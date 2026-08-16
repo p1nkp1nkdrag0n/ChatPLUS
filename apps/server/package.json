@@ -1,0 +1,34 @@
+{
+  "name": "@personasim/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/bootstrap.ts",
+    "start": "tsx src/bootstrap.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "test": "vitest run --root ../.. apps/server/src",
+    "test:llm:smoke": "tsx src/scripts/llm-smoke.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@fastify/multipart": "^9.2.1",
+    "@personasim/contracts": "workspace:*",
+    "@personasim/features": "workspace:*",
+    "@personasim/kernel": "workspace:*",
+    "@personasim/providers": "workspace:*",
+    "better-sqlite3": "^12.2.0",
+    "dotenv": "^17.2.2",
+    "fastify": "^5.5.0",
+    "luxon": "^3.7.2",
+    "nanoid": "^5.1.5",
+    "pino": "^9.9.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/luxon": "^3.6.2"
+  }
+}

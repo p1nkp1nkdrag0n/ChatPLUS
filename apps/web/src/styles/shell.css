@@ -1,0 +1,127 @@
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-nav {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: flex;
+  width: var(--nav-width);
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+}
+
+.app-nav__brand {
+  display: flex;
+  height: 82px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-editorial);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.app-nav__brand-mark {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+}
+
+.app-nav__groups {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 18px 12px;
+}
+
+.app-nav__group {
+  display: grid;
+  gap: 5px;
+}
+
+.app-nav__group--secondary {
+  margin-top: auto;
+}
+
+.app-nav__item {
+  position: relative;
+  display: flex;
+  min-height: 43px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 520;
+}
+
+.app-nav__item::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: -12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+}
+
+.app-nav__item:hover {
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
+
+.app-nav__item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.app-nav__item.is-active::before {
+  background: var(--accent);
+}
+
+.app-nav__runtime {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 14px;
+  padding: 12px 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.app-nav__runtime strong,
+.app-nav__runtime span {
+  display: block;
+}
+
+.app-nav__runtime strong {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.app-nav__runtime span {
+  font-size: 10px;
+}
+
+.app-main {
+  min-width: 0;
+  margin-left: var(--nav-width);
+}
+
+.mobile-nav {
+  display: none;
+}

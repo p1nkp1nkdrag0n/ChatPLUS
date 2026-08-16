@@ -1,0 +1,29 @@
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Local secrets. Keep only the documented template.
+.env
+.env.*
+!.env.example
+*.local
+
+# Runtime data
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite-*
+data/test-*/
+tmp/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+

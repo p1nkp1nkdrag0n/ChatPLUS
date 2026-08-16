@@ -1,0 +1,564 @@
+import { extname } from "node:path";
+
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { DateTime } from "luxon";
+import { z } from "zod";
+
+import type { ServerConfig } from "../config.js";
+import type { DatabaseStore } from "../db/store.js";
+import { capabilitiesForTier } from "../domain/capabilities.js";
+import { ApiError, notFound } from "../domain/errors.js";
+import {
+  chatMessageInputSchema,
+  clockAdvanceSchema,
+  importedCharacterInputSchema,
+  scheduleEffectProposalSchema,
+} from "../domain/schemas.js";
+import { compareUtc } from "../domain/time.js";
+import type { ActorQueue } from "../runtime/actor-queue.js";
+import type { Clock } from "../runtime/clock.js";
+import { isMutableClock } from "../runtime/clock.js";
+import type { SseHub } from "../sse/hub.js";
+import type { CharacterService } from "../services/character-service.js";
+import type { ConversationService } from "../services/conversation-service.js";
+import type { LlmService } from "../services/llm-service.js";
+import type { ScheduleService } from "../services/schedule-service.js";
+import type { SettlementService } from "../services/settlement-service.js";
+
+export type RouteServices = {
+  config: ServerConfig;
+  store: DatabaseStore;
+  clock: Clock;
+  actors: ActorQueue;
+  sse: SseHub;
+  llm: LlmService;
+  characters: CharacterService;
+  schedules: ScheduleService;
+  settlements: SettlementService;
+  conversations: ConversationService;
+};
+
+const idParamsSchema = z.object({ id: z.string().min(1) });
+const versionParamsSchema = idParamsSchema.extend({
+  version: z.coerce.number().int().positive(),
+});
+const sessionParamsSchema = z.object({ sessionId: z.string().min(1) });
+const rangeQuerySchema = z.object({
+  fromUtc: z.string().datetime({ offset: true }).optional(),
+  toUtc: z.string().datetime({ offset: true }).optional(),
+});
+
+export function registerRoutes(
+  app: FastifyInstance,
+  services: RouteServices,
+): void {
+  const {
+    config,
+    store,
+    clock,
+    actors,
+    sse,
+    llm,
+    characters,
+    schedules,
+    settlements,
+    conversations,
+  } = services;
+
+  app.get("/api/health", () => ({
+    status: "ok",
+    serverTimeUtc: clock.nowUtc(),
+    profile: config.profile,
+    llmProvider: llm.providerName,
+    clockMode: isMutableClock(clock) ? "fake" : "system",
+  }));
+
+  app.get("/api/characters", (request) => {
+    const query = z
+      .object({ includeArchived: z.coerce.boolean().default(false) })
+      .parse(request.query);
+    const items = characters.list(query.includeArchived).map((summary) => {
+      const spec = store.getCharacterSpec(summary.id);
+      return {
+        ...summary,
+        version: summary.currentVersion,
+        workOrRole: spec?.identity.workOrRole ?? "",
+      };
+    });
+    return { characters: items, items };
+  });
+
+  app.post("/api/characters/generate", async (request, reply) => {
+    const spec = await characters.generate(request.body);
+    return reply.code(201).send({ character: spec });
+  });
+
+  app.post("/api/characters/import", async (request, reply) => {
+    const input = await readImportInput(request);
+    const spec = await characters.import(input);
+    return reply.code(201).send({ character: spec });
+  });
+
+  app.get("/api/characters/:id", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const detail = characters.get(id);
+    return { character: detail.spec, ...detail };
+  });
+
+  app.patch("/api/characters/:id", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return {
+      character: await actors.runExclusive(id, () =>
+        characters.updateDraft(id, request.body as never),
+      ),
+    };
+  });
+
+  app.patch("/api/characters/:id/draft", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const raw = z.record(z.string(), z.unknown()).parse(request.body);
+    const mutation = "draft" in raw ? { ...raw, spec: raw.draft } : raw;
+    return {
+      character: await actors.runExclusive(id, () =>
+        characters.updateDraft(id, mutation),
+      ),
+    };
+  });
+
+  app.put("/api/characters/:id", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return {
+      character: await actors.runExclusive(id, () =>
+        characters.updateDraft(id, request.body as never),
+      ),
+    };
+  });
+
+  app.delete("/api/characters/:id", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return {
+      character: await actors.runExclusive(id, () => characters.archive(id)),
+    };
+  });
+
+  app.get("/api/characters/:id/versions", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return { versions: characters.listVersions(id) };
+  });
+
+  app.post("/api/characters/:id/versions/:version/restore", async (request) => {
+    const { id, version } = versionParamsSchema.parse(request.params);
+    return {
+      character: await actors.runExclusive(id, () =>
+        characters.restore(id, version),
+      ),
+    };
+  });
+
+  app.post("/api/characters/:id/restore", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const { version } = z
+      .object({ version: z.number().int().positive() })
+      .parse(request.body);
+    return {
+      character: await actors.runExclusive(id, () =>
+        characters.restore(id, version),
+      ),
+    };
+  });
+
+  app.post("/api/characters/:id/publish", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({ expectedVersion: z.number().int().positive().optional() })
+      .parse(request.body ?? {});
+    return actors.runExclusive(id, async () => {
+      const character = characters.publish(id, body.expectedVersion);
+      const plan = await schedules.ensure72Hours(
+        id,
+        store.listSchedule(id).length === 0,
+      );
+      return { character, schedule: plan.created };
+    });
+  });
+
+  app.post("/api/agents/:id/activate", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return actors.runExclusive(id, async () => {
+      const spec = store.getCharacterSpec(id);
+      if (!spec) throw notFound("Character");
+      const capabilities = capabilitiesForTier(spec.tier);
+      const settlement = await settlements.settleAndExtend(id);
+      const proactiveMessage = capabilities.proactiveDialogue
+        ? settlements.deliverOneProactive(id)
+        : undefined;
+      return buildAgentSnapshot(id, services, {
+        capabilities,
+        settlement,
+        proactiveMessage,
+      });
+    });
+  });
+
+  app.get("/api/agents/:id/state", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return buildAgentSnapshot(id, services);
+  });
+
+  app.get("/api/agents/:id/overview", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return buildAgentSnapshot(id, services);
+  });
+
+  app.get("/api/agents/:id/schedule", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const range = rangeQuerySchema.parse(request.query);
+    return {
+      items: schedules.list(id, range.fromUtc, range.toUtc),
+      serverTimeUtc: clock.nowUtc(),
+    };
+  });
+
+  app.post("/api/agents/:id/schedule/effects", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({ effects: z.array(z.unknown()) })
+      .parse(request.body);
+    return actors.runExclusive(id, () => {
+      const effects = z.array(scheduleEffectProposalSchema).parse(body.effects);
+      const validation = schedules.validateEffects(id, effects);
+      if (!validation.valid) {
+        throw new ApiError(
+          422,
+          "invalid_schedule_proposal",
+          "Schedule effects failed validation.",
+          validation.issues,
+        );
+      }
+      const nowUtc = clock.nowUtc();
+      const changed = store.transaction(() =>
+        schedules.applyValidatedEffects(id, effects, nowUtc),
+      );
+      sse.publish({
+        type: "schedule.updated",
+        agentId: id,
+        occurredAtUtc: nowUtc,
+        data: changed,
+      });
+      return { changed };
+    });
+  });
+
+  app.get("/api/agents/:id/timeline", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    if (!store.getCharacterSummary(id)) throw notFound("Character");
+    const query = z
+      .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
+      .parse(request.query);
+    const activityEvents = store.listActivityEvents(id, query.limit);
+    const scheduleItems = store.listSchedule(id);
+    const itemById = new Map(scheduleItems.map((item) => [item.id, item]));
+    const events = activityEvents.map((event) => ({
+      id: event.id,
+      type: event.eventType,
+      title: event.scheduleItemId
+        ? itemById.get(event.scheduleItemId)?.title
+        : undefined,
+      summary: event.summary,
+      occurredAtUtc: event.occurredAtUtc,
+    }));
+    return {
+      events,
+      activityEvents,
+      scheduleItems,
+      domainEvents: store.listDomainEvents(id, query.limit),
+    };
+  });
+
+  app.get("/api/agents/:id/memories", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    if (!store.getCharacterSummary(id)) throw notFound("Character");
+    const rows = store.database
+      .prepare(
+        `SELECT id, type, content, tags_json AS tagsJson, importance, confidence,
+          source_message_id AS sourceMessageId, source_event_id AS sourceEventId,
+          created_at_utc AS createdAtUtc, valid_until_utc AS validUntilUtc
+         FROM memories WHERE agent_id = ? ORDER BY importance DESC, created_at_utc DESC`,
+      )
+      .all(id)
+      .map((row) => {
+        const value = row as Record<string, unknown>;
+        const { tagsJson, ...rest } = value;
+        const parsedTags: unknown = JSON.parse(
+          typeof tagsJson === "string" ? tagsJson : "[]",
+        );
+        return { ...rest, tags: z.array(z.string()).parse(parsedTags) };
+      });
+    return { memories: rows };
+  });
+
+  app.get("/api/agents/:id/events", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    if (!store.getCharacterSummary(id)) throw notFound("Character");
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    reply.raw.flushHeaders();
+    const unsubscribe = sse.subscribe(id, reply.raw);
+    request.raw.once("close", unsubscribe);
+  });
+
+  app.get("/api/agents/:id/sessions", (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    return { sessions: conversations.listSessions(id) };
+  });
+
+  app.post("/api/agents/:id/sessions", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = z
+      .object({ title: z.string().max(200).optional() })
+      .parse(request.body ?? {});
+    const session = conversations.createSession(id, body.title);
+    return reply.code(201).send({ session });
+  });
+
+  app.get("/api/sessions/:sessionId/messages", (request) => {
+    const { sessionId } = sessionParamsSchema.parse(request.params);
+    const query = z
+      .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
+      .parse(request.query);
+    return { messages: conversations.listMessages(sessionId, query.limit) };
+  });
+
+  app.post("/api/sessions/:sessionId/messages", async (request, reply) => {
+    const { sessionId } = sessionParamsSchema.parse(request.params);
+    const input = chatMessageInputSchema.parse(normalizeChatBody(request.body));
+    const result = await actors.runExclusive(input.agentId, () =>
+      conversations.chat(sessionId, input),
+    );
+    return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+  });
+
+  app.post("/api/agents/:id/messages", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const input = chatMessageInputSchema.parse({
+      ...normalizeChatBody(request.body),
+      agentId: id,
+    });
+    const result = await actors.runExclusive(id, async () => {
+      const session =
+        conversations.listSessions(id)[0] ?? conversations.createSession(id);
+      return conversations.chat(session.id, input);
+    });
+    return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+  });
+
+  app.get("/api/settings", () => ({
+    settings: store.getSettings(),
+    runtime: {
+      llmProvider: llm.providerName,
+      llmModel: llm.modelName,
+      llmBaseUrl: config.llm.baseUrl,
+      hasApiKey: Boolean(config.llm.apiKey),
+      clockMode: isMutableClock(clock) ? "fake" : "system",
+      profile: config.profile,
+    },
+  }));
+
+  const updateSettings = (request: FastifyRequest) => {
+    const values = z.record(z.string(), z.unknown()).parse(request.body);
+    const forbidden = Object.keys(values).filter((key) =>
+      /(api.?key|secret|password|token|credential)/i.test(key),
+    );
+    if (forbidden.length > 0) {
+      throw new ApiError(
+        400,
+        "secret_setting_forbidden",
+        "Secrets may only be supplied through environment variables.",
+        {
+          keys: forbidden,
+        },
+      );
+    }
+    store.setSettings(values, clock.nowUtc());
+    return { settings: store.getSettings() };
+  };
+  app.put("/api/settings", updateSettings);
+  app.patch("/api/settings", updateSettings);
+
+  if (config.developerRoutes) {
+    app.get("/api/developer/status", () => ({
+      serverTimeUtc: clock.nowUtc(),
+      activeSseConnections: sse.connectionCount(),
+      activeActorQueues: actors.activeActors,
+      tables: store.tableCounts(),
+      runtime: { llmProvider: llm.providerName, llmModel: llm.modelName },
+    }));
+
+    app.get("/api/developer/events", (request) => {
+      const query = z
+        .object({
+          agentId: z.string().optional(),
+          limit: z.coerce.number().int().min(1).max(500).default(100),
+        })
+        .parse(request.query);
+      return { events: store.listDomainEvents(query.agentId, query.limit) };
+    });
+
+    app.get("/api/developer/llm-calls", (request) => {
+      const query = z
+        .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
+        .parse(request.query);
+      return { calls: store.listLlmCalls(query.limit) };
+    });
+
+    app.post("/api/developer/clock/set", async (request) => {
+      if (!isMutableClock(clock)) {
+        throw new ApiError(
+          409,
+          "clock_not_mutable",
+          "The configured clock is not mutable.",
+        );
+      }
+      const { value } = z
+        .object({ value: z.string().datetime({ offset: true }) })
+        .parse(request.body);
+      clock.setUtc(value);
+      await settleActiveAgents(services);
+      return { nowUtc: clock.nowUtc() };
+    });
+
+    app.post("/api/developer/clock/advance", async (request) => {
+      if (!isMutableClock(clock)) {
+        throw new ApiError(
+          409,
+          "clock_not_mutable",
+          "The configured clock is not mutable.",
+        );
+      }
+      const duration = clockAdvanceSchema.parse(request.body);
+      clock.advance({
+        ...(duration.days === undefined ? {} : { days: duration.days }),
+        ...(duration.hours === undefined ? {} : { hours: duration.hours }),
+        ...(duration.minutes === undefined
+          ? {}
+          : { minutes: duration.minutes }),
+      });
+      await settleActiveAgents(services);
+      return { nowUtc: clock.nowUtc() };
+    });
+
+    app.post("/api/developer/agents/:id/settle", async (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      return actors.runExclusive(id, async () => {
+        const settlement = await settlements.settleAndExtend(id);
+        const proactiveMessage = settlements.deliverOneProactive(id);
+        return { settlement, proactiveMessage };
+      });
+    });
+  }
+}
+
+function normalizeChatBody(body: unknown): Record<string, unknown> {
+  if (typeof body !== "object" || body === null) return {};
+  const input = body as Record<string, unknown>;
+  return {
+    ...input,
+    text: input.text ?? input.content,
+    clientMessageId: input.clientMessageId ?? input.idempotencyKey,
+  };
+}
+
+async function readImportInput(request: FastifyRequest): Promise<unknown> {
+  if (!request.isMultipart())
+    return importedCharacterInputSchema.parse(request.body);
+  const fields: Record<string, string> = {};
+  let sourceText = "";
+  let sourceTitle = "导入材料";
+  for await (const part of request.parts()) {
+    if (part.type === "file") {
+      const extension = extname(part.filename).toLowerCase();
+      if (![".txt", ".md", ".srt"].includes(extension)) {
+        throw new ApiError(
+          415,
+          "unsupported_import_type",
+          "Only .txt, .md and .srt files are supported.",
+        );
+      }
+      const buffer = await part.toBuffer();
+      if (buffer.byteLength > 512_000) {
+        throw new ApiError(
+          413,
+          "import_too_large",
+          "Imported text must not exceed 500 KB.",
+        );
+      }
+      sourceText = buffer.toString("utf8");
+      sourceTitle = part.filename;
+    } else {
+      fields[part.fieldname] = String(part.value);
+    }
+  }
+  return importedCharacterInputSchema.parse({
+    ...fields,
+    tier: fields.tier,
+    sourceText: fields.sourceText ?? sourceText,
+    sourceTitle: fields.sourceTitle ?? sourceTitle,
+  });
+}
+
+function buildAgentSnapshot(
+  id: string,
+  services: RouteServices,
+  extra: Record<string, unknown> = {},
+) {
+  const spec = services.store.getCharacterSpec(id);
+  const state = services.store.getRuntimeState(id);
+  const cursor = services.store.getCursor(id);
+  if (!spec || !state || !cursor) throw notFound("Character");
+  const capabilities = capabilitiesForTier(spec.tier);
+  const nowUtc = services.clock.nowUtc();
+  const next24Utc = DateTime.fromISO(nowUtc)
+    .plus({ hours: 24 })
+    .toUTC()
+    .toISO()!;
+  const schedule = capabilities.schedule
+    ? services.store.listSchedule(id, { fromUtc: nowUtc, toUtc: next24Utc })
+    : [];
+  const currentActivity = schedule.find(
+    (item) =>
+      compareUtc(item.startAtUtc, nowUtc) <= 0 &&
+      compareUtc(item.endAtUtc, nowUtc) > 0 &&
+      item.status !== "cancelled",
+  );
+  return {
+    agentId: id,
+    character: spec,
+    capabilities,
+    state,
+    cursor,
+    serverTimeUtc: nowUtc,
+    characterLocalTime: DateTime.fromISO(nowUtc)
+      .setZone(spec.identity.timezone)
+      .toISO(),
+    currentActivity,
+    schedule,
+    ...extra,
+  };
+}
+
+async function settleActiveAgents(services: RouteServices): Promise<void> {
+  const nowUtc = services.clock.nowUtc();
+  await Promise.all(
+    services.sse.getActiveAgentIds().map((agentId) =>
+      services.actors.runExclusive(agentId, async () => {
+        await services.settlements.settleAndExtend(agentId, { toUtc: nowUtc });
+        services.settlements.deliverOneProactive(agentId);
+      }),
+    ),
+  );
+}

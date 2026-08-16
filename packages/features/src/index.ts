@@ -1,4 +1,5 @@
 export * from "./memory-engine.js";
+export * from "./model-effects.js";
 export * from "./persona-guard.js";
 export * from "./proactive-dialogue.js";
 export * from "./prompt-assembler.js";

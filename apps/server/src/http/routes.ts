@@ -416,6 +416,18 @@ export function registerRoutes(
       return { calls: store.listLlmCalls(query.limit) };
     });
 
+    app.get("/api/developer/rejected-proposals", (request) => {
+      const query = z
+        .object({
+          agentId: z.string().optional(),
+          limit: z.coerce.number().int().min(1).max(500).default(100),
+        })
+        .parse(request.query);
+      return {
+        proposals: store.listRejectedProposals(query.agentId, query.limit),
+      };
+    });
+
     app.post("/api/developer/clock/set", async (request) => {
       if (!isMutableClock(clock)) {
         throw new ApiError(

@@ -46,6 +46,7 @@ const envSchema = z.object({
     .default(1),
   LOG_LEVEL: z.string().default("info"),
   SEED_DEMO: booleanFromEnv,
+  CHAT_EFFECTS_MODE: z.enum(["off", "gated"]).default("gated"),
 });
 
 export type ServerConfig = {
@@ -68,6 +69,7 @@ export type ServerConfig = {
   logLevel: string;
   seedDemo: boolean;
   developerRoutes: boolean;
+  chatEffectsMode: "off" | "gated";
 };
 
 export function readConfig(
@@ -109,6 +111,7 @@ export function readConfig(
     logLevel: env.LOG_LEVEL,
     seedDemo: env.SEED_DEMO,
     developerRoutes: env.NODE_ENV !== "production",
+    chatEffectsMode: env.CHAT_EFFECTS_MODE,
   };
 
   return {

@@ -4,6 +4,7 @@ export * from "./events.js";
 export * from "./llm.js";
 export * from "./memory.js";
 export * from "./messages.js";
+export * from "./persona-chat-decision.js";
 export * from "./plugin.js";
 export * from "./primitives.js";
 export * from "./provenance.js";

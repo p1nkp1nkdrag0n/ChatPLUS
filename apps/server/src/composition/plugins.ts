@@ -183,6 +183,7 @@ function createDomainPlugin(
       const clock = context.services.resolve(SERVER_CLOCK_TOKEN);
       const llm = context.services.resolve(SERVER_LLM_SERVICE_TOKEN);
       const sse = context.services.resolve(SSE_HUB_TOKEN);
+      const config = context.services.resolve(SERVER_CONFIG_TOKEN);
       const characters = new CharacterService(store, clock, llm);
       const schedules = new ScheduleService(store, clock, llm);
       const settlements = new SettlementService(
@@ -199,6 +200,7 @@ function createDomainPlugin(
         schedules,
         settlements,
         sse,
+        { chatEffectsMode: config.chatEffectsMode },
       );
 
       context.services.provide(CHARACTER_SERVICE_TOKEN, characters);

@@ -32,6 +32,16 @@ export type ProposalValidation =
       issues: Array<{ index: number; code: string; message: string }>;
     };
 
+export type PartialProposalValidation = {
+  accepted: ScheduleEffectProposal[];
+  rejections: Array<{
+    index: number;
+    code: string;
+    message: string;
+    proposal: ScheduleEffectProposal;
+  }>;
+};
+
 export class ScheduleService {
   constructor(
     private readonly store: DatabaseStore,
@@ -216,16 +226,66 @@ export class ScheduleService {
   ): ProposalValidation {
     const spec = this.store.getCharacterSpec(agentId);
     if (!spec) throw notFound("Character");
+    const result = this.validateBatch(agentId, spec, effects, nowUtc);
+    if (result.valid) return { valid: true, effects };
+    return {
+      valid: false,
+      issues: result.errors.map((error, index) => ({
+        index,
+        code: error.code.toLowerCase(),
+        message: error.message,
+      })),
+    };
+  }
+
+  /**
+   * Validates proposals one by one against a growing accepted prefix. A
+   * rejected proposal only drops itself, so one invalid effect can never
+   * void the others or the conversational reply it travelled with.
+   */
+  validateEffectsPartial(
+    agentId: string,
+    effects: ScheduleEffectProposal[],
+    nowUtc = this.clock.nowUtc(),
+  ): PartialProposalValidation {
+    const spec = this.store.getCharacterSpec(agentId);
+    if (!spec) throw notFound("Character");
+    const accepted: ScheduleEffectProposal[] = [];
+    const rejections: PartialProposalValidation["rejections"] = [];
+    for (const effect of effects) {
+      const result = this.validateBatch(agentId, spec, [...accepted, effect], nowUtc);
+      if (result.valid) {
+        accepted.push(effect);
+        continue;
+      }
+      const first = result.errors[0];
+      rejections.push({
+        index: accepted.length + rejections.length,
+        code: (first?.code ?? "proposal_rejected").toLowerCase(),
+        message: first?.message ?? "The proposal failed schedule validation.",
+        proposal: effect,
+      });
+    }
+    return { accepted, rejections };
+  }
+
+  private validateBatch(
+    agentId: string,
+    spec: CharacterSpec,
+    effects: ScheduleEffectProposal[],
+    nowUtc: string,
+  ):
+    | { valid: true }
+    | { valid: false; errors: Array<{ code: string; message: string }> } {
+    if (effects.length === 0) return { valid: true };
     if (
-      (!capabilitiesForTier(spec.tier).schedule ||
-        !spec.schedulePolicy.enabled) &&
-      effects.length > 0
+      !capabilitiesForTier(spec.tier).schedule ||
+      !spec.schedulePolicy.enabled
     ) {
       return {
         valid: false,
-        issues: [
+        errors: [
           {
-            index: 0,
             code: "schedule_disabled",
             message: "Scheduling is disabled for this character.",
           },
@@ -243,12 +303,11 @@ export class ScheduleService {
         horizonHours: 72,
       },
     );
-    if (result.valid) return { valid: true, effects };
+    if (result.valid) return { valid: true };
     return {
       valid: false,
-      issues: result.errors.map((error, index) => ({
-        index,
-        code: error.code.toLowerCase(),
+      errors: result.errors.map((error) => ({
+        code: error.code,
         message: error.message,
       })),
     };

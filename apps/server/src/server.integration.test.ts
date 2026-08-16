@@ -39,6 +39,7 @@ describe("PersonaSim server integration", () => {
       expect(runMigrations(database)).toEqual([
         "001_initial.sql",
         "002_memory_projection.sql",
+        "003_rejected_proposals.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database

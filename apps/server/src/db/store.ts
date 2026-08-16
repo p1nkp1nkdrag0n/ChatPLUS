@@ -627,6 +627,59 @@ export class DatabaseStore {
       }));
   }
 
+  insertRejectedProposal(input: {
+    agentId: string;
+    sessionId?: string;
+    purpose: string;
+    reasonCode: string;
+    reasonSummary: string;
+    raw: unknown;
+    correlationId?: string;
+    createdAtUtc: string;
+  }): void {
+    this.database
+      .prepare(
+        `INSERT INTO rejected_proposals(
+          id, agent_id, session_id, purpose, reason_code, reason_summary,
+          raw_json, correlation_id, created_at_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        createEntityId("rejection"),
+        input.agentId,
+        input.sessionId ?? null,
+        input.purpose,
+        input.reasonCode,
+        input.reasonSummary,
+        JSON.stringify(input.raw ?? null),
+        input.correlationId ?? null,
+        input.createdAtUtc,
+      );
+  }
+
+  listRejectedProposals(
+    agentId?: string,
+    limit = 100,
+  ): Array<Record<string, unknown>> {
+    const where = agentId ? "WHERE agent_id = ?" : "";
+    const params = agentId ? [agentId, limit] : [limit];
+    return this.database
+      .prepare(
+        `SELECT id, agent_id AS agentId, session_id AS sessionId, purpose,
+          reason_code AS reasonCode, reason_summary AS reasonSummary,
+          raw_json AS rawJson, correlation_id AS correlationId,
+          created_at_utc AS createdAtUtc
+         FROM rejected_proposals ${where}
+         ORDER BY created_at_utc DESC, rowid DESC LIMIT ?`,
+      )
+      .all(...params)
+      .map((row) => {
+        const value = row as Record<string, unknown>;
+        const { rawJson, ...rest } = value;
+        return { ...rest, raw: parseJsonValue(rawJson) };
+      });
+  }
+
   getSettings(): Record<string, unknown> {
     const output: Record<string, unknown> = {};
     for (const row of this.database

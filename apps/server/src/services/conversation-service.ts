@@ -1,6 +1,11 @@
 import { DateTime } from "luxon";
 import {
+  MemoryCandidateSchema,
+  PersonaChatDecisionSchema,
   PersonaChatResponseSchema,
+  ScheduleEffectProposalSchema,
+  type MemoryCandidate,
+  type PersonaChatDecision,
   type PersonaChatResponse,
 } from "@personasim/contracts";
 import {
@@ -8,6 +13,9 @@ import {
   assembleChatPrompt,
   createSafeFallbackReply,
   guardPersonaReply,
+  hasScheduleIntent,
+  normalizeModelEffects,
+  type ModelEffectRejection,
   type ReplyStrategy,
 } from "@personasim/features";
 
@@ -45,10 +53,26 @@ import {
   validateMergeAndPersistMemories,
 } from "./memory-service.js";
 import type {
-  ProposalValidation,
+  PartialProposalValidation,
   ScheduleService,
 } from "./schedule-service.js";
 import type { SettlementService } from "./settlement-service.js";
+
+export type ChatTurnDecisionPath =
+  | "full"
+  | "partial"
+  | "effects_rejected"
+  | "reply_only"
+  | "fallback";
+
+export interface ConversationServiceOptions {
+  /**
+   * "gated" (default) allows the live model to propose schedule effects only
+   * for high-fidelity characters when the turn shows schedule intent.
+   * "off" restores the pure reply-only live path everywhere.
+   */
+  chatEffectsMode?: "off" | "gated";
+}
 
 export type ChatTurnResult = {
   idempotentReplay: boolean;
@@ -73,6 +97,7 @@ export class ConversationService {
     private readonly schedules: ScheduleService,
     private readonly settlements: SettlementService,
     private readonly sse: SseHub,
+    private readonly options: ConversationServiceOptions = {},
   ) {}
 
   listSessions(agentId: string): StoredSession[] {
@@ -184,6 +209,12 @@ export class ConversationService {
       nowUtc,
       userMessage: input.text,
     });
+    const effectsEligible =
+      this.options.chatEffectsMode !== "off" &&
+      capabilities.schedule &&
+      spec.tier === "high_fidelity" &&
+      spec.schedulePolicy.enabled &&
+      hasScheduleIntent(input.text);
 
     const turn =
       this.llm.providerName === "fixture"
@@ -206,9 +237,42 @@ export class ConversationService {
             system: assembledPrompt.system,
             prompt: assembledPrompt.prompt,
             replyStrategy: assembledPrompt.replyStrategy,
+            effects: {
+              eligible: effectsEligible,
+              schedule,
+              userText: input.text,
+            },
           });
     const { decision, inspection, repairAttempted } = turn;
     const validation = inspection.validation;
+
+    const proposalRejections: Array<{
+      reasonCode: string;
+      reasonSummary: string;
+      raw: unknown;
+    }> = [
+      ...turn.modelRejections.map((rejection) => ({
+        reasonCode: rejection.reasonCode,
+        reasonSummary: rejection.reasonSummary,
+        raw: rejection.raw,
+      })),
+      ...validation.rejections.map((rejection) => ({
+        reasonCode: rejection.code,
+        reasonSummary: rejection.message,
+        raw: rejection.proposal,
+      })),
+    ];
+    const proposedCount = decision.scheduleEffects.length;
+    const acceptedCount = validation.accepted.length;
+    const decisionPath: ChatTurnDecisionPath = turn.usedFallback
+      ? "fallback"
+      : proposedCount === 0 && proposalRejections.length === 0
+        ? "reply_only"
+        : acceptedCount === proposedCount && proposalRejections.length === 0
+          ? "full"
+          : acceptedCount > 0
+            ? "partial"
+            : "effects_rejected";
 
     const userMessage: StoredMessage = {
       id: createEntityId("message"),
@@ -236,6 +300,8 @@ export class ConversationService {
         reasonCode: decision.reasonCode,
         reasonSummary: decision.reasonSummary,
         repairAttempted,
+        decisionPath,
+        rejectedProposalCount: proposalRejections.length,
       },
       createdAtUtc: nowUtc,
     };
@@ -259,9 +325,21 @@ export class ConversationService {
         this.store.insertMessage(userMessage);
         scheduleChanges = this.schedules.applyValidatedEffects(
           input.agentId,
-          validation.valid ? validation.effects : [],
+          validation.accepted,
           nowUtc,
         );
+        for (const rejection of proposalRejections) {
+          this.store.insertRejectedProposal({
+            agentId: input.agentId,
+            sessionId,
+            purpose: "chat_turn",
+            reasonCode: rejection.reasonCode,
+            reasonSummary: rejection.reasonSummary,
+            raw: rejection.raw,
+            correlationId: input.clientMessageId,
+            createdAtUtc: nowUtc,
+          });
+        }
         if (stateChanged) this.store.updateRuntimeState(nextState);
         memoryIds = capabilities.longTermMemory
           ? validateMergeAndPersistMemories({
@@ -379,7 +457,7 @@ export class ConversationService {
     fixture: AgentTurnDecision;
   }): Promise<ResolvedTurn> {
     let decision: AgentTurnDecision | undefined;
-    let initialIssues: unknown = [];
+    let initialIssues: unknown[] = [];
     try {
       decision = await this.llm.generateObject({
         purpose: "chat_turn",
@@ -404,6 +482,7 @@ export class ConversationService {
         )
       : undefined;
     let repairAttempted = false;
+    let usedFallback = false;
     if (!decision || !inspection || inspection.issues.length > 0) {
       repairAttempted = true;
       decision = await this.tryRepairFixtureDecision(
@@ -424,6 +503,7 @@ export class ConversationService {
     }
     if (inspection.issues.length > 0) {
       decision = safeDecision(input.spec);
+      usedFallback = true;
       inspection = inspectDecision(
         this.schedules,
         input.agentId,
@@ -433,7 +513,13 @@ export class ConversationService {
         input.capabilities,
       );
     }
-    return { decision, inspection, repairAttempted };
+    return {
+      decision,
+      inspection,
+      repairAttempted,
+      usedFallback,
+      modelRejections: [],
+    };
   }
 
   private async decidePersonaReply(input: {
@@ -445,43 +531,95 @@ export class ConversationService {
     system: string;
     prompt: string;
     replyStrategy: ReplyStrategy;
+    effects: {
+      eligible: boolean;
+      schedule: ScheduleItem[];
+      userText: string;
+    };
   }): Promise<ResolvedTurn> {
-    let response: PersonaChatResponse | undefined;
-    let initialIssues: unknown = [];
+    let decisionResponse: PersonaChatDecision | undefined;
+    let replyResponse: PersonaChatResponse | undefined;
+    let initialIssues: unknown[] = [];
+    const effectsContract = input.effects.eligible
+      ? buildScheduleEffectsContract(
+          input.effects.schedule,
+          input.spec.identity.timezone,
+        )
+      : "";
     try {
-      const candidate = await this.llm.generateObject({
-        purpose: "chat_turn",
-        agentId: input.agentId,
-        system: input.system,
-        prompt: input.prompt,
-        schema: PersonaChatResponseSchema,
-        maxOutputTokens: input.replyStrategy.maxOutputTokens,
-      });
-      response = PersonaChatResponseSchema.parse(candidate);
+      if (input.effects.eligible) {
+        decisionResponse = PersonaChatDecisionSchema.parse(
+          await this.llm.generateObject({
+            purpose: "chat_turn",
+            agentId: input.agentId,
+            system: input.system,
+            prompt: `${input.prompt}\n${effectsContract}`,
+            schema: PersonaChatDecisionSchema,
+            maxOutputTokens: input.replyStrategy.maxOutputTokens + 800,
+          }),
+        );
+      } else {
+        replyResponse = PersonaChatResponseSchema.parse(
+          await this.llm.generateObject({
+            purpose: "chat_turn",
+            agentId: input.agentId,
+            system: input.system,
+            prompt: input.prompt,
+            schema: PersonaChatResponseSchema,
+            maxOutputTokens: input.replyStrategy.maxOutputTokens,
+          }),
+        );
+      }
     } catch (error) {
       initialIssues = invalidOutputIssues(error);
     }
 
-    let decision = response
-      ? materializePersonaReply(response, input.spec, input.replyStrategy)
-      : safePersonaDecision(input.spec);
-    let inspection = response
-      ? inspectDecision(
-          this.schedules,
-          input.agentId,
-          input.spec,
-          decision,
-          input.nowUtc,
-          input.capabilities,
-        )
-      : undefined;
+    const modelRejections: ModelEffectRejection[] = [];
+    let decision =
+      decisionResponse !== undefined
+        ? this.materializeDecisionResponse(
+            decisionResponse,
+            input.spec,
+            input.replyStrategy,
+            {
+              schedule: input.effects.schedule,
+              timezone: input.spec.identity.timezone,
+              nowUtc: input.nowUtc,
+              userText: input.effects.userText,
+            },
+            modelRejections,
+          )
+        : replyResponse !== undefined
+          ? materializePersonaReply(replyResponse, input.spec, input.replyStrategy)
+          : safePersonaDecision(input.spec);
+    let usedFallback =
+      decisionResponse === undefined && replyResponse === undefined;
+
+    let inspection =
+      usedFallback
+        ? undefined
+        : inspectDecision(
+            this.schedules,
+            input.agentId,
+            input.spec,
+            decision,
+            input.nowUtc,
+            input.capabilities,
+          );
     let repairAttempted = false;
-    if (!response || !inspection || inspection.issues.length > 0) {
+    if (!inspection || inspection.issues.length > 0) {
       repairAttempted = true;
       const repaired = await this.tryRepairPersonaReply(
         input.spec,
         input.userText,
-        response,
+        decisionResponse !== undefined
+          ? {
+              text: decisionResponse.text,
+              ...(decisionResponse.toneTags === undefined
+                ? {}
+                : { toneTags: decisionResponse.toneTags }),
+            }
+          : replyResponse,
         inspection?.issues ?? initialIssues,
         input.replyStrategy,
       );
@@ -503,6 +641,7 @@ export class ConversationService {
     }
     if (!inspection || inspection.issues.length > 0) {
       decision = safePersonaDecision(input.spec);
+      usedFallback = true;
       inspection = inspectDecision(
         this.schedules,
         input.agentId,
@@ -512,7 +651,71 @@ export class ConversationService {
         input.capabilities,
       );
     }
-    return { decision, inspection, repairAttempted };
+    return {
+      decision,
+      inspection,
+      repairAttempted,
+      usedFallback,
+      modelRejections,
+    };
+  }
+
+  private materializeDecisionResponse(
+    response: PersonaChatDecision,
+    spec: CharacterSpec,
+    replyStrategy: ReplyStrategy,
+    context: {
+      schedule: ScheduleItem[];
+      timezone: string;
+      nowUtc: string;
+      userText: string;
+    },
+    modelRejections: ModelEffectRejection[],
+  ): AgentTurnDecision {
+    const base = materializePersonaReply(
+      PersonaChatResponseSchema.parse({
+        text: response.text,
+        ...(response.toneTags === undefined ? {} : { toneTags: response.toneTags }),
+        ...(response.deliveryMode === undefined
+          ? {}
+          : { deliveryMode: response.deliveryMode }),
+        ...(response.chunks === undefined ? {} : { chunks: response.chunks }),
+      }),
+      spec,
+      replyStrategy,
+    );
+    const normalized = normalizeModelEffects({
+      effects: response.scheduleEffects,
+      schedule: context.schedule,
+      timezone: context.timezone,
+      nowUtc: context.nowUtc,
+      userText: context.userText,
+    });
+    modelRejections.push(...normalized.rejections);
+    const proposals: ScheduleEffectProposal[] = [];
+    for (const proposal of normalized.accepted) {
+      const parsed = ScheduleEffectProposalSchema.safeParse(proposal);
+      if (parsed.success) {
+        proposals.push(parsed.data);
+        continue;
+      }
+      modelRejections.push({
+        raw: proposal,
+        reasonCode: "schema_mismatch",
+        reasonSummary:
+          "The normalized proposal did not match the strict proposal contract.",
+      });
+    }
+    return {
+      ...base,
+      scheduleEffects: proposals,
+      memoryCandidates: sanitizeModelMemoryCandidates(response.memoryCandidates),
+      reasonCode: "persona_chat_decision",
+      reasonSummary:
+        proposals.length > 0
+          ? "根据角色人格回复，并提交了通过校验的日程调整。"
+          : "根据角色人格和当前对话生成自然回复。",
+    };
   }
 
   private async tryRepairFixtureDecision(
@@ -593,6 +796,8 @@ type ResolvedTurn = {
   decision: AgentTurnDecision;
   inspection: DecisionInspection;
   repairAttempted: boolean;
+  usedFallback: boolean;
+  modelRejections: ModelEffectRejection[];
 };
 
 class DuplicateTurnError extends Error {
@@ -662,15 +867,17 @@ function inspectDecision(
   decision: AgentTurnDecision,
   nowUtc: string,
   capabilities: SimulationCapabilities,
-): { validation: ProposalValidation; issues: unknown[] } {
-  const validation = schedules.validateEffects(
+): { validation: PartialProposalValidation; issues: unknown[] } {
+  // Partial validation: an invalid proposal drops only itself. The remaining
+  // issues are reply-level (claim consistency, persona guard) and are the
+  // only conditions that can still trigger a repair or fallback.
+  const validation = schedules.validateEffectsPartial(
     agentId,
     decision.scheduleEffects,
     nowUtc,
   );
   const issues: unknown[] = [];
-  if (!validation.valid) issues.push(...validation.issues);
-  if (violatesTruthfulReply(decision)) {
+  if (violatesTruthfulReply(decision, validation.accepted.length)) {
     issues.push({
       code: "uncommitted_schedule_claim",
       message:
@@ -682,14 +889,107 @@ function inspectDecision(
       text: decision.reply.text,
       avoidedPhrases: spec.dialogue.avoidedPhrases,
       forbiddenMetaKnowledge: spec.knowledge.forbiddenMetaKnowledge,
-      acceptedScheduleEffects: validation.valid
-        ? toFeatureScheduleEffects(validation.effects)
-        : [],
+      acceptedScheduleEffects: toFeatureScheduleEffects(validation.accepted),
       reasonSummary: decision.reasonSummary,
     });
     if (!guarded.allowed) issues.push(...guarded.violations);
   }
   return { validation, issues };
+}
+
+function buildScheduleEffectsContract(
+  items: readonly ScheduleItem[],
+  timezone: string,
+): string {
+  const rows = items
+    .filter((item) => item.status !== "cancelled")
+    .slice(0, 20)
+    .map((item) => ({
+      itemId: item.id,
+      title: item.title,
+      category: item.category,
+      startLocal: DateTime.fromISO(item.startAtUtc)
+        .setZone(timezone)
+        .toFormat("yyyy-MM-dd HH:mm"),
+      endLocal: DateTime.fromISO(item.endAtUtc)
+        .setZone(timezone)
+        .toFormat("yyyy-MM-dd HH:mm"),
+      rigidity: item.rigidity,
+    }));
+  return [
+    "SCHEDULE_EFFECTS_CONTRACT",
+    "The user message may relate to the character's plans. You may propose at most 3 schedule changes in the optional scheduleEffects array; return an empty array unless the user clearly requested, agreed to, or accepted a concrete change.",
+    'Each effect MUST include "justificationQuote": a short verbatim quote from the current user message that justifies it. Effects without a grounded quote are rejected by the server.',
+    "Operations: create | reschedule | cancel. reschedule and cancel need itemId from SCHEDULE_ITEMS_JSON; create needs item.title and item.startAt.",
+    `Times: local clock strings in the character timezone (${timezone}), for example "19:30", "明天 09:00", or ISO UTC timestamps. Unparseable times are rejected.`,
+    "SCHEDULE_ITEMS_JSON",
+    JSON.stringify(rows),
+  ].join("\n");
+}
+
+const MEMORY_KINDS = new Set([
+  "semantic",
+  "episodic",
+  "relationship",
+  "commitment",
+]);
+
+const UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+
+function sanitizeModelMemoryCandidates(
+  records: readonly Record<string, unknown>[],
+): AgentTurnDecision["memoryCandidates"] {
+  const output: MemoryCandidate[] = [];
+  for (const raw of records.slice(0, 4)) {
+    const content =
+      typeof raw.content === "string"
+        ? raw.content.trim()
+        : typeof raw.text === "string"
+          ? raw.text.trim()
+          : "";
+    if (content === "") continue;
+    const occurredAtUtc =
+      typeof raw.occurredAtUtc === "string" && UTC_PATTERN.test(raw.occurredAtUtc)
+        ? raw.occurredAtUtc
+        : undefined;
+    const candidate = {
+      kind: (typeof raw.kind === "string" && MEMORY_KINDS.has(raw.kind)
+        ? raw.kind
+        : "episodic") as MemoryCandidate["kind"],
+      content: content.slice(0, 2_000),
+      importance:
+        typeof raw.importance === "number" &&
+        Number.isFinite(raw.importance) &&
+        raw.importance >= 0 &&
+        raw.importance <= 1
+          ? raw.importance
+          : 0.5,
+      confidence:
+        typeof raw.confidence === "number" &&
+        Number.isFinite(raw.confidence) &&
+        raw.confidence >= 0 &&
+        raw.confidence <= 1
+          ? raw.confidence
+          : 0.6,
+      ...(occurredAtUtc === undefined ? {} : { occurredAtUtc }),
+      tags: Array.isArray(raw.tags)
+        ? raw.tags
+            .filter(
+              (tag): tag is string =>
+                typeof tag === "string" && tag.trim() !== "",
+            )
+            .slice(0, 20)
+        : [],
+      sourceMessageIds: [],
+      sourceActivityEventIds: [],
+      origin: "runtime_simulation",
+      reasonCode: "model_memory_proposal",
+      reasonSummary: "模型从对话中提取的记忆候选。",
+    };
+    const parsed = MemoryCandidateSchema.safeParse(candidate);
+    if (parsed.success) output.push(parsed.data);
+  }
+  return output;
 }
 
 function fixtureDecision(
@@ -1046,8 +1346,11 @@ function invalidOutputIssues(error: unknown): unknown[] {
   ];
 }
 
-function violatesTruthfulReply(decision: AgentTurnDecision): boolean {
-  if (decision.scheduleEffects.length > 0) return false;
+function violatesTruthfulReply(
+  decision: AgentTurnDecision,
+  acceptedEffectCount: number,
+): boolean {
+  if (acceptedEffectCount > 0) return false;
   return /(?:已经|已|刚刚).{0,12}(?:修改|取消|移动|改(?:了|到|成)?|安排(?:好|了)?|加入).{0,12}(?:日程|计划|行程)|(?:i(?:'ve| have)) (?:rescheduled|cancelled|added .{0,12} to (?:my )?schedule)/iu.test(
     decision.reply.text,
   );

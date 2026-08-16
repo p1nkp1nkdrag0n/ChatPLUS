@@ -68,6 +68,30 @@ export type StoredActivityEvent = {
   idempotencyKey: string;
 };
 
+export const SCHEDULE_NEGOTIATION_STATUSES = [
+  "collecting_details",
+  "awaiting_confirmation",
+  "committed",
+  "declined",
+  "withdrawn",
+  "expired",
+  "conflicted",
+] as const;
+
+export type ScheduleNegotiationStatus =
+  (typeof SCHEDULE_NEGOTIATION_STATUSES)[number];
+
+export type StoredScheduleNegotiation = {
+  id: string;
+  agentId: string;
+  sessionId: string;
+  status: ScheduleNegotiationStatus;
+  offerVersion: number;
+  record: Record<string, unknown>;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+};
+
 export class DatabaseStore {
   constructor(readonly database: Database) {}
 
@@ -483,6 +507,139 @@ export class DatabaseStore {
       .run(message.createdAtUtc, message.sessionId);
   }
 
+  getActiveScheduleNegotiation(
+    sessionId: string,
+  ): StoredScheduleNegotiation | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT record_json FROM schedule_negotiations
+         WHERE session_id = ?
+           AND status IN ('collecting_details', 'awaiting_confirmation')
+         ORDER BY updated_at_utc DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(sessionId) as { record_json: string } | undefined;
+    return row ? mapScheduleNegotiation(row) : undefined;
+  }
+
+  getScheduleNegotiationById(
+    negotiationId: string,
+  ): StoredScheduleNegotiation | undefined {
+    const row = this.database
+      .prepare("SELECT record_json FROM schedule_negotiations WHERE id = ?")
+      .get(negotiationId) as { record_json: string } | undefined;
+    return row ? mapScheduleNegotiation(row) : undefined;
+  }
+
+  upsertScheduleNegotiation(
+    negotiation: StoredScheduleNegotiation,
+  ): StoredScheduleNegotiation {
+    const existing = this.getScheduleNegotiationById(negotiation.id);
+    const normalized: StoredScheduleNegotiation = {
+      ...negotiation,
+      createdAtUtc: canonicalUtc(
+        existing?.createdAtUtc ?? negotiation.createdAtUtc,
+      ),
+      updatedAtUtc: canonicalUtc(negotiation.updatedAtUtc),
+    };
+    this.database
+      .prepare(
+        `INSERT INTO schedule_negotiations(
+          id, agent_id, session_id, status, offer_version, record_json,
+          created_at_utc, updated_at_utc
+        ) VALUES (
+          @id, @agentId, @sessionId, @status, @offerVersion, @recordJson,
+          @createdAtUtc, @updatedAtUtc
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          agent_id = excluded.agent_id,
+          session_id = excluded.session_id,
+          status = excluded.status,
+          offer_version = excluded.offer_version,
+          record_json = excluded.record_json,
+          created_at_utc = excluded.created_at_utc,
+          updated_at_utc = excluded.updated_at_utc`,
+      )
+      .run({
+        ...normalized,
+        recordJson: JSON.stringify(normalized),
+      });
+    return normalized;
+  }
+
+  compareAndSetScheduleNegotiation(
+    negotiation: StoredScheduleNegotiation,
+    expected: {
+      status: ScheduleNegotiationStatus;
+      offerVersion: number;
+    },
+  ): boolean {
+    const existing = this.getScheduleNegotiationById(negotiation.id);
+    if (existing === undefined) return false;
+    const normalized: StoredScheduleNegotiation = {
+      ...negotiation,
+      createdAtUtc: canonicalUtc(existing.createdAtUtc),
+      updatedAtUtc: canonicalUtc(negotiation.updatedAtUtc),
+    };
+    const result = this.database
+      .prepare(
+        `UPDATE schedule_negotiations SET
+          agent_id = @agentId,
+          session_id = @sessionId,
+          status = @status,
+          offer_version = @offerVersion,
+          record_json = @recordJson,
+          created_at_utc = @createdAtUtc,
+          updated_at_utc = @updatedAtUtc
+         WHERE id = @id
+           AND agent_id = @agentId
+           AND session_id = @sessionId
+           AND status = @expectedStatus
+           AND offer_version = @expectedOfferVersion`,
+      )
+      .run({
+        ...normalized,
+        recordJson: JSON.stringify(normalized),
+        expectedStatus: expected.status,
+        expectedOfferVersion: expected.offerVersion,
+      });
+    return result.changes === 1;
+  }
+
+  listScheduleNegotiations(
+    input: {
+      agentId?: string;
+      sessionId?: string;
+      status?: ScheduleNegotiationStatus;
+      limit?: number;
+    } = {},
+  ): StoredScheduleNegotiation[] {
+    const clauses: string[] = [];
+    const parameters: Record<string, unknown> = {
+      limit: Math.max(1, Math.min(input.limit ?? 100, 500)),
+    };
+    if (input.agentId !== undefined) {
+      clauses.push("agent_id = @agentId");
+      parameters.agentId = input.agentId;
+    }
+    if (input.sessionId !== undefined) {
+      clauses.push("session_id = @sessionId");
+      parameters.sessionId = input.sessionId;
+    }
+    if (input.status !== undefined) {
+      clauses.push("status = @status");
+      parameters.status = input.status;
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    return this.database
+      .prepare(
+        `SELECT record_json FROM schedule_negotiations ${where}
+         ORDER BY updated_at_utc DESC, rowid DESC LIMIT @limit`,
+      )
+      .all(parameters)
+      .map((row) => mapScheduleNegotiation(row as SqlRow));
+  }
+
   insertActivityEvent(event: StoredActivityEvent): boolean {
     const result = this.database
       .prepare(
@@ -529,8 +686,8 @@ export class DatabaseStore {
     correlationId?: string;
     causationId?: string;
     idempotencyKey: string;
-  }): void {
-    this.database
+  }): boolean {
+    const result = this.database
       .prepare(
         `INSERT OR IGNORE INTO domain_events(
           id, agent_id, stream_type, stream_id, stream_version, event_type,
@@ -552,6 +709,7 @@ export class DatabaseStore {
         input.causationId ?? null,
         input.idempotencyKey,
       );
+    return result.changes > 0;
   }
 
   listDomainEvents(
@@ -720,6 +878,7 @@ export class DatabaseStore {
       "proactive_candidates",
       "settlements",
       "domain_events",
+      "schedule_negotiations",
       "llm_calls",
     ];
     return Object.fromEntries(
@@ -772,6 +931,10 @@ function mapMessage(row: SqlRow): StoredMessage {
     metadata: recordValue(parseJsonValue(row.metadata_json ?? "{}")),
     createdAtUtc: String(row.created_at_utc),
   };
+}
+
+function mapScheduleNegotiation(row: SqlRow): StoredScheduleNegotiation {
+  return parseJsonValue(row.record_json) as StoredScheduleNegotiation;
 }
 
 function normalizeScheduleItemTimes(item: ScheduleItem): ScheduleItem {

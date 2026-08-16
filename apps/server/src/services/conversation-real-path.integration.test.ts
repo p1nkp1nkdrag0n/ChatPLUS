@@ -592,7 +592,7 @@ describe("openai-compatible reply-first conversation path", () => {
       sessionId,
       character.id,
       "legacy-replay",
-      "这次请求应被幂等回放。",
+      "旧消息",
     );
 
     expect(response.statusCode).toBe(200);

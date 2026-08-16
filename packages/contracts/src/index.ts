@@ -10,6 +10,7 @@ export * from "./primitives.js";
 export * from "./provenance.js";
 export * from "./relationship.js";
 export * from "./schedule.js";
+export * from "./schedule-negotiation.js";
 export * from "./settings.js";
 export * from "./simulation.js";
 export * from "./state.js";

@@ -153,11 +153,7 @@ const JUSTIFICATION_KEYS = [
 ] as const;
 
 const ITEM_ID_KEYS = ["itemId", "item_id", "scheduleItemId", "id"] as const;
-const ITEM_INDEX_KEYS = [
-  "scheduleIndex",
-  "itemIndex",
-  "index",
-] as const;
+const ITEM_INDEX_KEYS = ["scheduleIndex", "itemIndex", "index"] as const;
 const ITEM_TITLE_KEYS = ["itemTitle", "targetTitle", "title"] as const;
 
 /** Cheap rule-based gate deciding whether a turn may propose schedule effects. */
@@ -264,26 +260,98 @@ interface LocalClock {
   minute: number;
 }
 
+const CHINESE_DIGITS: Record<string, number> = {
+  零: 0,
+  〇: 0,
+  一: 1,
+  二: 2,
+  两: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+
+function parseChineseInteger(value: string): number | undefined {
+  if (value === "十") return 10;
+  const ten = value.indexOf("十");
+  if (ten >= 0) {
+    const tens = ten === 0 ? 1 : CHINESE_DIGITS[value[ten - 1] ?? ""];
+    const ones =
+      ten === value.length - 1 ? 0 : CHINESE_DIGITS[value[ten + 1] ?? ""];
+    if (tens === undefined || ones === undefined) return undefined;
+    return tens * 10 + ones;
+  }
+  if (value.length === 1) return CHINESE_DIGITS[value];
+  const digits = [...value].map((digit) => CHINESE_DIGITS[digit]);
+  if (digits.some((digit) => digit === undefined)) return undefined;
+  return Number(digits.join(""));
+}
+
 function parseLocalClock(text: string): LocalClock | undefined {
   const dayOffset = /后天/.test(text)
     ? 2
-    : /(明天|明日|tomorrow)/i.test(text)
+    : /(明天|明日|明早|明晚|tomorrow)/i.test(text)
       ? 1
       : 0;
-  const match =
-    /(\d{1,2})\s*[:：时点]\s*(\d{1,2})?/.exec(text) ??
-    /(\d{1,2})\s*点(?:\s*(\d{1,2})\s*分)?/.exec(text);
-  if (match === null) return undefined;
-  let hour = Number(match[1]);
-  const minute = match[2] === undefined ? 0 : Number(match[2]);
+  const colonMatch = /(\d{1,2})\s*[:：]\s*(\d{1,2})/.exec(text);
+  const numericPointMatch =
+    colonMatch === null
+      ? /(\d{1,2})\s*[点时](?:(半|一刻|三刻)|\s*(\d{1,2})\s*分?)?/.exec(text)
+      : null;
+  const chineseMatch =
+    colonMatch === null && numericPointMatch === null
+      ? /([零〇一二两三四五六七八九十]{1,3})\s*[点时](?:(半|一刻|三刻)|([零〇一二两三四五六七八九十]{1,3})\s*分)?/u.exec(
+          text,
+        )
+      : null;
+  if (
+    colonMatch === null &&
+    numericPointMatch === null &&
+    chineseMatch === null
+  ) {
+    return undefined;
+  }
+  let hour = colonMatch
+    ? Number(colonMatch[1])
+    : numericPointMatch
+      ? Number(numericPointMatch[1])
+      : parseChineseInteger(chineseMatch?.[1] ?? "");
+  const minute = colonMatch
+    ? Number(colonMatch[2])
+    : numericPointMatch
+      ? clockMarkerMinutes(numericPointMatch[2], numericPointMatch[3])
+      : clockMarkerMinutes(
+          chineseMatch?.[2],
+          chineseMatch?.[3],
+          parseChineseInteger,
+        );
+  if (hour === undefined || minute === undefined) return undefined;
   if (!Number.isInteger(hour) || !Number.isInteger(minute)) return undefined;
-  if (/(中午|下午|傍晚|晚上|今晚|夜里|night|evening|afternoon|pm)/i.test(text)) {
+  if (/(晚上|今晚|夜里|夜晚|午夜|night|evening)/i.test(text)) {
+    if (hour === 12) hour = 0;
+    else if (hour < 12) hour += 12;
+  } else if (/(凌晨|before\s+dawn)/i.test(text)) {
+    if (hour === 12) hour = 0;
+  } else if (/(中午|下午|傍晚|noon|afternoon|pm)/i.test(text)) {
     if (hour < 12) hour += 12;
-  } else if (/( noon)/i.test(text) && hour === 12) {
-    hour = 12;
   }
   if (hour > 23 || minute > 59) return undefined;
   return { dayOffset, hour, minute };
+}
+
+function clockMarkerMinutes(
+  marker: string | undefined,
+  numeric: string | undefined,
+  parser: (value: string) => number | undefined = Number,
+): number | undefined {
+  if (marker === "半") return 30;
+  if (marker === "一刻") return 15;
+  if (marker === "三刻") return 45;
+  return numeric === undefined ? 0 : parser(numeric);
 }
 
 /**
@@ -346,22 +414,22 @@ export function parseModelTime(
     if (meridiem.toLowerCase() === "pm" && hour < 12) hour += 12;
     if (meridiem.toLowerCase() === "am" && hour === 12) hour = 0;
     if (hour > 23 || minuteRaw > 59) return undefined;
-    let resolved = now
-      .startOf("day")
-      .plus({ days: /(明天|明日|tomorrow)/i.test(text) ? 1 : 0, hours: hour, minutes: minuteRaw });
+    let resolved = now.startOf("day").plus({
+      days: /(明天|明日|tomorrow)/i.test(text) ? 1 : 0,
+      hours: hour,
+      minutes: minuteRaw,
+    });
     if (resolved <= now) resolved = resolved.plus({ days: 1 });
     return resolved.toUTC().toISO()!;
   }
 
   const clock = parseLocalClock(text);
   if (clock !== undefined) {
-    let resolved = now
-      .startOf("day")
-      .plus({
-        days: clock.dayOffset,
-        hours: clock.hour,
-        minutes: clock.minute,
-      });
+    let resolved = now.startOf("day").plus({
+      days: clock.dayOffset,
+      hours: clock.hour,
+      minutes: clock.minute,
+    });
     if (resolved <= now) resolved = resolved.plus({ days: 1 });
     return resolved.toUTC().toISO()!;
   }
@@ -369,9 +437,7 @@ export function parseModelTime(
   return undefined;
 }
 
-function parseDurationMinutes(
-  raw: unknown,
-): number | undefined {
+function parseDurationMinutes(raw: unknown): number | undefined {
   const numeric = firstNumberLike(raw);
   if (numeric !== undefined && numeric > 0 && numeric <= 24 * 60) {
     return numeric <= 24 ? Math.round(numeric * 60) : Math.round(numeric);
@@ -418,7 +484,8 @@ function resolveScheduleItem(
       const candidate = normalizeForMatch(item.title);
       return (
         candidate.length >= 2 &&
-        (candidate.includes(normalizedTitle) || normalizedTitle.includes(candidate))
+        (candidate.includes(normalizedTitle) ||
+          normalizedTitle.includes(candidate))
       );
     });
     if (contained !== undefined) return contained;
@@ -426,9 +493,7 @@ function resolveScheduleItem(
   return undefined;
 }
 
-function sanitizeStateEffects(
-  value: unknown,
-): Record<string, number> {
+function sanitizeStateEffects(value: unknown): Record<string, number> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return {};
   }
@@ -498,13 +563,13 @@ export function normalizeModelEffects(
       );
       continue;
     }
-    if (
-      typeof raw !== "object" ||
-      raw === null ||
-      Array.isArray(raw)
-    ) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
       rejections.push(
-        rejection(raw, "malformed_effect", "The effect entry is not an object."),
+        rejection(
+          raw,
+          "malformed_effect",
+          "The effect entry is not an object.",
+        ),
       );
       continue;
     }
@@ -585,9 +650,16 @@ export function normalizeModelEffects(
         continue;
       }
       const startRaw =
-        firstString(effect, ["newStartAtUtc", "newStart", "startAt", "startTime"]) ??
+        firstString(effect, [
+          "newStartAtUtc",
+          "newStart",
+          "startAt",
+          "startTime",
+        ]) ??
         firstString(
-          typeof effect.item === "object" && effect.item !== null && !Array.isArray(effect.item)
+          typeof effect.item === "object" &&
+            effect.item !== null &&
+            !Array.isArray(effect.item)
             ? (effect.item as Record<string, unknown>)
             : {},
           ["startAtUtc", "start", "startTime"],
@@ -595,7 +667,11 @@ export function normalizeModelEffects(
       const newStartAtUtc = parseModelTime(startRaw, timeContext);
       if (newStartAtUtc === undefined) {
         rejections.push(
-          rejection(raw, "unparseable_time", "The new start time could not be resolved."),
+          rejection(
+            raw,
+            "unparseable_time",
+            "The new start time could not be resolved.",
+          ),
         );
         continue;
       }
@@ -633,7 +709,9 @@ export function normalizeModelEffects(
     }
 
     const draftSource =
-      typeof effect.item === "object" && effect.item !== null && !Array.isArray(effect.item)
+      typeof effect.item === "object" &&
+      effect.item !== null &&
+      !Array.isArray(effect.item)
         ? (effect.item as Record<string, unknown>)
         : effect;
     const title = firstString(draftSource, ["title", "name", "activity"]);
@@ -653,7 +731,11 @@ export function normalizeModelEffects(
     const startAtUtc = parseModelTime(startRaw, timeContext);
     if (startAtUtc === undefined) {
       rejections.push(
-        rejection(raw, "unparseable_time", "The created item start time could not be resolved."),
+        rejection(
+          raw,
+          "unparseable_time",
+          "The created item start time could not be resolved.",
+        ),
       );
       continue;
     }

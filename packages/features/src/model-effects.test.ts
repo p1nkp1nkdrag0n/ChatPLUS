@@ -49,7 +49,9 @@ describe("hasScheduleIntent", () => {
   it("detects invitations and reschedule wording", () => {
     expect(hasScheduleIntent("今晚要不要一起去参加晚会？")).toBe(true);
     expect(hasScheduleIntent("我们把明天的计划推迟一点吧")).toBe(true);
-    expect(hasScheduleIntent("can we reschedule the study session?")).toBe(true);
+    expect(hasScheduleIntent("can we reschedule the study session?")).toBe(
+      true,
+    );
   });
 
   it("ignores ordinary conversation", () => {
@@ -106,6 +108,30 @@ describe("parseModelTime", () => {
     expect(parseModelTime("明天上午10:30", context)).toBe(
       "2026-08-17T02:30:00.000Z",
     );
+    expect(parseModelTime("明早七点", context)).toBe(
+      "2026-08-16T23:00:00.000Z",
+    );
+    expect(parseModelTime("明天早上七点一起跑半小时", context)).toBe(
+      "2026-08-16T23:00:00.000Z",
+    );
+    expect(parseModelTime("后天晚上八点半", context)).toBe(
+      "2026-08-18T12:30:00.000Z",
+    );
+    expect(parseModelTime("明天 7点半", context)).toBe(
+      "2026-08-16T23:30:00.000Z",
+    );
+    expect(parseModelTime("明天 7点一刻", context)).toBe(
+      "2026-08-16T23:15:00.000Z",
+    );
+    expect(parseModelTime("明天 7点三刻", context)).toBe(
+      "2026-08-16T23:45:00.000Z",
+    );
+    expect(parseModelTime("今晚12点", context)).toBe(
+      "2026-08-16T16:00:00.000Z",
+    );
+    expect(parseModelTime("晚上十二点半", context)).toBe(
+      "2026-08-16T16:30:00.000Z",
+    );
   });
 
   it("parses ISO timestamps and relative offsets", () => {
@@ -115,9 +141,7 @@ describe("parseModelTime", () => {
     expect(parseModelTime("2026-08-16T19:00", context)).toBe(
       "2026-08-16T11:00:00.000Z",
     );
-    expect(parseModelTime("2小时后", context)).toBe(
-      "2026-08-16T08:00:00.000Z",
-    );
+    expect(parseModelTime("2小时后", context)).toBe("2026-08-16T08:00:00.000Z");
     expect(parseModelTime("in 90 minutes", context)).toBe(
       "2026-08-16T07:30:00.000Z",
     );
@@ -205,7 +229,10 @@ describe("normalizeModelEffects", () => {
 
   it("rejects unknown operations, unresolved items and unparseable times individually", () => {
     const result = normalize([
-      { operation: "destroy_everything", justificationQuote: "一起去参加学校的晚会" },
+      {
+        operation: "destroy_everything",
+        justificationQuote: "一起去参加学校的晚会",
+      },
       {
         operation: "cancel",
         itemId: "does-not-exist",

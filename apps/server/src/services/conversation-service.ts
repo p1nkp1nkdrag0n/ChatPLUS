@@ -7,6 +7,7 @@ import {
   type MemoryCandidate,
   type PersonaChatDecision,
   type PersonaChatResponse,
+  type ScheduleNegotiationAction,
 } from "@personasim/contracts";
 import {
   applyRelationshipDelta,
@@ -57,13 +58,15 @@ import type {
   ScheduleService,
 } from "./schedule-service.js";
 import type { SettlementService } from "./settlement-service.js";
+import {
+  buildScheduleNegotiationContract,
+  ScheduleNegotiationService,
+  type ActiveScheduleNegotiation,
+  type PreparedScheduleNegotiation,
+} from "./schedule-negotiation-service.js";
 
 export type ChatTurnDecisionPath =
-  | "full"
-  | "partial"
-  | "effects_rejected"
-  | "reply_only"
-  | "fallback";
+  "full" | "partial" | "effects_rejected" | "reply_only" | "fallback";
 
 export interface ConversationServiceOptions {
   /**
@@ -72,6 +75,11 @@ export interface ConversationServiceOptions {
    * "off" restores the pure reply-only live path everywhere.
    */
   chatEffectsMode?: "off" | "gated";
+  /**
+   * Keeps rollout reversible. Legacy effects and server-owned negotiation
+   * commands are never allowed to write in the same turn.
+   */
+  scheduleNegotiationMode?: "legacy" | "shadow" | "enforced";
 }
 
 export type ChatTurnResult = {
@@ -90,6 +98,8 @@ export type ChatTurnResult = {
 };
 
 export class ConversationService {
+  private readonly scheduleNegotiations: ScheduleNegotiationService;
+
   constructor(
     private readonly store: DatabaseStore,
     private readonly clock: Clock,
@@ -98,7 +108,12 @@ export class ConversationService {
     private readonly settlements: SettlementService,
     private readonly sse: SseHub,
     private readonly options: ConversationServiceOptions = {},
-  ) {}
+  ) {
+    this.scheduleNegotiations = new ScheduleNegotiationService(
+      store,
+      schedules,
+    );
+  }
 
   listSessions(agentId: string): StoredSession[] {
     if (!this.store.getCharacterSummary(agentId)) throw notFound("Character");
@@ -139,6 +154,7 @@ export class ConversationService {
       input.clientMessageId,
     );
     if (existing?.assistantMessage) {
+      assertIdempotentTurnMatches(existing.userMessage, input.text);
       const state = this.store.getRuntimeState(input.agentId);
       if (!state) throw notFound("Character state");
       return {
@@ -184,6 +200,8 @@ export class ConversationService {
       );
     }
     const nowUtc = this.clock.nowUtc();
+    const userMessageId = createEntityId("message");
+    const assistantMessageId = createEntityId("message");
     const capabilities = capabilitiesForTier(spec.tier);
     const schedule = capabilities.schedule
       ? this.store.listSchedule(input.agentId, {
@@ -195,7 +213,36 @@ export class ConversationService {
       ? readActiveMemories(this.store, input.agentId, nowUtc)
       : [];
     const recentMessages = this.store.listMessages(sessionId, 30);
-    const fixture = fixtureDecision(spec, schedule, input.text, nowUtc);
+    const scheduleNegotiationEligible =
+      this.options.scheduleNegotiationMode !== undefined &&
+      this.options.scheduleNegotiationMode !== "legacy" &&
+      this.options.chatEffectsMode !== "off" &&
+      capabilities.schedule &&
+      spec.tier === "high_fidelity" &&
+      spec.schedulePolicy.enabled &&
+      this.llm.providerName !== "fixture";
+    const negotiationEnforced =
+      this.options.scheduleNegotiationMode === "enforced" &&
+      this.options.chatEffectsMode !== "off" &&
+      capabilities.schedule &&
+      spec.tier === "high_fidelity" &&
+      spec.schedulePolicy.enabled;
+    const activeNegotiation = scheduleNegotiationEligible
+      ? this.scheduleNegotiations.getActive(sessionId, nowUtc)
+      : undefined;
+    const effectsEligible =
+      !negotiationEnforced &&
+      this.options.chatEffectsMode !== "off" &&
+      capabilities.schedule &&
+      spec.tier === "high_fidelity" &&
+      spec.schedulePolicy.enabled &&
+      hasScheduleIntent(input.text);
+    const rawFixture = fixtureDecision(spec, schedule, input.text, nowUtc);
+    const fixture =
+      (this.options.chatEffectsMode === "off" || negotiationEnforced) &&
+      rawFixture.scheduleEffects.length > 0
+        ? safeDecision(spec)
+        : rawFixture;
     const assembledPrompt = assembleChatPrompt({
       character: spec,
       state: toFeatureState(state),
@@ -208,13 +255,14 @@ export class ConversationService {
       })),
       nowUtc,
       userMessage: input.text,
+      decisionMode: scheduleNegotiationEligible
+        ? this.options.scheduleNegotiationMode === "shadow"
+          ? "schedule_negotiation_shadow"
+          : "schedule_negotiation"
+        : effectsEligible
+          ? "legacy_effects"
+          : "reply_only",
     });
-    const effectsEligible =
-      this.options.chatEffectsMode !== "off" &&
-      capabilities.schedule &&
-      spec.tier === "high_fidelity" &&
-      spec.schedulePolicy.enabled &&
-      hasScheduleIntent(input.text);
 
     const turn =
       this.llm.providerName === "fixture"
@@ -241,9 +289,182 @@ export class ConversationService {
               eligible: effectsEligible,
               schedule,
               userText: input.text,
+              negotiation: {
+                enabled: scheduleNegotiationEligible,
+                enforced: negotiationEnforced,
+                ...(activeNegotiation === undefined
+                  ? {}
+                  : { active: activeNegotiation }),
+              },
             },
           });
-    const { decision, inspection, repairAttempted } = turn;
+    let { decision, inspection, repairAttempted } = turn;
+    let usedFallback = turn.usedFallback;
+    let negotiationPlan: PreparedScheduleNegotiation | undefined;
+    if (scheduleNegotiationEligible) {
+      const provisionalUserMessage: StoredMessage = {
+        id: userMessageId,
+        sessionId,
+        agentId: input.agentId,
+        role: "user",
+        content: input.text,
+        messageKind: "user",
+        clientMessageId: input.clientMessageId,
+        metadata: {},
+        createdAtUtc: nowUtc,
+      };
+      negotiationPlan = this.scheduleNegotiations.prepare({
+        agentId: input.agentId,
+        sessionId,
+        timezone: spec.identity.timezone,
+        nowUtc,
+        userMessage: provisionalUserMessage,
+        assistantMessageId,
+        recentMessages,
+        action: turn.scheduleAction,
+      });
+      if (this.options.scheduleNegotiationMode === "enforced") {
+        if (
+          negotiationPlan.effect === undefined &&
+          negotiationPlan.actionKind !== "none"
+        ) {
+          decision = {
+            ...decision,
+            memoryCandidates: decision.memoryCandidates.filter(
+              (candidate) => candidate.kind !== "commitment",
+            ),
+          };
+        }
+        decision = {
+          ...decision,
+          scheduleEffects:
+            negotiationPlan.effect === undefined
+              ? []
+              : [negotiationPlan.effect],
+          reasonCode:
+            negotiationPlan.effect === undefined
+              ? "schedule_negotiation_pending"
+              : "schedule_negotiation_committed",
+          reasonSummary:
+            negotiationPlan.effect === undefined
+              ? "结构化日程协商尚未形成可提交命令。"
+              : "结构化约定已通过服务端校验并形成日程命令。",
+        };
+        inspection = inspectDecision(
+          this.schedules,
+          input.agentId,
+          spec,
+          decision,
+          nowUtc,
+          capabilities,
+        );
+        appendNegotiationReplyIssues(
+          inspection,
+          decision.reply.text,
+          negotiationPlan.effect !== undefined,
+        );
+        if (
+          negotiationPlan.effect === undefined &&
+          (negotiationPlan.actionKind === "accept_user_offer" ||
+            negotiationPlan.actionKind === "accept_pending_offer") &&
+          negotiationPlan.rejections.length > 0
+        ) {
+          inspection.issues.push({
+            code: "rejected_schedule_acceptance",
+            message:
+              "The structured acceptance was rejected and cannot be presented as accepted.",
+          });
+        }
+        if (inspection.issues.length > 0) {
+          repairAttempted = true;
+          const repaired = await this.tryRepairPersonaReply(
+            spec,
+            input.text,
+            {
+              text: decision.reply.text,
+              toneTags: decision.reply.toneTags,
+            },
+            inspection.issues,
+            assembledPrompt.replyStrategy,
+          );
+          const repairedBase = repaired
+            ? materializePersonaReply(
+                repaired,
+                spec,
+                assembledPrompt.replyStrategy,
+              )
+            : safeNegotiatedDecision(
+                spec,
+                negotiationPlan.effect !== undefined,
+              );
+          if (repaired === undefined) usedFallback = true;
+          decision = {
+            ...repairedBase,
+            scheduleEffects:
+              negotiationPlan.effect === undefined
+                ? []
+                : [negotiationPlan.effect],
+            reasonCode:
+              negotiationPlan.effect === undefined
+                ? repairedBase.reasonCode
+                : "schedule_negotiation_committed",
+            reasonSummary:
+              negotiationPlan.effect === undefined
+                ? repairedBase.reasonSummary
+                : "结构化约定已通过服务端校验并形成日程命令。",
+          };
+          inspection = inspectDecision(
+            this.schedules,
+            input.agentId,
+            spec,
+            decision,
+            nowUtc,
+            capabilities,
+          );
+          appendNegotiationReplyIssues(
+            inspection,
+            decision.reply.text,
+            negotiationPlan.effect !== undefined,
+          );
+          if (inspection.issues.length > 0) {
+            usedFallback = true;
+            const fallback = safeNegotiatedDecision(
+              spec,
+              negotiationPlan.effect !== undefined,
+            );
+            decision = {
+              ...fallback,
+              scheduleEffects:
+                negotiationPlan.effect === undefined
+                  ? []
+                  : [negotiationPlan.effect],
+              reasonCode:
+                negotiationPlan.effect === undefined
+                  ? fallback.reasonCode
+                  : "schedule_negotiation_committed",
+              reasonSummary:
+                negotiationPlan.effect === undefined
+                  ? fallback.reasonSummary
+                  : "结构化约定已通过服务端校验并形成日程命令。",
+            };
+            inspection = inspectDecision(
+              this.schedules,
+              input.agentId,
+              spec,
+              decision,
+              nowUtc,
+              capabilities,
+            );
+          }
+        }
+        if (negotiationPlan.presentationText !== undefined) {
+          decision = appendNegotiationPresentation(
+            decision,
+            negotiationPlan.presentationText,
+          );
+        }
+      }
+    }
     const validation = inspection.validation;
 
     const proposalRejections: Array<{
@@ -261,10 +482,13 @@ export class ConversationService {
         reasonSummary: rejection.message,
         raw: rejection.proposal,
       })),
+      ...(this.options.scheduleNegotiationMode === "enforced"
+        ? (negotiationPlan?.rejections ?? [])
+        : []),
     ];
     const proposedCount = decision.scheduleEffects.length;
     const acceptedCount = validation.accepted.length;
-    const decisionPath: ChatTurnDecisionPath = turn.usedFallback
+    const decisionPath: ChatTurnDecisionPath = usedFallback
       ? "fallback"
       : proposedCount === 0 && proposalRejections.length === 0
         ? "reply_only"
@@ -275,7 +499,7 @@ export class ConversationService {
             : "effects_rejected";
 
     const userMessage: StoredMessage = {
-      id: createEntityId("message"),
+      id: userMessageId,
       sessionId,
       agentId: input.agentId,
       role: "user",
@@ -286,7 +510,7 @@ export class ConversationService {
       createdAtUtc: nowUtc,
     };
     const assistantMessage: StoredMessage = {
-      id: createEntityId("message"),
+      id: assistantMessageId,
       sessionId,
       agentId: input.agentId,
       role: "assistant",
@@ -313,6 +537,7 @@ export class ConversationService {
       capabilities,
     );
     const stateChanged = nextState.revision !== state.revision;
+    let effectsToApply = validation.accepted;
     let scheduleChanges: ScheduleItem[] = [];
     let memoryIds: string[] = [];
     try {
@@ -322,12 +547,140 @@ export class ConversationService {
           input.clientMessageId,
         );
         if (duplicate) throw new DuplicateTurnError(duplicate);
+        if (
+          this.options.scheduleNegotiationMode === "enforced" &&
+          negotiationPlan?.effect !== undefined
+        ) {
+          const finalValidation = this.schedules.validateEffectsPartial(
+            input.agentId,
+            [negotiationPlan.effect],
+            nowUtc,
+          );
+          if (finalValidation.accepted.length !== 1) {
+            throw new ApiError(
+              409,
+              "schedule_changed_during_negotiation",
+              "The schedule changed before the negotiated command could be committed.",
+              finalValidation.rejections,
+            );
+          }
+          effectsToApply = finalValidation.accepted;
+        }
         this.store.insertMessage(userMessage);
+        if (
+          this.options.scheduleNegotiationMode === "enforced" &&
+          negotiationPlan !== undefined
+        ) {
+          for (const update of negotiationPlan.updates) {
+            if (
+              negotiationPlan.expectedActive?.id === update.id &&
+              !this.store.compareAndSetScheduleNegotiation(update, {
+                status: negotiationPlan.expectedActive.status,
+                offerVersion: negotiationPlan.expectedActive.offerVersion,
+              })
+            ) {
+              throw new ApiError(
+                409,
+                "stale_schedule_negotiation",
+                "The schedule offer changed before it could be committed.",
+              );
+            }
+            if (negotiationPlan.expectedActive?.id !== update.id) {
+              this.store.upsertScheduleNegotiation(update);
+            }
+          }
+          if (negotiationPlan.transition !== undefined) {
+            const latest = negotiationPlan.updates.at(-1);
+            if (
+              !this.store.insertDomainEvent({
+                agentId: input.agentId,
+                streamType: "schedule_negotiation",
+                streamId: latest?.id ?? sessionId,
+                streamVersion: latest?.offerVersion ?? 0,
+                eventType: `schedule.negotiation_${negotiationPlan.transition.reason}`,
+                recordedAtUtc: nowUtc,
+                payload: {
+                  actionKind: negotiationPlan.actionKind,
+                  transition: negotiationPlan.transition,
+                  negotiationId: latest?.id,
+                  offerVersion: latest?.offerVersion,
+                },
+                correlationId: input.clientMessageId,
+                causationId: userMessage.id,
+                idempotencyKey: `schedule-negotiation:${sessionId}:${input.clientMessageId}`,
+              })
+            ) {
+              throw new Error(
+                "Schedule negotiation audit event was not inserted",
+              );
+            }
+          }
+        } else if (
+          this.options.scheduleNegotiationMode === "shadow" &&
+          negotiationPlan !== undefined
+        ) {
+          if (
+            !this.store.insertDomainEvent({
+              agentId: input.agentId,
+              streamType: "schedule_negotiation_shadow",
+              streamId: sessionId,
+              streamVersion: nextState.revision,
+              eventType: "schedule.negotiation_shadow_evaluated",
+              recordedAtUtc: nowUtc,
+              payload: {
+                actionKind: negotiationPlan.actionKind,
+                wouldCommit: negotiationPlan.effect !== undefined,
+                rejectionCodes: negotiationPlan.rejections.map(
+                  (rejection) => rejection.reasonCode,
+                ),
+              },
+              correlationId: input.clientMessageId,
+              causationId: userMessage.id,
+              idempotencyKey: `schedule-negotiation-shadow:${sessionId}:${input.clientMessageId}`,
+            })
+          ) {
+            throw new Error(
+              "Schedule negotiation shadow event was not inserted",
+            );
+          }
+        }
         scheduleChanges = this.schedules.applyValidatedEffects(
           input.agentId,
-          validation.accepted,
+          effectsToApply,
           nowUtc,
         );
+        if (
+          this.options.scheduleNegotiationMode === "enforced" &&
+          scheduleChanges.length > 0 &&
+          negotiationPlan?.effect !== undefined
+        ) {
+          const negotiation = negotiationPlan.updates.at(-1);
+          if (
+            !this.store.insertDomainEvent({
+              agentId: input.agentId,
+              streamType: "schedule",
+              streamId: input.agentId,
+              streamVersion: Math.max(
+                ...scheduleChanges.map((item) => item.revision),
+              ),
+              eventType: "schedule.command_committed",
+              recordedAtUtc: nowUtc,
+              effectiveAtUtc: scheduleChanges[0]!.startAtUtc,
+              payload: {
+                negotiationId: negotiation?.id,
+                offerVersion: negotiation?.offerVersion,
+                operation: "create",
+                changedItemIds: scheduleChanges.map((item) => item.id),
+                policyVersion: 1,
+              },
+              correlationId: input.clientMessageId,
+              causationId: userMessage.id,
+              idempotencyKey: `schedule-command:${negotiation?.id}:${negotiation?.offerVersion}`,
+            })
+          ) {
+            throw new Error("Schedule command audit event was not inserted");
+          }
+        }
         for (const rejection of proposalRejections) {
           this.store.insertRejectedProposal({
             agentId: input.agentId,
@@ -352,29 +705,34 @@ export class ConversationService {
             }).map((memory) => memory.id)
           : [];
         this.store.insertMessage(assistantMessage);
-        this.store.insertDomainEvent({
-          agentId: input.agentId,
-          streamType: "conversation",
-          streamId: sessionId,
-          streamVersion: nextState.revision,
-          eventType: "conversation.turn_committed",
-          recordedAtUtc: nowUtc,
-          payload: {
-            userMessageId: userMessage.id,
-            assistantMessageId: assistantMessage.id,
-            scheduleItemIds: scheduleChanges.map((item) => item.id),
-            memoryIds,
-            reasonCode: decision.reasonCode,
-          },
-          correlationId: input.clientMessageId,
-          causationId: userMessage.id,
-          idempotencyKey: `chat:${sessionId}:${input.clientMessageId}`,
-        });
+        if (
+          !this.store.insertDomainEvent({
+            agentId: input.agentId,
+            streamType: "conversation",
+            streamId: sessionId,
+            streamVersion: nextState.revision,
+            eventType: "conversation.turn_committed",
+            recordedAtUtc: nowUtc,
+            payload: {
+              userMessageId: userMessage.id,
+              assistantMessageId: assistantMessage.id,
+              scheduleItemIds: scheduleChanges.map((item) => item.id),
+              memoryIds,
+              reasonCode: decision.reasonCode,
+            },
+            correlationId: input.clientMessageId,
+            causationId: userMessage.id,
+            idempotencyKey: `chat:${sessionId}:${input.clientMessageId}`,
+          })
+        ) {
+          throw new Error("Conversation turn audit event was not inserted");
+        }
       });
     } catch (error) {
       if (error instanceof DuplicateTurnError) {
         const stored = error.turn;
         if (!stored.assistantMessage) throw error;
+        assertIdempotentTurnMatches(stored.userMessage, input.text);
         return {
           idempotentReplay: true,
           userMessage: stored.userMessage,
@@ -519,6 +877,7 @@ export class ConversationService {
       repairAttempted,
       usedFallback,
       modelRejections: [],
+      scheduleAction: { kind: "none" },
     };
   }
 
@@ -535,19 +894,39 @@ export class ConversationService {
       eligible: boolean;
       schedule: ScheduleItem[];
       userText: string;
+      negotiation: {
+        enabled: boolean;
+        enforced: boolean;
+        active?: ActiveScheduleNegotiation;
+      };
     };
   }): Promise<ResolvedTurn> {
     let decisionResponse: PersonaChatDecision | undefined;
     let replyResponse: PersonaChatResponse | undefined;
     let initialIssues: unknown[] = [];
-    const effectsContract = input.effects.eligible
-      ? buildScheduleEffectsContract(
-          input.effects.schedule,
-          input.spec.identity.timezone,
-        )
-      : "";
+    const effectsContract = [
+      ...(input.effects.negotiation.enabled
+        ? [
+            buildScheduleNegotiationContract({
+              ...(input.effects.negotiation.active === undefined
+                ? {}
+                : { active: input.effects.negotiation.active }),
+              timezone: input.spec.identity.timezone,
+              legacyEffectsEnabled: input.effects.eligible,
+            }),
+          ]
+        : []),
+      ...(input.effects.eligible
+        ? [
+            buildScheduleEffectsContract(
+              input.effects.schedule,
+              input.spec.identity.timezone,
+            ),
+          ]
+        : []),
+    ].join("\n");
     try {
-      if (input.effects.eligible) {
+      if (input.effects.eligible || input.effects.negotiation.enabled) {
         decisionResponse = PersonaChatDecisionSchema.parse(
           await this.llm.generateObject({
             purpose: "chat_turn",
@@ -586,26 +965,35 @@ export class ConversationService {
               timezone: input.spec.identity.timezone,
               nowUtc: input.nowUtc,
               userText: input.effects.userText,
+              legacyEffectsEnabled: input.effects.eligible,
             },
             modelRejections,
           )
         : replyResponse !== undefined
-          ? materializePersonaReply(replyResponse, input.spec, input.replyStrategy)
+          ? materializePersonaReply(
+              replyResponse,
+              input.spec,
+              input.replyStrategy,
+            )
           : safePersonaDecision(input.spec);
     let usedFallback =
       decisionResponse === undefined && replyResponse === undefined;
 
-    let inspection =
-      usedFallback
-        ? undefined
-        : inspectDecision(
-            this.schedules,
-            input.agentId,
-            input.spec,
-            decision,
-            input.nowUtc,
-            input.capabilities,
-          );
+    let inspection = usedFallback
+      ? undefined
+      : inspectDecision(
+          this.schedules,
+          input.agentId,
+          input.spec,
+          decision,
+          input.nowUtc,
+          input.capabilities,
+        );
+    if (inspection && input.effects.negotiation.enforced) {
+      inspection.issues = inspection.issues.filter(
+        (issue) => !isUncommittedScheduleIssue(issue),
+      );
+    }
     let repairAttempted = false;
     if (!inspection || inspection.issues.length > 0) {
       repairAttempted = true;
@@ -637,6 +1025,11 @@ export class ConversationService {
           input.nowUtc,
           input.capabilities,
         );
+        if (input.effects.negotiation.enforced) {
+          inspection.issues = inspection.issues.filter(
+            (issue) => !isUncommittedScheduleIssue(issue),
+          );
+        }
       }
     }
     if (!inspection || inspection.issues.length > 0) {
@@ -657,6 +1050,7 @@ export class ConversationService {
       repairAttempted,
       usedFallback,
       modelRejections,
+      scheduleAction: decisionResponse?.scheduleAction ?? { kind: "none" },
     };
   }
 
@@ -669,13 +1063,16 @@ export class ConversationService {
       timezone: string;
       nowUtc: string;
       userText: string;
+      legacyEffectsEnabled: boolean;
     },
     modelRejections: ModelEffectRejection[],
   ): AgentTurnDecision {
     const base = materializePersonaReply(
       PersonaChatResponseSchema.parse({
         text: response.text,
-        ...(response.toneTags === undefined ? {} : { toneTags: response.toneTags }),
+        ...(response.toneTags === undefined
+          ? {}
+          : { toneTags: response.toneTags }),
         ...(response.deliveryMode === undefined
           ? {}
           : { deliveryMode: response.deliveryMode }),
@@ -685,7 +1082,7 @@ export class ConversationService {
       replyStrategy,
     );
     const normalized = normalizeModelEffects({
-      effects: response.scheduleEffects,
+      effects: context.legacyEffectsEnabled ? response.scheduleEffects : [],
       schedule: context.schedule,
       timezone: context.timezone,
       nowUtc: context.nowUtc,
@@ -709,7 +1106,9 @@ export class ConversationService {
     return {
       ...base,
       scheduleEffects: proposals,
-      memoryCandidates: sanitizeModelMemoryCandidates(response.memoryCandidates),
+      memoryCandidates: sanitizeModelMemoryCandidates(
+        response.memoryCandidates,
+      ),
       reasonCode: "persona_chat_decision",
       reasonSummary:
         proposals.length > 0
@@ -798,6 +1197,7 @@ type ResolvedTurn = {
   repairAttempted: boolean;
   usedFallback: boolean;
   modelRejections: ModelEffectRejection[];
+  scheduleAction: ScheduleNegotiationAction;
 };
 
 class DuplicateTurnError extends Error {
@@ -949,7 +1349,8 @@ function sanitizeModelMemoryCandidates(
           : "";
     if (content === "") continue;
     const occurredAtUtc =
-      typeof raw.occurredAtUtc === "string" && UTC_PATTERN.test(raw.occurredAtUtc)
+      typeof raw.occurredAtUtc === "string" &&
+      UTC_PATTERN.test(raw.occurredAtUtc)
         ? raw.occurredAtUtc
         : undefined;
     const candidate = {
@@ -1337,6 +1738,56 @@ function safePersonaDecision(spec: CharacterSpec): AgentTurnDecision {
   };
 }
 
+function assertIdempotentTurnMatches(
+  storedUserMessage: StoredMessage,
+  requestedText: string,
+): void {
+  if (storedUserMessage.content === requestedText) return;
+  throw new ApiError(
+    409,
+    "idempotency_key_reused",
+    "The client message id was already used with different content.",
+  );
+}
+
+function safeNegotiatedDecision(
+  spec: CharacterSpec,
+  committed: boolean,
+): AgentTurnDecision {
+  if (!committed) return safePersonaDecision(spec);
+  const text =
+    spec.dialogue.warmth >= 0.6
+      ? "好，这个约定已经确认了。"
+      : "可以，这个约定已经确认。";
+  return {
+    reply: {
+      text,
+      chunks: [text],
+      toneTags:
+        spec.dialogue.warmth >= 0.6 ? ["自然", "确认"] : ["自然", "克制"],
+    },
+    scheduleEffects: [],
+    memoryCandidates: [],
+    reasonCode: "schedule_negotiation_reply_fallback",
+    reasonSummary: "使用与服务端提交结果一致的安全回复。",
+  };
+}
+
+function appendNegotiationPresentation(
+  decision: AgentTurnDecision,
+  presentationText: string,
+): AgentTurnDecision {
+  const text = `${decision.reply.text.trim()}\n${presentationText}`.trim();
+  return {
+    ...decision,
+    reply: {
+      ...decision.reply,
+      text,
+      chunks: [text],
+    },
+  };
+}
+
 function invalidOutputIssues(error: unknown): unknown[] {
   return [
     {
@@ -1344,6 +1795,17 @@ function invalidOutputIssues(error: unknown): unknown[] {
       message: error instanceof Error ? error.message : "Invalid output",
     },
   ];
+}
+
+function isUncommittedScheduleIssue(issue: unknown): boolean {
+  if (typeof issue !== "object" || issue === null || Array.isArray(issue)) {
+    return false;
+  }
+  const code = (issue as Record<string, unknown>)["code"];
+  return (
+    code === "uncommitted_schedule_claim" ||
+    code === "UNCOMMITTED_SCHEDULE_CLAIM"
+  );
 }
 
 function violatesTruthfulReply(
@@ -1354,6 +1816,46 @@ function violatesTruthfulReply(
   return /(?:已经|已|刚刚).{0,12}(?:修改|取消|移动|改(?:了|到|成)?|安排(?:好|了)?|加入).{0,12}(?:日程|计划|行程)|(?:i(?:'ve| have)) (?:rescheduled|cancelled|added .{0,12} to (?:my )?schedule)/iu.test(
     decision.reply.text,
   );
+}
+
+/**
+ * A negative safety rail only: matching text can force a repair but can never
+ * create or parameterize a schedule command.
+ */
+function replyClaimsRecordedAgreement(text: string): boolean {
+  return sentenceUnits(text).some((clause) => {
+    if (/[?？]|怎么样|可以吗|好吗|行吗|要不要/u.test(clause)) {
+      return false;
+    }
+    return /(?:我.{0,4}(?:记下|记住)(?:了|啦)|说好(?:了)?|说定(?:了)?|约定(?:好|了)|已经确认|我.{0,4}(?:会|一定会)?准时到|(?:明天|明早|今晚|后天).{0,16}(?:见|等你))/iu.test(
+      clause,
+    );
+  });
+}
+
+function replyRejectsCommittedAgreement(text: string): boolean {
+  return /(?:(?:我|这次|明天|明早).{0,6}(?:不能|没法|不).{0,4}(?:去|来|参加|见|跑)|去不了|算了|改天再说|我拒绝|i (?:can't|cannot|won't) (?:go|come|make it)|no[,， ]+i (?:can't|won't))/iu.test(
+    text,
+  );
+}
+
+function appendNegotiationReplyIssues(
+  inspection: DecisionInspection,
+  text: string,
+  committed: boolean,
+): void {
+  if (!committed && replyClaimsRecordedAgreement(text)) {
+    inspection.issues.push({
+      code: "uncommitted_schedule_agreement",
+      message: "Reply claims an agreement without a committed command.",
+    });
+  }
+  if (committed && replyRejectsCommittedAgreement(text)) {
+    inspection.issues.push({
+      code: "negotiation_reply_contradiction",
+      message: "Reply rejects an agreement represented by a committed command.",
+    });
+  }
 }
 
 function applyTurnState(

@@ -200,7 +200,10 @@ function createDomainPlugin(
         schedules,
         settlements,
         sse,
-        { chatEffectsMode: config.chatEffectsMode },
+        {
+          chatEffectsMode: config.chatEffectsMode,
+          scheduleNegotiationMode: config.scheduleNegotiationMode,
+        },
       );
 
       context.services.provide(CHARACTER_SERVICE_TOKEN, characters);

@@ -256,6 +256,7 @@ function firstNumberLike(value: unknown): number | undefined {
 
 interface LocalClock {
   dayOffset: number;
+  explicitDay: boolean;
   hour: number;
   minute: number;
 }
@@ -292,7 +293,7 @@ function parseChineseInteger(value: string): number | undefined {
 }
 
 function parseLocalClock(text: string): LocalClock | undefined {
-  const dayOffset = /后天/.test(text)
+  let dayOffset = /后天/.test(text)
     ? 2
     : /(明天|明日|明早|明晚|tomorrow)/i.test(text)
       ? 1
@@ -332,15 +333,25 @@ function parseLocalClock(text: string): LocalClock | undefined {
   if (hour === undefined || minute === undefined) return undefined;
   if (!Number.isInteger(hour) || !Number.isInteger(minute)) return undefined;
   if (/(晚上|今晚|夜里|夜晚|午夜|night|evening)/i.test(text)) {
-    if (hour === 12) hour = 0;
-    else if (hour < 12) hour += 12;
+    if (hour === 12) {
+      hour = 0;
+      dayOffset += 1;
+    } else if (hour < 12) hour += 12;
   } else if (/(凌晨|before\s+dawn)/i.test(text)) {
     if (hour === 12) hour = 0;
   } else if (/(中午|下午|傍晚|noon|afternoon|pm)/i.test(text)) {
     if (hour < 12) hour += 12;
   }
   if (hour > 23 || minute > 59) return undefined;
-  return { dayOffset, hour, minute };
+  return {
+    dayOffset,
+    explicitDay:
+      /(今天|今日|今早|今晚|明天|明日|明早|明晚|后天|today|tonight|tomorrow)/i.test(
+        text,
+      ),
+    hour,
+    minute,
+  };
 }
 
 function clockMarkerMinutes(
@@ -414,12 +425,16 @@ export function parseModelTime(
     if (meridiem.toLowerCase() === "pm" && hour < 12) hour += 12;
     if (meridiem.toLowerCase() === "am" && hour === 12) hour = 0;
     if (hour > 23 || minuteRaw > 59) return undefined;
+    const explicitDay =
+      /(今天|今日|今早|今晚|明天|明日|明早|明晚|后天|today|tonight|tomorrow)/i.test(
+        text,
+      );
     let resolved = now.startOf("day").plus({
-      days: /(明天|明日|tomorrow)/i.test(text) ? 1 : 0,
+      days: /后天/u.test(text) ? 2 : /(明天|明日|tomorrow)/i.test(text) ? 1 : 0,
       hours: hour,
       minutes: minuteRaw,
     });
-    if (resolved <= now) resolved = resolved.plus({ days: 1 });
+    if (!explicitDay && resolved <= now) resolved = resolved.plus({ days: 1 });
     return resolved.toUTC().toISO()!;
   }
 
@@ -430,7 +445,9 @@ export function parseModelTime(
       hours: clock.hour,
       minutes: clock.minute,
     });
-    if (resolved <= now) resolved = resolved.plus({ days: 1 });
+    if (!clock.explicitDay && resolved <= now) {
+      resolved = resolved.plus({ days: 1 });
+    }
     return resolved.toUTC().toISO()!;
   }
 

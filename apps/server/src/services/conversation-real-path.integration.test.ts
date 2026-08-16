@@ -631,6 +631,7 @@ async function createRealProviderTestApp(): Promise<{
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    scheduleNegotiationMode: "legacy",
     llm: {
       provider: "openai-compatible",
       baseUrl: "https://example.invalid",

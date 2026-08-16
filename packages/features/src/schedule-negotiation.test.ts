@@ -88,6 +88,19 @@ describe("schedule negotiation", () => {
     expect(stale.readyToCommit).toBe(false);
   });
 
+  it("requires confirmation evidence from a later turn", () => {
+    const pending = awaitingNegotiation();
+    const sameTurn = reduceScheduleNegotiation({
+      state: pending,
+      action: { type: "accept_pending", offerVersion: 1 },
+      evidence: { current: evidence("offer-1", T2) },
+    });
+
+    expect(sameTurn.state).toBe(pending);
+    expect(sameTurn.transition.reason).toBe("confirmation_not_subsequent");
+    expect(sameTurn.readyToCommit).toBe(false);
+  });
+
   it("never revives a withdrawn negotiation", () => {
     const pending = awaitingNegotiation();
     const withdrawn = reduceScheduleNegotiation({

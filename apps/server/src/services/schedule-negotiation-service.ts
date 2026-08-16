@@ -24,7 +24,7 @@ import { createEntityId } from "../domain/id.js";
 import type { ScheduleService } from "./schedule-service.js";
 
 const NEGOTIATION_TTL_MINUTES = 30;
-export const SCHEDULE_NEGOTIATION_POLICY_VERSION = 1;
+export const SCHEDULE_NEGOTIATION_POLICY_VERSION = 2;
 
 const DEFAULT_DURATION_MINUTES: Record<string, number> = {
   sleep: 480,
@@ -209,6 +209,22 @@ export class ScheduleNegotiationService {
     const rejections: ScheduleNegotiationRejection[] = [];
     const updates: StoredScheduleNegotiation[] = [];
     let active = this.getActive(input.sessionId, input.nowUtc);
+    const explicitCancellation = isExplicitScheduleCancellation(
+      input.userMessage.content,
+    );
+    if (explicitCancellation) {
+      input = { ...input, action: { kind: "withdraw_offer" } };
+    } else if (active !== undefined) {
+      if (isUnambiguousScheduleConfirmation(input.userMessage.content)) {
+        input = {
+          ...input,
+          action: {
+            kind: "accept_pending_offer",
+            evidenceQuotes: [input.userMessage.content],
+          },
+        };
+      }
+    }
     const initialActive = active;
     const finish = (
       plan: PreparedScheduleNegotiation,
@@ -249,8 +265,70 @@ export class ScheduleNegotiationService {
       }
     }
 
+    if (
+      active !== undefined &&
+      isQuestionShapedScheduleControl(input.userMessage.content)
+    ) {
+      rejections.push({
+        reasonCode: "confirmation_not_affirmative",
+        reasonSummary:
+          "A question about confirmation or cancellation is not an explicit decision.",
+        raw: input.action,
+      });
+      return finish({
+        actionKind: input.action.kind,
+        updates,
+        ...(active.state.offer === undefined
+          ? {}
+          : {
+              presentationText: formatPendingOffer(
+                active.state.offer,
+                input.timezone,
+              ),
+            }),
+        rejections,
+      });
+    }
+
+    if (
+      !explicitCancellation &&
+      UNSUPPORTED_SCHEDULE_OPERATION_PATTERN.test(input.userMessage.content)
+    ) {
+      rejections.push({
+        reasonCode: "unsupported_schedule_operation",
+        reasonSummary:
+          "The negotiated writer currently supports new shared activities only, not cancel or reschedule commands.",
+        raw: input.action,
+      });
+      return finish({
+        actionKind: input.action.kind,
+        updates,
+        ...(active?.state.offer === undefined
+          ? {}
+          : {
+              presentationText: formatPendingOffer(
+                active.state.offer,
+                input.timezone,
+              ),
+            }),
+        rejections,
+      });
+    }
+
     if (input.action.kind === "none") {
-      return finish({ actionKind: input.action.kind, updates, rejections });
+      return finish({
+        actionKind: input.action.kind,
+        updates,
+        ...(active?.state.offer === undefined
+          ? {}
+          : {
+              presentationText: formatPendingOffer(
+                active.state.offer,
+                input.timezone,
+              ),
+            }),
+        rejections,
+      });
     }
 
     if (
@@ -258,7 +336,23 @@ export class ScheduleNegotiationService {
       input.action.kind === "withdraw_offer"
     ) {
       if (active === undefined) {
-        return finish({ actionKind: input.action.kind, updates, rejections });
+        if (input.action.kind === "withdraw_offer") {
+          rejections.push({
+            reasonCode: "missing_pending_offer",
+            reasonSummary:
+              "There is no active pending schedule offer to withdraw.",
+            raw: input.action,
+          });
+        }
+        return finish({
+          actionKind: input.action.kind,
+          updates,
+          presentationText:
+            input.action.kind === "decline_offer"
+              ? "【未修改日程】角色没有接受这次日程提议。"
+              : "【未修改日程】当前没有可取消的待确认方案。",
+          rejections,
+        });
       }
       const reduced = reduceScheduleNegotiation({
         state: active.state,
@@ -278,6 +372,10 @@ export class ScheduleNegotiationService {
         actionKind: input.action.kind,
         updates,
         transition: reduced.transition,
+        presentationText:
+          input.action.kind === "decline_offer"
+            ? "【未修改日程】角色没有接受这次日程提议。"
+            : "【未修改日程】待确认方案已取消，日程保持不变。",
         rejections,
       });
     }
@@ -288,6 +386,15 @@ export class ScheduleNegotiationService {
           reasonCode: "missing_pending_offer",
           reasonSummary:
             "A confirmation cannot change the schedule without one active offer.",
+          raw: input.action,
+        });
+        return finish({ actionKind: input.action.kind, updates, rejections });
+      }
+      if (!isUnambiguousScheduleConfirmation(input.userMessage.content)) {
+        rejections.push({
+          reasonCode: "confirmation_not_affirmative",
+          reasonSummary:
+            "The pending offer requires an explicit affirmative reply without changed terms.",
           raw: input.action,
         });
         return finish({ actionKind: input.action.kind, updates, rejections });
@@ -391,15 +498,28 @@ export class ScheduleNegotiationService {
         actionKind: input.action.kind,
         updates,
         transition: reduced.transition,
+        presentationText:
+          "【未修改日程】信息还不完整，请补充明确的活动和开始时间。确认前不会修改日程。",
         rejections,
       });
     }
 
-    let canonical = canonicalizeOffer(
-      input.action.offer,
-      input.timezone,
-      input.nowUtc,
-    );
+    const acceptedUserOffer =
+      input.action.kind === "accept_user_offer"
+        ? canonicalizeAcceptedUserOffer(evidence, input.timezone)
+        : undefined;
+    if (acceptedUserOffer?.ok === false) {
+      rejections.push({
+        reasonCode: acceptedUserOffer.reasonCode,
+        reasonSummary: acceptedUserOffer.reasonSummary,
+        raw: input.action,
+      });
+      return finish({ actionKind: input.action.kind, updates, rejections });
+    }
+    let canonical =
+      acceptedUserOffer?.ok === true
+        ? acceptedUserOffer.offer
+        : canonicalizeOffer(input.action.offer, input.timezone, input.nowUtc);
     if (canonical === undefined) {
       rejections.push({
         reasonCode: "invalid_negotiation_offer",
@@ -409,40 +529,29 @@ export class ScheduleNegotiationService {
       });
       return finish({ actionKind: input.action.kind, updates, rejections });
     }
-    const groundedActivity = resolveGroundedActivity(
-      canonical.category,
-      canonical.activity,
-      evidence,
-    );
-    if (groundedActivity === undefined) {
-      rejections.push({
-        reasonCode: "activity_not_grounded",
-        reasonSummary:
-          "The offered activity was not supported by the cited user messages.",
-        raw: input.action,
-      });
-      return finish({ actionKind: input.action.kind, updates, rejections });
+    if (input.action.kind !== "accept_user_offer") {
+      const groundedActivity = resolveGroundedActivity(
+        canonical.category,
+        canonical.activity,
+        evidence,
+      );
+      if (groundedActivity === undefined) {
+        rejections.push({
+          reasonCode: "activity_not_grounded",
+          reasonSummary:
+            "The offered activity was not supported by the cited user messages.",
+          raw: input.action,
+        });
+        return finish({ actionKind: input.action.kind, updates, rejections });
+      }
+      canonical = { ...canonical, activity: groundedActivity };
     }
-    canonical = { ...canonical, activity: groundedActivity };
     if (input.action.kind === "accept_user_offer") {
       if (!evidence.some((item) => item.message.id === input.userMessage.id)) {
         rejections.push({
           reasonCode: "current_turn_not_grounded",
           reasonSummary:
             "A direct acceptance must cite the current user message.",
-          raw: input.action,
-        });
-        return finish({ actionKind: input.action.kind, updates, rejections });
-      }
-      const groundedStart = resolveGroundedStart(evidence, input.timezone);
-      if (
-        groundedStart === undefined ||
-        groundedStart !== canonical.startAtUtc
-      ) {
-        rejections.push({
-          reasonCode: "time_not_grounded",
-          reasonSummary:
-            "A directly accepted offer must use the single time stated by the user.",
           raw: input.action,
         });
         return finish({ actionKind: input.action.kind, updates, rejections });
@@ -466,22 +575,8 @@ export class ScheduleNegotiationService {
         });
         return finish({ actionKind: input.action.kind, updates, rejections });
       }
-      if (
-        input.action.offer.durationMinutes !== undefined &&
-        (groundedDuration.kind !== "one" ||
-          groundedDuration.value !== input.action.offer.durationMinutes)
-      ) {
-        rejections.push({
-          reasonCode: "duration_not_grounded",
-          reasonSummary:
-            "A model-supplied duration must exactly match the user's evidence.",
-          raw: input.action,
-        });
-        return finish({ actionKind: input.action.kind, updates, rejections });
-      }
       canonical = {
         ...canonical,
-        startAtUtc: groundedStart,
         durationMinutes:
           groundedDuration.kind === "one"
             ? groundedDuration.value
@@ -508,30 +603,17 @@ export class ScheduleNegotiationService {
       },
     });
 
-    if (input.action.kind === "propose_offer") {
-      updates.push(toStoredNegotiation(presented.state, stored, input));
-      return finish({
-        actionKind: input.action.kind,
-        updates,
-        transition: presented.transition,
-        presentationText: formatPendingOffer(
-          presented.state.offer!,
-          input.timezone,
-        ),
-        rejections,
-      });
-    }
-
-    return finish(
-      this.commitPresented({
-        ...input,
-        action: input.action,
-        ...(stored === undefined ? {} : { stored }),
-        presentedState: presented.state,
-        updates,
-        rejections,
-      }),
-    );
+    updates.push(toStoredNegotiation(presented.state, stored, input));
+    return finish({
+      actionKind: input.action.kind,
+      updates,
+      transition: presented.transition,
+      presentationText: formatPendingOffer(
+        presented.state.offer!,
+        input.timezone,
+      ),
+      rejections,
+    });
   }
 
   private acceptPending(input: {
@@ -616,80 +698,22 @@ export class ScheduleNegotiationService {
     input.updates.push(
       toStoredNegotiation(accepted.state, input.active.stored, input),
     );
+    if (!accepted.readyToCommit) {
+      input.rejections.push({
+        reasonCode: accepted.transition.reason,
+        reasonSummary:
+          "The pending offer could not be committed from this confirmation.",
+        raw: input.action,
+      });
+    }
     return {
       actionKind: input.action.kind,
       updates: input.updates,
       transition: accepted.transition,
       ...(accepted.readyToCommit ? { effect } : {}),
-      rejections: input.rejections,
-    };
-  }
-
-  private commitPresented(input: {
-    agentId: string;
-    sessionId: string;
-    timezone: string;
-    nowUtc: string;
-    userMessage: StoredMessage;
-    assistantMessageId: string;
-    recentMessages: readonly StoredMessage[];
-    action: Extract<ScheduleNegotiationAction, { kind: "accept_user_offer" }>;
-    stored?: StoredScheduleNegotiation;
-    presentedState: ScheduleNegotiation;
-    updates: StoredScheduleNegotiation[];
-    rejections: ScheduleNegotiationRejection[];
-  }): PreparedScheduleNegotiation {
-    const offer = input.presentedState.offer;
-    if (offer === undefined) {
-      return {
-        actionKind: input.action.kind,
-        updates: input.updates,
-        rejections: input.rejections,
-      };
-    }
-    const effect = offerToEffect(offer);
-    const validation = this.schedules.validateEffectsPartial(
-      input.agentId,
-      [effect],
-      input.nowUtc,
-    );
-    const currentEvidence = {
-      evidenceId: input.assistantMessageId,
-      observedAtUtc: input.nowUtc,
-    };
-    const reduced =
-      validation.accepted.length === 1
-        ? reduceScheduleNegotiation({
-            state: input.presentedState,
-            action: {
-              type: "accept_pending",
-              offerVersion: input.presentedState.offerVersion,
-            },
-            evidence: { current: currentEvidence },
-          })
-        : reduceScheduleNegotiation({
-            state: input.presentedState,
-            action: {
-              type: "mark_conflicted",
-              reasonCode: validation.rejections[0]?.code ?? "schedule_conflict",
-            },
-            evidence: { current: currentEvidence },
-          });
-    input.updates.push(toStoredNegotiation(reduced.state, input.stored, input));
-    if (validation.accepted.length !== 1) {
-      input.rejections.push(
-        ...validation.rejections.map((item) => ({
-          reasonCode: item.code,
-          reasonSummary: item.message,
-          raw: item.proposal,
-        })),
-      );
-    }
-    return {
-      actionKind: input.action.kind,
-      updates: input.updates,
-      transition: reduced.transition,
-      ...(reduced.readyToCommit ? { effect } : {}),
+      ...(accepted.readyToCommit
+        ? { presentationText: formatCommittedOffer(offer, input.timezone) }
+        : {}),
       rejections: input.rejections,
     };
   }
@@ -698,6 +722,7 @@ export class ScheduleNegotiationService {
 export function buildScheduleNegotiationContract(input: {
   active?: ActiveScheduleNegotiation;
   timezone: string;
+  nowUtc: string;
   legacyEffectsEnabled?: boolean;
 }): string {
   const activeNegotiation = input.active?.expired
@@ -738,14 +763,19 @@ export function buildScheduleNegotiationContract(input: {
     "SCHEDULE_NEGOTIATION_CONTRACT",
     "Return scheduleAction separately from the natural reply. The reply wording never authorizes a schedule change.",
     "Allowed kinds: none, request_details, propose_offer, accept_user_offer, accept_pending_offer, decline_offer, withdraw_offer.",
-    "Use accept_user_offer only when the character accepts a user-supplied activity and start time. Include the complete semantic offer and verbatim evidenceQuotes copied from user messages. durationMinutes may be omitted for a server policy default.",
-    "Use propose_offer when the character introduces or changes any material term. A proposal never changes the schedule until a later user turn returns accept_pending_offer.",
-    "Use accept_pending_offer only when the current user unambiguously accepts the single active offer without changing it. Include evidenceQuotes copied exactly from the current user message, but do not restate or modify the offer in this action.",
+    "Use accept_user_offer only when the character is willing to accept a user-supplied activity and start time. It creates a server-canonical pending offer and never changes the schedule in the same turn. Include the semantic offer and verbatim evidenceQuotes copied from user messages; the server derives the authoritative activity, time, and duration from those quotes.",
+    "Use propose_offer when the character introduces or changes any material term. It also creates only a pending offer and never changes the schedule in the same turn.",
+    "Only a later, separate user turn may return accept_pending_offer. Use it only when the current user gives an unambiguous affirmative answer to the single active offer without changing any term. Include evidenceQuotes copied exactly from the current user message, but do not restate or modify the offer in this action.",
+    "This negotiated writer currently supports creating a new shared activity only. Never turn a request to cancel or reschedule an existing item into a create offer; return none and clearly explain that it is unsupported.",
+    "For accept_user_offer, copy relative or local time wording from the evidence instead of inventing an ISO date. Omit durationMinutes when the user did not state a duration.",
     input.legacyEffectsEnabled
       ? "Use request_details when activity or start time is missing. Use none for unrelated conversation. Also return scheduleEffects under the appended legacy contract; the shadow evaluator and legacy writer are validated independently."
       : "Use request_details when activity or start time is missing. Use none for unrelated conversation. Return scheduleEffects as an empty array; it is ignored by the negotiated writer.",
-    "The natural reply must match scheduleAction: never claim an agreement was recorded for none, request_details, propose_offer, decline_offer, or withdraw_offer.",
+    "The natural reply must match scheduleAction: accept_user_offer and propose_offer must ask for confirmation and must not claim the schedule was changed. Never claim an agreement was recorded for none, request_details, decline_offer, or withdraw_offer.",
     `Character timezone: ${input.timezone}`,
+    `Character local date/time: ${DateTime.fromISO(input.nowUtc)
+      .setZone(input.timezone)
+      .toFormat("yyyy-MM-dd HH:mm ZZZZ")}`,
     "ACTIVE_SCHEDULE_NEGOTIATION_JSON",
     JSON.stringify(activeNegotiation),
   ].join("\n");
@@ -766,6 +796,57 @@ function canonicalizeOffer(
     durationMinutes:
       offer.durationMinutes ?? DEFAULT_DURATION_MINUTES[offer.category] ?? 60,
     timezone,
+  };
+}
+
+type AcceptedUserOfferResolution =
+  | { ok: true; offer: CanonicalScheduleOffer }
+  | {
+      ok: false;
+      reasonCode: "activity_not_grounded" | "time_not_grounded";
+      reasonSummary: string;
+    };
+
+/**
+ * A direct user offer is only an input to the confirmation flow. The model
+ * chooses the dialogue act, while the server derives every material term from
+ * exact user evidence before showing the pending offer back to the user.
+ */
+function canonicalizeAcceptedUserOffer(
+  evidence: readonly ResolvedEvidence[],
+  timezone: string,
+): AcceptedUserOfferResolution {
+  const groundedActivities = uniqueActivityFamilies(
+    evidence.flatMap((item) => matchingActivityFamilies(item.quote)),
+  );
+  if (groundedActivities.length !== 1) {
+    return {
+      ok: false,
+      reasonCode: "activity_not_grounded",
+      reasonSummary:
+        "The user evidence must identify exactly one supported activity.",
+    };
+  }
+  const startAtUtc = resolveGroundedStart(evidence, timezone);
+  if (startAtUtc === undefined) {
+    return {
+      ok: false,
+      reasonCode: "time_not_grounded",
+      reasonSummary:
+        "The user evidence must identify exactly one resolvable start time.",
+    };
+  }
+  const activity = groundedActivities[0]!;
+  return {
+    ok: true,
+    offer: {
+      operation: "create",
+      activity: activity.label,
+      category: activity.category,
+      startAtUtc,
+      durationMinutes: DEFAULT_DURATION_MINUTES[activity.category] ?? 60,
+      timezone,
+    },
   };
 }
 
@@ -831,6 +912,84 @@ function evidenceQuoteIsExact(quote: string, message: string): boolean {
   return (
     normalizedQuote.length > 0 &&
     normalizeEvidenceText(message).includes(normalizedQuote)
+  );
+}
+
+const AFFIRMATIVE_CONFIRMATIONS = new Set([
+  "好",
+  "好的",
+  "好呀",
+  "好啊",
+  "行",
+  "行的",
+  "可以",
+  "当然可以",
+  "没问题",
+  "确认",
+  "确认安排",
+  "确定",
+  "同意",
+  "就按这个",
+  "就按这个来",
+  "按这个来",
+  "就这么办",
+  "说定了",
+  "ok",
+  "okay",
+  "yes",
+  "sure",
+  "confirm",
+  "confirmed",
+  "agreed",
+  "soundsgood",
+  "👌",
+  "👍",
+]);
+
+const UNSUPPORTED_SCHEDULE_OPERATION_PATTERN =
+  /(?:取消|删(?:掉|除)?|撤(?:销|掉)?|去掉|作废|不(?:去|参加)(?:了)?|不要(?:了)?|(?:把|将).{0,40}(?:改|换|挪|调|移|推|延|提|删|撤|取消|去掉)|(?:改|换|挪|调|移)(?:到|成|为|期|时间|个时间)|推迟|延后|延到|提前|\b(?:cancel|remove|delete|drop|undo|withdraw|reschedul(?:e|ing)|postpone|shift)\b|\b(?:move|change)\b.{0,40}\b(?:to|into|from)\b|\bpush\s+back\b|\bbring\s+forward\b)/iu;
+const QUESTION_MARK_PATTERN = /[?？﹖؟⁇⁈⁉]/u;
+
+function isUnambiguousScheduleConfirmation(text: string): boolean {
+  const compatibilityNormalized = text.normalize("NFKC");
+  if (QUESTION_MARK_PATTERN.test(compatibilityNormalized)) return false;
+  const normalized = normalizeEvidenceText(compatibilityNormalized).replace(
+    /^(?:嗯+|好吧)/u,
+    "",
+  );
+  return AFFIRMATIVE_CONFIRMATIONS.has(normalized);
+}
+
+const EXPLICIT_SCHEDULE_CANCELLATIONS = new Set([
+  "取消",
+  "取消这个",
+  "算了",
+  "不确认",
+  "不要了",
+  "不用了",
+  "放弃",
+  "先不定了",
+  "改天再说",
+  "cancel",
+  "no",
+  "nevermind",
+]);
+
+function isExplicitScheduleCancellation(text: string): boolean {
+  const compatibilityNormalized = text.normalize("NFKC");
+  if (QUESTION_MARK_PATTERN.test(compatibilityNormalized)) return false;
+  return EXPLICIT_SCHEDULE_CANCELLATIONS.has(
+    normalizeEvidenceText(compatibilityNormalized),
+  );
+}
+
+function isQuestionShapedScheduleControl(text: string): boolean {
+  const compatibilityNormalized = text.normalize("NFKC");
+  if (!QUESTION_MARK_PATTERN.test(compatibilityNormalized)) return false;
+  const normalized = normalizeEvidenceText(compatibilityNormalized);
+  return (
+    AFFIRMATIVE_CONFIRMATIONS.has(normalized) ||
+    EXPLICIT_SCHEDULE_CANCELLATIONS.has(normalized)
   );
 }
 
@@ -1135,10 +1294,18 @@ function formatPendingOffer(
   offer: CanonicalScheduleOffer,
   timezone: string,
 ): string {
-  const startLocal = DateTime.fromISO(offer.startAtUtc)
-    .setZone(timezone)
-    .toFormat("yyyy-MM-dd HH:mm");
-  return `【待确认日程】${startLocal}，${offer.activity}，${offer.durationMinutes} 分钟。请确认是否按此安排。`;
+  const local = DateTime.fromISO(offer.startAtUtc).setZone(timezone);
+  const startLocal = local.toFormat("yyyy-MM-dd HH:mm");
+  return `【待确认日程】${startLocal}，${offer.activity}，${offer.durationMinutes} 分钟（${timezone}，UTC${local.toFormat("ZZ")}）。日程尚未修改；请明确回复“确认”应用该方案，或回复“取消”放弃。`;
+}
+
+function formatCommittedOffer(
+  offer: CanonicalScheduleOffer,
+  timezone: string,
+): string {
+  const local = DateTime.fromISO(offer.startAtUtc).setZone(timezone);
+  const startLocal = local.toFormat("yyyy-MM-dd HH:mm");
+  return `【日程已修改】${startLocal}，${offer.activity}，${offer.durationMinutes} 分钟（${timezone}，UTC${local.toFormat("ZZ")}）。`;
 }
 
 function negotiationStateFromStored(
@@ -1169,6 +1336,14 @@ function toStoredNegotiation(
   existing: StoredScheduleNegotiation | undefined,
   input: { agentId: string; sessionId: string },
 ): StoredScheduleNegotiation {
+  const existingPolicyVersion = existing?.record["policyVersion"];
+  const policyVersion =
+    existing !== undefined &&
+    existing.offerVersion === state.offerVersion &&
+    typeof existingPolicyVersion === "number" &&
+    Number.isInteger(existingPolicyVersion)
+      ? existingPolicyVersion
+      : SCHEDULE_NEGOTIATION_POLICY_VERSION;
   return {
     id: state.id,
     agentId: input.agentId,
@@ -1177,7 +1352,7 @@ function toStoredNegotiation(
     offerVersion: state.offerVersion,
     record: {
       negotiation: state,
-      policyVersion: SCHEDULE_NEGOTIATION_POLICY_VERSION,
+      policyVersion,
     },
     createdAtUtc: existing?.createdAtUtc ?? state.createdAtUtc,
     updatedAtUtc: state.updatedAtUtc,

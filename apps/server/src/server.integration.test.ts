@@ -990,6 +990,7 @@ describe("PersonaSim server integration", () => {
       clockMode: "fake",
       seedDemo: true,
       developerRoutes: true,
+      scheduleNegotiationMode: "legacy",
       llm: {
         provider: "fixture",
         baseUrl: "https://example.invalid",
@@ -1025,6 +1026,7 @@ async function createTestApp(): Promise<{
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    scheduleNegotiationMode: "legacy",
     llm: {
       provider: "fixture",
       baseUrl: "https://example.invalid",

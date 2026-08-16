@@ -115,6 +115,7 @@ export type ScheduleNegotiationTransitionReason =
   | "invalid_offer"
   | "invalid_action_for_status"
   | "missing_pending_offer"
+  | "confirmation_not_subsequent"
   | "stale_offer_version"
   | "ambiguous_pending_offer";
 
@@ -397,6 +398,9 @@ export function reduceScheduleNegotiation(
         state.offer === undefined
       ) {
         return unchanged(state, action, current, "missing_pending_offer");
+      }
+      if (state.offer.evidenceIds.includes(current.evidenceId)) {
+        return unchanged(state, action, current, "confirmation_not_subsequent");
       }
       if (
         action.offerVersion !== undefined &&

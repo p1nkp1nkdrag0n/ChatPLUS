@@ -11,10 +11,9 @@ const EvidenceQuotesSchema = z
   .max(8);
 
 /**
- * A committable, create-only schedule offer expressed in conversation terms.
- * The server remains responsible for resolving startAt to an authoritative
- * instant, supplying and freezing any category-based default duration, and
- * constructing and validating the schedule command.
+ * A create-only schedule offer expressed in conversation terms. A complete
+ * offer is still only pending until a later user turn explicitly confirms its
+ * persisted version. The server resolves all authoritative command terms.
  */
 export const ScheduleNegotiationOfferSchema = z
   .object({
@@ -96,6 +95,9 @@ const WithdrawScheduleOfferActionSchema = z
 
 /**
  * Model-facing dialogue behavior for the create-only negotiation MVP.
+ * accept_user_offer records willingness and presents a pending offer; it does
+ * not commit in the same turn. Only accept_pending_offer can commit, and only
+ * from a later user turn.
  * Accepting a pending offer intentionally carries no restated offer so the
  * server must use the persisted, versioned terms it originally presented.
  * Its evidence can only quote the current user's confirmation.

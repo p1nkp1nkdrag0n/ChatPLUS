@@ -18,6 +18,7 @@ export default async function globalSetup() {
     host: "127.0.0.1",
     databasePath: ":memory:",
     clockMode: "fake",
+    scheduleNegotiationMode: "legacy",
     seedDemo: false,
     developerRoutes: true,
     llm: {

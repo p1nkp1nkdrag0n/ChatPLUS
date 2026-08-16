@@ -9,8 +9,7 @@ import type { GenerateObjectInput, LlmService } from "./llm-service.js";
 
 const START_UTC = "2026-08-16T02:00:00.000Z"; // 10:00 Asia/Shanghai
 
-const INVITATION_TEXT =
-  "今晚要不要一起去参加学校的晚会？可以把学习挪到明天。";
+const INVITATION_TEXT = "今晚要不要一起去参加学校的晚会？可以把学习挪到明天。";
 
 describe("live chat schedule-effect proposals", () => {
   let app: PersonaSimApp | undefined;
@@ -250,6 +249,7 @@ async function createEffectsTestApp(
     seedDemo: false,
     developerRoutes: true,
     chatEffectsMode: overrides.chatEffectsMode ?? "gated",
+    scheduleNegotiationMode: "legacy",
     llm: {
       provider: "openai-compatible",
       baseUrl: "https://example.invalid",

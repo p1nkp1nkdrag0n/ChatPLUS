@@ -30,9 +30,12 @@ For a schedule-capable turn the model returns a bounded dialogue action:
 
 An offer contains semantic activity and time terms plus verbatim evidence
 from conversation messages. Application code resolves the evidence, converts
-time to UTC, applies domain defaults, and stores a canonical offer. A short
-confirmation can only accept one active, unexpired offer version in the same
-session.
+time to UTC, applies domain defaults, and stores a canonical offer. Both
+`accept_user_offer` and `propose_offer` only create an
+`awaiting_confirmation` offer and display its canonical terms. They never
+write the schedule in that turn. A later user turn must explicitly affirm the
+single active, unexpired offer version in the same session before
+`accept_pending_offer` can create a command.
 
 Once an offer is accepted, application code constructs the schedule command,
 validates it against the authoritative schedule, and atomically persists the
@@ -66,7 +69,9 @@ ignores negotiation rows.
 2. Identical reply text cannot change a schedule without an accepted,
    validated command.
 3. An offer version is committed at most once.
-4. Withdrawal, rejection, expiry or supersession permanently invalidates the
+4. Presenting an offer and accepting it require different user-message
+   evidence; no caller can complete both phases in one turn.
+5. Withdrawal, rejection, expiry or supersession permanently invalidates the
    old version.
-5. Messages, negotiation state, schedule projection and audit events commit
+6. Messages, negotiation state, schedule projection and audit events commit
    together or not at all.

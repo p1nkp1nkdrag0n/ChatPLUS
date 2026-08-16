@@ -17,6 +17,9 @@ import type { GenerateObjectInput, LlmService } from "./llm-service.js";
 const START_UTC = "2026-08-16T02:00:00.000Z"; // 10:00 Asia/Shanghai
 const RUN_START_UTC = "2026-08-16T23:00:00.000Z"; // next day 07:00
 const RUN_END_UTC = "2026-08-16T23:30:00.000Z";
+const EARLY_MORNING_UTC = "2026-08-16T21:59:39.371Z"; // 05:59 Asia/Shanghai
+const NEXT_MORNING_RUN_START_UTC = "2026-08-17T23:00:00.000Z";
+const NEXT_MORNING_RUN_END_UTC = "2026-08-17T23:30:00.000Z";
 const DIRECT_AGREEMENT = "那说好了明天早上七点一起跑半小时";
 
 const ACCEPTED_REPLY_VARIANTS = [
@@ -41,16 +44,18 @@ describe("server-owned schedule negotiation", () => {
   });
 
   it.each(ACCEPTED_REPLY_VARIANTS)(
-    "commits the same direct user offer independently of reply wording: %s",
+    "presents and later commits the same direct user offer independently of reply wording: %s",
     async (replyText) => {
       app = (await createNegotiationTestApp()).app;
       const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
       mockLlm(app.personasim.llm, calls, (input) => {
         expect(input.prompt).toContain("SCHEDULE_NEGOTIATION_CONTRACT");
         expect(input.prompt).not.toContain("SCHEDULE_EFFECTS_CONTRACT");
+        turn += 1;
         const decision = {
-          text: replyText,
-          scheduleAction: acceptUserOffer(),
+          text: turn === 1 ? replyText : "好。",
+          scheduleAction: turn === 1 ? acceptUserOffer() : acceptPendingOffer(),
         };
         expect(decision).not.toHaveProperty("scheduleEffects");
         return decision;
@@ -71,8 +76,31 @@ describe("server-owned schedule negotiation", () => {
 
       expect(response.statusCode).toBe(201);
       const body = jsonBody<ChatTurnResult>(response);
-      expect(body.scheduleChanges).toHaveLength(1);
-      const created = body.scheduleChanges[0]!;
+      expect(body.scheduleChanges).toEqual([]);
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(body.assistantMessage.content).toContain(
+        "【待确认日程】2026-08-17 07:00，跑步，30 分钟",
+      );
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+
+      const confirmation = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        `direct-confirmation-${ACCEPTED_REPLY_VARIANTS.indexOf(replyText)}`,
+        "没问题",
+      );
+      expect(confirmation.statusCode).toBe(201);
+      const confirmationBody = jsonBody<ChatTurnResult>(confirmation);
+      expect(confirmationBody.scheduleChanges).toHaveLength(1);
+      const created = confirmationBody.scheduleChanges[0]!;
       expect(created).toMatchObject({
         category: "exercise",
         status: "planned",
@@ -81,7 +109,7 @@ describe("server-owned schedule negotiation", () => {
         startAtUtc: RUN_START_UTC,
         endAtUtc: RUN_END_UTC,
       });
-      expect(body.assistantMessage.metadata).toMatchObject({
+      expect(confirmationBody.assistantMessage.metadata).toMatchObject({
         decisionPath: "full",
         rejectedProposalCount: 0,
         repairAttempted: false,
@@ -122,7 +150,7 @@ describe("server-owned schedule negotiation", () => {
       });
       expect(
         calls.filter((input) => input.purpose === "chat_turn"),
-      ).toHaveLength(1);
+      ).toHaveLength(2);
     },
   );
 
@@ -182,10 +210,17 @@ describe("server-owned schedule negotiation", () => {
   ] as const)("$label", async ({ userText, offer, startAtUtc, endAtUtc }) => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
-    mockLlm(app.personasim.llm, calls, () => ({
-      text: "好。",
-      scheduleAction: { kind: "accept_user_offer", offer },
-    }));
+    let turn = 0;
+    mockLlm(app.personasim.llm, calls, () => {
+      turn += 1;
+      return {
+        text: "好。",
+        scheduleAction:
+          turn === 1
+            ? { kind: "accept_user_offer", offer }
+            : acceptPendingOffer(),
+      };
+    });
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
     calls.length = 0;
@@ -199,7 +234,28 @@ describe("server-owned schedule negotiation", () => {
     );
 
     expect(response.statusCode).toBe(201);
-    const body = jsonBody<ChatTurnResult>(response);
+    const offeredBody = jsonBody<ChatTurnResult>(response);
+    expect(offeredBody.scheduleChanges).toEqual([]);
+    const pending =
+      app.personasim.store.getActiveScheduleNegotiation(sessionId);
+    expect(readNegotiationState(pending!)).toMatchObject({
+      status: "awaiting_confirmation",
+      offer: {
+        startAtUtc,
+        durationMinutes:
+          (Date.parse(endAtUtc) - Date.parse(startAtUtc)) / 60_000,
+      },
+    });
+
+    const confirmation = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      `duration-confirmation-${offer.durationMinutes ?? "default"}`,
+      "没问题",
+    );
+    expect(confirmation.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(confirmation);
     expect(body.scheduleChanges).toEqual([
       expect.objectContaining({
         category: "exercise",
@@ -217,19 +273,26 @@ describe("server-owned schedule negotiation", () => {
   it("commits 今晚十二点半 at local midnight rather than noon", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
-    mockLlm(app.personasim.llm, calls, () => ({
-      text: "好。",
-      scheduleAction: {
-        kind: "accept_user_offer",
-        offer: {
-          activity: "一起跑步",
-          category: "exercise",
-          startAt: "今晚十二点半",
-          durationMinutes: 30,
-          evidenceQuotes: ["今晚十二点半一起跑半小时"],
-        },
-      },
-    }));
+    let turn = 0;
+    mockLlm(app.personasim.llm, calls, () => {
+      turn += 1;
+      return {
+        text: "好。",
+        scheduleAction:
+          turn === 1
+            ? {
+                kind: "accept_user_offer",
+                offer: {
+                  activity: "一起跑步",
+                  category: "exercise",
+                  startAt: "今晚十二点半",
+                  durationMinutes: 30,
+                  evidenceQuotes: ["今晚十二点半一起跑半小时"],
+                },
+              }
+            : acceptPendingOffer(),
+      };
+    });
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
     for (const item of app.personasim.store.listSchedule(character.id)) {
@@ -257,7 +320,25 @@ describe("server-owned schedule negotiation", () => {
     );
 
     expect(response.statusCode).toBe(201);
-    expect(jsonBody<ChatTurnResult>(response).scheduleChanges).toEqual([
+    expect(jsonBody<ChatTurnResult>(response).scheduleChanges).toEqual([]);
+    expect(
+      readNegotiationState(
+        app.personasim.store.getActiveScheduleNegotiation(sessionId)!,
+      ).offer,
+    ).toMatchObject({
+      startAtUtc: "2026-08-16T16:30:00.000Z",
+      durationMinutes: 30,
+    });
+
+    const confirmation = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "midnight-confirmation",
+      "没问题",
+    );
+    expect(confirmation.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(confirmation).scheduleChanges).toEqual([
       expect.objectContaining({
         category: "exercise",
         startAtUtc: "2026-08-16T16:30:00.000Z",
@@ -269,18 +350,25 @@ describe("server-owned schedule negotiation", () => {
   it("grounds an English word duration instead of applying the category default", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
-    mockLlm(app.personasim.llm, calls, () => ({
-      text: "Okay.",
-      scheduleAction: {
-        kind: "accept_user_offer",
-        offer: {
-          activity: "meet",
-          category: "social",
-          startAt: "tomorrow at 3 pm",
-          evidenceQuotes: ["meet tomorrow at 3 pm for one hour"],
-        },
-      },
-    }));
+    let turn = 0;
+    mockLlm(app.personasim.llm, calls, () => {
+      turn += 1;
+      return {
+        text: "Okay.",
+        scheduleAction:
+          turn === 1
+            ? {
+                kind: "accept_user_offer",
+                offer: {
+                  activity: "meet",
+                  category: "social",
+                  startAt: "tomorrow at 3 pm",
+                  evidenceQuotes: ["meet tomorrow at 3 pm for one hour"],
+                },
+              }
+            : acceptPendingOffer("yes"),
+      };
+    });
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
     calls.length = 0;
@@ -294,7 +382,17 @@ describe("server-owned schedule negotiation", () => {
     );
 
     expect(response.statusCode).toBe(201);
-    expect(jsonBody<ChatTurnResult>(response).scheduleChanges).toEqual([
+    expect(jsonBody<ChatTurnResult>(response).scheduleChanges).toEqual([]);
+
+    const confirmation = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "english-word-confirmation",
+      "yes",
+    );
+    expect(confirmation.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(confirmation).scheduleChanges).toEqual([
       expect.objectContaining({
         category: "social",
         startAtUtc: "2026-08-17T07:00:00.000Z",
@@ -486,11 +584,13 @@ describe("server-owned schedule negotiation", () => {
   it("replays a committed command once and rejects client id reuse with different content", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
+    let turn = 0;
     mockLlm(app.personasim.llm, calls, (input) => {
       expect(input.prompt).toContain("SCHEDULE_NEGOTIATION_CONTRACT");
+      turn += 1;
       return {
         text: "好，明早见。",
-        scheduleAction: acceptUserOffer(),
+        scheduleAction: turn === 1 ? acceptUserOffer() : acceptPendingOffer(),
       };
     });
 
@@ -499,12 +599,24 @@ describe("server-owned schedule negotiation", () => {
     calls.length = 0;
     const clientMessageId = "idempotent-negotiated-command";
 
+    const proposalResponse = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "idempotent-negotiated-proposal",
+      DIRECT_AGREEMENT,
+    );
+    expect(proposalResponse.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(proposalResponse).scheduleChanges).toEqual(
+      [],
+    );
+
     const firstResponse = await sendMessage(
       app,
       sessionId,
       character.id,
       clientMessageId,
-      DIRECT_AGREEMENT,
+      "没问题",
     );
     expect(firstResponse.statusCode).toBe(201);
     const firstBody = jsonBody<ChatTurnResult>(firstResponse);
@@ -525,7 +637,7 @@ describe("server-owned schedule negotiation", () => {
       ),
     ).toHaveLength(1);
     expect(calls.filter((input) => input.purpose === "chat_turn")).toHaveLength(
-      1,
+      2,
     );
 
     const replayResponse = await sendMessage(
@@ -533,7 +645,7 @@ describe("server-owned schedule negotiation", () => {
       sessionId,
       character.id,
       clientMessageId,
-      DIRECT_AGREEMENT,
+      "没问题",
     );
     expect(replayResponse.statusCode).toBe(200);
     const replayBody = jsonBody<ChatTurnResult>(replayResponse);
@@ -542,7 +654,7 @@ describe("server-owned schedule negotiation", () => {
     expect(replayBody.userMessage.id).toBe(firstBody.userMessage.id);
     expect(replayBody.assistantMessage.id).toBe(firstBody.assistantMessage.id);
     expect(calls.filter((input) => input.purpose === "chat_turn")).toHaveLength(
-      1,
+      2,
     );
     expect(app.personasim.store.listSchedule(character.id)).toEqual(
       scheduleAfterFirst,
@@ -569,7 +681,7 @@ describe("server-owned schedule negotiation", () => {
       jsonBody<{ error: { code: string } }>(conflictResponse).error.code,
     ).toBe("idempotency_key_reused");
     expect(calls.filter((input) => input.purpose === "chat_turn")).toHaveLength(
-      1,
+      2,
     );
     expect(app.personasim.store.listSchedule(character.id)).toEqual(
       scheduleAfterFirst,
@@ -588,13 +700,26 @@ describe("server-owned schedule negotiation", () => {
   it("keeps HTTP, projection, audit events and SSE notifications aligned", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
-    mockLlm(app.personasim.llm, calls, () => ({
-      text: "好。",
-      scheduleAction: acceptUserOffer(),
-    }));
+    let turn = 0;
+    mockLlm(app.personasim.llm, calls, () => {
+      turn += 1;
+      return {
+        text: "好。",
+        scheduleAction: turn === 1 ? acceptUserOffer() : acceptPendingOffer(),
+      };
+    });
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
     calls.length = 0;
+    const proposal = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "negotiation-observable-proposal",
+      DIRECT_AGREEMENT,
+    );
+    expect(proposal.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(proposal).scheduleChanges).toEqual([]);
     const publish = vi.spyOn(app.personasim.sse, "publish");
     const clientMessageId = "negotiation-observable-commit";
 
@@ -603,7 +728,7 @@ describe("server-owned schedule negotiation", () => {
       sessionId,
       character.id,
       clientMessageId,
-      DIRECT_AGREEMENT,
+      "没问题",
     );
 
     expect(response.statusCode).toBe(201);
@@ -660,15 +785,31 @@ describe("server-owned schedule negotiation", () => {
   it("rolls back messages, negotiation and schedule when command audit insertion fails", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
-    mockLlm(app.personasim.llm, calls, () => ({
-      text: "好。",
-      scheduleAction: acceptUserOffer(),
-    }));
+    let turn = 0;
+    mockLlm(app.personasim.llm, calls, () => {
+      turn += 1;
+      return {
+        text: "好。",
+        scheduleAction: turn === 1 ? acceptUserOffer() : acceptPendingOffer(),
+      };
+    });
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
     calls.length = 0;
+    const proposal = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "negotiation-command-audit-proposal",
+      DIRECT_AGREEMENT,
+    );
+    expect(proposal.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(proposal).scheduleChanges).toEqual([]);
     const scheduleBefore = app.personasim.store.listSchedule(character.id);
     const messagesBefore = app.personasim.store.listMessages(sessionId);
+    const negotiationsBefore = app.personasim.store.listScheduleNegotiations({
+      sessionId,
+    });
     const eventsBefore = app.personasim.store.listDomainEvents(
       character.id,
       100,
@@ -689,7 +830,7 @@ describe("server-owned schedule negotiation", () => {
       sessionId,
       character.id,
       "negotiation-command-audit-failure",
-      DIRECT_AGREEMENT,
+      "没问题",
     );
 
     expect(response.statusCode).toBe(500);
@@ -701,7 +842,7 @@ describe("server-owned schedule negotiation", () => {
     );
     expect(
       app.personasim.store.listScheduleNegotiations({ sessionId }),
-    ).toEqual([]);
+    ).toEqual(negotiationsBefore);
     expect(app.personasim.store.listDomainEvents(character.id, 100)).toEqual(
       eventsBefore,
     );
@@ -711,39 +852,17 @@ describe("server-owned schedule negotiation", () => {
   it("revalidates against the latest schedule inside the commit transaction", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
-    let agentId = "";
+    let chatTurn = 0;
     vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
       (input) => {
         calls.push(input);
         if (input.purpose === "chat_turn") {
+          chatTurn += 1;
           return Promise.resolve({
-            text: "明早我去不了。",
-            scheduleAction: acceptUserOffer(),
+            text: chatTurn === 1 ? "我先列出来请你确认。" : "明早我去不了。",
+            scheduleAction:
+              chatTurn === 1 ? acceptUserOffer() : acceptPendingOffer(),
           } as never);
-        }
-        if (input.purpose === "repair_chat_turn") {
-          app!.personasim.store.insertScheduleItem({
-            id: "schedule-concurrent-fixed-conflict",
-            agentId,
-            title: "并发写入的固定安排",
-            description: "模拟模型生成与事务提交之间出现的新冲突。",
-            category: "work",
-            startAtUtc: RUN_START_UTC,
-            endAtUtc: RUN_END_UTC,
-            timezone: "Asia/Shanghai",
-            rigidity: "fixed",
-            priority: 1,
-            source: "manual",
-            adherenceProbability: 1,
-            narrativeImportance: 0.5,
-            shareable: false,
-            stateEffects: {},
-            status: "planned",
-            revision: 1,
-            createdAtUtc: START_UTC,
-            updatedAtUtc: START_UTC,
-          });
-          return Promise.resolve({ text: "我先重新确认一下时间。" } as never);
         }
         if (input.fixture !== undefined) {
           return Promise.resolve(input.fixture as never);
@@ -752,18 +871,60 @@ describe("server-owned schedule negotiation", () => {
       },
     );
     const character = await createAndPublishHighFidelity(app);
-    agentId = character.id;
     const sessionId = await createSession(app, character.id);
     calls.length = 0;
+    const proposal = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "schedule-changed-proposal",
+      DIRECT_AGREEMENT,
+    );
+    expect(proposal.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(proposal).scheduleChanges).toEqual([]);
+    const pendingBefore = app.personasim.store.listScheduleNegotiations({
+      sessionId,
+    });
     const messagesBefore = app.personasim.store.listMessages(sessionId);
     const clientMessageId = "schedule-changed-before-commit";
+    const originalTransaction = app.personasim.store.transaction.bind(
+      app.personasim.store,
+    );
+    let injectConcurrentConflict = true;
+    vi.spyOn(app.personasim.store, "transaction").mockImplementation((work) => {
+      if (injectConcurrentConflict) {
+        injectConcurrentConflict = false;
+        app!.personasim.store.insertScheduleItem({
+          id: "schedule-concurrent-fixed-conflict",
+          agentId: character.id,
+          title: "并发写入的固定安排",
+          description: "模拟模型生成与事务提交之间出现的新冲突。",
+          category: "work",
+          startAtUtc: RUN_START_UTC,
+          endAtUtc: RUN_END_UTC,
+          timezone: "Asia/Shanghai",
+          rigidity: "fixed",
+          priority: 1,
+          source: "manual",
+          adherenceProbability: 1,
+          narrativeImportance: 0.5,
+          shareable: false,
+          stateEffects: {},
+          status: "planned",
+          revision: 1,
+          createdAtUtc: START_UTC,
+          updatedAtUtc: START_UTC,
+        });
+      }
+      return originalTransaction(work);
+    });
 
     const response = await sendMessage(
       app,
       sessionId,
       character.id,
       clientMessageId,
-      DIRECT_AGREEMENT,
+      "没问题",
     );
 
     expect(response.statusCode).toBe(409);
@@ -775,7 +936,7 @@ describe("server-owned schedule negotiation", () => {
     );
     expect(
       app.personasim.store.listScheduleNegotiations({ sessionId }),
-    ).toEqual([]);
+    ).toEqual(pendingBefore);
     expect(
       app.personasim.store.getScheduleItem(
         "schedule-concurrent-fixed-conflict",
@@ -831,6 +992,7 @@ describe("server-owned schedule negotiation", () => {
   it.each([
     {
       label: "different activity in the same category",
+      clientMessageId: "canonicalized-activity",
       action: {
         kind: "accept_user_offer",
         offer: {
@@ -840,10 +1002,10 @@ describe("server-owned schedule negotiation", () => {
           evidenceQuotes: ["明天早上七点一起跑半小时"],
         },
       },
-      reasonCode: "activity_not_grounded",
     },
     {
       label: "model-invented duration",
+      clientMessageId: "canonicalized-duration",
       action: {
         kind: "accept_user_offer",
         offer: {
@@ -854,24 +1016,10 @@ describe("server-owned schedule negotiation", () => {
           evidenceQuotes: ["明天早上七点一起跑半小时"],
         },
       },
-      reasonCode: "duration_not_grounded",
-    },
-    {
-      label: "non-verbatim evidence with appended time",
-      action: {
-        kind: "accept_user_offer",
-        offer: {
-          activity: "一起跑步",
-          category: "exercise",
-          startAt: "后天 09:00",
-          evidenceQuotes: ["明天早上七点一起跑半小时，改成后天九点也可以"],
-        },
-      },
-      reasonCode: "ungrounded_negotiation_offer",
     },
   ] as const)(
-    "rejects $label even when the reply text is affirmative",
-    async ({ action, reasonCode }) => {
+    "canonicalizes $label from current user evidence instead of model fields",
+    async ({ action, clientMessageId }) => {
       app = (await createNegotiationTestApp()).app;
       const calls: Array<GenerateObjectInput<unknown>> = [];
       mockLlm(app.personasim.llm, calls, () => ({
@@ -887,35 +1035,89 @@ describe("server-owned schedule negotiation", () => {
         app,
         sessionId,
         character.id,
-        `rejected-${reasonCode}`,
+        clientMessageId,
         DIRECT_AGREEMENT,
       );
 
       expect(response.statusCode).toBe(201);
       const body = jsonBody<ChatTurnResult>(response);
       expect(body.scheduleChanges).toEqual([]);
-      expect(body.assistantMessage.content).not.toBe("好。");
       expect(body.assistantMessage.metadata).toMatchObject({
-        decisionPath: "fallback",
-        repairAttempted: true,
-        rejectedProposalCount: 1,
+        decisionPath: "reply_only",
+        repairAttempted: false,
+        rejectedProposalCount: 0,
       });
       expect(app.personasim.store.listSchedule(character.id)).toEqual(
         scheduleBefore,
       );
-      expect(
-        app.personasim.store.listScheduleNegotiations({ sessionId }),
-      ).toEqual([]);
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+      expect(readNegotiationState(pending!).offer).toMatchObject({
+        activity: "跑步",
+        category: "exercise",
+        startAtUtc: RUN_START_UTC,
+        durationMinutes: 30,
+      });
       expect(
         app.personasim.store.listRejectedProposals(character.id, 20),
-      ).toEqual([
-        expect.objectContaining({
-          sessionId,
-          reasonCode,
-        }),
-      ]);
+      ).toEqual([]);
     },
   );
+
+  it("rejects non-verbatim evidence with appended terms even when the reply is affirmative", async () => {
+    app = (await createNegotiationTestApp()).app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, () => ({
+      text: "好。",
+      scheduleAction: {
+        kind: "accept_user_offer",
+        offer: {
+          activity: "一起跑步",
+          category: "exercise",
+          startAt: "后天 09:00",
+          evidenceQuotes: ["明天早上七点一起跑半小时，改成后天九点也可以"],
+        },
+      },
+    }));
+    const character = await createAndPublishHighFidelity(app);
+    const sessionId = await createSession(app, character.id);
+    calls.length = 0;
+    const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "rejected-ungrounded-negotiation-offer",
+      DIRECT_AGREEMENT,
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.scheduleChanges).toEqual([]);
+    expect(body.assistantMessage.metadata).toMatchObject({
+      repairAttempted: true,
+      rejectedProposalCount: 1,
+    });
+    expect(app.personasim.store.listSchedule(character.id)).toEqual(
+      scheduleBefore,
+    );
+    expect(
+      app.personasim.store.listScheduleNegotiations({ sessionId }),
+    ).toEqual([]);
+    expect(
+      app.personasim.store.listRejectedProposals(character.id, 20),
+    ).toEqual([
+      expect.objectContaining({
+        sessionId,
+        reasonCode: "ungrounded_negotiation_offer",
+      }),
+    ]);
+  });
 
   it("repairs a recorded-agreement reply when the structured action is none", async () => {
     app = (await createNegotiationTestApp()).app;
@@ -1100,7 +1302,7 @@ describe("server-owned schedule negotiation", () => {
     );
   });
 
-  it("retains the canonical pending-offer display after repairing the natural reply", async () => {
+  it("replaces a contradictory proposal reply with the canonical pending-offer display without model repair", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
     vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
@@ -1120,9 +1322,6 @@ describe("server-owned schedule negotiation", () => {
               },
             },
           } as never);
-        }
-        if (input.purpose === "repair_chat_turn") {
-          return Promise.resolve({ text: "我先把具体方案说清楚。" } as never);
         }
         if (input.fixture !== undefined) {
           return Promise.resolve(input.fixture as never);
@@ -1150,7 +1349,7 @@ describe("server-owned schedule negotiation", () => {
       "【待确认日程】2026-08-17 07:00，跑步，30 分钟",
     );
     expect(body.assistantMessage.metadata).toMatchObject({
-      repairAttempted: true,
+      repairAttempted: false,
       decisionPath: "reply_only",
     });
     expect(
@@ -1159,10 +1358,7 @@ describe("server-owned schedule negotiation", () => {
       status: "awaiting_confirmation",
       offerVersion: 1,
     });
-    expect(calls.map((input) => input.purpose)).toEqual([
-      "chat_turn",
-      "repair_chat_turn",
-    ]);
+    expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
   });
 
   it("does not let fixture reply keywords bypass the enforced writer", async () => {
@@ -1235,26 +1431,1149 @@ describe("server-owned schedule negotiation", () => {
   it("preserves the legacy writer when shadow mode is selected", async () => {
     app = (
       await createNegotiationTestApp({
-        provider: "fixture",
         mode: "shadow",
       })
     ).app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, () => ({
+      text: "好呀，我愿意一起去。学习的事我来重新安排。",
+      scheduleAction: {
+        kind: "accept_user_offer",
+        offer: {
+          activity: "一起参加晚会",
+          category: "social",
+          startAt: "今晚 19:00",
+          evidenceQuotes: ["今晚要不要一起去参加学校的晚会"],
+        },
+      },
+      scheduleEffects: [
+        {
+          operation: "move",
+          itemTitle: "晚间自习",
+          newStart: "明天 15:45",
+          justificationQuote: "可以把学习挪到明天",
+        },
+      ],
+    }));
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
+    calls.length = 0;
 
     const response = await sendMessage(
       app,
       sessionId,
       character.id,
-      "fixture-shadow-keeps-legacy-writer",
-      "今晚要不要一起参加学校的晚会？",
+      "shadow-keeps-legacy-writer",
+      "今晚要不要一起去参加学校的晚会？可以把学习挪到明天。",
     );
 
     expect(response.statusCode).toBe(201);
-    expect(jsonBody<ChatTurnResult>(response).scheduleChanges).toHaveLength(2);
+    expect(jsonBody<ChatTurnResult>(response).scheduleChanges).toHaveLength(1);
     expect(
       app.personasim.store.listScheduleNegotiations({ sessionId }),
     ).toEqual([]);
+    const events = app.personasim.store.listDomainEvents(character.id, 100);
+    expect(
+      events.filter(
+        (event) => event.eventType === "schedule.command_committed",
+      ),
+    ).toEqual([]);
+    expect(
+      events.filter(
+        (event) =>
+          event.correlationId === "shadow-keeps-legacy-writer" &&
+          event.eventType === "schedule.negotiation_shadow_evaluated",
+      ),
+    ).toHaveLength(1);
+  });
+
+  describe("strict two-phase confirmation", () => {
+    it("keeps a direct accept_user_offer pending and commits it only after explicit confirmation", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "可以。",
+              scheduleAction: acceptUserOffer(),
+            }
+          : {
+              text: "好。",
+              scheduleAction: {
+                kind: "accept_pending_offer",
+                evidenceQuotes: ["没问题"],
+              },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+      const publish = vi.spyOn(app.personasim.sse, "publish");
+
+      const offered = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "strict-direct-offer",
+        DIRECT_AGREEMENT,
+      );
+
+      expect(offered.statusCode).toBe(201);
+      const offeredBody = jsonBody<ChatTurnResult>(offered);
+      expect(offeredBody.scheduleChanges).toEqual([]);
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(offeredBody.assistantMessage.content).toContain(
+        "【待确认日程】2026-08-17 07:00，跑步，30 分钟",
+      );
+      expect(offeredBody.assistantMessage.content).toContain("日程尚未修改");
+      expect(offeredBody.assistantMessage.content).not.toContain(
+        "【日程已修改】",
+      );
+      expect(
+        publish.mock.calls.filter(
+          ([event]) => event.type === "schedule.updated",
+        ),
+      ).toEqual([]);
+
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+      expect(readNegotiationState(pending!)).toMatchObject({
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+        offer: {
+          version: 1,
+          category: "exercise",
+          startAtUtc: RUN_START_UTC,
+          durationMinutes: 30,
+        },
+      });
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter(
+            (event) =>
+              event.correlationId === "strict-direct-offer" &&
+              event.eventType === "schedule.negotiation_offer_presented",
+          ),
+      ).toHaveLength(1);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toEqual([]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .find(
+            (event) =>
+              event.correlationId === "strict-direct-offer" &&
+              event.eventType === "conversation.turn_committed",
+          )?.payload,
+      ).toMatchObject({ scheduleItemIds: [] });
+
+      publish.mockClear();
+      const confirmed = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "strict-direct-confirmation",
+        "没问题",
+      );
+
+      expect(confirmed.statusCode).toBe(201);
+      const confirmedBody = jsonBody<ChatTurnResult>(confirmed);
+      expect(confirmedBody.scheduleChanges).toEqual([
+        expect.objectContaining({
+          category: "exercise",
+          startAtUtc: RUN_START_UTC,
+          endAtUtc: RUN_END_UTC,
+          source: "user_invitation",
+        }),
+      ]);
+      expect(confirmedBody.assistantMessage.content).toContain(
+        "【日程已修改】2026-08-17 07:00，跑步，30 分钟",
+      );
+      expect(publish.mock.calls.map(([event]) => event.type)).toContain(
+        "schedule.updated",
+      );
+      expect(
+        app.personasim.store.getActiveScheduleNegotiation(sessionId),
+      ).toBeUndefined();
+      expect(
+        app.personasim.store.getScheduleNegotiationById(pending!.id),
+      ).toMatchObject({
+        status: "committed",
+        offerVersion: 1,
+      });
+      const commandEvents = app.personasim.store
+        .listDomainEvents(character.id, 100)
+        .filter((event) => event.eventType === "schedule.command_committed");
+      expect(commandEvents).toHaveLength(1);
+      expect(commandEvents[0]?.payload).toMatchObject({
+        negotiationId: pending!.id,
+        offerVersion: 1,
+        changedItemIds: [confirmedBody.scheduleChanges[0]!.id],
+      });
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .find(
+            (event) =>
+              event.correlationId === "strict-direct-confirmation" &&
+              event.eventType === "conversation.turn_committed",
+          )?.payload,
+      ).toMatchObject({
+        scheduleItemIds: [confirmedBody.scheduleChanges[0]!.id],
+      });
+
+      const replay = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "strict-direct-confirmation",
+        "没问题",
+      );
+      expect(replay.statusCode).toBe(200);
+      expect(jsonBody<ChatTurnResult>(replay)).toMatchObject({
+        idempotentReplay: true,
+        scheduleChanges: [],
+      });
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toHaveLength(1);
+      expect(app.personasim.store.listSchedule(character.id)).toHaveLength(
+        scheduleBefore.length + 1,
+      );
+    });
+
+    it("server-normalizes an explicit confirmation when the model returns none and preserves the pending policy version", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "我先列出方案，请你确认。",
+              scheduleAction: acceptUserOffer(),
+            }
+          : {
+              text: "收到。",
+              scheduleAction: { kind: "none" },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const offered = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "server-normalized-confirmation-offer",
+        DIRECT_AGREEMENT,
+      );
+      expect(offered.statusCode).toBe(201);
+      expect(jsonBody<ChatTurnResult>(offered).scheduleChanges).toEqual([]);
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+
+      // Simulate a pending offer created under the previous policy. Confirming
+      // it under the current runtime must retain the policy that formed it.
+      app.personasim.store.upsertScheduleNegotiation({
+        ...pending!,
+        record: { ...pending!.record, policyVersion: 1 },
+      });
+
+      const confirmed = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "server-normalized-confirmation-none",
+        "没问题",
+      );
+
+      expect(confirmed.statusCode).toBe(201);
+      const confirmedBody = jsonBody<ChatTurnResult>(confirmed);
+      expect(confirmedBody.scheduleChanges).toEqual([
+        expect.objectContaining({
+          category: "exercise",
+          startAtUtc: RUN_START_UTC,
+          endAtUtc: RUN_END_UTC,
+        }),
+      ]);
+      expect(confirmedBody.assistantMessage.content).toContain(
+        "【日程已修改】2026-08-17 07:00，跑步，30 分钟",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toHaveLength(
+        scheduleBefore.length + 1,
+      );
+      const committed = app.personasim.store.getScheduleNegotiationById(
+        pending!.id,
+      );
+      expect(committed).toMatchObject({
+        status: "committed",
+        offerVersion: 1,
+        record: { policyVersion: 1 },
+      });
+      const commandEvents = app.personasim.store
+        .listDomainEvents(character.id, 100)
+        .filter((event) => event.eventType === "schedule.command_committed");
+      expect(commandEvents).toHaveLength(1);
+      expect(commandEvents[0]?.payload).toMatchObject({
+        negotiationId: pending!.id,
+        offerVersion: 1,
+        policyVersion: 1,
+        changedItemIds: [confirmedBody.scheduleChanges[0]!.id],
+      });
+    });
+
+    it("server-normalizes an explicit cancellation over a model acceptance without writing", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "我先列出方案，请你确认。",
+              scheduleAction: acceptUserOffer(),
+            }
+          : {
+              text: "好。",
+              scheduleAction: {
+                kind: "accept_pending_offer",
+                evidenceQuotes: ["取消"],
+              },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const offered = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "server-normalized-cancellation-offer",
+        DIRECT_AGREEMENT,
+      );
+      expect(offered.statusCode).toBe(201);
+      expect(jsonBody<ChatTurnResult>(offered).scheduleChanges).toEqual([]);
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({ status: "awaiting_confirmation" });
+      const publish = vi.spyOn(app.personasim.sse, "publish");
+
+      const cancelled = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "server-normalized-cancellation",
+        "取消",
+      );
+
+      expect(cancelled.statusCode).toBe(201);
+      const cancelledBody = jsonBody<ChatTurnResult>(cancelled);
+      expect(cancelledBody.scheduleChanges).toEqual([]);
+      expect(cancelledBody.assistantMessage.content).toContain(
+        "【未修改日程】",
+      );
+      expect(cancelledBody.assistantMessage.content).toContain(
+        "待确认方案已取消",
+      );
+      expect(cancelledBody.assistantMessage.content).not.toContain(
+        "【日程已修改】",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(
+        publish.mock.calls.filter(
+          ([event]) => event.type === "schedule.updated",
+        ),
+      ).toEqual([]);
+      expect(
+        app.personasim.store.getActiveScheduleNegotiation(sessionId),
+      ).toBeUndefined();
+      const withdrawn = app.personasim.store.getScheduleNegotiationById(
+        pending!.id,
+      );
+      expect(withdrawn).toMatchObject({ status: "withdrawn" });
+      expect(readNegotiationState(withdrawn!)).toMatchObject({
+        status: "withdrawn",
+        terminalReasonCode: "user_withdrew",
+      });
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toEqual([]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .find(
+            (event) =>
+              event.correlationId === "server-normalized-cancellation" &&
+              event.eventType === "conversation.turn_committed",
+          )?.payload,
+      ).toMatchObject({ scheduleItemIds: [] });
+    });
+
+    it("uses early-morning user evidence as truth instead of a model supplied ISO date and duration", async () => {
+      app = (
+        await createNegotiationTestApp({
+          clock: new FakeClock(EARLY_MORNING_UTC),
+        })
+      ).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "我先把时间列出来，请你确认。",
+              scheduleAction: {
+                kind: "accept_user_offer",
+                offer: {
+                  activity: "一起跑步",
+                  category: "exercise",
+                  // Both fields deliberately reproduce the bad live-model output.
+                  startAt: "2026-08-17T07:00:00+08:00",
+                  durationMinutes: 60,
+                  evidenceQuotes: ["明早七点跑步"],
+                },
+              },
+            }
+          : {
+              text: "好。",
+              scheduleAction: {
+                kind: "accept_pending_offer",
+                evidenceQuotes: ["没问题"],
+              },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const offered = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "early-morning-offer",
+        "明早七点跑步",
+      );
+
+      expect(offered.statusCode).toBe(201);
+      const offeredBody = jsonBody<ChatTurnResult>(offered);
+      expect(offeredBody.scheduleChanges).toEqual([]);
+      expect(offeredBody.assistantMessage.content).toContain(
+        "【待确认日程】2026-08-18 07:00，跑步，30 分钟",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+      expect(readNegotiationState(pending!)).toMatchObject({
+        status: "awaiting_confirmation",
+        offer: {
+          startAtUtc: NEXT_MORNING_RUN_START_UTC,
+          durationMinutes: 30,
+        },
+      });
+
+      const confirmed = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "early-morning-confirmation",
+        "没问题",
+      );
+
+      expect(confirmed.statusCode).toBe(201);
+      const confirmedBody = jsonBody<ChatTurnResult>(confirmed);
+      expect(confirmedBody.scheduleChanges).toEqual([
+        expect.objectContaining({
+          startAtUtc: NEXT_MORNING_RUN_START_UTC,
+          endAtUtc: NEXT_MORNING_RUN_END_UTC,
+          category: "exercise",
+        }),
+      ]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toHaveLength(1);
+    });
+
+    it("rejects cancel or reschedule intent instead of turning it into a new item", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, calls, () => ({
+        text: "好。",
+        scheduleAction: {
+          kind: "accept_user_offer",
+          offer: {
+            activity: "跑步",
+            category: "exercise",
+            startAt: "明天八点",
+            durationMinutes: 30,
+            evidenceQuotes: ["跑步", "明天八点"],
+          },
+        },
+      }));
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "unsupported-reschedule",
+        "把跑步改到明天八点",
+      );
+
+      expect(response.statusCode).toBe(201);
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(body.assistantMessage.content).toContain("【未修改日程】");
+      expect(body.assistantMessage.content).toContain("暂不支持取消或改期");
+      expect(body.assistantMessage.metadata.reasonCode).toBe(
+        "unsupported_schedule_operation",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(
+        app.personasim.store.listScheduleNegotiations({ sessionId }),
+      ).toEqual([]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toEqual([]);
+    });
+
+    it.each([
+      { id: "delete-cn", userText: "删掉明天八点的跑步" },
+      { id: "revoke-cn", userText: "撤销明天八点的跑步" },
+      { id: "move-cn", userText: "把跑步换到后天九点" },
+      { id: "remove-en", userText: "remove tomorrow's 8am run" },
+      { id: "shift-en", userText: "shift tomorrow's run to 9am" },
+    ])(
+      "rejects unsupported existing-item operation before trusting the model: $userText",
+      async ({ id, userText }) => {
+        app = (await createNegotiationTestApp()).app;
+        const calls: Array<GenerateObjectInput<unknown>> = [];
+        mockLlm(app.personasim.llm, calls, () => ({
+          text: "好。",
+          scheduleAction: {
+            kind: "accept_user_offer",
+            offer: {
+              activity: "跑步",
+              category: "exercise",
+              startAt: "明天八点",
+              durationMinutes: 30,
+              evidenceQuotes: [userText],
+            },
+          },
+        }));
+        const character = await createAndPublishHighFidelity(app);
+        const sessionId = await createSession(app, character.id);
+        calls.length = 0;
+        const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+        const response = await sendMessage(
+          app,
+          sessionId,
+          character.id,
+          `unsupported-operation-${id}`,
+          userText,
+        );
+
+        expect(response.statusCode).toBe(201);
+        const body = jsonBody<ChatTurnResult>(response);
+        expect(body.scheduleChanges).toEqual([]);
+        expect(body.assistantMessage.content).toContain("【未修改日程】");
+        expect(body.assistantMessage.content).toContain("暂不支持取消或改期");
+        expect(body.assistantMessage.metadata.reasonCode).toBe(
+          "unsupported_schedule_operation",
+        );
+        expect(app.personasim.store.listSchedule(character.id)).toEqual(
+          scheduleBefore,
+        );
+        expect(
+          app.personasim.store.listScheduleNegotiations({ sessionId }),
+        ).toEqual([]);
+      },
+    );
+
+    it("rejects an attempted reschedule from the full user message while keeping an active offer unchanged", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "我先列出方案，请你确认。",
+              scheduleAction: acceptUserOffer(),
+            }
+          : {
+              text: "行，改成八点。",
+              scheduleAction: {
+                kind: "propose_offer",
+                offer: {
+                  activity: "跑步",
+                  category: "exercise",
+                  startAt: "明天八点",
+                  durationMinutes: 30,
+                  evidenceQuotes: [DIRECT_AGREEMENT, "明天八点"],
+                },
+              },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const offered = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "active-reschedule-offer",
+        DIRECT_AGREEMENT,
+      );
+      expect(offered.statusCode).toBe(201);
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "active-reschedule-attempt",
+        "把时间改成明天八点",
+      );
+
+      expect(response.statusCode).toBe(201);
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(body.assistantMessage.content).toContain("【未修改日程】");
+      expect(body.assistantMessage.content).toContain("暂不支持取消或改期");
+      expect(body.assistantMessage.metadata.reasonCode).toBe(
+        "unsupported_schedule_operation",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(
+        app.personasim.store.getActiveScheduleNegotiation(sessionId),
+      ).toMatchObject({
+        id: pending!.id,
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toEqual([]);
+    });
+
+    it("reports a missing pending offer instead of claiming that a bare cancellation succeeded", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, calls, () => ({
+        text: "好，已经取消了。",
+        scheduleAction: { kind: "none" },
+      }));
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "cancellation-without-pending",
+        "取消",
+      );
+
+      expect(response.statusCode).toBe(201);
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(body.assistantMessage.content).toContain("【未修改日程】");
+      expect(body.assistantMessage.content).toContain(
+        "当前没有可确认的日程方案",
+      );
+      expect(body.assistantMessage.content).not.toContain("已经取消");
+      expect(body.assistantMessage.metadata.reasonCode).toBe(
+        "missing_pending_offer",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(
+        app.personasim.store.listScheduleNegotiations({ sessionId }),
+      ).toEqual([]);
+    });
+
+    it("keeps the confirmation prompt controlled while an offer is pending", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "我先列出方案，请你确认。",
+              scheduleAction: acceptUserOffer(),
+            }
+          : {
+              text: "喜欢。你还要我推荐一种颜色吗？",
+              scheduleAction: { kind: "none" },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "controlled-pending-offer",
+        DIRECT_AGREEMENT,
+      );
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "controlled-pending-reminder",
+        "你喜欢蓝色吗？",
+      );
+
+      expect(response.statusCode).toBe(201);
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(body.assistantMessage.content).toContain(
+        "待确认方案仍未应用。请只回复“确认”或“取消”",
+      );
+      expect(body.assistantMessage.content).toContain("【待确认日程】");
+      expect(body.assistantMessage.content).not.toContain("推荐一种颜色");
+      expect(body.assistantMessage.metadata.reasonCode).toBe(
+        "schedule_negotiation_awaiting_confirmation",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(
+        app.personasim.store.getActiveScheduleNegotiation(sessionId),
+      ).toMatchObject({ status: "awaiting_confirmation", offerVersion: 1 });
+    });
+
+    it("rejects an affirmative action when there is no pending offer", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, calls, () => ({
+        text: "好。",
+        scheduleAction: {
+          kind: "accept_pending_offer",
+          evidenceQuotes: ["没问题"],
+        },
+      }));
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "confirmation-without-pending",
+        "没问题",
+      );
+
+      expect(response.statusCode).toBe(201);
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(body.assistantMessage.content).toContain("【未修改日程】");
+      expect(body.assistantMessage.content).toContain(
+        "当前没有可确认的日程方案",
+      );
+      expect(body.assistantMessage.content).not.toContain("【日程已修改】");
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(
+        app.personasim.store.listScheduleNegotiations({ sessionId }),
+      ).toEqual([]);
+      expect(
+        app.personasim.store.listRejectedProposals(character.id, 20),
+      ).toEqual([
+        expect.objectContaining({ reasonCode: "missing_pending_offer" }),
+      ]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .find(
+            (event) =>
+              event.correlationId === "confirmation-without-pending" &&
+              event.eventType === "conversation.turn_committed",
+          )?.payload,
+      ).toMatchObject({ scheduleItemIds: [] });
+    });
+
+    it("rejects a negative confirmation without writing or closing the pending offer", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "明早七点跑半小时，你看可以吗？",
+              scheduleAction: proposeRunOffer(),
+            }
+          : {
+              text: "好。",
+              scheduleAction: {
+                kind: "accept_pending_offer",
+                evidenceQuotes: ["不行"],
+              },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+      const proposal = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "declined-proposal",
+        "明早可以陪我跑步吗？",
+      );
+      expect(proposal.statusCode).toBe(201);
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({ status: "awaiting_confirmation" });
+
+      const declined = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "declined-confirmation",
+        "不行",
+      );
+
+      expect(declined.statusCode).toBe(201);
+      const declinedBody = jsonBody<ChatTurnResult>(declined);
+      expect(declinedBody.scheduleChanges).toEqual([]);
+      expect(declinedBody.assistantMessage.content).toContain("【未修改日程】");
+      expect(declinedBody.assistantMessage.content).toContain(
+        "没有识别到明确且不改变条款的肯定答复",
+      );
+      expect(declinedBody.assistantMessage.content).not.toContain(
+        "【日程已修改】",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBefore,
+      );
+      expect(
+        app.personasim.store.getActiveScheduleNegotiation(sessionId),
+      ).toMatchObject({
+        id: pending!.id,
+        status: "awaiting_confirmation",
+        offerVersion: 1,
+      });
+      expect(
+        app.personasim.store.listRejectedProposals(character.id, 20),
+      ).toEqual([
+        expect.objectContaining({
+          correlationId: "declined-confirmation",
+          reasonCode: "confirmation_not_affirmative",
+        }),
+      ]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toEqual([]);
+    });
+
+    it.each([
+      {
+        id: "changed-terms",
+        label: "changed terms",
+        userText: "七点还是八点都行",
+      },
+      {
+        id: "confirmation-question",
+        label: "question-shaped confirmation",
+        userText: "确定？",
+      },
+      {
+        id: "compatibility-question",
+        label: "NFKC-compatible question-shaped confirmation",
+        userText: "确定﹖",
+      },
+      {
+        id: "cancellation-question",
+        label: "question-shaped cancellation",
+        userText: "取消？",
+      },
+    ])(
+      "rejects $label even when the model returns accept_pending_offer",
+      async ({ id, userText }) => {
+        app = (await createNegotiationTestApp()).app;
+        const calls: Array<GenerateObjectInput<unknown>> = [];
+        let turn = 0;
+        mockLlm(app.personasim.llm, calls, () => {
+          turn += 1;
+          return turn === 1
+            ? {
+                text: "明早七点跑半小时，你看可以吗？",
+                scheduleAction: proposeRunOffer(),
+              }
+            : {
+                text: "好。",
+                scheduleAction: {
+                  kind: "accept_pending_offer",
+                  evidenceQuotes: [userText],
+                },
+              };
+        });
+        const character = await createAndPublishHighFidelity(app);
+        const sessionId = await createSession(app, character.id);
+        calls.length = 0;
+        const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+        const proposal = await sendMessage(
+          app,
+          sessionId,
+          character.id,
+          `ambiguous-proposal-${id}`,
+          "明早可以陪我跑步吗？",
+        );
+        expect(proposal.statusCode).toBe(201);
+        const pending =
+          app.personasim.store.getActiveScheduleNegotiation(sessionId);
+        expect(pending).toMatchObject({ status: "awaiting_confirmation" });
+
+        const correlationId = `ambiguous-confirmation-${id}`;
+        const ambiguous = await sendMessage(
+          app,
+          sessionId,
+          character.id,
+          correlationId,
+          userText,
+        );
+
+        expect(ambiguous.statusCode).toBe(201);
+        const ambiguousBody = jsonBody<ChatTurnResult>(ambiguous);
+        expect(ambiguousBody.scheduleChanges).toEqual([]);
+        expect(ambiguousBody.assistantMessage.content).toContain(
+          "【未修改日程】",
+        );
+        expect(ambiguousBody.assistantMessage.content).toContain(
+          "没有识别到明确且不改变条款的肯定答复",
+        );
+        expect(ambiguousBody.assistantMessage.content).not.toContain(
+          "【日程已修改】",
+        );
+        expect(app.personasim.store.listSchedule(character.id)).toEqual(
+          scheduleBefore,
+        );
+        const stillPending =
+          app.personasim.store.getActiveScheduleNegotiation(sessionId);
+        expect(stillPending).toMatchObject({
+          id: pending!.id,
+          status: "awaiting_confirmation",
+          offerVersion: 1,
+        });
+        expect(
+          app.personasim.store.listRejectedProposals(character.id, 20),
+        ).toEqual([
+          expect.objectContaining({
+            correlationId,
+            reasonCode: "confirmation_not_affirmative",
+          }),
+        ]);
+        const events = app.personasim.store.listDomainEvents(character.id, 100);
+        expect(
+          events.filter(
+            (event) => event.eventType === "schedule.command_committed",
+          ),
+        ).toEqual([]);
+        expect(
+          events.filter(
+            (event) =>
+              event.correlationId === correlationId &&
+              typeof event.eventType === "string" &&
+              event.eventType.startsWith("schedule.negotiation_"),
+          ),
+        ).toEqual([]);
+      },
+    );
+
+    it("marks a pending offer conflicted when the slot is occupied before confirmation", async () => {
+      app = (await createNegotiationTestApp()).app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let turn = 0;
+      mockLlm(app.personasim.llm, calls, () => {
+        turn += 1;
+        return turn === 1
+          ? {
+              text: "明早七点跑半小时，你看可以吗？",
+              scheduleAction: proposeRunOffer(),
+            }
+          : {
+              text: "我先重新确认一下时间。",
+              scheduleAction: {
+                kind: "accept_pending_offer",
+                evidenceQuotes: ["没问题"],
+              },
+            };
+      });
+      const character = await createAndPublishHighFidelity(app);
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+
+      const proposal = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "conflicted-proposal",
+        "明早可以陪我跑步吗？",
+      );
+      expect(proposal.statusCode).toBe(201);
+      const pending =
+        app.personasim.store.getActiveScheduleNegotiation(sessionId);
+      expect(pending).toMatchObject({ status: "awaiting_confirmation" });
+
+      app.personasim.store.insertScheduleItem({
+        id: "schedule-strict-two-phase-conflict",
+        agentId: character.id,
+        title: "确认前新增的固定安排",
+        description: "占用待确认时段。",
+        category: "work",
+        startAtUtc: RUN_START_UTC,
+        endAtUtc: RUN_END_UTC,
+        timezone: "Asia/Shanghai",
+        rigidity: "fixed",
+        priority: 1,
+        source: "manual",
+        adherenceProbability: 1,
+        narrativeImportance: 0.5,
+        shareable: false,
+        stateEffects: {},
+        status: "planned",
+        revision: 1,
+        createdAtUtc: START_UTC,
+        updatedAtUtc: START_UTC,
+      });
+      const scheduleBeforeConfirmation = app.personasim.store.listSchedule(
+        character.id,
+      );
+
+      const conflicted = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "conflicted-confirmation",
+        "没问题",
+      );
+
+      expect(conflicted.statusCode).toBe(201);
+      const conflictedBody = jsonBody<ChatTurnResult>(conflicted);
+      expect(conflictedBody.scheduleChanges).toEqual([]);
+      expect(conflictedBody.assistantMessage.content).toContain(
+        "【未修改日程】",
+      );
+      expect(conflictedBody.assistantMessage.content).toContain(
+        "方案未通过日程校验（overlap_fixed）",
+      );
+      expect(conflictedBody.assistantMessage.content).toContain("没有修改日程");
+      expect(conflictedBody.assistantMessage.content).not.toContain(
+        "【日程已修改】",
+      );
+      expect(app.personasim.store.listSchedule(character.id)).toEqual(
+        scheduleBeforeConfirmation,
+      );
+      const stored = app.personasim.store.getScheduleNegotiationById(
+        pending!.id,
+      );
+      expect(stored).toMatchObject({ status: "conflicted" });
+      expect(readNegotiationState(stored!)).toMatchObject({
+        status: "conflicted",
+        terminalReasonCode: "overlap_fixed",
+      });
+      expect(
+        app.personasim.store.listRejectedProposals(character.id, 20),
+      ).toEqual([expect.objectContaining({ reasonCode: "overlap_fixed" })]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .find(
+            (event) =>
+              event.correlationId === "conflicted-confirmation" &&
+              event.eventType === "schedule.negotiation_conflicted",
+          )?.payload,
+      ).toMatchObject({
+        transition: { reason: "conflicted" },
+      });
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .filter((event) => event.eventType === "schedule.command_committed"),
+      ).toEqual([]);
+      expect(
+        app.personasim.store
+          .listDomainEvents(character.id, 100)
+          .find(
+            (event) =>
+              event.correlationId === "conflicted-confirmation" &&
+              event.eventType === "conversation.turn_committed",
+          )?.payload,
+      ).toMatchObject({ scheduleItemIds: [] });
+    });
   });
 
   it("resumes and commits the exact pending offer after a file-database restart", async () => {
@@ -1375,11 +2694,35 @@ function acceptUserOffer(): ScheduleNegotiationAction {
   };
 }
 
+function proposeRunOffer(): ScheduleNegotiationAction {
+  return {
+    kind: "propose_offer",
+    offer: {
+      activity: "一起跑步",
+      category: "exercise",
+      startAt: "明天 07:00",
+      durationMinutes: 30,
+      evidenceQuotes: ["明早可以陪我跑步吗"],
+    },
+  };
+}
+
+function acceptPendingOffer(
+  evidenceQuote = "没问题",
+): ScheduleNegotiationAction {
+  return {
+    kind: "accept_pending_offer",
+    evidenceQuotes: [evidenceQuote],
+  };
+}
+
 function readNegotiationState(negotiation: StoredScheduleNegotiation): {
   status: string;
   offerVersion: number;
+  terminalReasonCode?: string;
   offer?: {
     version: number;
+    activity: string;
     category: string;
     startAtUtc: string;
     durationMinutes: number;
@@ -1388,8 +2731,10 @@ function readNegotiationState(negotiation: StoredScheduleNegotiation): {
   return negotiation.record["negotiation"] as {
     status: string;
     offerVersion: number;
+    terminalReasonCode?: string;
     offer?: {
       version: number;
+      activity: string;
       category: string;
       startAtUtc: string;
       durationMinutes: number;

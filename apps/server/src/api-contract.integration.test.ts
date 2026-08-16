@@ -41,6 +41,7 @@ describe("shared API transport contracts", () => {
         clockMode: "fake",
         seedDemo: false,
         developerRoutes: true,
+        scheduleNegotiationMode: "legacy",
         llm: {
           provider: "fixture",
           baseUrl: "https://example.invalid",

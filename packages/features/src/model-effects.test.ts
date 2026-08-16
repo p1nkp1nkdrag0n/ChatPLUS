@@ -101,6 +101,19 @@ describe("parseModelTime", () => {
     expect(parseModelTime("09:00", context)).toBe("2026-08-17T01:00:00.000Z");
   });
 
+  it("does not roll an explicitly same-day time into tomorrow", () => {
+    const lateContext = {
+      timezone: TIMEZONE,
+      nowUtc: "2026-08-16T13:00:00.000Z", // 21:00 Asia/Shanghai
+    };
+    expect(parseModelTime("今晚八点", lateContext)).toBe(
+      "2026-08-16T12:00:00.000Z",
+    );
+    expect(parseModelTime("今天早上七点", lateContext)).toBe(
+      "2026-08-15T23:00:00.000Z",
+    );
+  });
+
   it("parses explicit day references", () => {
     expect(parseModelTime("明天 9:00", context)).toBe(
       "2026-08-17T01:00:00.000Z",

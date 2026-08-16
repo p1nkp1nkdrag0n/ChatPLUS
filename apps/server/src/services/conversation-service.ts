@@ -60,9 +60,11 @@ import type {
 import type { SettlementService } from "./settlement-service.js";
 import {
   buildScheduleNegotiationContract,
+  SCHEDULE_NEGOTIATION_POLICY_VERSION,
   ScheduleNegotiationService,
   type ActiveScheduleNegotiation,
   type PreparedScheduleNegotiation,
+  type ScheduleNegotiationRejection,
 } from "./schedule-negotiation-service.js";
 
 export type ChatTurnDecisionPath =
@@ -324,6 +326,16 @@ export class ConversationService {
         action: turn.scheduleAction,
       });
       if (this.options.scheduleNegotiationMode === "enforced") {
+        const negotiationRejection = negotiationPlan.rejections[0];
+        const controlledReply = scheduleNegotiationOutcomeDecision(
+          spec,
+          negotiationPlan,
+        );
+        if (controlledReply !== undefined) {
+          decision = controlledReply;
+          repairAttempted ||= negotiationRejection !== undefined;
+          usedFallback = false;
+        }
         if (
           negotiationPlan.effect === undefined &&
           negotiationPlan.actionKind !== "none"
@@ -335,20 +347,18 @@ export class ConversationService {
             ),
           };
         }
+        const negotiationReason = scheduleNegotiationDecisionReason(
+          negotiationPlan,
+          decision,
+        );
         decision = {
           ...decision,
           scheduleEffects:
             negotiationPlan.effect === undefined
               ? []
               : [negotiationPlan.effect],
-          reasonCode:
-            negotiationPlan.effect === undefined
-              ? "schedule_negotiation_pending"
-              : "schedule_negotiation_committed",
-          reasonSummary:
-            negotiationPlan.effect === undefined
-              ? "结构化日程协商尚未形成可提交命令。"
-              : "结构化约定已通过服务端校验并形成日程命令。",
+          reasonCode: negotiationReason.reasonCode,
+          reasonSummary: negotiationReason.reasonSummary,
         };
         inspection = inspectDecision(
           this.schedules,
@@ -363,19 +373,7 @@ export class ConversationService {
           decision.reply.text,
           negotiationPlan.effect !== undefined,
         );
-        if (
-          negotiationPlan.effect === undefined &&
-          (negotiationPlan.actionKind === "accept_user_offer" ||
-            negotiationPlan.actionKind === "accept_pending_offer") &&
-          negotiationPlan.rejections.length > 0
-        ) {
-          inspection.issues.push({
-            code: "rejected_schedule_acceptance",
-            message:
-              "The structured acceptance was rejected and cannot be presented as accepted.",
-          });
-        }
-        if (inspection.issues.length > 0) {
+        if (inspection.issues.length > 0 && controlledReply === undefined) {
           repairAttempted = true;
           const repaired = await this.tryRepairPersonaReply(
             spec,
@@ -671,7 +669,10 @@ export class ConversationService {
                 offerVersion: negotiation?.offerVersion,
                 operation: "create",
                 changedItemIds: scheduleChanges.map((item) => item.id),
-                policyVersion: 1,
+                policyVersion:
+                  typeof negotiation?.record["policyVersion"] === "number"
+                    ? negotiation.record["policyVersion"]
+                    : SCHEDULE_NEGOTIATION_POLICY_VERSION,
               },
               correlationId: input.clientMessageId,
               causationId: userMessage.id,
@@ -912,6 +913,7 @@ export class ConversationService {
                 ? {}
                 : { active: input.effects.negotiation.active }),
               timezone: input.spec.identity.timezone,
+              nowUtc: input.nowUtc,
               legacyEffectsEnabled: input.effects.eligible,
             }),
           ]
@@ -1771,6 +1773,172 @@ function safeNegotiatedDecision(
     reasonCode: "schedule_negotiation_reply_fallback",
     reasonSummary: "使用与服务端提交结果一致的安全回复。",
   };
+}
+
+function scheduleNegotiationOutcomeDecision(
+  spec: CharacterSpec,
+  plan: PreparedScheduleNegotiation,
+): AgentTurnDecision | undefined {
+  const rejection = plan.rejections[0];
+  if (rejection !== undefined) {
+    return rejectedScheduleNegotiationDecision(spec, rejection);
+  }
+  if (plan.effect !== undefined) {
+    return safeNegotiatedDecision(spec, true);
+  }
+
+  let text: string | undefined;
+  switch (plan.actionKind) {
+    case "accept_user_offer":
+      text = "我愿意先按下面的方案和你确认。你确认后，我再修改日程。";
+      break;
+    case "propose_offer":
+      text = "我整理了一份待确认方案。你确认后，我再修改日程。";
+      break;
+    case "request_details":
+      text = "目前还缺少明确的活动或开始时间，所以我没有修改日程。";
+      break;
+    case "decline_offer":
+      text = "这次我没有接受该日程提议，因此日程没有变化。";
+      break;
+    case "withdraw_offer":
+      text = "好的，待确认方案已经取消，日程没有变化。";
+      break;
+    case "accept_pending_offer":
+      text = "这次确认没有形成可提交的日程修改，日程保持不变。";
+      break;
+    case "none":
+      if (plan.presentationText === undefined) return undefined;
+      text = "待确认方案仍未应用。请只回复“确认”或“取消”。";
+      break;
+  }
+
+  return {
+    reply: {
+      text,
+      chunks: [text],
+      toneTags:
+        spec.dialogue.warmth >= 0.6 ? ["自然", "说明"] : ["自然", "克制"],
+    },
+    scheduleEffects: [],
+    memoryCandidates: [],
+    reasonCode: `schedule_negotiation_${plan.actionKind}`,
+    reasonSummary: "回复由服务端协商结果生成，不使用自然文案授权日程修改。",
+  };
+}
+
+function scheduleNegotiationDecisionReason(
+  plan: PreparedScheduleNegotiation,
+  decision: AgentTurnDecision,
+): { reasonCode: string; reasonSummary: string } {
+  const rejection = plan.rejections[0];
+  if (rejection !== undefined) {
+    return {
+      reasonCode: rejection.reasonCode,
+      reasonSummary: rejection.reasonSummary,
+    };
+  }
+  if (plan.effect !== undefined) {
+    return {
+      reasonCode: "schedule_negotiation_committed",
+      reasonSummary: "用户明确确认后，服务端已提交规范化日程命令。",
+    };
+  }
+  switch (plan.actionKind) {
+    case "accept_user_offer":
+    case "propose_offer":
+      return {
+        reasonCode: "schedule_negotiation_awaiting_confirmation",
+        reasonSummary: "服务端已生成待确认方案，尚未修改日程。",
+      };
+    case "request_details":
+      return {
+        reasonCode: "schedule_negotiation_needs_details",
+        reasonSummary: "活动或开始时间不完整，尚未生成可确认方案。",
+      };
+    case "decline_offer":
+      return {
+        reasonCode: "schedule_negotiation_declined",
+        reasonSummary: "角色拒绝了本次日程提议。",
+      };
+    case "withdraw_offer":
+      return {
+        reasonCode: "schedule_negotiation_withdrawn",
+        reasonSummary: "用户取消了待确认方案。",
+      };
+    case "accept_pending_offer":
+      return {
+        reasonCode: "schedule_negotiation_not_committed",
+        reasonSummary: "本次确认未形成可提交命令，日程保持不变。",
+      };
+    case "none":
+      if (plan.presentationText !== undefined) {
+        return {
+          reasonCode: "schedule_negotiation_awaiting_confirmation",
+          reasonSummary: "待确认方案仍然有效，尚未修改日程。",
+        };
+      }
+      return {
+        reasonCode: decision.reasonCode,
+        reasonSummary: decision.reasonSummary,
+      };
+  }
+}
+
+function rejectedScheduleNegotiationDecision(
+  spec: CharacterSpec,
+  rejection: ScheduleNegotiationRejection,
+): AgentTurnDecision {
+  const reason = scheduleNegotiationRejectionText(rejection.reasonCode);
+  const text = `【未修改日程】${reason}`;
+  return {
+    reply: {
+      text,
+      chunks: [text],
+      toneTags:
+        spec.dialogue.warmth >= 0.6 ? ["自然", "说明"] : ["自然", "克制"],
+    },
+    scheduleEffects: [],
+    memoryCandidates: [],
+    reasonCode: rejection.reasonCode,
+    reasonSummary: rejection.reasonSummary,
+  };
+}
+
+function scheduleNegotiationRejectionText(reasonCode: string): string {
+  switch (reasonCode) {
+    case "missing_pending_offer":
+      return "当前没有可确认的日程方案。请先说明活动和时间，我会先生成待确认方案。";
+    case "expired_pending_offer":
+    case "offer_expired":
+      return "待确认方案已经过期，请重新说明活动和时间。";
+    case "confirmation_not_affirmative":
+    case "ungrounded_pending_confirmation":
+    case "confirmation_not_subsequent":
+      return "没有识别到明确且不改变条款的肯定答复。请只回复“确认”，或回复“取消”。";
+    case "stale_offer_version":
+      return "待确认方案已经更新，请重新查看最新方案后再确认。";
+    case "ambiguous_pending_offer":
+      return "当前存在多个可能的待确认方案，无法安全确定要修改哪一项。";
+    case "ambiguous_start_time":
+    case "time_not_grounded":
+      return "开始时间不唯一或无法安全解析，请明确一个具体日期和时间。";
+    case "ambiguous_duration":
+      return "时长存在多个可能值，请明确一个时长。";
+    case "unparsed_duration":
+      return "无法安全解析你给出的时长，请换一种明确说法。";
+    case "activity_not_grounded":
+      return "没有识别出唯一的活动内容，请明确要安排什么活动。";
+    case "current_turn_not_grounded":
+    case "ungrounded_negotiation_offer":
+      return "方案缺少当前对话中的明确依据，请重新说明活动和时间。";
+    case "invalid_negotiation_offer":
+      return "方案信息不完整或格式无效，请重新说明活动和时间。";
+    case "unsupported_schedule_operation":
+      return "当前安全确认流程只支持新增共同安排，暂不支持取消或改期已有日程。";
+    default:
+      return `方案未通过日程校验（${reasonCode}），因此没有修改日程。`;
+  }
 }
 
 function appendNegotiationPresentation(

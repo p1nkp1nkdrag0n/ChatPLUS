@@ -5,6 +5,7 @@ export * from "./proactive-dialogue.js";
 export * from "./prompt-assembler.js";
 export * from "./relationship-engine.js";
 export * from "./reply-strategy.js";
+export * from "./schedule-negotiation.js";
 export * from "./schedule-planner.js";
 export * from "./schedule-validator.js";
 export * from "./settlement-engine.js";

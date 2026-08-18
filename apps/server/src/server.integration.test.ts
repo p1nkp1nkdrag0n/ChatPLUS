@@ -40,6 +40,7 @@ describe("PersonaSim server integration", () => {
         "001_initial.sql",
         "002_memory_projection.sql",
         "003_rejected_proposals.sql",
+        "004_schedule_negotiations.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -56,6 +57,7 @@ describe("PersonaSim server integration", () => {
           "activity_events",
           "settlements",
           "domain_events",
+          "schedule_negotiations",
           "llm_calls",
         ]),
       );
@@ -988,6 +990,7 @@ describe("PersonaSim server integration", () => {
       clockMode: "fake",
       seedDemo: true,
       developerRoutes: true,
+      scheduleNegotiationMode: "legacy",
       llm: {
         provider: "fixture",
         baseUrl: "https://example.invalid",
@@ -1023,6 +1026,7 @@ async function createTestApp(): Promise<{
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    scheduleNegotiationMode: "legacy",
     llm: {
       provider: "fixture",
       baseUrl: "https://example.invalid",

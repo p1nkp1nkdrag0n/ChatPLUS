@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import { PersonaChatDeliveryModeSchema } from "./llm.js";
+import {
+  ScheduleNegotiationActionSchema,
+  type ScheduleNegotiationAction,
+} from "./schedule-negotiation.js";
 
 /**
  * Lenient model-facing chat decision. When a turn is schedule-eligible the
@@ -20,8 +24,15 @@ const PersonaChatDecisionShapeSchema = z
       .min(1)
       .max(12)
       .optional(),
-    scheduleEffects: z.array(z.record(z.string(), z.unknown())).max(8).default([]),
-    memoryCandidates: z.array(z.record(z.string(), z.unknown())).max(8).default([]),
+    scheduleAction: ScheduleNegotiationActionSchema.default({ kind: "none" }),
+    scheduleEffects: z
+      .array(z.record(z.string(), z.unknown()))
+      .max(8)
+      .default([]),
+    memoryCandidates: z
+      .array(z.record(z.string(), z.unknown()))
+      .max(8)
+      .default([]),
   })
   .strip();
 
@@ -34,10 +45,14 @@ function looseRecords(value: unknown): Record<string, unknown>[] | undefined {
   return value.filter(isPlainRecord).slice(0, 8);
 }
 
-function looseTextList(
+function looseScheduleAction(
   value: unknown,
-  maximum: number,
-): string[] | undefined {
+): ScheduleNegotiationAction | undefined {
+  const parsed = ScheduleNegotiationActionSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function looseTextList(value: unknown, maximum: number): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value
     .filter((item): item is string => typeof item === "string")
@@ -65,13 +80,20 @@ export const PersonaChatDecisionSchema = z.preprocess((value) => {
       ? nestedReply?.["scheduleEffects"]
       : value["scheduleEffects"],
   );
+  const scheduleAction = looseScheduleAction(
+    value["scheduleAction"] === undefined
+      ? nestedReply?.["scheduleAction"]
+      : value["scheduleAction"],
+  );
   const memoryCandidates = looseRecords(
     value["memoryCandidates"] === undefined
       ? nestedReply?.["memoryCandidates"]
       : value["memoryCandidates"],
   );
   const toneTags = looseTextList(
-    value["toneTags"] === undefined ? nestedReply?.["toneTags"] : value["toneTags"],
+    value["toneTags"] === undefined
+      ? nestedReply?.["toneTags"]
+      : value["toneTags"],
     12,
   );
   const chunks = looseTextList(
@@ -82,13 +104,14 @@ export const PersonaChatDecisionSchema = z.preprocess((value) => {
   return {
     ...(text === undefined ? {} : { text }),
     ...(toneTags === undefined ? {} : { toneTags }),
-    ...(value["deliveryMode"] === undefined && nestedReply?.["deliveryMode"] === undefined
+    ...(value["deliveryMode"] === undefined &&
+    nestedReply?.["deliveryMode"] === undefined
       ? {}
       : {
-          deliveryMode:
-            value["deliveryMode"] ?? nestedReply?.["deliveryMode"],
+          deliveryMode: value["deliveryMode"] ?? nestedReply?.["deliveryMode"],
         }),
     ...(chunks === undefined ? {} : { chunks }),
+    ...(scheduleAction === undefined ? {} : { scheduleAction }),
     ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
     ...(memoryCandidates === undefined ? {} : { memoryCandidates }),
   };

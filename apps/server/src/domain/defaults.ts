@@ -274,6 +274,7 @@ export function initialRuntimeState(
     stress: 0.28,
     socialBattery: 0.68,
     focus: 0.7,
+    sleepDebtMinutes: 0,
     relationship: {
       userId: "local-user",
       closeness: draft.userRelationship.initialCloseness,

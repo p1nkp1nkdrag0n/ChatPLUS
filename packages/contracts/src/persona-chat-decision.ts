@@ -33,6 +33,12 @@ const PersonaChatDecisionShapeSchema = z
       .array(z.record(z.string(), z.unknown()))
       .max(8)
       .default([]),
+    stateDelta: z.unknown().optional(),
+    relationshipDelta: z.unknown().optional(),
+    personalIntentCandidates: z
+      .array(z.record(z.string(), z.unknown()))
+      .max(8)
+      .default([]),
   })
   .strip();
 
@@ -64,8 +70,11 @@ function looseTextList(value: unknown, maximum: number): string[] | undefined {
 export const PersonaChatDecisionSchema = z.preprocess((value) => {
   if (!isPlainRecord(value)) return value;
 
-  const reply = value["reply"];
+  const reply = value["replyDecision"] ?? value["reply"];
   const nestedReply = isPlainRecord(reply) ? reply : undefined;
+  const nestedWorldEffects = isPlainRecord(value["worldEffects"])
+    ? value["worldEffects"]
+    : undefined;
   const text =
     typeof value["text"] === "string"
       ? value["text"]
@@ -86,10 +95,17 @@ export const PersonaChatDecisionSchema = z.preprocess((value) => {
       : value["scheduleAction"],
   );
   const memoryCandidates = looseRecords(
-    value["memoryCandidates"] === undefined
-      ? nestedReply?.["memoryCandidates"]
-      : value["memoryCandidates"],
+    nestedWorldEffects?.["memoryCandidates"] ??
+      value["memoryCandidates"] ??
+      nestedReply?.["memoryCandidates"],
   );
+  const personalIntentCandidates = looseRecords(
+    nestedWorldEffects?.["personalIntentCandidates"] ??
+      value["personalIntentCandidates"],
+  );
+  const stateDelta = nestedWorldEffects?.["stateDelta"] ?? value["stateDelta"];
+  const relationshipDelta =
+    nestedWorldEffects?.["relationshipDelta"] ?? value["relationshipDelta"];
   const toneTags = looseTextList(
     value["toneTags"] === undefined
       ? nestedReply?.["toneTags"]
@@ -114,7 +130,152 @@ export const PersonaChatDecisionSchema = z.preprocess((value) => {
     ...(scheduleAction === undefined ? {} : { scheduleAction }),
     ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
     ...(memoryCandidates === undefined ? {} : { memoryCandidates }),
+    ...(stateDelta === undefined ? {} : { stateDelta }),
+    ...(relationshipDelta === undefined ? {} : { relationshipDelta }),
+    ...(personalIntentCandidates === undefined
+      ? {}
+      : { personalIntentCandidates }),
   };
 }, PersonaChatDecisionShapeSchema);
 
 export type PersonaChatDecision = z.infer<typeof PersonaChatDecisionSchema>;
+
+export const PersonaReplyDecisionSchema = PersonaChatDecisionShapeSchema.omit({
+  scheduleEffects: true,
+  memoryCandidates: true,
+  stateDelta: true,
+  relationshipDelta: true,
+  personalIntentCandidates: true,
+});
+export type PersonaReplyDecision = z.infer<typeof PersonaReplyDecisionSchema>;
+
+const PersonaTurnWorldEffectsSchema = z
+  .object({
+    stateDelta: z.unknown().optional(),
+    relationshipDelta: z.unknown().optional(),
+    memoryCandidates: z.unknown().optional(),
+    personalIntentCandidates: z.unknown().optional(),
+    continuityEffects: z.unknown().optional(),
+  })
+  .strip();
+
+const PersonaTurnProviderEnvelopeShapeSchema = z
+  .object({
+    replyDecision: z.unknown(),
+    worldEffects: PersonaTurnWorldEffectsSchema.default({}),
+    scheduleEffects: z.unknown().optional(),
+  })
+  .strip();
+
+/**
+ * Raw provider boundary for canonical live chat. It deliberately does not
+ * validate replyDecision: the reply and each world-effect field have separate
+ * repair/validation lifecycles in ConversationService. Legacy flat replies are
+ * normalized into the same boundary during rollout.
+ */
+export const PersonaTurnProviderEnvelopeSchema = z.preprocess((value) => {
+  if (!isPlainRecord(value)) {
+    return { replyDecision: value, worldEffects: {} };
+  }
+
+  const replyDecision = value["replyDecision"] ?? value["reply"] ?? value;
+  const nestedReply = isPlainRecord(replyDecision) ? replyDecision : undefined;
+  const nestedWorldEffects = isPlainRecord(value["worldEffects"])
+    ? value["worldEffects"]
+    : undefined;
+  const effect = (key: string): unknown =>
+    nestedWorldEffects?.[key] ?? value[key];
+  const scheduleEffects =
+    value["scheduleEffects"] ?? nestedReply?.["scheduleEffects"];
+
+  return {
+    replyDecision,
+    worldEffects: {
+      ...(effect("stateDelta") === undefined
+        ? {}
+        : { stateDelta: effect("stateDelta") }),
+      ...(effect("relationshipDelta") === undefined
+        ? {}
+        : { relationshipDelta: effect("relationshipDelta") }),
+      ...(effect("memoryCandidates") === undefined
+        ? {}
+        : { memoryCandidates: effect("memoryCandidates") }),
+      ...(effect("personalIntentCandidates") === undefined
+        ? {}
+        : { personalIntentCandidates: effect("personalIntentCandidates") }),
+      ...(effect("continuityEffects") === undefined
+        ? {}
+        : { continuityEffects: effect("continuityEffects") }),
+    },
+    ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
+  };
+}, PersonaTurnProviderEnvelopeShapeSchema);
+
+export type PersonaTurnProviderEnvelope = z.infer<
+  typeof PersonaTurnProviderEnvelopeSchema
+>;
+
+/**
+ * Model-facing turn envelope. Reply validity is the only parse-level gate;
+ * each world effect stays untrusted until the independent feature validator.
+ * Legacy flat replies are accepted during rollout, while server-owned schedule
+ * fields are stripped and can never become a mutation command.
+ */
+export const PersonaTurnEnvelopeSchema = z.preprocess(
+  (value) => {
+    if (!isPlainRecord(value)) return value;
+
+    const replySource = isPlainRecord(value["replyDecision"])
+      ? value["replyDecision"]
+      : value;
+    const reply = PersonaChatDecisionSchema.safeParse(replySource);
+    if (!reply.success) return value;
+
+    const nestedWorldEffects = isPlainRecord(value["worldEffects"])
+      ? value["worldEffects"]
+      : undefined;
+    const effect = (key: string): unknown =>
+      nestedWorldEffects?.[key] ?? value[key];
+
+    return {
+      replyDecision: {
+        text: reply.data.text,
+        ...(reply.data.toneTags === undefined
+          ? {}
+          : { toneTags: reply.data.toneTags }),
+        ...(reply.data.deliveryMode === undefined
+          ? {}
+          : { deliveryMode: reply.data.deliveryMode }),
+        ...(reply.data.chunks === undefined
+          ? {}
+          : { chunks: reply.data.chunks }),
+        scheduleAction: reply.data.scheduleAction,
+      },
+      worldEffects: {
+        ...(effect("stateDelta") === undefined
+          ? {}
+          : { stateDelta: effect("stateDelta") }),
+        ...(effect("relationshipDelta") === undefined
+          ? {}
+          : { relationshipDelta: effect("relationshipDelta") }),
+        ...(effect("memoryCandidates") === undefined
+          ? {}
+          : { memoryCandidates: effect("memoryCandidates") }),
+        ...(effect("personalIntentCandidates") === undefined
+          ? {}
+          : { personalIntentCandidates: effect("personalIntentCandidates") }),
+        ...(effect("continuityEffects") === undefined
+          ? {}
+          : { continuityEffects: effect("continuityEffects") }),
+      },
+    };
+  },
+  z
+    .object({
+      replyDecision: PersonaReplyDecisionSchema,
+      worldEffects: PersonaTurnWorldEffectsSchema.default({}),
+    })
+    .strip(),
+);
+
+export type PersonaTurnEnvelope = z.infer<typeof PersonaTurnEnvelopeSchema>;

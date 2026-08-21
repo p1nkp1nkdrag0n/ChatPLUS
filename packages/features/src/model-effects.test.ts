@@ -49,6 +49,9 @@ describe("hasScheduleIntent", () => {
   it("detects invitations and reschedule wording", () => {
     expect(hasScheduleIntent("今晚要不要一起去参加晚会？")).toBe(true);
     expect(hasScheduleIntent("我们把明天的计划推迟一点吧")).toBe(true);
+    expect(
+      hasScheduleIntent("我们把明天19:30外滩散步定下来，你确认能来吗？"),
+    ).toBe(true);
     expect(hasScheduleIntent("can we reschedule the study session?")).toBe(
       true,
     );

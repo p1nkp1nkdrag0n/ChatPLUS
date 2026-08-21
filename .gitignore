@@ -27,3 +27,6 @@ Thumbs.db
 .vscode/
 *.log
 
+# Generated real-network acceptance transcript stays local.
+/docs/reports/ChatPLUS_Real_Network_Acceptance_2026-08-21.md
+

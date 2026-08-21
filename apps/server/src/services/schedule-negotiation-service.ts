@@ -290,16 +290,12 @@ export class ScheduleNegotiationService {
       });
     }
 
-    if (
-      !explicitCancellation &&
-      UNSUPPORTED_SCHEDULE_OPERATION_PATTERN.test(input.userMessage.content)
-    ) {
-      rejections.push({
-        reasonCode: "unsupported_schedule_operation",
-        reasonSummary:
-          "The negotiated writer currently supports new shared activities only, not cancel or reschedule commands.",
-        raw: input.action,
-      });
+    // `none` is the explicit no-op dialogue action. Inspecting arbitrary
+    // non-schedule prose for unsupported mutation words before honoring the
+    // no-op caused false positives such as "答辩结束后想吃…请记住". Genuine
+    // cancellation is already promoted to withdraw_offer above; non-none
+    // schedule actions still pass through the unsupported-operation guard.
+    if (input.action.kind === "none") {
       return finish({
         actionKind: input.action.kind,
         updates,
@@ -315,7 +311,16 @@ export class ScheduleNegotiationService {
       });
     }
 
-    if (input.action.kind === "none") {
+    if (
+      !explicitCancellation &&
+      UNSUPPORTED_SCHEDULE_OPERATION_PATTERN.test(input.userMessage.content)
+    ) {
+      rejections.push({
+        reasonCode: "unsupported_schedule_operation",
+        reasonSummary:
+          "The negotiated writer currently supports new shared activities only, not cancel or reschedule commands.",
+        raw: input.action,
+      });
       return finish({
         actionKind: input.action.kind,
         updates,
@@ -441,8 +446,13 @@ export class ScheduleNegotiationService {
       });
       return finish({ actionKind: input.action.kind, updates, rejections });
     }
+    const groundedClockRange =
+      input.action.kind === "accept_user_offer"
+        ? resolveGroundedClockRange(evidence, input.timezone)
+        : undefined;
     if (
       input.action.kind === "accept_user_offer" &&
+      groundedClockRange === undefined &&
       evidence.some((item) => hasAmbiguousStartExpression(item.quote))
     ) {
       rejections.push({
@@ -506,7 +516,11 @@ export class ScheduleNegotiationService {
 
     const acceptedUserOffer =
       input.action.kind === "accept_user_offer"
-        ? canonicalizeAcceptedUserOffer(evidence, input.timezone)
+        ? canonicalizeAcceptedUserOffer(
+            evidence,
+            input.timezone,
+            groundedClockRange,
+          )
         : undefined;
     if (acceptedUserOffer?.ok === false) {
       rejections.push({
@@ -556,7 +570,10 @@ export class ScheduleNegotiationService {
         });
         return finish({ actionKind: input.action.kind, updates, rejections });
       }
-      const groundedDuration = resolveGroundedDuration(evidence);
+      const groundedDuration = resolveGroundedDuration(
+        evidence,
+        groundedClockRange?.durationMinutes,
+      );
       if (groundedDuration.kind === "ambiguous") {
         rejections.push({
           reasonCode: "ambiguous_duration",
@@ -807,6 +824,11 @@ type AcceptedUserOfferResolution =
       reasonSummary: string;
     };
 
+type GroundedClockRange = {
+  startAtUtc: string;
+  durationMinutes: number;
+};
+
 /**
  * A direct user offer is only an input to the confirmation flow. The model
  * chooses the dialogue act, while the server derives every material term from
@@ -815,6 +837,7 @@ type AcceptedUserOfferResolution =
 function canonicalizeAcceptedUserOffer(
   evidence: readonly ResolvedEvidence[],
   timezone: string,
+  groundedClockRange?: GroundedClockRange,
 ): AcceptedUserOfferResolution {
   const groundedActivities = uniqueActivityFamilies(
     evidence.flatMap((item) => matchingActivityFamilies(item.quote)),
@@ -827,7 +850,8 @@ function canonicalizeAcceptedUserOffer(
         "The user evidence must identify exactly one supported activity.",
     };
   }
-  const startAtUtc = resolveGroundedStart(evidence, timezone);
+  const startAtUtc =
+    groundedClockRange?.startAtUtc ?? resolveGroundedStart(evidence, timezone);
   if (startAtUtc === undefined) {
     return {
       ok: false,
@@ -844,7 +868,10 @@ function canonicalizeAcceptedUserOffer(
       activity: activity.label,
       category: activity.category,
       startAtUtc,
-      durationMinutes: DEFAULT_DURATION_MINUTES[activity.category] ?? 60,
+      durationMinutes:
+        groundedClockRange?.durationMinutes ??
+        DEFAULT_DURATION_MINUTES[activity.category] ??
+        60,
       timezone,
     },
   };
@@ -1045,6 +1072,110 @@ function resolveGroundedStart(
 const START_REFERENCE_PATTERN =
   /\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)?|(?:in\s+\d+(?:\.\d+)?\s+(?:hours?|minutes?)|(?:半|\d+(?:\.\d+)?|[零〇一二两三四五六七八九十]{1,3})\s*(?:个)?\s*(?:小时|分钟)\s*(?:后|以后|之后)|\d+(?:\.\d+)?\s*(?:hours?|minutes?)\s*(?:later|from\s+now))|\d{1,2}(?::\d{2})?\s*(?:am|pm)|(?:\d{1,2}|[零〇一二两三四五六七八九十]{1,3})\s*(?:[:：]\s*\d{1,2}|[点时](?:(?:半|一刻|三刻)|\s*(?:\d{1,2}|[零〇一二两三四五六七八九十]{1,3})\s*分?)?)/giu;
 
+const NUMERIC_CLOCK_RANGE_PATTERN =
+  /(?:(凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|夜里|夜晚)\s*)?([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)\s*(am|pm)?\s*(?:到|至|[-—–~～]|\bto\b)\s*(?:(凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|夜里|夜晚)\s*)?([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)\s*(am|pm)?/giu;
+
+function resolveGroundedClockRange(
+  evidence: readonly ResolvedEvidence[],
+  timezone: string,
+): GroundedClockRange | undefined {
+  const candidates = new Map<string, GroundedClockRange>();
+  let sawRange = false;
+  for (const item of evidence) {
+    const matches = [...item.quote.matchAll(NUMERIC_CLOCK_RANGE_PATTERN)];
+    if (matches.length === 0) continue;
+    if (matches.length !== 1) return undefined;
+    sawRange = true;
+
+    const match = matches[0]!;
+    const matchStart = match.index ?? 0;
+    const residual = `${item.quote.slice(0, matchStart)} ${item.quote.slice(
+      matchStart + match[0].length,
+    )}`;
+    if ([...residual.matchAll(START_REFERENCE_PATTERN)].length > 0) {
+      return undefined;
+    }
+
+    const startHourRaw = Number(match[2]);
+    const startPeriod = `${match[1] ?? ""} ${match[4] ?? ""}`.trim();
+    const startExpression = `${item.quote.slice(0, matchStart)} ${
+      match[1] ?? ""
+    }${match[2]}:${match[3]}${match[4] ?? ""}`;
+    const startAtUtc = parseModelTime(startExpression, {
+      timezone,
+      nowUtc: item.message.createdAtUtc,
+    });
+    if (startAtUtc === undefined) return undefined;
+
+    const startLocal = DateTime.fromISO(startAtUtc).setZone(timezone);
+    if (!startLocal.isValid) return undefined;
+    const endHourRaw = Number(match[6]);
+    const endMinute = Number(match[7]);
+    const endPeriod = `${match[5] ?? ""} ${match[8] ?? ""}`.trim();
+    const endHour = resolveRangeEndHour({
+      endHourRaw,
+      endPeriod,
+      startHourRaw,
+      startPeriod,
+      startLocalHour: startLocal.hour,
+    });
+    if (endHour === undefined) return undefined;
+
+    let endLocal = startLocal.startOf("day").set({
+      hour: endHour,
+      minute: endMinute,
+    });
+    if (endLocal <= startLocal) endLocal = endLocal.plus({ days: 1 });
+    const durationMinutes = Math.round(
+      endLocal.diff(startLocal, "minutes").minutes,
+    );
+    if (durationMinutes <= 0 || durationMinutes > 1_440) return undefined;
+
+    const candidate = { startAtUtc, durationMinutes };
+    candidates.set(`${startAtUtc}|${durationMinutes}`, candidate);
+  }
+  return sawRange && candidates.size === 1
+    ? [...candidates.values()][0]
+    : undefined;
+}
+
+function resolveRangeEndHour(input: {
+  endHourRaw: number;
+  endPeriod: string;
+  startHourRaw: number;
+  startPeriod: string;
+  startLocalHour: number;
+}): number | undefined {
+  if (input.endHourRaw < 0 || input.endHourRaw > 23) return undefined;
+  if (input.endPeriod !== "") {
+    return applyClockPeriod(input.endHourRaw, input.endPeriod);
+  }
+  if (
+    input.startPeriod !== "" &&
+    input.startLocalHour >= 12 &&
+    input.startHourRaw <= input.endHourRaw &&
+    input.endHourRaw < 12
+  ) {
+    return input.endHourRaw + 12;
+  }
+  return input.endHourRaw;
+}
+
+function applyClockPeriod(hour: number, period: string): number | undefined {
+  if (hour < 0 || hour > 23) return undefined;
+  if (/^(?:am|凌晨|清晨|早上|上午)$/iu.test(period)) {
+    return hour === 12 ? 0 : hour;
+  }
+  if (/^(?:pm|中午|下午|傍晚)$/iu.test(period)) {
+    return hour < 12 ? hour + 12 : hour;
+  }
+  if (/^(?:晚上|夜里|夜晚)$/u.test(period)) {
+    if (hour === 12) return 0;
+    return hour < 12 ? hour + 12 : hour;
+  }
+  return undefined;
+}
+
 function hasAmbiguousStartExpression(text: string): boolean {
   const references = [...text.matchAll(START_REFERENCE_PATTERN)];
   if (references.length > 1) return true;
@@ -1066,12 +1197,15 @@ function hasAmbiguousDurationExpression(text: string): boolean {
 
 function resolveGroundedDuration(
   evidence: readonly ResolvedEvidence[],
+  rangeDurationMinutes?: number,
 ):
   | { kind: "none" }
   | { kind: "one"; value: number }
   | { kind: "ambiguous" }
   | { kind: "unparsed" } {
-  const candidates = new Set<number>();
+  const candidates = new Set<number>(
+    rangeDurationMinutes === undefined ? [] : [rangeDurationMinutes],
+  );
   let sawUnparsedDuration = false;
   for (const item of evidence) {
     const extraction = extractDurationEvidence(item.quote);

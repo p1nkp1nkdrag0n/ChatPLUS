@@ -23,6 +23,44 @@ import {
   rememberActiveCharacter,
 } from "../lib/activeCharacter";
 import { formatLocalDateTime, nowWindow } from "../lib/date";
+import {
+  buildTimelineLineage,
+  type TimelineLineageInput,
+} from "../lib/timelineLineage";
+
+const SOURCE_LABELS: Record<string, string> = {
+  routine: "\u65e5\u5e38",
+  initial_plan: "\u521d\u59cb\u8ba1\u5212",
+  user_invitation: "\u7528\u6237\u9080\u8bf7",
+  runtime_replan: "\u8fd0\u884c\u8c03\u6574",
+  self_initiated: "\u81ea\u4e3b\u53d1\u8d77",
+  manual: "\u624b\u52a8",
+};
+
+function SourceBadge({ source }: { source: string | undefined }) {
+  if (!source) return null;
+  return (
+    <span className="timeline-source-badge" title={"source: " + source}>
+      {SOURCE_LABELS[source] ?? source}
+    </span>
+  );
+}
+
+function LineageDetails({ value }: { value: TimelineLineageInput }) {
+  const nodes = buildTimelineLineage(value);
+  if (nodes.length < 2) return null;
+  return (
+    <details className="timeline-lineage">
+      <summary>{nodes.map((node) => node.label).join(" → ")}</summary>
+      {nodes.map((node, index) => (
+        <span key={node.field}>
+          {index > 0 ? <span aria-hidden="true">{" → "}</span> : null}
+          <code>{node.id}</code>
+        </span>
+      ))}
+    </details>
+  );
+}
 
 export default function TimelinePage() {
   const params = useParams<{ characterId: string }>();
@@ -201,8 +239,19 @@ export default function TimelinePage() {
                         .toFormat("HH:mm")}
                     </time>
                     <div>
-                      <strong>{item.title}</strong>
+                      <div className="timeline-block__title-row">
+                        <strong>{item.title}</strong>
+                        <SourceBadge source={item.source} />
+                      </div>
                       <p>{item.description}</p>
+                      <LineageDetails
+                        value={{
+                          scheduleItemId: item.id,
+                          ...(item.sourceIntentId
+                            ? { sourceIntentId: item.sourceIntentId }
+                            : {}),
+                        }}
+                      />
                     </div>
                     <span className="timeline-block__meta">
                       {item.rigidity} · {item.status}
@@ -239,11 +288,23 @@ export default function TimelinePage() {
                   <CalendarDays size={13} />
                 </span>
                 <div>
-                  <strong>{event.title}</strong>
+                  <div className="timeline-block__title-row">
+                    <strong>{event.title}</strong>
+                    <SourceBadge source={event.source} />
+                  </div>
                   <p>{event.summary}</p>
                   <time>
                     {formatLocalDateTime(event.occurredAtUtc, timezone)}
                   </time>
+                  <LineageDetails value={event} />
+                  {event.correlationId || event.causationId ? (
+                    <details className="timeline-lineage">
+                      <summary>{"Correlation / causation"}</summary>
+                      <code>{event.correlationId ?? "-"}</code>
+                      <span>{" / "}</span>
+                      <code>{event.causationId ?? "-"}</code>
+                    </details>
+                  ) : null}
                 </div>
               </li>
             ))}

@@ -1,9 +1,11 @@
-import type {
-  JsonValue,
-  LLMChatMessage,
-  LLMRequest,
-  LLMResponse,
-  LlmPurpose,
+import {
+  LlmCapabilityProfileSchema,
+  type JsonValue,
+  type LLMChatMessage,
+  type LLMRequest,
+  type LLMResponse,
+  type LlmCapabilityProfile,
+  type LlmPurpose,
 } from "@personasim/contracts";
 import { z, type ZodType } from "zod";
 
@@ -63,6 +65,7 @@ type FetchLike = typeof fetch;
 
 export interface OpenAiCompatibleLlmOptions {
   apiKey: string;
+  capabilities?: LlmCapabilityProfile;
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
@@ -74,6 +77,13 @@ export interface OpenAiCompatibleLlmOptions {
 }
 
 export type OpenAICompatibleLlmOptions = OpenAiCompatibleLlmOptions;
+
+export const DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES: LlmCapabilityProfile = {
+  structuredOutputMode: "json_object",
+  supportsThinkingControl: true,
+  supportsStreaming: false,
+  maxOutputTokens: 8_192,
+};
 
 export class LlmProviderError extends Error {
   constructor(
@@ -150,6 +160,50 @@ function normalizeMaxTokens(
   if (!Number.isInteger(tokens) || tokens < 1)
     throw new TypeError("maxOutputTokens must be positive");
   return Math.min(64_000, tokens);
+}
+
+function normalizeCapabilities(
+  value: LlmCapabilityProfile | undefined,
+): LlmCapabilityProfile {
+  return LlmCapabilityProfileSchema.parse(
+    value ?? DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES,
+  );
+}
+
+function responseFormat(
+  capabilities: LlmCapabilityProfile,
+  purpose: LlmPurpose,
+  schema: ZodType<unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (capabilities.structuredOutputMode === "prompt_json") return undefined;
+  if (capabilities.structuredOutputMode === "json_object") {
+    return { type: "json_object" };
+  }
+  if (schema === undefined) {
+    throw new LlmProviderError(
+      "Native structured output requires a response schema",
+      "MISSING_RESPONSE_SCHEMA",
+    );
+  }
+  let jsonSchema: unknown;
+  try {
+    jsonSchema = z.toJSONSchema(schema);
+  } catch (error) {
+    throw new LlmProviderError(
+      "The response schema cannot be converted to JSON Schema",
+      "UNSUPPORTED_RESPONSE_SCHEMA",
+      undefined,
+      { cause: error },
+    );
+  }
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: `personasim_${purpose}`,
+      strict: true,
+      schema: jsonSchema,
+    },
+  };
 }
 
 function isRetryable(error: unknown): boolean {
@@ -245,6 +299,7 @@ interface RawCallResult {
 export class OpenAiCompatibleLlmProvider implements LlmProvider {
   readonly name = "openai-compatible";
   readonly model: string;
+  readonly capabilities: LlmCapabilityProfile;
   readonly #apiKey: string;
   readonly #endpoint: string;
   readonly #timeoutMs: number;
@@ -257,12 +312,16 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   constructor(options: OpenAiCompatibleLlmOptions) {
     if (options.apiKey.trim() === "")
       throw new TypeError("LLM API key is required");
+    this.capabilities = normalizeCapabilities(options.capabilities);
     this.#apiKey = options.apiKey;
     this.#endpoint = endpoint(options.baseUrl ?? "https://api.deepseek.com");
     this.model = options.model ?? "deepseek-v4-flash";
     this.#timeoutMs = normalizeTimeout(options.timeoutMs);
     this.#maxRetries = normalizeRetries(options.maxRetries, 1);
-    this.#maxOutputTokens = normalizeMaxTokens(options.maxOutputTokens, 8_192);
+    this.#maxOutputTokens = Math.min(
+      normalizeMaxTokens(options.maxOutputTokens, 8_192),
+      normalizeMaxTokens(this.capabilities.maxOutputTokens, 64_000),
+    );
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#onMetric = options.onMetric;
     this.#retryDelay =
@@ -282,6 +341,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   async #callOnce(
     request: LLMRequest,
     attempt: number,
+    schema?: ZodType<unknown>,
     repairIssues?: readonly string[],
   ): Promise<RawCallResult> {
     const controller = new AbortController();
@@ -292,6 +352,11 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     const startedAt = Date.now();
     let status: number | undefined;
     try {
+      const structuredFormat = responseFormat(
+        this.capabilities,
+        request.purpose,
+        schema,
+      );
       const response = await this.#fetch(this.#endpoint, {
         method: "POST",
         headers: {
@@ -301,11 +366,15 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         body: JSON.stringify({
           model: this.model,
           messages: asMessages(request, repairIssues),
-          thinking: { type: "disabled" },
-          response_format: { type: "json_object" },
+          ...(this.capabilities.supportsThinkingControl
+            ? { thinking: { type: "disabled" } }
+            : {}),
+          ...(structuredFormat === undefined
+            ? {}
+            : { response_format: structuredFormat }),
           stream: false,
-          max_tokens: normalizeMaxTokens(
-            request.maxOutputTokens,
+          max_tokens: Math.min(
+            normalizeMaxTokens(request.maxOutputTokens, this.#maxOutputTokens),
             this.#maxOutputTokens,
           ),
           ...(request.temperature === undefined
@@ -433,6 +502,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         const raw = await this.#callOnce(
           request,
           attempt + 1,
+          schema,
           latestStructuredIssues,
         );
         if (schema === undefined) return { value: raw.data, raw };

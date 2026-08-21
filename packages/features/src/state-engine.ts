@@ -2,12 +2,12 @@ import { clamp } from "./shared.js";
 import type { RelationshipStateLike } from "./relationship-engine.js";
 
 export interface StateDeltaLike {
-  moodValence?: number;
-  moodArousal?: number;
-  energy?: number;
-  stress?: number;
-  socialBattery?: number;
-  focus?: number;
+  moodValence?: number | undefined;
+  moodArousal?: number | undefined;
+  energy?: number | undefined;
+  stress?: number | undefined;
+  socialBattery?: number | undefined;
+  focus?: number | undefined;
 }
 
 export interface RuntimeStateLike {
@@ -19,6 +19,7 @@ export interface RuntimeStateLike {
   stress: number;
   socialBattery: number;
   focus: number;
+  sleepDebtMinutes?: number;
   currentActivityId?: string;
   locationContext?: string;
   relationship?: RelationshipStateLike;

@@ -1,3 +1,14 @@
+import type {
+  EvidenceBundle,
+  JsonValue,
+  Memory,
+  MemoryEvidence,
+  MemoryNamespace,
+  MemoryRecallQuery,
+  MemoryRecallResult,
+  RetrievalScoreBreakdown,
+} from "@personasim/contracts";
+
 export type SimulationTier = "lightweight" | "daily" | "high_fidelity";
 
 export type CharacterStatus = "draft" | "published" | "archived";
@@ -138,6 +149,9 @@ export interface ScheduleItem {
   narrativeImportance: number;
   shareable: boolean;
   revision: number;
+  sourceIntentId?: string;
+  correlationId?: string;
+  causationId?: string;
 }
 
 export interface ChatSession {
@@ -166,6 +180,15 @@ export interface TimelineEvent {
   title: string;
   summary: string;
   occurredAtUtc: string;
+  scheduleItemId?: string;
+  activityEventId?: string;
+  memoryId?: string;
+  proactiveCandidateId?: string;
+  messageId?: string;
+  source?: string;
+  sourceIntentId?: string;
+  correlationId?: string;
+  causationId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -177,6 +200,74 @@ export interface AppSettings {
   clockMode: "system" | "fake";
   locale: string;
   defaultTimezone: string;
+}
+
+export type RetrievalRunStageName =
+  | "query_normalization"
+  | "temporal_resolution"
+  | "namespace_filter"
+  | "candidate_generation"
+  | "evidence_verification"
+  | "scoring"
+  | "selection"
+  | "prompt_rendering";
+
+export interface RetrievalRunStage {
+  name: RetrievalRunStageName;
+  ordinal: number;
+  status: "completed" | "skipped" | "failed";
+  inputCount?: number;
+  outputCount?: number;
+  durationMs: number;
+  reasonCode?: string;
+  snapshot?: JsonValue;
+}
+
+export interface RetrievalRunCandidate {
+  memoryId: string;
+  namespace: MemoryNamespace;
+  evidenceIds: string[];
+  score: number;
+  scoreBreakdown: RetrievalScoreBreakdown;
+  semanticScore: number | null;
+  relationshipScore: number | null;
+  decision: "selected" | "excluded";
+  reasonCode: string;
+  reasonSummary?: string;
+  selectionRank?: number;
+}
+
+export interface RetrievalReplayInput {
+  agentId: string;
+  query: MemoryRecallQuery;
+  nowUtc: string;
+  memories: Memory[];
+  evidence: MemoryEvidence[];
+  minimumScore: number;
+  maxEvidence: number;
+  candidateLimit: number;
+}
+
+export interface RetrievalRun {
+  id: string;
+  agentId: string;
+  sessionId?: string;
+  sourceMessageId?: string;
+  inputSnapshot: RetrievalReplayInput;
+  stages: RetrievalRunStage[];
+  candidates: RetrievalRunCandidate[];
+  result: MemoryRecallResult;
+  evidenceBundle?: EvidenceBundle;
+  configSnapshot: Record<string, JsonValue>;
+  renderedPromptFragment?: string;
+  createdAtUtc: string;
+}
+
+export interface RetrievalRunReplayResponse {
+  runId: string;
+  input: RetrievalReplayInput;
+  result: MemoryRecallResult;
+  matchesRecordedResult: boolean;
 }
 
 export interface ApiIssue {

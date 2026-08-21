@@ -269,4 +269,46 @@ describe("planner and settlement", () => {
     expect(duplicate.events).toHaveLength(0);
     expect(duplicate.items[0]?.status).toBe(first.items[0]?.status);
   });
+
+  it("gradually repays sleep debt when sleep settles", () => {
+    const sleep = {
+      ...item(
+        "sleep-repayment",
+        "2026-06-01T23:00:00.000Z",
+        "2026-06-02T07:00:00.000Z",
+        "fixed",
+        "sleep",
+      ),
+      adherenceProbability: 1,
+      stateEffects: { energy: 0.2, stress: -0.08 },
+    };
+    const sleepyState = {
+      agentId: "agent-1",
+      asOfUtc: "2026-06-01T22:00:00.000Z",
+      moodValence: 0,
+      moodArousal: 0.4,
+      energy: 0.35,
+      stress: 0.45,
+      socialBattery: 0.6,
+      focus: 0.45,
+      sleepDebtMinutes: 240,
+      revision: 0,
+    };
+    const input = {
+      agentId: "agent-1",
+      fromUtc: "2026-06-01T22:00:00.000Z",
+      toUtc: "2026-06-02T08:00:00.000Z",
+      items: [sleep],
+      state: sleepyState,
+      routineAdherence: 1,
+    } as const;
+
+    const first = settleSchedule(input);
+    const replay = settleSchedule(input);
+
+    expect(first.events.map((event) => event.kind)).toContain("completed");
+    expect(first.state.sleepDebtMinutes).toBeGreaterThan(0);
+    expect(first.state.sleepDebtMinutes).toBeLessThan(240);
+    expect(replay.state.sleepDebtMinutes).toBe(first.state.sleepDebtMinutes);
+  });
 });

@@ -283,10 +283,16 @@ export class DatabaseStore {
   insertInitialState(state: RuntimeState, horizonEndUtc: string): void {
     this.database
       .prepare(
-        `INSERT INTO runtime_states(agent_id, state_json, revision, updated_at_utc)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO runtime_states(agent_id, state_json, revision, updated_at_utc, sleep_debt_minutes)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(state.agentId, JSON.stringify(state), state.revision, state.asOfUtc);
+      .run(
+        state.agentId,
+        JSON.stringify(state),
+        state.revision,
+        state.asOfUtc,
+        state.sleepDebtMinutes,
+      );
     this.database
       .prepare(
         `INSERT INTO simulation_cursors(
@@ -308,10 +314,16 @@ export class DatabaseStore {
   updateRuntimeState(state: RuntimeState): void {
     this.database
       .prepare(
-        `UPDATE runtime_states SET state_json = ?, revision = ?, updated_at_utc = ?
+        `UPDATE runtime_states SET state_json = ?, revision = ?, updated_at_utc = ?, sleep_debt_minutes = ?
          WHERE agent_id = ?`,
       )
-      .run(JSON.stringify(state), state.revision, state.asOfUtc, state.agentId);
+      .run(
+        JSON.stringify(state),
+        state.revision,
+        state.asOfUtc,
+        state.sleepDebtMinutes,
+        state.agentId,
+      );
   }
 
   getCursor(agentId: string): SimulationCursor | undefined {
@@ -382,14 +394,19 @@ export class DatabaseStore {
       .prepare(
         `INSERT INTO schedule_items(
           id, agent_id, title, category, start_at_utc, end_at_utc, status, rigidity,
-          source, shareable, narrative_importance, revision, item_json, created_at_utc, updated_at_utc
+          source, shareable, narrative_importance, revision, source_intent_id,
+          correlation_id, causation_id, item_json, created_at_utc, updated_at_utc
         ) VALUES (
           @id, @agentId, @title, @category, @startAtUtc, @endAtUtc, @status, @rigidity,
-          @source, @shareable, @narrativeImportance, @revision, @itemJson, @createdAtUtc, @updatedAtUtc
+          @source, @shareable, @narrativeImportance, @revision, @sourceIntentId,
+          @correlationId, @causationId, @itemJson, @createdAtUtc, @updatedAtUtc
         )`,
       )
       .run({
         ...normalized,
+        sourceIntentId: normalized.sourceIntentId ?? null,
+        correlationId: normalized.correlationId ?? null,
+        causationId: normalized.causationId ?? null,
         shareable: normalized.shareable ? 1 : 0,
         itemJson: JSON.stringify(normalized),
       });
@@ -403,10 +420,15 @@ export class DatabaseStore {
           start_at_utc = @startAtUtc, end_at_utc = @endAtUtc, status = @status,
           rigidity = @rigidity, source = @source, shareable = @shareable,
           narrative_importance = @narrativeImportance, revision = @revision,
-          item_json = @itemJson, updated_at_utc = @updatedAtUtc WHERE id = @id`,
+          source_intent_id = @sourceIntentId, correlation_id = @correlationId,
+          causation_id = @causationId, item_json = @itemJson,
+          updated_at_utc = @updatedAtUtc WHERE id = @id`,
       )
       .run({
         ...normalized,
+        sourceIntentId: normalized.sourceIntentId ?? null,
+        correlationId: normalized.correlationId ?? null,
+        causationId: normalized.causationId ?? null,
         shareable: normalized.shareable ? 1 : 0,
         itemJson: JSON.stringify(normalized),
       });
@@ -456,6 +478,17 @@ export class DatabaseStore {
            ) ORDER BY created_at_utc, sort_order`,
         )
         .all(sessionId, limit) as SqlRow[]
+    ).map(mapMessage);
+  }
+
+  listMessagesForContext(sessionId: string): StoredMessage[] {
+    return (
+      this.database
+        .prepare(
+          `SELECT *, rowid AS sort_order FROM messages
+           WHERE session_id = ? ORDER BY created_at_utc, rowid`,
+        )
+        .all(sessionId) as SqlRow[]
     ).map(mapMessage);
   }
 

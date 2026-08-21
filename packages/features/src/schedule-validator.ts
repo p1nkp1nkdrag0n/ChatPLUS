@@ -28,6 +28,7 @@ export interface ScheduleItemDraftLike {
     | "initial_plan"
     | "user_invitation"
     | "runtime_replan"
+    | "self_initiated"
     | "manual";
   adherenceProbability: number;
   narrativeImportance: number;

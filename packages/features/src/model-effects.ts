@@ -80,7 +80,7 @@ export interface NormalizeModelEffectsResult {
 }
 
 const SCHEDULE_INTENT_PATTERN =
-  /(晚会|派对|聚会|饭局|party|celebrat|邀请|邀我|约我|约个|一起(?:去|参加|吃|玩|出[门去])|陪[我你]|见面|碰面|约会|出来(?:吃|玩|见)?|改天|换个时间|推迟|延后|提前|改期|改时间|取消(?:掉|了|吧)?|不去了|去不了|挪到|挪一挪|调整.{0,8}(?:计划|日程|安排)|(?:计划|日程|安排).{0,8}(?:改|变|调整|取消|挪)|要不要.{0,6}(?:去|来|一起)|reschedule|postpone|move\s.{0,20}\bto\b|cancel\s|invite|hang\s?out|meet\s?up|shall\swe)/iu;
+  /(晚会|派对|聚会|饭局|party|celebrat|邀请|邀我|约我|约个|一起(?:去|参加|吃|玩|出[门去])|陪[我你]|见面|碰面|约会|出来(?:吃|玩|见)?|我们.{0,40}(?:定下来|定好|安排|去|参加|散步|见)|(?:你|我)?确认.{0,3}(?:能|会|愿意).{0,4}(?:来|去|参加)|改天|换个时间|推迟|延后|提前|改期|改时间|取消(?:掉|了|吧)?|不去了|去不了|挪到|挪一挪|调整.{0,8}(?:计划|日程|安排)|(?:计划|日程|安排).{0,8}(?:改|变|调整|取消|挪)|要不要.{0,6}(?:去|来|一起)|reschedule|postpone|move\s.{0,20}\bto\b|cancel\s|invite|hang\s?out|meet\s?up|shall\swe)/iu;
 
 const OPERATION_ALIASES: Record<string, ModelEffectProposalLike["operation"]> =
   {

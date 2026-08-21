@@ -3,6 +3,7 @@ import { extname } from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { DateTime } from "luxon";
 import { z } from "zod";
+import { MemoryRecallPreviewRequestSchema } from "@personasim/contracts";
 
 import type { ServerConfig } from "../config.js";
 import type { DatabaseStore } from "../db/store.js";
@@ -18,10 +19,24 @@ import { compareUtc } from "../domain/time.js";
 import type { ActorQueue } from "../runtime/actor-queue.js";
 import type { Clock } from "../runtime/clock.js";
 import { isMutableClock } from "../runtime/clock.js";
+import { buildTimelineResponse } from "./timeline-projection.js";
 import type { SseHub } from "../sse/hub.js";
+import type { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
+import type { AutobiographyService } from "../services/autobiography-service.js";
+import type { CalendarService } from "../services/calendar-service.js";
 import type { CharacterService } from "../services/character-service.js";
+import type { CheckpointService } from "../services/checkpoint-service.js";
 import type { ConversationService } from "../services/conversation-service.js";
+import type { ContinuityIndexService } from "../services/continuity-index-service.js";
+import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
+import type { DateDigestService } from "../services/date-digest-service.js";
+import type { FollowUpService } from "../services/follow-up-service.js";
 import type { LlmService } from "../services/llm-service.js";
+import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
+import type { MemoryRecallService } from "../services/memory-recall-service.js";
+import type { PersonalLifeService } from "../services/personal-life-service.js";
+import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
+import type { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
 
@@ -32,9 +47,22 @@ export type RouteServices = {
   actors: ActorQueue;
   sse: SseHub;
   llm: LlmService;
+  memoryRecalls: MemoryRecallService;
   characters: CharacterService;
   schedules: ScheduleService;
   settlements: SettlementService;
+  personalLife: PersonalLifeService;
+  autobiographies: AutobiographyService;
+  calendar: CalendarService;
+  checkpoints: CheckpointService;
+  continuityIndex: ContinuityIndexService;
+  conversationActivity: ConversationActivityTracker;
+  dateDigests: DateDigestService;
+  followUps: FollowUpService;
+  memoryLifecycle: MemoryLifecycleService;
+  proactiveDelivery: ProactiveDeliveryService;
+  proactiveGeneration: ProactiveGenerationService;
+  retrievalRuns: RetrievalRunRepository;
   conversations: ConversationService;
 };
 
@@ -59,9 +87,12 @@ export function registerRoutes(
     actors,
     sse,
     llm,
+    memoryRecalls,
     characters,
     schedules,
     settlements,
+    personalLife,
+    conversationActivity,
     conversations,
   } = services;
 
@@ -184,19 +215,34 @@ export function registerRoutes(
 
   app.post("/api/agents/:id/activate", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
-    return actors.runExclusive(id, async () => {
+    const activated = await actors.runExclusive(id, async () => {
       const spec = store.getCharacterSpec(id);
       if (!spec) throw notFound("Character");
       const capabilities = capabilitiesForTier(spec.tier);
+      if (
+        capabilities.proactiveDialogue &&
+        store.listSessions(id).length === 0
+      ) {
+        store.createSession(
+          id,
+          `与${spec.identity.name}的对话`,
+          clock.nowUtc(),
+        );
+      }
       const settlement = await settlements.settleAndExtend(id);
-      const proactiveMessage = capabilities.proactiveDialogue
-        ? settlements.deliverOneProactive(id)
+      personalLife.ensureSelfInitiatedPlans(id);
+      return { capabilities, settlement };
+    });
+    const proactiveOutcome = activated.capabilities.proactiveDialogue
+      ? await services.proactiveDelivery.deliverNext(id)
+      : undefined;
+    const proactiveMessage =
+      proactiveOutcome?.status === "committed"
+        ? proactiveOutcome.message
         : undefined;
-      return buildAgentSnapshot(id, services, {
-        capabilities,
-        settlement,
-        proactiveMessage,
-      });
+    return buildAgentSnapshot(id, services, {
+      ...activated,
+      proactiveMessage,
     });
   });
 
@@ -255,24 +301,7 @@ export function registerRoutes(
     const query = z
       .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
       .parse(request.query);
-    const activityEvents = store.listActivityEvents(id, query.limit);
-    const scheduleItems = store.listSchedule(id);
-    const itemById = new Map(scheduleItems.map((item) => [item.id, item]));
-    const events = activityEvents.map((event) => ({
-      id: event.id,
-      type: event.eventType,
-      title: event.scheduleItemId
-        ? itemById.get(event.scheduleItemId)?.title
-        : undefined,
-      summary: event.summary,
-      occurredAtUtc: event.occurredAtUtc,
-    }));
-    return {
-      events,
-      activityEvents,
-      scheduleItems,
-      domainEvents: store.listDomainEvents(id, query.limit),
-    };
+    return buildTimelineResponse(store, id, query.limit);
   });
 
   app.get("/api/agents/:id/memories", (request) => {
@@ -337,10 +366,22 @@ export function registerRoutes(
   app.post("/api/sessions/:sessionId/messages", async (request, reply) => {
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const input = chatMessageInputSchema.parse(normalizeChatBody(request.body));
-    const result = await actors.runExclusive(input.agentId, () =>
-      conversations.chat(sessionId, input),
-    );
-    return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+    const lease = conversationActivity.beginUserTurn(input.agentId);
+    try {
+      const result = await actors.runExclusive(input.agentId, async () => {
+        const turn = await conversations.chat(sessionId, input);
+        if (turn.idempotentReplay || turn.scheduleChanges.length > 0) {
+          return turn;
+        }
+        const planning = personalLife.ensureSelfInitiatedPlans(input.agentId);
+        return planning.state === undefined
+          ? turn
+          : { ...turn, state: planning.state };
+      });
+      return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+    } finally {
+      lease.end();
+    }
   });
 
   app.post("/api/agents/:id/messages", async (request, reply) => {
@@ -349,12 +390,24 @@ export function registerRoutes(
       ...normalizeChatBody(request.body),
       agentId: id,
     });
-    const result = await actors.runExclusive(id, async () => {
-      const session =
-        conversations.listSessions(id)[0] ?? conversations.createSession(id);
-      return conversations.chat(session.id, input);
-    });
-    return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+    const lease = conversationActivity.beginUserTurn(id);
+    try {
+      const result = await actors.runExclusive(id, async () => {
+        const session =
+          conversations.listSessions(id)[0] ?? conversations.createSession(id);
+        const turn = await conversations.chat(session.id, input);
+        if (turn.idempotentReplay || turn.scheduleChanges.length > 0) {
+          return turn;
+        }
+        const planning = personalLife.ensureSelfInitiatedPlans(id);
+        return planning.state === undefined
+          ? turn
+          : { ...turn, state: planning.state };
+      });
+      return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+    } finally {
+      lease.end();
+    }
   });
 
   app.get("/api/settings", () => ({
@@ -391,6 +444,51 @@ export function registerRoutes(
   app.patch("/api/settings", updateSettings);
 
   if (config.developerRoutes) {
+    app.post("/api/developer/agents/:id/memory-recall-preview", (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const spec = store.getCharacterSpec(id);
+      if (spec === undefined) throw notFound("Character");
+      const input = MemoryRecallPreviewRequestSchema.parse(request.body);
+      return memoryRecalls.preview({
+        agentId: id,
+        query: input.message,
+        nowUtc: clock.nowUtc(),
+        timezone: spec.identity.timezone,
+      });
+    });
+    app.get("/api/developer/agents/:id/retrieval-runs", (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      if (!store.getCharacterSummary(id)) throw notFound("Character");
+      const query = z
+        .object({ limit: z.coerce.number().int().min(1).max(500).default(50) })
+        .parse(request.query);
+      return { runs: services.retrievalRuns.listByAgent(id, query.limit) };
+    });
+
+    app.get("/api/developer/retrieval-runs/:id", (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const run = services.retrievalRuns.findById(id);
+      if (run === undefined) throw notFound("Retrieval run");
+      return { run };
+    });
+
+    app.get("/api/developer/retrieval-runs/:id/replay", (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const run = services.retrievalRuns.findById(id);
+      const input = services.retrievalRuns.getReplayInput(id);
+      if (run === undefined || input === undefined) {
+        throw notFound("Retrieval run");
+      }
+      const result = memoryRecalls.replay(input);
+      return {
+        runId: id,
+        input,
+        result,
+        matchesRecordedResult:
+          JSON.stringify(result) === JSON.stringify(run.result),
+      };
+    });
+
     app.get("/api/developer/status", () => ({
       serverTimeUtc: clock.nowUtc(),
       activeSseConnections: sse.connectionCount(),
@@ -466,11 +564,20 @@ export function registerRoutes(
 
     app.post("/api/developer/agents/:id/settle", async (request) => {
       const { id } = idParamsSchema.parse(request.params);
-      return actors.runExclusive(id, async () => {
+      const settlement = await actors.runExclusive(id, async () => {
         const settlement = await settlements.settleAndExtend(id);
-        const proactiveMessage = settlements.deliverOneProactive(id);
-        return { settlement, proactiveMessage };
+        personalLife.ensureSelfInitiatedPlans(id);
+        return settlement;
       });
+      const proactiveOutcome = await services.proactiveDelivery.deliverNext(id);
+      return {
+        settlement,
+        proactiveMessage:
+          proactiveOutcome.status === "committed"
+            ? proactiveOutcome.message
+            : undefined,
+        proactiveOutcome,
+      };
     });
   }
 }
@@ -566,11 +673,13 @@ function buildAgentSnapshot(
 async function settleActiveAgents(services: RouteServices): Promise<void> {
   const nowUtc = services.clock.nowUtc();
   await Promise.all(
-    services.sse.getActiveAgentIds().map((agentId) =>
-      services.actors.runExclusive(agentId, async () => {
+    services.sse.getActiveAgentIds().map(async (agentId) => {
+      await services.actors.runExclusive(agentId, async () => {
         await services.settlements.settleAndExtend(agentId, { toUtc: nowUtc });
-        services.settlements.deliverOneProactive(agentId);
-      }),
-    ),
+        services.personalLife.ensureSelfInitiatedPlans(agentId);
+        services.memoryLifecycle.maintainAgent(agentId);
+      });
+      await services.proactiveDelivery.deliverNext(agentId);
+    }),
   );
 }

@@ -194,6 +194,171 @@ describe("shared API transport contracts", () => {
     );
   });
 
+  it("stitches authoritative product-trace IDs into canonical timeline events", async () => {
+    const { agentId, published } = await createPublishedAgent(app);
+    const store = app.personasim.store;
+    const intentId = "intent-timeline-trace";
+    const scheduleItemId = published.schedule[0]!.id;
+    const activityEventId = "activity-timeline-trace";
+    const memoryId = "memory-timeline-trace";
+    const proactiveCandidateId = "candidate-timeline-trace";
+    const messageId = "message-timeline-trace";
+    const correlationId = "correlation-timeline-trace";
+
+    store.database
+      .prepare(
+        `INSERT INTO personal_intentions(
+          id, agent_id, session_id, activity, category, duration_minutes,
+          earliest_at_utc, latest_at_utc, basis_kind, priority, freshness,
+          record_json, status, dedupe_key, spec_version, schema_version,
+          attempt_count, last_attempt_at_utc, created_at_utc, updated_at_utc
+        ) VALUES (
+          ?, ?, NULL, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?
+        )`,
+      )
+      .run(
+        intentId,
+        agentId,
+        "整理并分享旅行记录",
+        "leisure",
+        30,
+        "spontaneous",
+        0.9,
+        0.9,
+        "{}",
+        "consumed",
+        "timeline-trace-intent",
+        published.character.version,
+        1,
+        START_UTC,
+        START_UTC,
+      );
+
+    const originalScheduleItem = store.getScheduleItem(scheduleItemId)!;
+    store.updateScheduleItem({
+      ...originalScheduleItem,
+      source: "self_initiated",
+      sourceIntentId: intentId,
+      correlationId,
+      causationId: intentId,
+      updatedAtUtc: START_UTC,
+    });
+    store.insertActivityEvent({
+      id: activityEventId,
+      agentId,
+      scheduleItemId,
+      eventType: "completed",
+      occurredAtUtc: START_UTC,
+      summary: "完成了自主安排并留下可分享的结果。",
+      outcomeFacts: ["完成自主安排"],
+      stateDelta: {},
+      origin: "deterministic",
+      idempotencyKey: "timeline-trace:activity",
+    });
+    store.database
+      .prepare(
+        `INSERT INTO memories(
+          id, agent_id, type, content, tags_json, importance, confidence,
+          source_message_id, source_event_id, created_at_utc, valid_until_utc,
+          recorded_at_utc, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?)`,
+      )
+      .run(
+        memoryId,
+        agentId,
+        "episodic",
+        "完成了自主安排。",
+        JSON.stringify(["timeline", "trace"]),
+        0.8,
+        1,
+        activityEventId,
+        START_UTC,
+        START_UTC,
+        "active",
+      );
+    store.database
+      .prepare(
+        `INSERT INTO proactive_candidates(
+          id, agent_id, trigger_event_id, intent, summary, draft_message,
+          earliest_at_utc, expires_at_utc, priority, cooldown_key, status,
+          created_at_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        proactiveCandidateId,
+        agentId,
+        activityEventId,
+        "share_experience",
+        "想分享刚完成的自主安排。",
+        "刚刚把这件事做完了，想和你分享。",
+        START_UTC,
+        "2026-08-17T02:00:00.000Z",
+        0.9,
+        "timeline-trace",
+        "sent",
+        START_UTC,
+      );
+    const session = store.createSession(agentId, "时间线链路", START_UTC);
+    store.insertMessage({
+      id: messageId,
+      sessionId: session.id,
+      agentId,
+      role: "assistant",
+      content: "刚刚把这件事做完了，想和你分享。",
+      messageKind: "assistant_proactive",
+      triggerEventId: activityEventId,
+      metadata: { proactiveCandidateId },
+      createdAtUtc: START_UTC,
+    });
+    expect(
+      store.insertDomainEvent({
+        agentId,
+        streamType: "self_plan",
+        streamId: intentId,
+        streamVersion: 1,
+        eventType: "self_plan.committed",
+        recordedAtUtc: START_UTC,
+        payload: {
+          intentId,
+          createdScheduleItemIds: [scheduleItemId],
+          changedScheduleItemIds: [scheduleItemId],
+        },
+        correlationId,
+        causationId: intentId,
+        idempotencyKey: "timeline-trace:self-plan",
+      }),
+    ).toBe(true);
+
+    const timeline = parseResponse(
+      await app.inject({
+        method: "GET",
+        url: `/api/agents/${agentId}/timeline?limit=100`,
+      }),
+      200,
+      TimelineResponseSchema,
+    );
+    const expectedLineage = {
+      sourceIntentId: intentId,
+      scheduleItemId,
+      activityEventId,
+      memoryId,
+      proactiveCandidateId,
+      messageId,
+    };
+
+    expect(
+      timeline.events.find((event) => event.id === activityEventId),
+    ).toMatchObject(expectedLineage);
+    const committedPlan = timeline.events.find(
+      (event) => event.type === "self_plan.committed",
+    );
+    expect(committedPlan).toMatchObject(expectedLineage);
+    expect(committedPlan).not.toHaveProperty("selfPlanId");
+    expect(new Set(timeline.events.map((event) => event.id)).size).toBe(
+      timeline.events.length,
+    );
+  });
+
   it("parses every production SSE event variant emitted by real services", async () => {
     const { agentId } = await createPublishedAgent(app);
     const session = parseResponse(

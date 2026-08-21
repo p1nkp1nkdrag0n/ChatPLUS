@@ -602,6 +602,303 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(body.decision.deliveryMode).toBe("single_block");
     expect(calls).toEqual([]);
   });
+
+  it("commits valid world effects while rejecting malformed siblings", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: {
+            text: "That sounds worth exploring.",
+            deliveryMode: "single_block",
+          },
+          worldEffects: {
+            stateDelta: { energy: -1, stress: 0.1 },
+            relationshipDelta: { closeness: 1, trust: 0.2 },
+            personalIntentCandidates: [
+              {
+                activity: "photograph the riverside night view",
+                category: "leisure",
+                durationHint: "60 minutes",
+                timingHint: "tonight",
+                basisKind: "chat",
+                evidenceQuotes: ["The riverside night view is beautiful"],
+                reasonCode: "chat_grounded_interest",
+                reasonSummary: "The user expressed a grounded interest.",
+              },
+              {
+                activity: "model-owned exact time",
+                basisKind: "chat",
+                evidenceQuotes: ["The riverside night view is beautiful"],
+                reasonCode: "invalid_exact_time",
+                reasonSummary: "This candidate must be rejected.",
+                earliestAtUtc: "2026-08-16T12:00:00.000Z",
+              },
+            ],
+          },
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "world-effects-commit",
+      "The riverside night view is beautiful; I would love to photograph it tonight.",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toBe("That sounds worth exploring.");
+    expect(body.state.energy).toBeCloseTo(before.energy - 0.2, 8);
+    expect(body.state.stress).toBeCloseTo(before.stress + 0.1, 8);
+    expect(body.state.relationship.closeness).toBeGreaterThan(
+      before.relationship.closeness,
+    );
+    expect(body.state.relationship.closeness).toBeLessThanOrEqual(
+      before.relationship.closeness + 0.1,
+    );
+    const intentCount = app.personasim.store.database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM personal_intentions WHERE agent_id = ?",
+      )
+      .get(character.id) as { count: number };
+    expect(intentCount.count).toBe(1);
+    const rejection = app.personasim.store.database
+      .prepare(
+        "SELECT reason_code FROM rejected_proposals WHERE agent_id = ? ORDER BY id DESC LIMIT 1",
+      )
+      .get(character.id) as { reason_code: string } | undefined;
+    expect(rejection?.reason_code).toBe("invalid_effect_candidate");
+    const audit = app.personasim.store
+      .listDomainEvents(character.id, 100)
+      .find(
+        (event) => event.eventType === "conversation.world_effects_committed",
+      );
+    expect(audit?.payload).toMatchObject({
+      mode: "enforced",
+      accepted: {
+        stateDelta: true,
+        relationshipDelta: true,
+        personalIntentCandidateCount: 1,
+      },
+      rejectionCodes: ["invalid_effect_candidate"],
+    });
+  });
+
+  it("preserves validated effects when reply repair succeeds", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: { text: "As an AI language model, I have no life." },
+          worldEffects: { stateDelta: { energy: -0.1 } },
+        };
+      }
+      if (input.purpose === "repair_chat_turn") {
+        return { text: "I am here, and I want to answer as myself." };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "world-effects-repair",
+      "Please answer in your own voice.",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toContain("answer as myself");
+    expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+    expect(body.state.energy).toBeCloseTo(before.energy - 0.1, 8);
+    expect(calls.map((input) => input.purpose)).toEqual([
+      "chat_turn",
+      "repair_chat_turn",
+    ]);
+  });
+
+  it("repairs a parse-invalid reply while preserving independently valid effects", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const rawTurn = {
+      replyDecision: { text: { invalid: true } },
+      worldEffects: {
+        stateDelta: { energy: -0.12 },
+        scheduleMutationBundle: { owner: "model" },
+      },
+      scheduleMutationBundle: { owner: "model" },
+    };
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") return rawTurn;
+      if (input.purpose === "repair_chat_turn") {
+        return { text: "I needed to rephrase that, but I am still here." };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "world-effects-invalid-reply",
+      "Please cancel dinner tomorrow, then try that answer again.",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toContain("still here");
+    expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+    expect(body.state.energy).toBeCloseTo(before.energy - 0.12, 8);
+    expect(body.scheduleChanges).toEqual([]);
+    const chatCall = calls.find((input) => input.purpose === "chat_turn");
+    expect(chatCall?.schema.safeParse(rawTurn).success).toBe(true);
+    expect(calls.map((input) => input.purpose)).toEqual([
+      "chat_turn",
+      "repair_chat_turn",
+    ]);
+  });
+
+  it("audits an ungrounded personal intent without aborting the reply", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: { text: "That is an interesting thought." },
+          worldEffects: {
+            personalIntentCandidates: [
+              {
+                activity: "photograph the riverside",
+                category: "leisure",
+                durationHint: "60 minutes",
+                timingHint: "tonight",
+                basisKind: "chat",
+                evidenceQuotes: ["This quote was never said"],
+                reasonCode: "chat_grounded_interest",
+                reasonSummary: "The model proposed a chat-derived interest.",
+              },
+            ],
+          },
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "world-effects-ungrounded-intent",
+      "The riverside is calm today.",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toBe(
+      "That is an interesting thought.",
+    );
+    const counts = app.personasim.store.database
+      .prepare(
+        "SELECT (SELECT COUNT(*) FROM messages WHERE session_id = ?) AS messages, (SELECT COUNT(*) FROM personal_intentions WHERE agent_id = ?) AS intents",
+      )
+      .get(sessionId, character.id) as { messages: number; intents: number };
+    expect(counts).toEqual({ messages: 2, intents: 0 });
+    const rejection = app.personasim.store.database
+      .prepare(
+        "SELECT reason_code FROM rejected_proposals WHERE agent_id = ? ORDER BY id DESC LIMIT 1",
+      )
+      .get(character.id) as { reason_code: string } | undefined;
+    expect(rejection?.reason_code).toBe("ungrounded_evidence_quote");
+  });
+
+  it("rolls back the entire turn when world-effect audit persistence fails", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: { text: "I will keep that in mind." },
+          worldEffects: {
+            stateDelta: { energy: -0.1 },
+            personalIntentCandidates: [
+              {
+                activity: "photograph the riverside night view",
+                category: "leisure",
+                durationHint: "60 minutes",
+                timingHint: "tonight",
+                basisKind: "chat",
+                evidenceQuotes: ["The riverside night view is beautiful"],
+                reasonCode: "chat_grounded_interest",
+                reasonSummary: "The user expressed a grounded interest.",
+              },
+            ],
+          },
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+    const insertDomainEvent = app.personasim.store.insertDomainEvent.bind(
+      app.personasim.store,
+    );
+    vi.spyOn(app.personasim.store, "insertDomainEvent").mockImplementation(
+      (event) =>
+        event.eventType === "conversation.world_effects_committed"
+          ? false
+          : insertDomainEvent(event),
+    );
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "world-effects-rollback",
+      "The riverside night view is beautiful; I would love to photograph it tonight.",
+    );
+
+    expect(response.statusCode).toBe(500);
+    expect(app.personasim.store.getRuntimeState(character.id)).toEqual(before);
+    const messageCount = app.personasim.store.database
+      .prepare("SELECT COUNT(*) AS count FROM messages WHERE session_id = ?")
+      .get(sessionId) as { count: number };
+    const intentCount = app.personasim.store.database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM personal_intentions WHERE agent_id = ?",
+      )
+      .get(character.id) as { count: number };
+    expect(messageCount.count).toBe(0);
+    expect(intentCount.count).toBe(0);
+  });
 });
 
 function mockLlm(
@@ -620,7 +917,9 @@ function fixtureFor(input: GenerateObjectInput<unknown>): unknown {
   throw new Error(`No fixture for ${input.purpose}`);
 }
 
-async function createRealProviderTestApp(): Promise<{
+async function createRealProviderTestApp(
+  liveWorldEffectsMode: "off" | "shadow" | "enforced" = "off",
+): Promise<{
   app: PersonaSimApp;
   clock: FakeClock;
 }> {
@@ -632,6 +931,7 @@ async function createRealProviderTestApp(): Promise<{
     seedDemo: false,
     developerRoutes: true,
     scheduleNegotiationMode: "legacy",
+    liveWorldEffectsMode,
     llm: {
       provider: "openai-compatible",
       baseUrl: "https://example.invalid",

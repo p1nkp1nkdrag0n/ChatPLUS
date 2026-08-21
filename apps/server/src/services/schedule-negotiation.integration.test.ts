@@ -747,6 +747,7 @@ describe("server-owned schedule negotiation", () => {
       .filter((event) => event.correlationId === clientMessageId);
     expect(events.map((event) => event.eventType).sort()).toEqual([
       "conversation.turn_committed",
+      "conversation.world_effects_shadow_evaluated",
       "schedule.command_committed",
       "schedule.negotiation_offer_accepted",
     ]);
@@ -987,6 +988,93 @@ describe("server-owned schedule negotiation", () => {
         .listDomainEvents(character.id, 100)
         .filter((event) => event.eventType === "schedule.command_committed"),
     ).toEqual([]);
+  });
+
+  it("keeps ordinary future-oriented memory text as a no-op when scheduleAction is none", async () => {
+    app = (await createNegotiationTestApp()).app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const modelReply =
+      "记住了，你答辩后更想安静复盘，不参加庆功宴。\n" +
+      "我之后会按这个偏好陪你聊。";
+    mockLlm(app.personasim.llm, calls, () => ({
+      text: modelReply,
+      scheduleAction: { kind: "none" },
+    }));
+    const character = await createAndPublishHighFidelity(app);
+    const sessionId = await createSession(app, character.id);
+    calls.length = 0;
+    const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "ordinary-memory-no-schedule",
+      "答辩结束后我不参加庆功宴，我更想找个安静的地方复盘。",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toBe(modelReply);
+    expect(body.assistantMessage.content).not.toContain("【未修改日程】");
+    expect(body.assistantMessage.metadata.reasonCode).not.toBe(
+      "unsupported_schedule_operation",
+    );
+    expect(body.scheduleChanges).toEqual([]);
+    expect(app.personasim.store.listSchedule(character.id)).toEqual(
+      scheduleBefore,
+    );
+    expect(
+      app.personasim.store.listScheduleNegotiations({ sessionId }),
+    ).toEqual([]);
+    expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
+  });
+
+  it("creates only a pending offer when a grounded verbal acceptance omits scheduleAction", async () => {
+    app = (await createNegotiationTestApp()).app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, () => ({
+      text: "确认，明天（8月22日）晚上19:30到20:30，外滩散步，聊三段测试音频。我来。",
+      scheduleAction: { kind: "none" },
+    }));
+    const character = await createAndPublishHighFidelity(app);
+    const sessionId = await createSession(app, character.id);
+    calls.length = 0;
+    const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "grounded-verbal-acceptance",
+      "【虚构测试邀约】那我们把明天（8月22日）晚上19:30到20:30定下来吧：去外滩散步，聊聊三段测试音频。你确认能来吗？请在回复里明确复述时间和活动。",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.scheduleChanges).toEqual([]);
+    expect(app.personasim.store.listSchedule(character.id)).toEqual(
+      scheduleBefore,
+    );
+    expect(body.assistantMessage.content).toContain("【待确认日程】");
+    expect(body.assistantMessage.content).not.toContain("已经确认");
+    const pending =
+      app.personasim.store.getActiveScheduleNegotiation(sessionId);
+    expect(pending).toMatchObject({
+      status: "awaiting_confirmation",
+      offerVersion: 1,
+    });
+    expect(readNegotiationState(pending!).offer).toMatchObject({
+      activity: "散步",
+      startAtUtc: "2026-08-17T11:30:00.000Z",
+      durationMinutes: 60,
+    });
+    expect(
+      app.personasim.store
+        .listDomainEvents(character.id, 100)
+        .filter((event) => event.eventType === "schedule.command_committed"),
+    ).toEqual([]);
+    expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
   });
 
   it.each([

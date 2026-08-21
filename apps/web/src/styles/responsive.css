@@ -138,6 +138,20 @@
     grid-column: auto;
     grid-row: auto;
   }
+
+  .developer-panel--recall {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .memory-recall-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .memory-recall-candidates,
+  .memory-recall-evidence {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -356,6 +370,24 @@
   .llm-call-list > div {
     grid-template-columns: 1fr 1fr;
     gap: 4px;
+  }
+
+  .memory-recall-form {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-recall-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .memory-recall-abstention {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .memory-recall-rejections li {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

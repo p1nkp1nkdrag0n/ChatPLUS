@@ -120,4 +120,54 @@ describe("deriveReplyStrategy", () => {
     );
     expect(strategy.maxOutputTokens).toBeLessThanOrEqual(8_000);
   });
+
+  it("lets fatigue shape casual delivery without reducing an explicit detailed answer", () => {
+    const dialogue = {
+      verbosity: 0.65,
+      averageMessageLength: 180,
+      averageChunksPerTurn: 4,
+    };
+    const rested = {
+      state: {
+        energy: 0.9,
+        stress: 0.1,
+        socialBattery: 0.9,
+        sleepDebtMinutes: 0,
+      },
+    };
+    const fatigued = {
+      state: {
+        energy: 0.1,
+        stress: 0.9,
+        socialBattery: 0.1,
+        sleepDebtMinutes: 600,
+      },
+    };
+
+    const restedCasual = deriveReplyStrategy(
+      "Tell me about your day.",
+      dialogue,
+      rested,
+    );
+    const fatiguedCasual = deriveReplyStrategy(
+      "Tell me about your day.",
+      dialogue,
+      fatigued,
+    );
+    const restedDetailed = deriveReplyStrategy(
+      "Explain the design in detail, step-by-step.",
+      dialogue,
+      rested,
+    );
+    const fatiguedDetailed = deriveReplyStrategy(
+      "Explain the design in detail, step-by-step.",
+      dialogue,
+      fatigued,
+    );
+
+    expect(fatiguedCasual.targetChars).toBeLessThan(restedCasual.targetChars);
+    expect(fatiguedCasual.preferredChunkCount).toBe(1);
+    expect(fatiguedDetailed).toEqual(restedDetailed);
+    expect(fatiguedDetailed.complexity).toBe("deep");
+  });
 });

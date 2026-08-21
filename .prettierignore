@@ -11,3 +11,4 @@ data/
 *.db
 *.db-*
 docs/design/*.png
+docs/plans/ChatPLUS_PersonaSim_Integrated_Upgrade_Plan_v2.md

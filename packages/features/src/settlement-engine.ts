@@ -10,7 +10,12 @@ import {
   type RuntimeStateLike,
   type StateDeltaLike,
 } from "./state-engine.js";
-import { parseInstant, seededUnit, stableId } from "./shared.js";
+import {
+  minutesBetween,
+  parseInstant,
+  seededUnit,
+  stableId,
+} from "./shared.js";
 
 export type ActivityEventTypeLike =
   "started" | "completed" | "partial" | "skipped" | "cancelled";
@@ -86,6 +91,36 @@ function eventKey(
   eventType: ActivityEventTypeLike,
 ): string {
   return `activity:${item.agentId}:${item.id}:${eventType}:${item.startAtUtc}`;
+}
+
+function applySleepDebtRepayment<TState extends RuntimeStateLike>(
+  state: TState,
+  events: readonly ActivityEventLike[],
+): TState {
+  const currentDebt = Math.max(0, Math.min(720, state.sleepDebtMinutes ?? 0));
+  if (currentDebt === 0) return state;
+  const recoveredMinutes = events
+    .filter(
+      (event) =>
+        (event.kind === "completed" || event.kind === "partial") &&
+        event.category === "sleep" &&
+        event.endedAtUtc !== undefined,
+    )
+    .reduce(
+      (total, event) =>
+        total +
+        Math.round(
+          minutesBetween(event.startedAtUtc, event.endedAtUtc!) *
+            event.completionRatio *
+            0.3,
+        ),
+      0,
+    );
+  if (recoveredMinutes === 0) return state;
+  return {
+    ...state,
+    sleepDebtMinutes: Math.max(0, currentDebt - recoveredMinutes),
+  };
 }
 
 function resultForItem(
@@ -247,12 +282,13 @@ export function settleSchedule<TState extends RuntimeStateLike>(
       return start <= to && to < end;
     })
     .sort((left, right) => right.priority - left.priority)[0];
-  const nextState = applyStateDelta(
+  const stateAfterEffects = applyStateDelta(
     input.state,
     aggregateStateDelta,
     input.toUtc,
     active?.id,
   );
+  const nextState = applySleepDebtRepayment(stateAfterEffects, events);
   return {
     idempotencyKey,
     skippedAsDuplicate: false,

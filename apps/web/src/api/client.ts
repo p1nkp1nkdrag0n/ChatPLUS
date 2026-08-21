@@ -1,3 +1,4 @@
+import type { MemoryRecallPreviewResponse } from "@personasim/contracts";
 import type {
   AppSettings,
   CharacterDetail,
@@ -5,6 +6,8 @@ import type {
   CharacterSummary,
   ChatMessage,
   ChatSession,
+  RetrievalRun,
+  RetrievalRunReplayResponse,
   RuntimeState,
   ScheduleItem,
   SimulationTier,
@@ -222,44 +225,20 @@ export const api = {
         | TimelineEvent[]
       >(`/api/agents/${agentId}/timeline`);
       if (Array.isArray(value)) return { events: value };
-      const activity =
-        value.events?.map((event): TimelineEvent => ({
-          id: stringValue(event.id),
-          type: stringValue(event.type, "activity"),
-          title: stringValue(event.title, activityTitle(event.type)),
-          summary: stringValue(event.summary),
-          occurredAtUtc: stringValue(
-            event.occurredAtUtc,
-            new Date().toISOString(),
+      if (value.events !== undefined) {
+        return {
+          events: dedupeAndSortTimelineEvents(
+            value.events.map(normalizeCanonicalTimelineEvent),
           ),
-          metadata: recordValue(event),
-        })) ??
-        (value.activityEvents ?? []).map((event): TimelineEvent => ({
-          id: stringValue(event.id),
-          type: stringValue(event.eventType, "activity"),
-          title: activityTitle(event.eventType),
-          summary: stringValue(event.summary),
-          occurredAtUtc: stringValue(
-            event.occurredAtUtc,
-            new Date().toISOString(),
-          ),
-          metadata: recordValue(event),
-        }));
-      const domain = (value.domainEvents ?? []).map((event): TimelineEvent => ({
-        id: stringValue(event.id ?? event.idempotencyKey),
-        type: stringValue(event.eventType, "domain"),
-        title: stringValue(event.eventType, "领域事件"),
-        summary: summarizeRecord(event.payload ?? event.data),
-        occurredAtUtc: stringValue(
-          event.recordedAtUtc ?? event.occurredAtUtc,
-          new Date().toISOString(),
-        ),
-        metadata: recordValue(event),
-      }));
+        };
+      }
+
+      const activity = (value.activityEvents ?? []).map(
+        normalizeLegacyActivityEvent,
+      );
+      const domain = (value.domainEvents ?? []).map(normalizeLegacyDomainEvent);
       return {
-        events: [...activity, ...domain].toSorted((a, b) =>
-          b.occurredAtUtc.localeCompare(a.occurredAtUtc),
-        ),
+        events: dedupeAndSortTimelineEvents([...activity, ...domain]),
       };
     },
     sessions: (agentId: string) =>
@@ -329,24 +308,34 @@ export const api = {
   },
   developer: {
     snapshot: async (agentId: string) => {
-      try {
-        return await request<Record<string, unknown>>(
-          `/api/developer/snapshot/${agentId}`,
-        );
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.status !== 404) throw error;
-        const [status, overview, memories, timeline] = await Promise.all([
-          request<Record<string, unknown>>("/api/developer/status"),
-          request<Record<string, unknown>>(`/api/agents/${agentId}/overview`),
-          request<Record<string, unknown>>(`/api/agents/${agentId}/memories`),
-          request<Record<string, unknown>>(`/api/agents/${agentId}/timeline`),
-        ]);
-        return { status, overview, memories, timeline };
-      }
+      const [status, overview, memories, timeline] = await Promise.all([
+        request<Record<string, unknown>>("/api/developer/status"),
+        request<Record<string, unknown>>(`/api/agents/${agentId}/overview`),
+        request<Record<string, unknown>>(`/api/agents/${agentId}/memories`),
+        request<Record<string, unknown>>(`/api/agents/${agentId}/timeline`),
+      ]);
+      return { status, overview, memories, timeline };
     },
     llmCalls: () =>
       request<{ calls: Array<Record<string, unknown>> }>(
         "/api/developer/llm-calls",
+      ),
+    memoryRecallPreview: (agentId: string, message: string) =>
+      request<MemoryRecallPreviewResponse>(
+        `/api/developer/agents/${agentId}/memory-recall-preview`,
+        { method: "POST", body: body({ message }) },
+      ),
+    retrievalRuns: (agentId: string, limit = 50) =>
+      request<{ runs: RetrievalRun[] }>(
+        `/api/developer/agents/${encodeURIComponent(agentId)}/retrieval-runs?limit=${limit}`,
+      ),
+    retrievalRun: (runId: string) =>
+      request<{ run: RetrievalRun }>(
+        `/api/developer/retrieval-runs/${encodeURIComponent(runId)}`,
+      ),
+    replayRetrievalRun: (runId: string) =>
+      request<RetrievalRunReplayResponse>(
+        `/api/developer/retrieval-runs/${encodeURIComponent(runId)}/replay`,
       ),
     setClock: (nowUtc: string) =>
       request<{ nowUtc: string }>("/api/developer/clock/set", {
@@ -488,6 +477,106 @@ function activityTitle(value: unknown): string {
       skipped: "活动跳过",
       cancelled: "活动取消",
     }[stringValue(value)] ?? "活动事件"
+  );
+}
+
+type TimelineLineageIds = Pick<
+  TimelineEvent,
+  | "sourceIntentId"
+  | "scheduleItemId"
+  | "activityEventId"
+  | "memoryId"
+  | "proactiveCandidateId"
+  | "messageId"
+>;
+
+function normalizeCanonicalTimelineEvent(
+  event: Record<string, unknown>,
+): TimelineEvent {
+  return {
+    id: stringValue(event.id),
+    type: stringValue(event.type, "activity"),
+    title: stringValue(event.title, activityTitle(event.type)),
+    summary: stringValue(event.summary),
+    occurredAtUtc: stringValue(event.occurredAtUtc, new Date().toISOString()),
+    ...timelineLineageIds(event),
+    ...(typeof event.source === "string" ? { source: event.source } : {}),
+    ...(typeof event.correlationId === "string"
+      ? { correlationId: event.correlationId }
+      : {}),
+    ...(typeof event.causationId === "string"
+      ? { causationId: event.causationId }
+      : {}),
+    metadata: recordValue(event),
+  };
+}
+
+function normalizeLegacyActivityEvent(
+  event: Record<string, unknown>,
+): TimelineEvent {
+  const id = stringValue(event.id);
+  return {
+    id,
+    type: stringValue(event.eventType, "activity"),
+    title: activityTitle(event.eventType),
+    summary: stringValue(event.summary),
+    occurredAtUtc: stringValue(event.occurredAtUtc, new Date().toISOString()),
+    ...timelineLineageIds({ ...event, activityEventId: id }),
+    ...(typeof event.source === "string" ? { source: event.source } : {}),
+    metadata: recordValue(event),
+  };
+}
+
+function normalizeLegacyDomainEvent(
+  event: Record<string, unknown>,
+): TimelineEvent {
+  return {
+    id: stringValue(event.id ?? event.idempotencyKey),
+    type: stringValue(event.eventType, "domain"),
+    title: stringValue(event.eventType, "领域事件"),
+    summary: summarizeRecord(event.payload ?? event.data),
+    occurredAtUtc: stringValue(
+      event.recordedAtUtc ?? event.occurredAtUtc,
+      new Date().toISOString(),
+    ),
+    ...timelineLineageIds(event),
+    ...(typeof event.correlationId === "string"
+      ? { correlationId: event.correlationId }
+      : {}),
+    ...(typeof event.causationId === "string"
+      ? { causationId: event.causationId }
+      : {}),
+    metadata: recordValue(event),
+  };
+}
+
+function timelineLineageIds(
+  event: Record<string, unknown>,
+): TimelineLineageIds {
+  const result: TimelineLineageIds = {};
+  for (const key of [
+    "sourceIntentId",
+    "scheduleItemId",
+    "activityEventId",
+    "memoryId",
+    "proactiveCandidateId",
+    "messageId",
+  ] as const) {
+    const id = event[key];
+    if (typeof id === "string") result[key] = id;
+  }
+  return result;
+}
+
+function dedupeAndSortTimelineEvents(events: TimelineEvent[]): TimelineEvent[] {
+  const uniqueEvents = new Map<string, TimelineEvent>();
+  for (const event of events) {
+    if (!uniqueEvents.has(event.id)) uniqueEvents.set(event.id, event);
+  }
+  return [...uniqueEvents.values()].toSorted(
+    (left, right) =>
+      right.occurredAtUtc.localeCompare(left.occurredAtUtc) ||
+      right.id.localeCompare(left.id),
   );
 }
 

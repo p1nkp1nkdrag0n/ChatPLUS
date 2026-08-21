@@ -9,6 +9,7 @@ import {
   OriginalCharacterInputSchema,
 } from "./character.js";
 import { PersonaChatDeliveryModeSchema } from "./llm.js";
+import { MemoryRecallRuntimeDiagnosticSchema } from "./memory-recall-preview.js";
 import {
   EntityIdSchema,
   ReasonCodeSchema,
@@ -17,7 +18,11 @@ import {
   SimulationTierSchema,
   UtcDateTimeSchema,
 } from "./primitives.js";
-import { ScheduleItemSchema, ScheduleStateEffectsSchema } from "./schedule.js";
+import {
+  ScheduleItemSchema,
+  ScheduleSourceSchema,
+  ScheduleStateEffectsSchema,
+} from "./schedule.js";
 import { RuntimeStateSchema } from "./state.js";
 
 export const ApiErrorCodeSchema = z.enum([
@@ -285,6 +290,7 @@ export const SendMessageResponseSchema = z
     assistantMessage: ApiStoredMessageSchema,
     scheduleChanges: z.array(ScheduleItemSchema).max(300),
     state: RuntimeStateSchema,
+    memoryRecall: MemoryRecallRuntimeDiagnosticSchema.optional(),
     decision: z
       .object({
         reasonCode: ReasonCodeSchema,
@@ -312,6 +318,15 @@ export const ApiTimelineEventSchema = z
     title: z.string().trim().min(1).max(160).optional(),
     summary: z.string().trim().min(1).max(1_000),
     occurredAtUtc: UtcDateTimeSchema,
+    scheduleItemId: EntityIdSchema.optional(),
+    activityEventId: EntityIdSchema.optional(),
+    memoryId: EntityIdSchema.optional(),
+    proactiveCandidateId: EntityIdSchema.optional(),
+    messageId: EntityIdSchema.optional(),
+    source: ScheduleSourceSchema.optional(),
+    sourceIntentId: EntityIdSchema.optional(),
+    correlationId: EntityIdSchema.optional(),
+    causationId: EntityIdSchema.optional(),
   })
   .strict();
 export type ApiTimelineEvent = z.infer<typeof ApiTimelineEventSchema>;

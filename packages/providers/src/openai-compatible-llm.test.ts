@@ -172,6 +172,112 @@ describe("OpenAI-compatible provider", () => {
     expect(JSON.stringify(value)).not.toContain("reasoning");
   });
 
+  it("omits unsupported controls in prompt JSON mode and clamps output tokens", async () => {
+    let requestInit: RequestInit | undefined;
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      capabilities: {
+        structuredOutputMode: "prompt_json",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        maxContextTokens: 4_096,
+        maxOutputTokens: 256,
+      },
+      maxOutputTokens: 1_024,
+      fetch: (_input, init) => {
+        requestInit = init;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: { content: '{"ok":true}' },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      },
+      retryDelay: () => Promise.resolve(),
+    });
+
+    await provider.generateObject({
+      purpose: "chat_turn",
+      system: "Return JSON.",
+      prompt: "Test",
+      schema: z.object({ ok: z.boolean() }).strict(),
+      maxOutputTokens: 2_048,
+    });
+
+    const body = JSON.parse(requestBody(requestInit)) as Record<
+      string,
+      unknown
+    >;
+    expect(provider.capabilities.structuredOutputMode).toBe("prompt_json");
+    expect(body).not.toHaveProperty("thinking");
+    expect(body).not.toHaveProperty("response_format");
+    expect(body.stream).toBe(false);
+    expect(body.max_tokens).toBe(256);
+  });
+
+  it("uses a native JSON schema response format when supported", async () => {
+    let requestInit: RequestInit | undefined;
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      capabilities: {
+        structuredOutputMode: "native_schema",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        maxOutputTokens: 8_192,
+      },
+      fetch: (_input, init) => {
+        requestInit = init;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: { content: '{"ok":true}' },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      },
+      retryDelay: () => Promise.resolve(),
+    });
+
+    await provider.generateObject({
+      purpose: "chat_turn",
+      system: "Return JSON.",
+      prompt: "Test",
+      schema: z.object({ ok: z.boolean() }).strict(),
+    });
+
+    const body = JSON.parse(requestBody(requestInit)) as Record<
+      string,
+      unknown
+    >;
+    expect(body.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: {
+        name: "personasim_chat_turn",
+        strict: true,
+      },
+    });
+    expect(JSON.stringify(body.response_format)).toContain('"ok"');
+  });
+
   it("serializes generateObject prompts exactly once and keeps large request bodies bounded", async () => {
     let requestInit: RequestInit | undefined;
     const fakeFetch: typeof fetch = (_input, init) => {

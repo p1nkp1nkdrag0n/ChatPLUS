@@ -24,6 +24,7 @@ import {
 import { canonicalUtc, compareUtc } from "../domain/time.js";
 import type { Clock } from "../runtime/clock.js";
 import type { SseHub } from "../sse/hub.js";
+import type { ContinuityIndexService } from "./continuity-index-service.js";
 import type { LlmService } from "./llm-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
 import type { ScheduleService } from "./schedule-service.js";
@@ -53,6 +54,10 @@ export class SettlementService {
     private readonly llm: LlmService,
     private readonly schedules: ScheduleService,
     private readonly sse: SseHub,
+    private readonly options: {
+      proactiveCommitMode?: "legacy" | "atomic";
+      continuityIndex?: ContinuityIndexService;
+    } = {},
   ) {}
 
   async settle(
@@ -185,10 +190,12 @@ export class SettlementService {
         .prepare("SELECT 1 FROM settlements WHERE idempotency_key = ?")
         .get(idempotencyKey);
       if (duplicate) return;
+      const insertedActivityEvents: StoredActivityEvent[] = [];
       for (const projection of projections) {
         this.store.updateScheduleItem(projection.item);
         for (const event of projection.events) {
           if (!this.store.insertActivityEvent(event)) continue;
+          insertedActivityEvents.push(event);
           if (event.eventType === "completed") {
             if (capabilities.longTermMemory) this.insertActivityMemory(event);
             if (capabilities.proactiveDialogue) {
@@ -201,6 +208,11 @@ export class SettlementService {
             }
           }
         }
+      }
+      if (insertedActivityEvents.length > 0) {
+        this.options.continuityIndex?.upsertActivityEvents(
+          insertedActivityEvents,
+        );
       }
       this.store.updateRuntimeState(nextState);
       this.store.updateCursor({
@@ -313,7 +325,8 @@ export class SettlementService {
 
     const candidate = this.store.database
       .prepare(
-        `SELECT * FROM proactive_candidates
+        `SELECT id, trigger_event_id, draft_message, summary, revision
+         FROM proactive_candidates
          WHERE agent_id = ? AND status = 'pending' AND earliest_at_utc <= ? AND expires_at_utc >= ?
          ORDER BY priority DESC, created_at_utc LIMIT 1`,
       )
@@ -323,6 +336,7 @@ export class SettlementService {
           trigger_event_id: string;
           draft_message: string | null;
           summary: string;
+          revision: number;
         }
       | undefined;
     if (!candidate) return undefined;
@@ -335,6 +349,7 @@ export class SettlementService {
         nowUtc,
       );
     const eventId = candidate.trigger_event_id;
+    const claimToken = createEntityId("proactive_claim");
     const message: StoredMessage = {
       id: createEntityId("message"),
       sessionId: session.id,
@@ -345,27 +360,74 @@ export class SettlementService {
         `刚刚${candidate.summary}。我还挺想和你分享这件事的。`,
       messageKind: "assistant_proactive",
       triggerEventId: eventId,
-      metadata: { proactiveCandidateId: candidate.id },
+      metadata: { proactiveCandidateId: candidate.id, claimToken },
       createdAtUtc: nowUtc,
     };
+    let claimed = false;
     this.store.transaction(() => {
+      const claimResult =
+        this.options.proactiveCommitMode === "legacy"
+          ? this.store.database
+              .prepare(
+                "UPDATE proactive_candidates SET status = 'sent', revision = revision + 1 WHERE id = ? AND status = 'pending' AND revision = ?",
+              )
+              .run(candidate.id, candidate.revision)
+          : this.store.database
+              .prepare(
+                "UPDATE proactive_candidates SET status = 'sending', claim_token = ?, claimed_at_utc = ?, revision = revision + 1 WHERE id = ? AND status = 'pending' AND revision = ?",
+              )
+              .run(claimToken, nowUtc, candidate.id, candidate.revision);
+      if (claimResult.changes !== 1) return;
+      claimed = true;
+      if (this.options.proactiveCommitMode !== "legacy") {
+        if (
+          !this.store.insertDomainEvent({
+            agentId,
+            streamType: "proactive",
+            streamId: candidate.id,
+            streamVersion: candidate.revision + 1,
+            eventType: "proactive.claimed",
+            recordedAtUtc: nowUtc,
+            payload: { claimToken, triggerEventId: eventId },
+            causationId: eventId,
+            idempotencyKey: "proactive:" + candidate.id + ":claimed",
+          })
+        ) {
+          throw new Error("Proactive claim audit event was not inserted");
+        }
+      }
       this.store.insertMessage(message);
-      this.store.database
-        .prepare(
-          "UPDATE proactive_candidates SET status = 'sent' WHERE id = ? AND status = 'pending'",
-        )
-        .run(candidate.id);
-      this.store.insertDomainEvent({
-        agentId,
-        streamType: "conversation",
-        streamId: session.id,
-        streamVersion: 1,
-        eventType: "conversation.proactive_message_sent",
-        recordedAtUtc: nowUtc,
-        payload: { messageId: message.id, triggerEventId: eventId },
-        idempotencyKey: `proactive:${candidate.id}:sent`,
-      });
+      if (this.options.proactiveCommitMode !== "legacy") {
+        const sent = this.store.database
+          .prepare(
+            "UPDATE proactive_candidates SET status = 'sent', revision = revision + 1 WHERE id = ? AND status = 'sending' AND claim_token = ?",
+          )
+          .run(candidate.id, claimToken);
+        if (sent.changes !== 1) {
+          throw new Error("Proactive claim became stale before commit");
+        }
+      }
+      if (
+        !this.store.insertDomainEvent({
+          agentId,
+          streamType: "conversation",
+          streamId: session.id,
+          streamVersion: 1,
+          eventType: "conversation.proactive_message_sent",
+          recordedAtUtc: nowUtc,
+          payload: {
+            messageId: message.id,
+            triggerEventId: eventId,
+            proactiveCandidateId: candidate.id,
+          },
+          causationId: candidate.id,
+          idempotencyKey: `proactive:${candidate.id}:sent`,
+        })
+      ) {
+        throw new Error("Proactive delivery audit event was not inserted");
+      }
     });
+    if (!claimed) return undefined;
     this.sse.publish({
       type: "message.created",
       agentId,

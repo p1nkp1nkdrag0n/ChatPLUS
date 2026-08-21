@@ -1,20 +1,24 @@
+import type {
+  ScheduleMutationBundle,
+  SelfPlanBundle,
+} from "@personasim/contracts";
 import { DateTime } from "luxon";
 import {
   plan72HoursDetailed,
-  validateScheduleProposals,
+  validateFinalScheduleProjection,
+  type FinalScheduleProjectionError,
+  type ScheduleItemLike,
 } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
 import { capabilitiesForTier } from "../domain/capabilities.js";
-import {
-  toFeatureScheduleEffects,
-  toFeatureScheduleItems,
-} from "../domain/feature-adapters.js";
+import { toFeatureScheduleItems } from "../domain/feature-adapters.js";
 import { ApiError, notFound } from "../domain/errors.js";
 import { createEntityId } from "../domain/id.js";
 import {
   schedulePlanSchema,
   scheduleItemDraftSchema,
+  scheduleItemSchema,
   type CharacterSpec,
   type ScheduleEffectProposal,
   type ScheduleItem,
@@ -41,6 +45,54 @@ export type PartialProposalValidation = {
     proposal: ScheduleEffectProposal;
   }>;
 };
+
+export type ScheduleBundleTransactionMode = "auto" | "caller_owned";
+
+export interface ApplyScheduleBundleOptions {
+  /**
+   * The default opens a local transaction. Use caller_owned only while
+   * already inside a wider database transaction.
+   */
+  transaction?: ScheduleBundleTransactionMode;
+  nowUtc?: string;
+  minimumSleepMinutes?: number;
+  correlationId?: string;
+  causationId?: string;
+  /**
+   * Ownership guard for transitional callers. A legacy effect and a
+   * server-owned bundle may never write in the same invocation.
+   */
+  legacyEffects?: readonly ScheduleEffectProposal[];
+}
+
+export type ScheduleBundleFailureReason =
+  "mixed_write_modes" | "schedule_disabled" | "validation_failed";
+
+export type ScheduleBundleError =
+  | FinalScheduleProjectionError
+  | {
+      code: "MIXED_SCHEDULE_WRITE_MODES" | "SCHEDULE_DISABLED";
+      path: string;
+      message: string;
+    };
+
+interface ScheduleBundleApplyBase {
+  errors: ScheduleBundleError[];
+  projectedItems: ScheduleItem[];
+  createdItems: ScheduleItem[];
+  updatedItems: ScheduleItem[];
+  changedItems: ScheduleItem[];
+  lostSleepMinutes: number;
+}
+
+export type ScheduleBundleApplyResult =
+  | (ScheduleBundleApplyBase & { ok: true })
+  | (ScheduleBundleApplyBase & {
+      ok: false;
+      reason: ScheduleBundleFailureReason;
+    });
+
+type ServerOwnedScheduleBundle = ScheduleMutationBundle | SelfPlanBundle;
 
 export class ScheduleService {
   constructor(
@@ -253,7 +305,12 @@ export class ScheduleService {
     const accepted: ScheduleEffectProposal[] = [];
     const rejections: PartialProposalValidation["rejections"] = [];
     for (const effect of effects) {
-      const result = this.validateBatch(agentId, spec, [...accepted, effect], nowUtc);
+      const result = this.validateBatch(
+        agentId,
+        spec,
+        [...accepted, effect],
+        nowUtc,
+      );
       if (result.valid) {
         accepted.push(effect);
         continue;
@@ -292,8 +349,8 @@ export class ScheduleService {
         ],
       };
     }
-    const result = validateScheduleProposals(
-      toFeatureScheduleEffects(effects),
+    const result = validateFinalScheduleProjection(
+      legacyEffectsAsMutationBundle(effects),
       {
         agentId,
         nowUtc,
@@ -313,41 +370,196 @@ export class ScheduleService {
     };
   }
 
+  applyMutationBundle(
+    agentId: string,
+    bundle: ScheduleMutationBundle,
+    options: ApplyScheduleBundleOptions = {},
+  ): ScheduleBundleApplyResult {
+    return this.applyServerOwnedBundle(agentId, bundle, options);
+  }
+
+  applySelfPlanBundle(
+    agentId: string,
+    bundle: SelfPlanBundle,
+    options: ApplyScheduleBundleOptions = {},
+  ): ScheduleBundleApplyResult {
+    return this.applyServerOwnedBundle(agentId, bundle, options);
+  }
+
+  private applyServerOwnedBundle(
+    agentId: string,
+    bundle: ServerOwnedScheduleBundle,
+    options: ApplyScheduleBundleOptions,
+  ): ScheduleBundleApplyResult {
+    const apply = (): ScheduleBundleApplyResult => {
+      const spec = this.store.getCharacterSpec(agentId);
+      if (!spec) throw notFound("Character");
+      const existing = this.store.listSchedule(agentId);
+
+      if ((options.legacyEffects?.length ?? 0) > 0) {
+        return bundleFailure("mixed_write_modes", existing, {
+          code: "MIXED_SCHEDULE_WRITE_MODES",
+          path: "bundle",
+          message:
+            "Legacy schedule effects and a server-owned bundle are mutually exclusive",
+        });
+      }
+      if (
+        !capabilitiesForTier(spec.tier).schedule ||
+        !spec.schedulePolicy.enabled
+      ) {
+        return bundleFailure("schedule_disabled", existing, {
+          code: "SCHEDULE_DISABLED",
+          path: "bundle",
+          message: "Scheduling is disabled for this character",
+        });
+      }
+
+      const nowUtc = options.nowUtc ?? this.clock.nowUtc();
+      const projection = validateFinalScheduleProjection(bundle, {
+        agentId,
+        nowUtc,
+        timezone: spec.identity.timezone,
+        existingItems: toFeatureScheduleItems(existing),
+        policy: spec.schedulePolicy,
+        horizonHours: spec.schedulePolicy.horizonHours,
+        ...(options.minimumSleepMinutes === undefined
+          ? {}
+          : { minimumSleepMinutes: options.minimumSleepMinutes }),
+      });
+      if (!projection.ok) {
+        return {
+          ok: false,
+          reason: "validation_failed",
+          errors: projection.errors,
+          projectedItems: existing,
+          createdItems: [],
+          updatedItems: [],
+          changedItems: [],
+          lostSleepMinutes: 0,
+        };
+      }
+
+      // The validator owns the candidate projection. Persistence metadata is
+      // regenerated here so no planner can choose ids, timestamps, or revision.
+      const lineage =
+        "intentId" in bundle
+          ? {
+              sourceIntentId: bundle.intentId,
+              correlationId: options.correlationId ?? bundle.intentId,
+              causationId: options.causationId ?? bundle.intentId,
+            }
+          : {};
+      const createdItems = projection.createdItems.map((item) =>
+        materializeProjectedCreate(agentId, item, nowUtc, lineage),
+      );
+      const updatedItems = projection.changedItems.map((item) =>
+        materializeProjectedUpdate(item, nowUtc),
+      );
+      const createdByProjectionId = new Map(
+        projection.createdItems.map((item, index) => [
+          item.id,
+          createdItems[index]!,
+        ]),
+      );
+      const updatedById = new Map(updatedItems.map((item) => [item.id, item]));
+      const existingById = new Map(existing.map((item) => [item.id, item]));
+      const projectedItems = projection.projectedItems.map(
+        (item) =>
+          createdByProjectionId.get(item.id) ??
+          updatedById.get(item.id) ??
+          existingById.get(item.id) ??
+          scheduleItemSchema.parse(item),
+      );
+
+      for (const item of createdItems) this.store.insertScheduleItem(item);
+      for (const item of updatedItems) this.store.updateScheduleItem(item);
+      return {
+        ok: true,
+        errors: [],
+        projectedItems,
+        createdItems,
+        updatedItems,
+        changedItems: [...createdItems, ...updatedItems],
+        lostSleepMinutes: projection.lostSleepMinutes,
+      };
+    };
+
+    return options.transaction === "caller_owned"
+      ? apply()
+      : this.store.transaction(apply);
+  }
+
   applyValidatedEffects(
     agentId: string,
     effects: ScheduleEffectProposal[],
     nowUtc: string,
   ): ScheduleItem[] {
-    const changed: ScheduleItem[] = [];
-    for (const effect of effects) {
-      if (effect.operation === "create") {
-        const item = materializeScheduleItem(agentId, effect.item, nowUtc);
-        this.store.insertScheduleItem(item);
-        changed.push(item);
-        continue;
-      }
-      if (effect.operation === "cancel") {
-        const item = this.store.getScheduleItem(effect.itemId);
-        if (!item || item.agentId !== agentId) throw notFound("Schedule item");
-        item.status = "cancelled";
-        item.revision += 1;
-        item.updatedAtUtc = nowUtc;
-        this.store.updateScheduleItem(item);
-        changed.push(item);
-        continue;
-      }
-      const item = this.store.getScheduleItem(effect.itemId);
-      if (!item || item.agentId !== agentId) throw notFound("Schedule item");
-      item.startAtUtc = canonicalUtc(effect.newStartAtUtc);
-      item.endAtUtc = canonicalUtc(effect.newEndAtUtc);
-      item.source = "runtime_replan";
-      item.revision += 1;
-      item.updatedAtUtc = nowUtc;
-      this.store.updateScheduleItem(item);
-      changed.push(item);
+    if (effects.length === 0) return [];
+    const result = this.applyServerOwnedBundle(
+      agentId,
+      legacyEffectsAsMutationBundle(effects),
+      {
+        nowUtc,
+        transaction: this.store.database?.inTransaction
+          ? "caller_owned"
+          : "auto",
+      },
+    );
+    if (!result.ok) {
+      throw new ApiError(
+        409,
+        "schedule_projection_rejected",
+        "The validated schedule effects no longer produce a valid final projection.",
+        result.errors,
+      );
     }
-    return changed;
+    return result.changedItems;
   }
+}
+
+function legacyEffectsAsMutationBundle(
+  effects: readonly ScheduleEffectProposal[],
+): ScheduleMutationBundle {
+  const create: NonNullable<ScheduleMutationBundle["create"]> = [];
+  const reschedule: NonNullable<ScheduleMutationBundle["reschedule"]> = [];
+  const cancel: NonNullable<ScheduleMutationBundle["cancel"]> = [];
+
+  for (const effect of effects) {
+    if (effect.operation === "create") {
+      create.push({
+        title: effect.item.title,
+        description: effect.item.description,
+        category: effect.item.category,
+        startAtUtc: effect.item.startAtUtc,
+        endAtUtc: effect.item.endAtUtc,
+        timezone: effect.item.timezone,
+        rigidity: effect.item.rigidity,
+        priority: effect.item.priority,
+        adherenceProbability: effect.item.adherenceProbability,
+        narrativeImportance: effect.item.narrativeImportance,
+        shareable: effect.item.shareable,
+        stateEffects: effect.item.stateEffects,
+      });
+      continue;
+    }
+    if (effect.operation === "reschedule") {
+      reschedule.push({
+        itemId: effect.itemId,
+        newStartAtUtc: effect.newStartAtUtc,
+        newEndAtUtc: effect.newEndAtUtc,
+      });
+      continue;
+    }
+    cancel.push({ itemId: effect.itemId });
+  }
+
+  return {
+    owner: "user_negotiation",
+    ...(create.length === 0 ? {} : { create }),
+    ...(reschedule.length === 0 ? {} : { reschedule }),
+    ...(cancel.length === 0 ? {} : { cancel }),
+  };
 }
 
 function buildDeterministicPlan(
@@ -386,6 +598,9 @@ function stripItemMetadata(item: object): Record<string, unknown> {
     "revision",
     "createdAtUtc",
     "updatedAtUtc",
+    "sourceIntentId",
+    "correlationId",
+    "causationId",
   ]) {
     delete draft[field];
   }
@@ -409,6 +624,50 @@ function materializeScheduleItem(
     createdAtUtc: nowUtc,
     updatedAtUtc: nowUtc,
   };
+}
+
+function bundleFailure(
+  reason: ScheduleBundleFailureReason,
+  existing: ScheduleItem[],
+  error: ScheduleBundleError,
+): ScheduleBundleApplyResult {
+  return {
+    ok: false,
+    reason,
+    errors: [error],
+    projectedItems: existing,
+    createdItems: [],
+    updatedItems: [],
+    changedItems: [],
+    lostSleepMinutes: 0,
+  };
+}
+
+function materializeProjectedCreate(
+  agentId: string,
+  item: ScheduleItemLike,
+  nowUtc: string,
+  lineage: Partial<
+    Pick<ScheduleItem, "sourceIntentId" | "correlationId" | "causationId">
+  > = {},
+): ScheduleItem {
+  const draft = scheduleItemDraftSchema.parse(stripItemMetadata(item));
+  return scheduleItemSchema.parse({
+    ...materializeScheduleItem(agentId, draft, nowUtc),
+    ...lineage,
+  });
+}
+
+function materializeProjectedUpdate(
+  item: ScheduleItemLike,
+  nowUtc: string,
+): ScheduleItem {
+  return scheduleItemSchema.parse({
+    ...item,
+    startAtUtc: canonicalUtc(item.startAtUtc),
+    endAtUtc: canonicalUtc(item.endAtUtc),
+    updatedAtUtc: nowUtc,
+  });
 }
 
 function validateDraftSet(

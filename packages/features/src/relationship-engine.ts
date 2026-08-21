@@ -10,10 +10,10 @@ export interface RelationshipStateLike {
 }
 
 export interface RelationshipDeltaLike {
-  closeness?: number;
-  trust?: number;
-  familiarity?: number;
-  recentInteractionValence?: number;
+  closeness?: number | undefined;
+  trust?: number | undefined;
+  familiarity?: number | undefined;
+  recentInteractionValence?: number | undefined;
 }
 
 export interface RelationshipUpdateResult<T extends RelationshipStateLike> {
@@ -27,7 +27,7 @@ export function applyRelationshipDelta<T extends RelationshipStateLike>(
   delta: RelationshipDeltaLike,
   atUtc: string,
 ): RelationshipUpdateResult<T> {
-  const limits: Required<RelationshipDeltaLike> = {
+  const limits: Record<keyof RelationshipDeltaLike, number> = {
     closeness: 0.08,
     trust: 0.08,
     familiarity: 0.05,

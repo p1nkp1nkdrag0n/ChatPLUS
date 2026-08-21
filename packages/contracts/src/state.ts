@@ -19,6 +19,7 @@ export const RuntimeStateSchema = z
     stress: UnitIntervalSchema,
     socialBattery: UnitIntervalSchema,
     focus: UnitIntervalSchema,
+    sleepDebtMinutes: z.number().int().min(0).max(720).default(0),
     currentActivityId: EntityIdSchema.optional(),
     locationContext: z.string().trim().min(1).max(240).optional(),
     relationship: RelationshipStateSchema,

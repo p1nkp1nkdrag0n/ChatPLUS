@@ -8,7 +8,7 @@ describe("web API normalization", () => {
     vi.unstubAllGlobals();
   });
 
-  it("merges server activity projections and domain events without duplicating activities", async () => {
+  it("uses canonical events as authoritative and preserves lineage IDs", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -19,6 +19,19 @@ describe("web API normalization", () => {
               title: "海边旅行",
               summary: "旅行已经完成。",
               occurredAtUtc: "2026-08-16T08:00:00.000Z",
+              sourceIntentId: "intent-1",
+              scheduleItemId: "schedule-1",
+              activityEventId: "activity-1",
+              memoryId: "memory-1",
+              proactiveCandidateId: "candidate-1",
+              messageId: "message-1",
+            },
+            {
+              id: "domain-1",
+              type: "simulation.settled",
+              title: "模拟结算",
+              summary: "离线生活已结算。",
+              occurredAtUtc: "2026-08-16T09:00:00.000Z",
             },
           ],
           activityEvents: [
@@ -28,6 +41,12 @@ describe("web API normalization", () => {
               summary: "旅行已经完成。",
               occurredAtUtc: "2026-08-16T08:00:00.000Z",
             },
+            {
+              id: "legacy-activity",
+              eventType: "started",
+              summary: "不应追加的旧投影。",
+              occurredAtUtc: "2026-08-16T10:00:00.000Z",
+            },
           ],
           domainEvents: [
             {
@@ -35,6 +54,12 @@ describe("web API normalization", () => {
               eventType: "simulation.settled",
               recordedAtUtc: "2026-08-16T09:00:00.000Z",
               payload: { summary: "离线生活已结算。" },
+            },
+            {
+              id: "legacy-domain",
+              eventType: "schedule.changed",
+              recordedAtUtc: "2026-08-16T10:00:00.000Z",
+              payload: { summary: "不应追加的旧领域事件。" },
             },
           ],
         }),
@@ -57,7 +82,128 @@ describe("web API normalization", () => {
       type: "simulation.settled",
       summary: "离线生活已结算。",
     });
+    expect(
+      result.events.find((event) => event.id === "activity-1"),
+    ).toMatchObject({
+      sourceIntentId: "intent-1",
+      scheduleItemId: "schedule-1",
+      activityEventId: "activity-1",
+      memoryId: "memory-1",
+      proactiveCandidateId: "candidate-1",
+      messageId: "message-1",
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("merges and deduplicates legacy timeline arrays when canonical events are absent", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            activityEvents: [
+              {
+                id: "activity-1",
+                eventType: "completed",
+                summary: "旅行已经完成。",
+                occurredAtUtc: "2026-08-16T08:00:00.000Z",
+                sourceIntentId: "intent-1",
+                scheduleItemId: "schedule-1",
+              },
+              {
+                id: "activity-1",
+                eventType: "completed",
+                summary: "重复的活动事件。",
+                occurredAtUtc: "2026-08-16T08:00:00.000Z",
+              },
+            ],
+            domainEvents: [
+              {
+                id: "domain-1",
+                eventType: "simulation.settled",
+                recordedAtUtc: "2026-08-16T09:00:00.000Z",
+                payload: { summary: "离线生活已结算。" },
+              },
+              {
+                id: "domain-1",
+                eventType: "simulation.settled",
+                recordedAtUtc: "2026-08-16T09:00:00.000Z",
+                payload: { summary: "重复的领域事件。" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const result = await api.agents.timeline("agent-1");
+
+    expect(result.events.map((event) => event.id)).toEqual([
+      "domain-1",
+      "activity-1",
+    ]);
+    expect(
+      result.events.find((event) => event.id === "activity-1"),
+    ).toMatchObject({
+      sourceIntentId: "intent-1",
+      scheduleItemId: "schedule-1",
+      activityEventId: "activity-1",
+    });
+  });
+
+  it("composes developer snapshots only from supported endpoints", async () => {
+    const status = { serverTimeUtc: "2026-08-16T08:00:00.000Z" };
+    const overview = { agentId: "agent-1", state: { revision: 3 } };
+    const memories = { memories: [{ id: "memory-1" }] };
+    const timeline = { events: [{ id: "event-1" }] };
+    const payloads = new Map<string, Record<string, unknown>>([
+      ["/api/developer/status", status],
+      ["/api/agents/agent-1/overview", overview],
+      ["/api/agents/agent-1/memories", memories],
+      ["/api/agents/agent-1/timeline", timeline],
+    ]);
+    const fetchMock = vi.fn((input: string): Promise<Response> => {
+      const payload = payloads.get(input);
+      if (payload === undefined) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: { code: "not_found", message: "Unsupported endpoint" },
+            }),
+            {
+              status: 404,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.developer.snapshot("agent-1")).resolves.toEqual({
+      status,
+      overview,
+      memories,
+      timeline,
+    });
+
+    const requestedUrls = fetchMock.mock.calls.map(([input]) => input);
+    expect(requestedUrls).toEqual([
+      "/api/developer/status",
+      "/api/agents/agent-1/overview",
+      "/api/agents/agent-1/memories",
+      "/api/agents/agent-1/timeline",
+    ]);
+    expect(
+      requestedUrls.some((url) => url.includes("/api/developer/snapshot/")),
+    ).toBe(false);
   });
 
   it("normalizes assistant delivery metadata for sequential chat bubbles", async () => {

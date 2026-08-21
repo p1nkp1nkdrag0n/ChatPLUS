@@ -10,6 +10,18 @@ export interface ReplyDialogueStyleLike {
   formality?: number;
   directness?: number;
 }
+export interface ReplyStrategyContext {
+  state?: {
+    energy: number;
+    stress: number;
+    socialBattery: number;
+    sleepDebtMinutes?: number;
+  };
+  relationship?: {
+    closeness: number;
+    trust: number;
+  };
+}
 
 export interface ReplyStrategy {
   complexity: ReplyComplexity;
@@ -48,6 +60,7 @@ const GREETING_OR_ACK =
 export function deriveReplyStrategy(
   userMessage: string,
   dialogue: ReplyDialogueStyleLike,
+  context: ReplyStrategyContext = {},
 ): ReplyStrategy {
   const text = userMessage.trim();
   const negatedLongRequest = NEGATED_LONG_REQUEST.test(text);
@@ -93,14 +106,45 @@ export function deriveReplyStrategy(
     1_200,
   );
   const personaBaseline = averageLength * (0.7 + verbosity * 0.9);
-  const target = targetFor(complexity, personaBaseline);
-  const range = rangeFor(complexity, target);
-  const preferredChunkCount = clamp(
+  let target = targetFor(complexity, personaBaseline);
+  let range = rangeFor(complexity, target);
+  let preferredChunkCount = clamp(
     Math.round(dialogue.averageChunksPerTurn ?? 1),
     1,
     12,
   );
-  const deliveryPreference = deliveryPreferenceFor(dialogue);
+  let deliveryPreference = deliveryPreferenceFor(dialogue);
+
+  const runtime = context.state;
+  const naturalTurn = complexity === "brief" || complexity === "standard";
+  if (
+    runtime !== undefined &&
+    naturalTurn &&
+    !explicitDetail &&
+    !explicitDeep
+  ) {
+    const energy = clamp(runtime.energy, 0, 1);
+    const stress = clamp(runtime.stress, 0, 1);
+    const socialBattery = clamp(runtime.socialBattery, 0, 1);
+    const sleepDebt = clamp(runtime.sleepDebtMinutes ?? 0, 0, 720) / 720;
+    const fatigue = Math.max((1 - energy) * 0.65 + stress * 0.35, sleepDebt);
+    if (fatigue >= 0.55) {
+      const relationshipBuffer =
+        (context.relationship?.closeness ?? 0) >= 0.8 ? 0.06 : 0;
+      const factor = clamp(
+        1 - (fatigue - 0.45) * 0.4 + relationshipBuffer,
+        0.72,
+        1,
+      );
+      target = Math.max(24, Math.round(target * factor));
+      range = rangeFor(complexity, target);
+      preferredChunkCount = Math.min(
+        preferredChunkCount,
+        socialBattery < 0.25 ? 1 : 2,
+      );
+      if (socialBattery < 0.25) deliveryPreference = "prefer_single_block";
+    }
+  }
 
   return {
     complexity,

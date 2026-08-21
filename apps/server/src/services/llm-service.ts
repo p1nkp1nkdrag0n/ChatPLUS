@@ -1,4 +1,8 @@
-import type { JsonValue, LlmPurpose } from "@personasim/contracts";
+import type {
+  JsonValue,
+  LlmCapabilityProfile,
+  LlmPurpose,
+} from "@personasim/contracts";
 import {
   createFixtureLlmProvider,
   createOpenAiCompatibleLlmProvider,
@@ -35,6 +39,7 @@ export type GenerateObjectInput<T> = {
 export class LlmService {
   readonly providerName: "fixture" | "openai-compatible";
   readonly modelName: string;
+  readonly capabilities: LlmCapabilityProfile;
   private readonly provider: LlmProvider;
 
   constructor(
@@ -56,17 +61,27 @@ export class LlmService {
         model: config.model,
         timeoutMs: config.timeoutMs,
         maxRetries: config.maxRetries,
+        ...(config.maxOutputTokens === undefined
+          ? {}
+          : { maxOutputTokens: config.maxOutputTokens }),
+        ...(config.capabilities === undefined
+          ? {}
+          : {
+              capabilities: config.capabilities,
+            }),
       });
     } else {
       this.provider = createFixtureLlmProvider();
     }
     this.modelName = this.provider.model;
+    this.capabilities = this.provider.capabilities;
   }
 
   async generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
     const startedAt = performance.now();
     let success = false;
     let errorCode: string | undefined;
+    let outputTokens = 0;
     try {
       const provider = this.fixtureProvider(input);
       const result = await provider.generateObject({
@@ -82,6 +97,7 @@ export class LlmService {
           : { maxOutputTokens: input.maxOutputTokens }),
       });
       success = true;
+      outputTokens = approximateTokens(JSON.stringify(result) ?? "");
       return result;
     } catch (error) {
       errorCode = errorCodeFrom(error);
@@ -99,7 +115,7 @@ export class LlmService {
         provider: this.providerName,
         model: this.modelName,
         inputTokens: approximateTokens(input.system + input.prompt),
-        outputTokens: 0,
+        outputTokens,
         latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
         success,
         ...(errorCode ? { errorCode } : {}),

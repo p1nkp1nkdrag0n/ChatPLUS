@@ -459,6 +459,43 @@
   font-family: var(--font-mono);
 }
 
+.timeline-block__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-source-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.timeline-lineage {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.timeline-lineage summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.timeline-lineage code {
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
 .event-ledger {
   border-left: 1px solid var(--line);
   padding-left: 28px;
@@ -616,6 +653,188 @@
   grid-column: 1 / -1;
 }
 
+.developer-panel--recall {
+  grid-column: 1 / -1;
+}
+
+.memory-recall-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.memory-recall-form .field {
+  margin: 0;
+}
+
+.memory-recall-form textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.memory-recall-inspector {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.memory-recall-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.memory-recall-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+.memory-recall-summary span,
+.memory-recall-section__heading span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.memory-recall-summary strong {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.memory-recall-abstention {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 12px 14px;
+  border-left: 3px solid var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.memory-recall-section {
+  display: grid;
+  gap: 10px;
+}
+
+.memory-recall-section__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.memory-recall-section__heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.memory-recall-candidates,
+.memory-recall-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.memory-recall-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.memory-recall-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.memory-recall-card strong {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.memory-recall-card p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.memory-recall-status {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.memory-recall-status--selected {
+  background: var(--sage-soft);
+  color: var(--sage);
+}
+
+.memory-recall-status--rejected {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.memory-recall-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.memory-recall-meta code {
+  overflow-wrap: anywhere;
+}
+
+.memory-recall-empty {
+  margin: 12px 0 0;
+  color: var(--muted);
+}
+
+.memory-recall-rejections {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.memory-recall-rejections summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.memory-recall-rejections ul {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-recall-rejections li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.memory-recall-rejections code {
+  overflow-wrap: anywhere;
+}
+
 .developer-panel pre,
 .json-editor textarea,
 .json-section-editor textarea {
@@ -632,6 +851,10 @@
   font-size: 11px;
   line-height: 1.65;
   white-space: pre-wrap;
+}
+
+.developer-panel pre {
+  max-height: 520px;
 }
 
 .advance-control {

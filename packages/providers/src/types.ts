@@ -1,4 +1,8 @@
-import type { LLMRequest, LLMResponse } from "@personasim/contracts";
+import type {
+  LlmCapabilityProfile,
+  LLMRequest,
+  LLMResponse,
+} from "@personasim/contracts";
 import type { ZodType } from "zod";
 
 export interface GenerateObjectInput<T> {
@@ -22,6 +26,7 @@ export interface CompletionInput {
 export interface LlmProvider {
   readonly name: string;
   readonly model: string;
+  readonly capabilities: LlmCapabilityProfile;
   generate(request: LLMRequest): Promise<LLMResponse>;
   generateObject<T>(input: GenerateObjectInput<T>): Promise<T>;
   completeStructured<T>(input: GenerateObjectInput<T>): Promise<T>;

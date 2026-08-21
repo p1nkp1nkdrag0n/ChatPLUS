@@ -1,4 +1,9 @@
-import { ActivityEnrichmentBatchSchema } from "@personasim/contracts";
+import {
+  ActivityEnrichmentBatchSchema,
+  AutobiographyRevisionProposalSchema,
+  AgentTurnDecisionSchema,
+  ContinuityTurnEffectsSchema,
+} from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
 
 import { createFixtureLlmProvider } from "./fixture-llm.js";
@@ -33,5 +38,105 @@ describe("Fixture LLM activity enrichment", () => {
       "event-2",
     ]);
     expect(batch.events[0]?.memoryCandidates[0]?.type).toBe("activity_outcome");
+  });
+});
+
+describe("Fixture LLM checkpoint autobiography", () => {
+  it("bounds evidence context while preserving the verified quote", async () => {
+    const quote = "x".repeat(1_500);
+    const response = await createFixtureLlmProvider().generate({
+      purpose: "checkpoint_autobiography",
+      payload: {
+        prompt: JSON.stringify({
+          evidence: [
+            {
+              id: "evidence-1",
+              sourceType: "message_archive",
+              sourceId: "message-1",
+              quote,
+              temporalStatus: "unknown",
+              reliability: "reported",
+              recordedAtUtc: "2026-08-21T04:00:00.000Z",
+            },
+          ],
+          messages: [],
+        }),
+      },
+    });
+
+    const proposal = AutobiographyRevisionProposalSchema.parse(response.data);
+    expect(proposal.entries[0]?.evidence[0]).toMatchObject({
+      id: "evidence-1",
+      sourceType: "message_archive",
+      sourceId: "message-1",
+      quote,
+    });
+    expect(proposal.entries[0]?.evidence[0]?.contextSummary).toHaveLength(
+      1_000,
+    );
+  });
+});
+
+describe("Fixture LLM continuity effects", () => {
+  it.each([
+    {
+      label: "defense",
+      userMessage: "我明天答辩，有点紧张。",
+      evidenceQuote: "明天答辩",
+    },
+    {
+      label: "interview",
+      userMessage: "我明天面试，希望别太紧张。",
+      evidenceQuote: "明天面试",
+    },
+    {
+      label: "portfolio",
+      userMessage: "作品集要交了，我还在收尾。",
+      evidenceQuote: "作品集要交",
+    },
+  ])(
+    "grounds follow-up and care-cue proposals for $label",
+    async ({ userMessage, evidenceQuote }) => {
+      const response = await createFixtureLlmProvider().generate({
+        purpose: "chat_turn",
+        payload: { userMessage },
+      });
+      const decision = AgentTurnDecisionSchema.parse(response.data);
+      const continuity = ContinuityTurnEffectsSchema.parse(
+        decision.continuityEffects,
+      );
+
+      expect(continuity.followUpCandidates).toHaveLength(1);
+      expect(continuity.careCueCandidates).toHaveLength(1);
+      expect(continuity.followUpTransitions).toEqual([]);
+      expect(continuity.followUpCandidates[0]?.evidenceQuotes).toEqual([
+        evidenceQuote,
+      ]);
+      expect(continuity.careCueCandidates[0]?.evidenceQuotes).toEqual([
+        evidenceQuote,
+      ]);
+      for (const candidate of [
+        continuity.followUpCandidates[0],
+        continuity.careCueCandidates[0],
+      ]) {
+        expect(candidate).not.toHaveProperty("id");
+        expect(candidate).not.toHaveProperty("earliestAtUtc");
+        expect(candidate).not.toHaveProperty("expiresAtUtc");
+      }
+    },
+  );
+
+  it("keeps continuity collections empty for an ordinary message", async () => {
+    const response = await createFixtureLlmProvider().generate({
+      purpose: "chat_turn",
+      payload: { userMessage: "今天午饭还不错。" },
+    });
+    const decision = AgentTurnDecisionSchema.parse(response.data);
+
+    expect(decision.continuityEffects).toEqual({
+      followUpCandidates: [],
+      followUpTransitions: [],
+      careCueCandidates: [],
+    });
   });
 });

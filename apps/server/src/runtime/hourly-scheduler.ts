@@ -1,5 +1,8 @@
 import { DateTime } from "luxon";
 
+import type { PersonalLifeService } from "../services/personal-life-service.js";
+import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
+import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
 import type { SseHub } from "../sse/hub.js";
 import type { ActorQueue } from "./actor-queue.js";
@@ -19,6 +22,18 @@ export class HourlyScheduler {
     private readonly actors: ActorQueue,
     private readonly settlements: SettlementService,
     private readonly logger: SchedulerLogger,
+    private readonly personalLife?: Pick<
+      PersonalLifeService,
+      "ensureSelfInitiatedPlans"
+    >,
+    private readonly proactiveDelivery?: Pick<
+      ProactiveDeliveryService,
+      "deliverNext"
+    >,
+    private readonly memoryLifecycle?: Pick<
+      MemoryLifecycleService,
+      "maintainAgent"
+    >,
   ) {}
 
   start(): void {
@@ -38,25 +53,35 @@ export class HourlyScheduler {
     const bucket = DateTime.fromISO(nowUtc).toUTC().startOf("hour").toISO()!;
     const activeAgents = this.sse.getActiveAgentIds();
     await Promise.allSettled(
-      activeAgents.map((agentId) =>
-        this.actors.runExclusive(agentId, async () => {
-          try {
+      activeAgents.map(async (agentId) => {
+        try {
+          await this.actors.runExclusive(agentId, async () => {
             await this.settlements.settleAndExtend(agentId, {
               toUtc: nowUtc,
               hourlyBucket: bucket,
             });
-            this.settlements.deliverOneProactive(agentId);
-          } catch (error) {
-            this.logger.error(
-              {
-                agentId,
-                error: error instanceof Error ? error.message : String(error),
-              },
-              "hourly settlement failed",
+            this.personalLife?.ensureSelfInitiatedPlans(agentId);
+            this.memoryLifecycle?.maintainAgent(agentId);
+          });
+          if (this.proactiveDelivery === undefined) {
+            await this.actors.runExclusive(agentId, () =>
+              this.settlements.deliverOneProactive(agentId),
             );
+          } else {
+            // ProactiveDeliveryService owns its own preflight/postflight actor
+            // phases. Its optional model compose must run between them.
+            await this.proactiveDelivery.deliverNext(agentId);
           }
-        }),
-      ),
+        } catch (error) {
+          this.logger.error(
+            {
+              agentId,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "hourly settlement failed",
+          );
+        }
+      }),
     );
   }
 

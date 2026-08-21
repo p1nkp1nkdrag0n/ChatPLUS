@@ -116,6 +116,103 @@ test.describe("PersonaSim fixture flow", () => {
       page.getByText("第一版只支持 .txt、.md 和 .srt 文件。"),
     ).toBeVisible();
   });
+
+  test("renders the recall inspector and authoritative timeline lineage", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const browserProblems: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        const location = message.location().url;
+        browserProblems.push(
+          `${message.type()}: ${message.text()}${location ? ` @ ${location}` : ""}`,
+        );
+      }
+    });
+    page.on("pageerror", (error) => {
+      browserProblems.push(`pageerror: ${error.message}`);
+    });
+
+    const suffix = `${test.info().project.name}-${Date.now()}`;
+    const characterId = await createPublishedCharacter(
+      request,
+      `Recall QA ${suffix}`,
+    );
+    await page.addInitScript((activeCharacterId) => {
+      localStorage.setItem(
+        "personasim.active-character.v1",
+        JSON.stringify({ version: 1, characterId: activeCharacterId }),
+      );
+    }, characterId);
+
+    await page.goto(`/characters/${characterId}/chat`);
+    await page
+      .getByTestId("chat-input")
+      .fill(
+        "\u4eca\u665a\u5b66\u6821\u6709\u65b0\u751f\u665a\u4f1a\uff0c" +
+          "\u4f60\u8981\u4e00\u8d77\u53bb\u5417\uff1f",
+      );
+    await page
+      .getByRole("button", { name: "\u53d1\u9001\u6d88\u606f" })
+      .click();
+    await expect(
+      page
+        .getByText(/\u597d\u554a|\u665a\u4f1a|\u5177\u4f53\u65f6\u95f4/)
+        .last(),
+    ).toBeVisible({ timeout: 30_000 });
+
+    await page.goto("/developer");
+    await expect(
+      page.getByRole("heading", { name: "Memory Recall Preview" }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Test message")
+      .fill(
+        "\u4f60\u8fd8\u8bb0\u5f97\u4eca\u665a\u7684\u65b0\u751f\u665a\u4f1a" +
+          "\u9080\u8bf7\u5417\uff1f",
+      );
+    const recallResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response
+          .url()
+          .endsWith(
+            `/api/developer/agents/${characterId}/memory-recall-preview`,
+          ),
+    );
+    await page.getByRole("button", { name: "Run recall preview" }).click();
+    expect((await recallResponse).ok()).toBe(true);
+    await expect(
+      page.getByText("Candidate memories", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Final EvidenceBundle", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("memory-recall-preview-inspector"),
+    ).toBeVisible();
+    await expect(page.getByTestId("retrieval-run-inspector")).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("developer-recall.png"),
+      fullPage: true,
+    });
+
+    await page.goto(`/characters/${characterId}/timeline`);
+    await expect(page.locator(".page--timeline")).toBeVisible();
+    await expect(
+      page
+        .locator("details.timeline-lineage summary")
+        .filter({ hasText: "ScheduleItem \u2192 Memory \u2192 Message" })
+        .first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.screenshot({
+      path: testInfo.outputPath("timeline-lineage.png"),
+      fullPage: true,
+    });
+
+    expect(browserProblems).toEqual([]);
+  });
 });
 
 async function createPublishedCharacter(

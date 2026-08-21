@@ -1,6 +1,8 @@
 import { z } from "zod";
 
+import { ContinuityTurnEffectsSchema } from "./follow-up.js";
 import { MemoryCandidateSchema } from "./memory.js";
+import { PersonalIntentCandidateSchema } from "./personal-intent.js";
 import { AgentReplySchema } from "./messages.js";
 import { ReasonCodeSchema, ShortTextSchema } from "./primitives.js";
 import { RelationshipDeltaSchema } from "./relationship.js";
@@ -14,6 +16,11 @@ export const AgentTurnDecisionSchema = z
     stateDelta: RuntimeStateDeltaSchema.optional(),
     relationshipDelta: RelationshipDeltaSchema.optional(),
     memoryCandidates: z.array(MemoryCandidateSchema).max(8),
+    personalIntentCandidates: z
+      .array(PersonalIntentCandidateSchema)
+      .max(8)
+      .optional(),
+    continuityEffects: ContinuityTurnEffectsSchema.optional(),
     reasonCode: ReasonCodeSchema,
     reasonSummary: ShortTextSchema,
   })

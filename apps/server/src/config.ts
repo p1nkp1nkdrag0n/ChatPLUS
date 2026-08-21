@@ -1,6 +1,11 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  ConversationRetentionPolicySchema,
+  type ConversationRetentionPolicy,
+  type LlmCapabilityProfile,
+} from "@personasim/contracts";
 import { config as loadEnv } from "dotenv";
 import { z } from "zod";
 
@@ -13,6 +18,15 @@ loadEnv({ path: resolve(workspaceRoot, ".env"), quiet: true });
 const booleanFromEnv = z
   .enum(["true", "false"])
   .default("true")
+  .transform((value) => value === "true");
+
+const optionalPositiveIntegerFromEnv = z.preprocess(
+  (value) => (value === "" || value === undefined ? undefined : value),
+  z.coerce.number().int().positive().optional(),
+);
+const falseByDefaultBooleanFromEnv = z
+  .enum(["true", "false"])
+  .default("false")
   .transform((value) => value === "true");
 
 const envSchema = z.object({
@@ -44,12 +58,56 @@ const envSchema = z.object({
     .min(0)
     .max(3)
     .default(1),
+  OPENAI_COMPATIBLE_STRUCTURED_OUTPUT_MODE: z
+    .enum(["native_schema", "json_object", "prompt_json"])
+    .default("json_object"),
+  OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL: booleanFromEnv,
+  OPENAI_COMPATIBLE_SUPPORTS_STREAMING: falseByDefaultBooleanFromEnv,
+  OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS: optionalPositiveIntegerFromEnv,
+  OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(64_000)
+    .default(8_192),
+  CONVERSATION_FULL_VERBATIM_HOURS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(24),
+  CONVERSATION_SOFT_TOKEN_LIMIT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(8_000),
+  CONVERSATION_HARD_TOKEN_LIMIT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(12_000),
+  CONVERSATION_MINIMUM_TAIL_TOKENS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(3_000),
+  CONVERSATION_MINIMUM_RECENT_TURNS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(12),
   LOG_LEVEL: z.string().default("info"),
   SEED_DEMO: booleanFromEnv,
   CHAT_EFFECTS_MODE: z.enum(["off", "gated"]).default("gated"),
   SCHEDULE_NEGOTIATION_MODE: z
     .enum(["legacy", "shadow", "enforced"])
+    .default("shadow"),
+  SELF_INITIATED_PLANNING: z.enum(["off", "shadow", "enforced"]).default("off"),
+  LIVE_WORLD_EFFECTS: z.enum(["off", "shadow", "enforced"]).default("shadow"),
+  MEMORY_RECALL_MODE: z
+    .enum(["legacy", "shadow", "enforced"])
     .default("legacy"),
+  AUTOBIOGRAPHY_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
+  PROACTIVE_COMMIT_MODE: z.enum(["legacy", "atomic"]).default("atomic"),
 });
 
 export type ServerConfig = {
@@ -68,12 +126,20 @@ export type ServerConfig = {
     model: string;
     timeoutMs: number;
     maxRetries: number;
+    maxOutputTokens?: number;
+    capabilities?: LlmCapabilityProfile;
   };
+  conversationRetention: ConversationRetentionPolicy;
   logLevel: string;
   seedDemo: boolean;
   developerRoutes: boolean;
   chatEffectsMode: "off" | "gated";
   scheduleNegotiationMode: "legacy" | "shadow" | "enforced";
+  selfInitiatedPlanningMode: "off" | "shadow" | "enforced";
+  liveWorldEffectsMode: "off" | "shadow" | "enforced";
+  memoryRecallMode: "legacy" | "shadow" | "enforced";
+  autobiographyMode: "off" | "shadow" | "enforced";
+  proactiveCommitMode: "legacy" | "atomic";
 };
 
 export function readConfig(
@@ -111,17 +177,48 @@ export function readConfig(
       model: env.OPENAI_COMPATIBLE_MODEL,
       timeoutMs: env.OPENAI_COMPATIBLE_TIMEOUT_MS,
       maxRetries: env.OPENAI_COMPATIBLE_MAX_RETRIES,
+      maxOutputTokens: env.OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
+      capabilities: {
+        structuredOutputMode: env.OPENAI_COMPATIBLE_STRUCTURED_OUTPUT_MODE,
+        supportsThinkingControl:
+          env.OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL,
+        supportsStreaming: env.OPENAI_COMPATIBLE_SUPPORTS_STREAMING,
+        ...(env.OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS === undefined
+          ? {}
+          : {
+              maxContextTokens: env.OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS,
+            }),
+        maxOutputTokens: env.OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
+      },
+    },
+    conversationRetention: {
+      fullVerbatimHours: env.CONVERSATION_FULL_VERBATIM_HOURS,
+      softTokenLimit: env.CONVERSATION_SOFT_TOKEN_LIMIT,
+      hardTokenLimit: env.CONVERSATION_HARD_TOKEN_LIMIT,
+      minimumTailTokens: env.CONVERSATION_MINIMUM_TAIL_TOKENS,
+      minimumRecentTurns: env.CONVERSATION_MINIMUM_RECENT_TURNS,
     },
     logLevel: env.LOG_LEVEL,
     seedDemo: env.SEED_DEMO,
     developerRoutes: env.NODE_ENV !== "production",
     chatEffectsMode: env.CHAT_EFFECTS_MODE,
     scheduleNegotiationMode: env.SCHEDULE_NEGOTIATION_MODE,
+    selfInitiatedPlanningMode: env.SELF_INITIATED_PLANNING,
+    liveWorldEffectsMode: env.LIVE_WORLD_EFFECTS,
+    memoryRecallMode: env.MEMORY_RECALL_MODE,
+    autobiographyMode: env.AUTOBIOGRAPHY_MODE,
+    proactiveCommitMode: env.PROACTIVE_COMMIT_MODE,
   };
 
-  return {
+  const merged = {
     ...base,
     ...overrides,
     llm: { ...base.llm, ...overrides.llm },
+  };
+  return {
+    ...merged,
+    conversationRetention: ConversationRetentionPolicySchema.parse(
+      merged.conversationRetention,
+    ),
   };
 }

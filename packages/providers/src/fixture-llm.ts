@@ -543,11 +543,76 @@ function normalTurnFixture(): JsonValue {
     reasonSummary: "按照角色的日常语气回应并关心用户近况。",
   };
 }
+function continuityUserMessage(request: LLMRequest): string {
+  const root = asRecord(request.payload);
+  if (typeof root.userMessage === "string") return root.userMessage;
+  if (typeof root.prompt !== "string") return "";
+
+  const marker = "CURRENT_USER_MESSAGE_JSON\n";
+  const markerIndex = root.prompt.lastIndexOf(marker);
+  if (markerIndex < 0) return "";
+  const jsonLine = root.prompt
+    .slice(markerIndex + marker.length)
+    .split("\n", 1)[0];
+  if (jsonLine === undefined) return "";
+  try {
+    const parsed = JSON.parse(jsonLine) as JsonValue;
+    return stringValue(asRecord(parsed).content, "");
+  } catch {
+    return "";
+  }
+}
+
+function continuityEffectsFixture(request: LLMRequest): JsonValue {
+  const userMessage = continuityUserMessage(request);
+  const grounded = [
+    { quote: "明天答辩", label: "答辩" },
+    { quote: "明天面试", label: "面试" },
+    { quote: "作品集要交", label: "作品集提交" },
+  ].find((item) => userMessage.includes(item.quote));
+  if (grounded === undefined) {
+    return {
+      followUpCandidates: [],
+      followUpTransitions: [],
+      careCueCandidates: [],
+    };
+  }
+
+  return {
+    followUpCandidates: [
+      {
+        subjectType: "user_event",
+        contextSummary: `用户提到近期的${grounded.label}。`,
+        expectedOutcomeDescription: `了解${grounded.label}的结果和用户感受。`,
+        timingHint: "在用户所述事件结束后，自然且不施压地询问",
+        evidenceQuotes: [grounded.quote],
+        reasonCode: "grounded_future_user_event",
+        reasonSummary: "用户原文明确提到了之后可以确认结果的重要事件。",
+      },
+    ],
+    followUpTransitions: [],
+    careCueCandidates: [
+      {
+        contextSummary: `用户近期要经历${grounded.label}。`,
+        mentionGuidance:
+          "只在相关话题自然出现时表达关心，不把提示当成立即追问的许可。",
+        timingHint: "事件临近或结束后且当前话题相关时",
+        evidenceQuotes: [grounded.quote],
+        reasonCode: "grounded_care_cue",
+        reasonSummary: "用户原文明确提到了近期值得关心的重要事件。",
+      },
+    ],
+  };
+}
 
 function chatFixture(request: LLMRequest): JsonValue {
-  return /晚会|party|一起去|邀请/iu.test(promptText(request))
+  const turn = /晚会|party|一起去|邀请/iu.test(promptText(request))
     ? partyTurnFixture(request)
     : normalTurnFixture();
+  return {
+    ...asRecord(turn),
+    continuityEffects: continuityEffectsFixture(request),
+  };
 }
 
 function repairTurnFixture(): JsonValue {
@@ -605,6 +670,76 @@ function proactiveFixture(request: LLMRequest): JsonValue {
   };
 }
 
+function checkpointAutobiographyFixture(request: LLMRequest): JsonValue {
+  const root = asRecord(request.payload);
+  const prompt = parseFixturePrompt(root["prompt"]);
+  const evidenceList = Array.isArray(prompt["evidence"])
+    ? prompt["evidence"]
+    : [];
+  const firstEvidence = asRecord(evidenceList[0] ?? {});
+  const messages = Array.isArray(prompt["messages"]) ? prompt["messages"] : [];
+  const firstMessage = asRecord(messages[0] ?? {});
+  const recordedAtUtc = stringValue(
+    firstEvidence["recordedAtUtc"],
+    "2026-01-01T00:00:00.000Z",
+  );
+  const summary = stringValue(
+    firstEvidence["quote"] ?? firstMessage["content"],
+    "I remember the verified events in this checkpoint.",
+  );
+  const evidenceId = stringValue(
+    firstEvidence["id"],
+    "evidence-checkpoint-fixture",
+  );
+  const sourceType = stringValue(
+    firstEvidence["sourceType"],
+    "message_archive",
+  );
+  const sourceId = stringValue(
+    firstEvidence["sourceId"] ?? firstMessage["id"],
+    "checkpoint-fixture",
+  );
+  const reliability = stringValue(firstEvidence["reliability"], "reported");
+  const temporalStatus = stringValue(
+    firstEvidence["temporalStatus"],
+    "unknown",
+  );
+  return {
+    summaryFirstPerson: summary,
+    entries: [
+      {
+        entryKind: "important_experience",
+        content: summary,
+        temporalStatus: "unknown",
+        evidence: [
+          {
+            id: evidenceId,
+            sourceType,
+            sourceId,
+            quote: summary,
+            contextSummary: summary.slice(0, 1_000),
+            temporalStatus,
+            reliability,
+            recordedAtUtc,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function parseFixturePrompt(
+  value: JsonValue | undefined,
+): Record<string, JsonValue> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value) as JsonValue;
+    return asRecord(parsed);
+  } catch {
+    return {};
+  }
+}
+
 const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   compile_character: compileFixture,
   import_character: importFixture,
@@ -613,6 +748,7 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   repair_chat_turn: () => repairTurnFixture(),
   enrich_activity: enrichFixture,
   compose_proactive_message: proactiveFixture,
+  checkpoint_autobiography: checkpointAutobiographyFixture,
 };
 
 function tokenEstimate(value: string): number {
@@ -622,6 +758,13 @@ function tokenEstimate(value: string): number {
 export class FixtureLlmProvider implements LlmProvider {
   readonly name = "fixture";
   readonly model: string;
+  readonly capabilities = {
+    structuredOutputMode: "prompt_json",
+    supportsThinkingControl: false,
+    supportsStreaming: false,
+    maxContextTokens: 128_000,
+    maxOutputTokens: 64_000,
+  } as const;
   readonly #fixtures: NonNullable<FixtureLlmOptions["fixtures"]>;
 
   constructor(options: FixtureLlmOptions = {}) {

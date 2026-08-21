@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import type { MemoryLifecycleStatusLike } from "./memory-lifecycle.js";
 import { clamp, normalizeText, parseInstant, stableId } from "./shared.js";
 
 export type MemoryKindLike =
@@ -9,6 +10,12 @@ export type MemoryOriginLike =
   | "model_inference"
   | "synthetic_extension"
   | "runtime_simulation";
+
+export interface MemoryClaimLike {
+  subjectKey: string;
+  disposition: "affirmed" | "negated" | "cancelled" | "completed";
+  recordedAtUtc: string;
+}
 
 export interface MemoryLike {
   id: string;
@@ -23,9 +30,13 @@ export interface MemoryLike {
   sourceMessageIds: string[];
   sourceActivityEventIds: string[];
   origin: MemoryOriginLike;
-  status: "active" | "superseded" | "forgotten";
+  status: MemoryLifecycleStatusLike;
   dedupeKey: string;
+  claim?: MemoryClaimLike;
   supersededById?: string;
+  mergedIntoId?: string;
+  lastReinforcedAtUtc?: string;
+  lifecycleUpdatedAtUtc?: string;
   createdAtUtc: string;
   updatedAtUtc: string;
 }
@@ -41,6 +52,7 @@ export interface MemoryProposalLike {
   sourceMessageIds: string[];
   sourceActivityEventIds: string[];
   origin: MemoryOriginLike;
+  claim?: MemoryClaimLike;
   reasonCode: string;
   reasonSummary: string;
 }
@@ -171,6 +183,7 @@ export function mergeMemoryProposal(
   const memoryId =
     base?.id ??
     stableId("memory", `${agentId}:${safe.kind}:${source}:${safe.content}`);
+  const claim = safe.claim ?? base?.claim;
   const memory: MemoryLike = {
     id: memoryId,
     agentId,
@@ -191,6 +204,9 @@ export function mergeMemoryProposal(
     origin: safe.origin,
     status: "active",
     dedupeKey: memoryDedupeKey(agentId, safe.kind, safe.content),
+    ...(claim === undefined ? {} : { claim }),
+    lastReinforcedAtUtc: nowUtc,
+    lifecycleUpdatedAtUtc: base?.lifecycleUpdatedAtUtc ?? nowUtc,
     createdAtUtc: base?.createdAtUtc ?? nowUtc,
     updatedAtUtc: nowUtc,
     ...(safe.occurredAtUtc === undefined

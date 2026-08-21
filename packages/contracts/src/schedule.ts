@@ -43,6 +43,7 @@ export const ScheduleSourceSchema = z.enum([
   "initial_plan",
   "user_invitation",
   "runtime_replan",
+  "self_initiated",
   "manual",
 ]);
 export type ScheduleSource = z.infer<typeof ScheduleSourceSchema>;
@@ -90,6 +91,9 @@ export const ScheduleItemSchema = z
     id: EntityIdSchema,
     agentId: EntityIdSchema,
     ...ScheduleDraftShape,
+    sourceIntentId: EntityIdSchema.optional(),
+    correlationId: EntityIdSchema.optional(),
+    causationId: EntityIdSchema.optional(),
     status: ScheduleStatusSchema,
     revision: RevisionSchema,
     createdAtUtc: UtcDateTimeSchema,

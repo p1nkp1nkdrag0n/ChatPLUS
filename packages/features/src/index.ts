@@ -6,6 +6,7 @@ export * from "./conversation-retention.js";
 export * from "./date-digest.js";
 export * from "./follow-up.js";
 export * from "./free-slot.js";
+export * from "./routine-hard-intervals.js";
 export * from "./memory-engine.js";
 export * from "./memory-judge.js";
 export * from "./memory-lifecycle.js";

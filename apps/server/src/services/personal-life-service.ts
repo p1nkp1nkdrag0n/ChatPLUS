@@ -5,6 +5,7 @@ import type {
   SelfPlanBundle,
 } from "@personasim/contracts";
 import {
+  deriveRoutineHardIntervals,
   normalizePersonalIntentCategory,
   stableId,
 } from "@personasim/features";
@@ -155,6 +156,10 @@ export class PersonalLifeService {
         intents: activeIntents,
         horizonEndAtUtc,
         schedule,
+        hardIntervals: deriveRoutineHardIntervals(character, {
+          horizonStartAtUtc: nowUtc,
+          horizonEndAtUtc,
+        }),
         correlationId,
         causationId: correlationId,
         ...(this.mode === "enforced"

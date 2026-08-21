@@ -81,7 +81,7 @@ const SCHEDULE_CATEGORIES = new Set([
   "other",
 ]);
 
-function normalizeCategory(value: string): string {
+export function normalizeCategory(value: string): string {
   const normalized = value
     .trim()
     .toLocaleLowerCase()

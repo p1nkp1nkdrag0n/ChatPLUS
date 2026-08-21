@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { openDatabase, type Database } from "../db/connection.js";
@@ -103,6 +107,59 @@ describe("ProactiveGenerationService", () => {
       reasonCode: "no_delivery_subject",
     });
     expect(proactiveMessageCount(database)).toBe(1);
+  });
+
+  it("preserves delivery idempotency after reopening the same SQLite file", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "personasim-proactive-"));
+    const databasePath = join(directory, "proactive.sqlite");
+    const firstDatabase = openDatabase(databasePath);
+    runMigrations(firstDatabase);
+    seedAgent(firstDatabase);
+    seedActivityCandidate(firstDatabase);
+    const sharedClock = new FakeClock(NOW_UTC);
+    const firstService = new ProactiveGenerationService(
+      new ProactiveGenerationRepository(firstDatabase),
+      new ConversationActivityTracker(firstDatabase),
+      new ActorQueue(),
+      sharedClock,
+      () => eligiblePolicy(),
+    );
+
+    const first = await firstService.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: () => "The city walk held up after reopening.",
+    });
+    expect(first.status).toBe("committed");
+    expect(proactiveMessageCount(firstDatabase)).toBe(1);
+    firstDatabase.close();
+
+    const reopened = openDatabase(databasePath);
+    runMigrations(reopened);
+    const reopenedService = new ProactiveGenerationService(
+      new ProactiveGenerationRepository(reopened),
+      new ConversationActivityTracker(reopened),
+      new ActorQueue(),
+      sharedClock,
+      () => eligiblePolicy(),
+    );
+    await expect(
+      reopenedService.generate({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        compose: () => "must not run",
+      }),
+    ).resolves.toEqual({
+      status: "not_claimed",
+      reasonCode: "no_delivery_subject",
+    });
+    expect(proactiveMessageCount(reopened)).toBe(1);
+    expect(readCandidate(reopened)).toMatchObject({
+      status: "sent",
+      revision: 2,
+    });
+    reopened.close();
+    rmSync(directory, { recursive: true, force: true });
   });
 
   it("releases the actor during compose and rejects a user arrival epoch overtake", async () => {

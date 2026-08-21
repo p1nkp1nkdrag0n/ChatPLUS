@@ -74,7 +74,6 @@ export async function runLlmHttpSmoke(
     liveWorldEffectsMode: "off",
     memoryRecallMode: "legacy",
     autobiographyMode: "off",
-    proactiveCommitMode: "atomic",
     llm: { ...inputConfig.llm, provider: "openai-compatible" },
   };
 

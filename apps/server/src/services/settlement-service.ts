@@ -4,7 +4,6 @@ import { settleSchedule, settlementIdempotencyKey } from "@personasim/features";
 import type {
   DatabaseStore,
   StoredActivityEvent,
-  StoredMessage,
 } from "../db/store.js";
 import { capabilitiesForTier } from "../domain/capabilities.js";
 import {
@@ -55,7 +54,6 @@ export class SettlementService {
     private readonly schedules: ScheduleService,
     private readonly sse: SseHub,
     private readonly options: {
-      proactiveCommitMode?: "legacy" | "atomic";
       continuityIndex?: ContinuityIndexService;
     } = {},
   ) {}
@@ -287,156 +285,6 @@ export class SettlementService {
     return result;
   }
 
-  deliverOneProactive(agentId: string): StoredMessage | undefined {
-    const spec = this.store.getCharacterSpec(agentId);
-    const state = this.store.getRuntimeState(agentId);
-    if (!spec || !state) throw notFound("Character");
-    if (
-      spec.status !== "published" ||
-      !capabilitiesForTier(spec.tier).proactiveDialogue ||
-      !spec.proactivePolicy.enabled
-    )
-      return undefined;
-    if (state.relationship.closeness < spec.proactivePolicy.minimumCloseness)
-      return undefined;
-    const nowUtc = this.clock.nowUtc();
-    this.store.database
-      .prepare(
-        `UPDATE proactive_candidates SET status = 'expired'
-         WHERE agent_id = ? AND status = 'pending' AND expires_at_utc < ?`,
-      )
-      .run(agentId, nowUtc);
-    if (isQuietTime(nowUtc, spec)) return undefined;
-
-    const localDay = DateTime.fromISO(nowUtc).setZone(spec.identity.timezone);
-    const dayStartUtc = localDay.startOf("day").toUTC().toISO()!;
-    const dayEndUtc = localDay.endOf("day").toUTC().toISO()!;
-    const sentToday = (
-      this.store.database
-        .prepare(
-          `SELECT COUNT(*) AS count FROM messages
-           WHERE agent_id = ? AND message_kind = 'assistant_proactive'
-             AND created_at_utc BETWEEN ? AND ?`,
-        )
-        .get(agentId, dayStartUtc, dayEndUtc) as { count: number }
-    ).count;
-    if (sentToday >= Math.min(2, spec.proactivePolicy.maxMessagesPerDay))
-      return undefined;
-
-    const candidate = this.store.database
-      .prepare(
-        `SELECT id, trigger_event_id, draft_message, summary, revision
-         FROM proactive_candidates
-         WHERE agent_id = ? AND status = 'pending' AND earliest_at_utc <= ? AND expires_at_utc >= ?
-         ORDER BY priority DESC, created_at_utc LIMIT 1`,
-      )
-      .get(agentId, nowUtc, nowUtc) as
-      | {
-          id: string;
-          trigger_event_id: string;
-          draft_message: string | null;
-          summary: string;
-          revision: number;
-        }
-      | undefined;
-    if (!candidate) return undefined;
-    const sessions = this.store.listSessions(agentId);
-    const session =
-      sessions[0] ??
-      this.store.createSession(
-        agentId,
-        `与${spec.identity.name}的对话`,
-        nowUtc,
-      );
-    const eventId = candidate.trigger_event_id;
-    const claimToken = createEntityId("proactive_claim");
-    const message: StoredMessage = {
-      id: createEntityId("message"),
-      sessionId: session.id,
-      agentId,
-      role: "assistant",
-      content:
-        candidate.draft_message ??
-        `刚刚${candidate.summary}。我还挺想和你分享这件事的。`,
-      messageKind: "assistant_proactive",
-      triggerEventId: eventId,
-      metadata: { proactiveCandidateId: candidate.id, claimToken },
-      createdAtUtc: nowUtc,
-    };
-    let claimed = false;
-    this.store.transaction(() => {
-      const claimResult =
-        this.options.proactiveCommitMode === "legacy"
-          ? this.store.database
-              .prepare(
-                "UPDATE proactive_candidates SET status = 'sent', revision = revision + 1 WHERE id = ? AND status = 'pending' AND revision = ?",
-              )
-              .run(candidate.id, candidate.revision)
-          : this.store.database
-              .prepare(
-                "UPDATE proactive_candidates SET status = 'sending', claim_token = ?, claimed_at_utc = ?, revision = revision + 1 WHERE id = ? AND status = 'pending' AND revision = ?",
-              )
-              .run(claimToken, nowUtc, candidate.id, candidate.revision);
-      if (claimResult.changes !== 1) return;
-      claimed = true;
-      if (this.options.proactiveCommitMode !== "legacy") {
-        if (
-          !this.store.insertDomainEvent({
-            agentId,
-            streamType: "proactive",
-            streamId: candidate.id,
-            streamVersion: candidate.revision + 1,
-            eventType: "proactive.claimed",
-            recordedAtUtc: nowUtc,
-            payload: { claimToken, triggerEventId: eventId },
-            causationId: eventId,
-            idempotencyKey: "proactive:" + candidate.id + ":claimed",
-          })
-        ) {
-          throw new Error("Proactive claim audit event was not inserted");
-        }
-      }
-      this.store.insertMessage(message);
-      if (this.options.proactiveCommitMode !== "legacy") {
-        const sent = this.store.database
-          .prepare(
-            "UPDATE proactive_candidates SET status = 'sent', revision = revision + 1 WHERE id = ? AND status = 'sending' AND claim_token = ?",
-          )
-          .run(candidate.id, claimToken);
-        if (sent.changes !== 1) {
-          throw new Error("Proactive claim became stale before commit");
-        }
-      }
-      if (
-        !this.store.insertDomainEvent({
-          agentId,
-          streamType: "conversation",
-          streamId: session.id,
-          streamVersion: 1,
-          eventType: "conversation.proactive_message_sent",
-          recordedAtUtc: nowUtc,
-          payload: {
-            messageId: message.id,
-            triggerEventId: eventId,
-            proactiveCandidateId: candidate.id,
-          },
-          causationId: candidate.id,
-          idempotencyKey: `proactive:${candidate.id}:sent`,
-        })
-      ) {
-        throw new Error("Proactive delivery audit event was not inserted");
-      }
-    });
-    if (!claimed) return undefined;
-    this.sse.publish({
-      type: "message.created",
-      agentId,
-      occurredAtUtc: nowUtc,
-      data: message,
-    });
-    return message;
-  }
-
   private async enrichImportantEvents(
     spec: CharacterSpec,
     projections: ProjectedOutcome[],
@@ -610,17 +458,3 @@ export class SettlementService {
   }
 }
 
-function isQuietTime(nowUtc: string, spec: CharacterSpec): boolean {
-  const local = DateTime.fromISO(nowUtc).setZone(spec.identity.timezone);
-  const minute = local.hour * 60 + local.minute;
-  const start = clockMinutes(spec.proactivePolicy.quietHours.startLocal);
-  const end = clockMinutes(spec.proactivePolicy.quietHours.endLocal);
-  return start > end
-    ? minute >= start || minute < end
-    : minute >= start && minute < end;
-}
-
-function clockMinutes(value: string): number {
-  const [hour, minute] = value.split(":").map(Number) as [number, number];
-  return hour * 60 + minute;
-}

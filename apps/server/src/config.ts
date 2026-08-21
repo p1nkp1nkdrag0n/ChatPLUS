@@ -107,7 +107,6 @@ const envSchema = z.object({
     .enum(["legacy", "shadow", "enforced"])
     .default("legacy"),
   AUTOBIOGRAPHY_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
-  PROACTIVE_COMMIT_MODE: z.enum(["legacy", "atomic"]).default("atomic"),
 });
 
 export type ServerConfig = {
@@ -139,7 +138,6 @@ export type ServerConfig = {
   liveWorldEffectsMode: "off" | "shadow" | "enforced";
   memoryRecallMode: "legacy" | "shadow" | "enforced";
   autobiographyMode: "off" | "shadow" | "enforced";
-  proactiveCommitMode: "legacy" | "atomic";
 };
 
 export function readConfig(
@@ -207,7 +205,6 @@ export function readConfig(
     liveWorldEffectsMode: env.LIVE_WORLD_EFFECTS,
     memoryRecallMode: env.MEMORY_RECALL_MODE,
     autobiographyMode: env.AUTOBIOGRAPHY_MODE,
-    proactiveCommitMode: env.PROACTIVE_COMMIT_MODE,
   };
 
   const merged = {

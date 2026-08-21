@@ -22,11 +22,11 @@ export class HourlyScheduler {
     private readonly actors: ActorQueue,
     private readonly settlements: SettlementService,
     private readonly logger: SchedulerLogger,
-    private readonly personalLife?: Pick<
+    private readonly personalLife: Pick<
       PersonalLifeService,
       "ensureSelfInitiatedPlans"
     >,
-    private readonly proactiveDelivery?: Pick<
+    private readonly proactiveDelivery: Pick<
       ProactiveDeliveryService,
       "deliverNext"
     >,
@@ -63,15 +63,9 @@ export class HourlyScheduler {
             this.personalLife?.ensureSelfInitiatedPlans(agentId);
             this.memoryLifecycle?.maintainAgent(agentId);
           });
-          if (this.proactiveDelivery === undefined) {
-            await this.actors.runExclusive(agentId, () =>
-              this.settlements.deliverOneProactive(agentId),
-            );
-          } else {
-            // ProactiveDeliveryService owns its own preflight/postflight actor
-            // phases. Its optional model compose must run between them.
-            await this.proactiveDelivery.deliverNext(agentId);
-          }
+          // ProactiveDeliveryService owns the preflight/postflight actor
+          // phases. Its optional model compose must run between them.
+          await this.proactiveDelivery.deliverNext(agentId);
         } catch (error) {
           this.logger.error(
             {

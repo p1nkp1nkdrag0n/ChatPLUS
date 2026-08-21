@@ -26,7 +26,7 @@ const NOW_UTC = "2026-08-21T04:37:00.000Z";
 const BUCKET_UTC = "2026-08-21T04:00:00.000Z";
 
 describe("HourlyScheduler personal life ordering", () => {
-  it("runs settlement, personal planning, and proactive delivery in one actor queue", async () => {
+  it("runs settlement and personal planning in the actor queue, then two-phase delivery", async () => {
     const clock = new FakeClock(NOW_UTC);
     const sse = new SseHub();
     vi.spyOn(sse, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
@@ -38,13 +38,8 @@ describe("HourlyScheduler personal life ordering", () => {
       activeActorCounts.push(actors.activeActors);
       return Promise.resolve();
     });
-    const deliverOneProactive = vi.fn(() => {
-      order.push("deliver");
-      activeActorCounts.push(actors.activeActors);
-    });
     const settlements = {
       settleAndExtend,
-      deliverOneProactive,
     } as unknown as SettlementService;
     const ensureSelfInitiatedPlans = vi.fn(() => {
       order.push("plan");
@@ -53,6 +48,13 @@ describe("HourlyScheduler personal life ordering", () => {
     const personalLife = {
       ensureSelfInitiatedPlans,
     } as unknown as Pick<PersonalLifeService, "ensureSelfInitiatedPlans">;
+    const deliverNext = vi.fn(() => {
+      order.push("deliver");
+      activeActorCounts.push(actors.activeActors);
+    });
+    const proactiveDelivery = {
+      deliverNext,
+    } as unknown as Pick<ProactiveDeliveryService, "deliverNext">;
     const logger = { error: vi.fn() };
     const scheduler = new HourlyScheduler(
       clock,
@@ -61,6 +63,7 @@ describe("HourlyScheduler personal life ordering", () => {
       settlements,
       logger,
       personalLife,
+      proactiveDelivery,
     );
 
     let releaseGate: () => void = () => undefined;
@@ -85,43 +88,13 @@ describe("HourlyScheduler personal life ordering", () => {
     await Promise.all([blocker, tick]);
 
     expect(order).toEqual(["settle", "plan", "deliver"]);
-    expect(activeActorCounts).toEqual([1, 1, 1]);
+    expect(activeActorCounts).toEqual([1, 1, 0]);
     expect(settleAndExtend).toHaveBeenCalledWith(AGENT_ID, {
       toUtc: NOW_UTC,
       hourlyBucket: BUCKET_UTC,
     });
     expect(ensureSelfInitiatedPlans).toHaveBeenCalledWith(AGENT_ID);
-    expect(deliverOneProactive).toHaveBeenCalledWith(AGENT_ID);
-    expect(logger.error).not.toHaveBeenCalled();
-  });
-
-  it("keeps the five-argument legacy constructor behavior", async () => {
-    const clock = new FakeClock(NOW_UTC);
-    const sse = new SseHub();
-    vi.spyOn(sse, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
-    const actors = new ActorQueue();
-    const order: string[] = [];
-    const settlements = {
-      settleAndExtend: vi.fn(() => {
-        order.push("settle");
-        return Promise.resolve();
-      }),
-      deliverOneProactive: vi.fn(() => {
-        order.push("deliver");
-      }),
-    } as unknown as SettlementService;
-    const logger = { error: vi.fn() };
-    const scheduler = new HourlyScheduler(
-      clock,
-      sse,
-      actors,
-      settlements,
-      logger,
-    );
-
-    await scheduler.tick();
-
-    expect(order).toEqual(["settle", "deliver"]);
+    expect(deliverNext).toHaveBeenCalledWith(AGENT_ID);
     expect(logger.error).not.toHaveBeenCalled();
   });
 });
@@ -261,7 +234,7 @@ function createDeliveryScheduler(
     harness.actors,
     harness.settlements,
     harness.logger,
-    undefined,
+    { ensureSelfInitiatedPlans: vi.fn() },
     harness.delivery,
   );
 }

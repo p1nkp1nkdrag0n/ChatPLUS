@@ -331,7 +331,6 @@ function createDomainPlugin(
         schedules,
         sse,
         {
-          proactiveCommitMode: config.proactiveCommitMode,
           continuityIndex,
         },
       );

@@ -499,7 +499,6 @@ async function openTrackedApp(
     liveWorldEffectsMode: "enforced",
     memoryRecallMode: "enforced",
     autobiographyMode: "off",
-    proactiveCommitMode: "atomic",
     llm: {
       provider: "openai-compatible",
       baseUrl: "https://example.invalid",

@@ -194,7 +194,6 @@ async function openTrackedApp(
     liveWorldEffectsMode: "off",
     memoryRecallMode: "legacy",
     autobiographyMode: "off",
-    proactiveCommitMode: "atomic",
     llm: {
       provider: "fixture",
       baseUrl: "https://example.invalid",

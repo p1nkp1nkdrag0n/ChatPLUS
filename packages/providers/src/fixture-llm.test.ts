@@ -3,6 +3,7 @@ import {
   AutobiographyRevisionProposalSchema,
   AgentTurnDecisionSchema,
   ContinuityTurnEffectsSchema,
+  PersonaTurnProviderEnvelopeSchema,
 } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -74,6 +75,46 @@ describe("Fixture LLM checkpoint autobiography", () => {
     expect(proposal.entries[0]?.evidence[0]?.contextSummary).toHaveLength(
       1_000,
     );
+  });
+});
+
+describe("Fixture LLM chat turn purpose contract", () => {
+  it("keeps the legacy flat decision shape for fixture output", async () => {
+    const response = await createFixtureLlmProvider().generate({
+      purpose: "chat_turn",
+      payload: { userMessage: "今天晚饭吃什么？" },
+    });
+
+    const decision = AgentTurnDecisionSchema.parse(response.data);
+    expect(decision.reply.text.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a canonical turn envelope override and normalizes it", async () => {
+    const provider = createFixtureLlmProvider({
+      fixtures: {
+        chat_turn: {
+          replyDecision: {
+            text: " envelopes are the canonical provider shape.",
+            toneTags: ["warm"],
+            chunks: [" envelopes are the canonical provider shape."],
+          },
+          worldEffects: {
+            stateDelta: { energy: -0.05 },
+          },
+        },
+      },
+    });
+
+    const response = await provider.generate({
+      purpose: "chat_turn",
+      payload: { userMessage: "今天过得怎么样？" },
+    });
+
+    const envelope = PersonaTurnProviderEnvelopeSchema.parse(response.data);
+    expect(envelope.replyDecision).toMatchObject({
+      text: " envelopes are the canonical provider shape.",
+    });
+    expect(envelope.worldEffects).toMatchObject({ stateDelta: { energy: -0.05 } });
   });
 });
 

@@ -1,4 +1,3 @@
-import { DateTime } from "luxon";
 import type { MemoryLifecycleStatusLike } from "./memory-lifecycle.js";
 import { clamp, normalizeText, parseInstant, stableId } from "./shared.js";
 
@@ -217,37 +216,4 @@ export function mergeMemoryProposal(
       : { expiresAtUtc: safe.expiresAtUtc }),
   };
   return { memory };
-}
-
-export function selectRelevantMemories(
-  memories: readonly MemoryLike[],
-  query: string,
-  nowUtc: string,
-  limit = 12,
-): MemoryLike[] {
-  const now = parseInstant(nowUtc);
-  return memories
-    .filter((memory) => {
-      if (memory.status !== "active") return false;
-      if (memory.expiresAtUtc === undefined) return true;
-      return parseInstant(memory.expiresAtUtc).toMillis() > now.toMillis();
-    })
-    .map((memory) => {
-      const ageDays = Math.max(
-        0,
-        now.diff(DateTime.fromISO(memory.updatedAtUtc), "days").days,
-      );
-      const recency = Math.exp(-ageDays / 45);
-      const relevance = similarity(
-        `${memory.content} ${memory.tags.join(" ")}`,
-        query,
-      );
-      return {
-        memory,
-        score: relevance * 0.55 + memory.importance * 0.3 + recency * 0.15,
-      };
-    })
-    .sort((left, right) => right.score - left.score)
-    .slice(0, Math.max(0, limit))
-    .map(({ memory }) => memory);
 }

@@ -15,6 +15,7 @@ import {
   type FreeSlot,
   type ScheduleIntervalLike,
 } from "./free-slot.js";
+import { DEFAULT_MINIMUM_SLEEP_MINUTES } from "./self-plan-bundle.js";
 import { clamp, parseInstant, parseZone, seededUnit } from "./shared.js";
 
 export type SelfPlanningCharacterLike = ActivityAffinityCharacterLike & {
@@ -662,7 +663,8 @@ export function planSelfInitiatedActivity(
     Math.trunc(input.minimumActivityMinutes ?? 15),
   );
   const bufferMinutes = Math.max(0, Math.trunc(input.bufferMinutes ?? 15));
-  const minimumSleepMinutes = input.minimumSleepMinutes ?? 360;
+  const minimumSleepMinutes =
+    input.minimumSleepMinutes ?? DEFAULT_MINIMUM_SLEEP_MINUTES;
   if (!Number.isInteger(minimumSleepMinutes) || minimumSleepMinutes < 0) {
     throw new TypeError("minimumSleepMinutes must be a non-negative integer");
   }

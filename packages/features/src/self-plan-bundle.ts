@@ -37,6 +37,13 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 const DEFAULT_MAX_NIGHT_SELF_PLANS_PER_ROLLING_7_DAYS = 2;
+
+/**
+ * Canonical minimum real sleep minutes that must survive a night self-plan.
+ * The planner and the projection validator share this default so a bundle is
+ * never validated against a laxer bound than it was planned with.
+ */
+export const DEFAULT_MINIMUM_SLEEP_MINUTES = 360;
 const ROLLING_7_DAYS_HOURS = 7 * 24;
 const MATERIAL_SLEEP_WINDOW_OVERLAP_MINUTES = 60;
 
@@ -449,7 +456,8 @@ export function validateFinalScheduleProjection(
     ]);
   }
 
-  const minimumSleepMinutes = context.minimumSleepMinutes ?? 240;
+  const minimumSleepMinutes =
+    context.minimumSleepMinutes ?? DEFAULT_MINIMUM_SLEEP_MINUTES;
   if (
     !Number.isFinite(minimumSleepMinutes) ||
     minimumSleepMinutes < 0 ||

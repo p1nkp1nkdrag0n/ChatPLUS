@@ -93,6 +93,13 @@ function eventKey(
   return `activity:${item.agentId}:${item.id}:${eventType}:${item.startAtUtc}`;
 }
 
+/**
+ * Fraction of completed sleep minutes that repays sleep debt per settlement.
+ * 0.5 clears the 720-minute debt cap in roughly three full nights instead of
+ * five, while recovery still stays gradual across several settlements.
+ */
+export const SLEEP_DEBT_RECOVERY_RATE = 0.5;
+
 function applySleepDebtRepayment<TState extends RuntimeStateLike>(
   state: TState,
   events: readonly ActivityEventLike[],
@@ -112,7 +119,7 @@ function applySleepDebtRepayment<TState extends RuntimeStateLike>(
         Math.round(
           minutesBetween(event.startedAtUtc, event.endedAtUtc!) *
             event.completionRatio *
-            0.3,
+            SLEEP_DEBT_RECOVERY_RATE,
         ),
       0,
     );

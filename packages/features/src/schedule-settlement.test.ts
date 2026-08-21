@@ -291,7 +291,7 @@ describe("planner and settlement", () => {
       stress: 0.45,
       socialBattery: 0.6,
       focus: 0.45,
-      sleepDebtMinutes: 240,
+      sleepDebtMinutes: 600,
       revision: 0,
     };
     const input = {
@@ -307,8 +307,60 @@ describe("planner and settlement", () => {
     const replay = settleSchedule(input);
 
     expect(first.events.map((event) => event.kind)).toContain("completed");
-    expect(first.state.sleepDebtMinutes).toBeGreaterThan(0);
-    expect(first.state.sleepDebtMinutes).toBeLessThan(240);
+    // 480 completed minutes repay 240 at SLEEP_DEBT_RECOVERY_RATE 0.5.
+    expect(first.state.sleepDebtMinutes).toBe(360);
+    expect(first.state.sleepDebtMinutes).toBeLessThan(600);
     expect(replay.state.sleepDebtMinutes).toBe(first.state.sleepDebtMinutes);
+  });
+
+  it("clears the 720-minute sleep debt cap within three full nights", () => {
+    const nights = [
+      ["2026-06-01T23:00:00.000Z", "2026-06-02T07:00:00.000Z"],
+      ["2026-06-02T23:00:00.000Z", "2026-06-03T07:00:00.000Z"],
+      ["2026-06-03T23:00:00.000Z", "2026-06-04T07:00:00.000Z"],
+    ] as const;
+    const exhaustedState = {
+      agentId: "agent-1",
+      asOfUtc: "2026-06-01T22:00:00.000Z",
+      moodValence: 0,
+      moodArousal: 0.4,
+      energy: 0.2,
+      stress: 0.6,
+      socialBattery: 0.5,
+      focus: 0.3,
+      sleepDebtMinutes: 720,
+      revision: 0,
+    };
+
+    let state = exhaustedState;
+    const remaining: number[] = [];
+    for (const [index, [startAtUtc, endAtUtc]] of nights.entries()) {
+      const settled = settleSchedule({
+        agentId: "agent-1",
+        fromUtc: `2026-06-0${index + 1}T22:00:00.000Z`,
+        toUtc: `2026-06-0${index + 2}T08:00:00.000Z`,
+        items: [
+          {
+            ...item(
+              `sleep-cap-${index}`,
+              startAtUtc,
+              endAtUtc,
+              "fixed",
+              "sleep",
+            ),
+            adherenceProbability: 1,
+            stateEffects: { energy: 0.2 },
+          },
+        ],
+        state,
+        routineAdherence: 1,
+      } as const);
+      state = settled.state;
+      remaining.push(settled.state.sleepDebtMinutes ?? 0);
+    }
+
+    // 480 completed minutes repay 240 per night at SLEEP_DEBT_RECOVERY_RATE.
+    expect(remaining).toEqual([480, 240, 0]);
+    expect(state.sleepDebtMinutes).toBe(0);
   });
 });

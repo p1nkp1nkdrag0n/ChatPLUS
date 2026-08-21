@@ -13,7 +13,7 @@ import {
   type MemoryRecallResult,
   type RetrievalScoreBreakdown,
 } from "@personasim/contracts";
-import { recallMemory } from "@personasim/features";
+import { recallMemory, recallQueryTokens } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
 import {
@@ -32,12 +32,13 @@ import {
   replayContinuityRecall,
 } from "./memory-recall-hierarchy.js";
 import {
-  readActiveMemoryRecords,
   readMemoryEvidence,
+  readRecallCandidateRecords,
 } from "./memory-service.js";
 
 export const DEFAULT_MEMORY_RECALL_MINIMUM_SCORE = 0.42;
 const DEFAULT_MEMORY_RECALL_CANDIDATE_LIMIT = 200;
+const DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT = 50;
 const DEFAULT_MEMORY_RECALL_MAX_EVIDENCE = 3;
 
 export type AgentMemoryRecallInput = {
@@ -561,11 +562,15 @@ function prepareRecall(
   );
   const minimumScore =
     query.minimumScore ?? DEFAULT_MEMORY_RECALL_MINIMUM_SCORE;
-  const memories = readActiveMemoryRecords(
+  const memories = readRecallCandidateRecords(
     store,
     input.agentId,
     input.nowUtc,
-    candidateLimit,
+    {
+      importanceLimit: candidateLimit,
+      keywordTokens: recallQueryTokens(query.query),
+      keywordLimit: DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT,
+    },
   );
   const rawEvidence = readMemoryEvidence(
     store,

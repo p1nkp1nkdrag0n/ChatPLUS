@@ -85,6 +85,16 @@ function tokens(value: string): Set<string> {
   return output;
 }
 
+/**
+ * Lexical tokens (words plus Han bigrams) a recall query should be able to
+ * match against. Storage layers use these tokens as a keyword prefilter so
+ * that highly relevant memories are recallable even when their importance
+ * ranks below the default importance-ordered candidate pool.
+ */
+export function recallQueryTokens(query: string): string[] {
+  return [...tokens(query)];
+}
+
 function hanPhraseAnchorScore(document: string, query: string): number {
   const documentHan = normalizeText(document)
     .match(/\p{Script=Han}+/gu)

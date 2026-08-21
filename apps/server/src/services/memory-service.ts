@@ -59,6 +59,85 @@ export function readActiveMemoryRecords(
   return rows.map(memoryFromRow);
 }
 
+export type RecallCandidatePoolInput = {
+  importanceLimit: number;
+  keywordTokens: readonly string[];
+  keywordLimit?: number;
+};
+
+/**
+ * Recall candidate pool: the importance-ordered head plus keyword-matched
+ * memories from the whole active set. The keyword prefilter keeps a highly
+ * relevant but low-importance memory recallable instead of being structurally
+ * truncated by the importance-ordered LIMIT.
+ */
+export function readRecallCandidateRecords(
+  store: DatabaseStore,
+  agentId: string,
+  nowUtc: string,
+  input: RecallCandidatePoolInput,
+): Memory[] {
+  const importanceLimit = Math.max(
+    0,
+    Math.min(500, Math.trunc(input.importanceLimit)),
+  );
+  if (importanceLimit === 0) return [];
+  const pool = readActiveMemoryRecords(
+    store,
+    agentId,
+    nowUtc,
+    importanceLimit,
+  );
+  // recallQueryTokens only emits word characters and Han bigrams, so the LIKE
+  // patterns below never need SQL wildcard escaping.
+  const keywordTokens = [...new Set(input.keywordTokens)]
+    .filter((token) => /^[\p{L}\p{N}]+$/u.test(token) && token.length >= 2)
+    .slice(0, 40);
+  if (keywordTokens.length === 0) return pool;
+  const keywordLimit = Math.max(
+    0,
+    Math.min(500, Math.trunc(input.keywordLimit ?? 50)),
+  );
+  if (keywordLimit === 0) return pool;
+  const poolIds = new Set(pool.map((memory) => memory.id));
+  const keywordClauses = keywordTokens
+    .flatMap(() => ["content LIKE ?", "tags_json LIKE ?"])
+    .join(" OR ");
+  const keywordParams = keywordTokens.flatMap((token) => [
+    `%${token}%`,
+    `%${token}%`,
+  ]);
+  const keywordRows = store.database
+    .prepare(
+      `SELECT id, agent_id, type, content, tags_json, importance, confidence,
+        source_message_id, source_event_id, created_at_utc, valid_until_utc,
+        memory_json, namespace, certainty, attribution, stability, status,
+        claim_subject_key, claim_disposition, superseded_by_id,
+        merged_into_id, last_reinforced_at_utc,
+        lifecycle_updated_at_utc,
+        mentioned_at_utc, planned_start_at_utc, planned_end_at_utc,
+        occurred_start_at_utc, occurred_end_at_utc, recorded_at_utc,
+        temporal_certainty, temporal_status
+       FROM memories
+       WHERE agent_id = ? AND status = 'active'
+         AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND (${keywordClauses})
+       ORDER BY importance DESC, created_at_utc DESC
+       LIMIT ?`,
+    )
+    .all(
+      agentId,
+      nowUtc,
+      ...keywordParams,
+      keywordLimit + pool.length,
+    ) as MemoryRow[];
+  const extras = keywordRows
+    .filter((row) => !poolIds.has(row.id))
+    .slice(0, keywordLimit)
+    .map(memoryFromRow);
+  return [...pool, ...extras];
+}
+
 export function readActiveMemories(
   store: DatabaseStore,
   agentId: string,

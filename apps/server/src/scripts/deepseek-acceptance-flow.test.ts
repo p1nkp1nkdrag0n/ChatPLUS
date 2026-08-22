@@ -433,7 +433,11 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
       "我记得 BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋；我们还约了2026年8月23日11:30去北岸书店喝茶。";
 
     expect(
-      containsCommittedScheduleRecall(finalTurn.assistantText, sharedItem),
+      containsCommittedScheduleRecall(
+        finalTurn.assistantText,
+        sharedItem,
+        result.startedAtUtc,
+      ),
     ).toBe(true);
     expect(
       evaluateDeepSeekAcceptance(result).find(
@@ -442,12 +446,76 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
     ).toMatchObject({ passed: true });
 
     finalTurn.assistantText =
-      "我记得 BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。";
+      "BGW-7419 是你那枚蓝色玻璃鲸的代号，你会在重要演讲前把它放在左口袋里。至于刚确认的安排，我们约好明天（8月23日）11:30 在梧桐路23号的北岸书店喝茶，预计45分钟。如果我没记错的话。";
+    expect(
+      containsCommittedScheduleRecall(
+        finalTurn.assistantText,
+        sharedItem,
+        result.startedAtUtc,
+      ),
+    ).toBe(true);
+    expect(
+      evaluateDeepSeekAcceptance(result).find(
+        (candidate) => candidate.id === "cross_session_recall",
+      ),
+    ).toMatchObject({ passed: true });
+
+    finalTurn.assistantText =
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。我们明天11:30去北岸书店喝茶。";
+    expect(
+      containsCommittedScheduleRecall(
+        finalTurn.assistantText,
+        sharedItem,
+        result.startedAtUtc,
+      ),
+    ).toBe(true);
+
+    const contradictedReply =
+      "BGW-7419 不是蓝色玻璃鲸，也不在左口袋；我们没有确认8月23日11:30去北岸书店喝茶。";
+    expect(containsCompleteAnchor(contradictedReply)).toBe(false);
+    expect(
+      containsCommittedScheduleRecall(
+        contradictedReply,
+        sharedItem,
+        result.startedAtUtc,
+      ),
+    ).toBe(false);
+    finalTurn.assistantText = contradictedReply;
     expect(
       evaluateDeepSeekAcceptance(result).find(
         (candidate) => candidate.id === "cross_session_recall",
       ),
     ).toMatchObject({ passed: false });
+
+    expect(
+      containsCompleteAnchor("BGW-7419 是蓝色玻璃鲸吗，演讲前放在左口袋吗？"),
+    ).toBe(false);
+
+    for (const assistantText of [
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。我们约在2025年8月23日11:30去北岸书店喝茶。",
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。我们约在8月24日11:30去北岸书店喝茶。",
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。我们明天（8月24日）11:30去北岸书店喝茶。",
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。我们约在8月23日去北岸书店喝茶。",
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。原定8月23日11:30去北岸书店喝茶，但安排已经取消了。",
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。我们8月23日11:30不会去北岸书店喝茶。",
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。我不确定是不是8月23日11:30去北岸书店喝茶。",
+      "BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。你是在问我们是否约了8月23日11:30去北岸书店喝茶吗？",
+      "我记得 BGW-7419 是蓝色玻璃鲸，演讲前放在左口袋。",
+    ]) {
+      finalTurn.assistantText = assistantText;
+      expect(
+        containsCommittedScheduleRecall(
+          finalTurn.assistantText,
+          sharedItem,
+          result.startedAtUtc,
+        ),
+      ).toBe(false);
+      expect(
+        evaluateDeepSeekAcceptance(result).find(
+          (candidate) => candidate.id === "cross_session_recall",
+        ),
+      ).toMatchObject({ passed: false });
+    }
   });
 
   it("renders a readable failure report and keeps all acceptance checks explicit", () => {

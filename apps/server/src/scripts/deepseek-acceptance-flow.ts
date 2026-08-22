@@ -1214,29 +1214,79 @@ function scheduleActionAuditLabel(
 
 export function containsCompleteAnchor(value: unknown): boolean {
   const text = typeof value === "string" ? value : JSON.stringify(value);
+  const contradictsIdentity =
+    /BGW-7419.{0,16}(?:不是|并非|不叫).{0,12}蓝色玻璃鲸/u.test(text) ||
+    /蓝色玻璃鲸.{0,16}(?:不是|并非).{0,12}BGW-7419/u.test(text);
+  const contradictsLocation =
+    /(?:没有|没|并未|不曾|从未|不会).{0,8}(?:放|装|带).{0,8}左口袋/u.test(
+      text,
+    ) || /(?:不在|并非在).{0,8}左口袋/u.test(text);
+  const questionsAnchor =
+    /BGW-7419.{0,20}(?:是否|是不是|蓝色玻璃鲸吗)/u.test(text) ||
+    /(?:是否|是不是).{0,20}(?:放|装|带).{0,8}左口袋/u.test(text) ||
+    /(?:放|装|带).{0,8}左口袋吗/u.test(text);
   return (
     text.includes(UNIQUE_FACT_CODE) &&
     text.includes(UNIQUE_FACT_OBJECT) &&
-    text.includes(UNIQUE_FACT_LOCATION)
+    text.includes(UNIQUE_FACT_LOCATION) &&
+    !contradictsIdentity &&
+    !contradictsLocation &&
+    !questionsAnchor
   );
 }
+
 export function containsCommittedScheduleRecall(
   value: unknown,
   item: ScheduleItem | undefined,
+  referenceUtc?: string,
 ): boolean {
   if (item === undefined) return false;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   const start = DateTime.fromISO(item.startAtUtc).setZone(item.timezone);
   if (!start.isValid) return false;
-  const year = String(start.year);
-  const month = String(start.month);
-  const day = String(start.day);
   const hour = String(start.hour);
   const minute = String(start.minute).padStart(2, "0");
-  const dates = [
-    year + "年" + month + "月" + day + "日",
-    year + "年" + month.padStart(2, "0") + "月" + day.padStart(2, "0") + "日",
+  const explicitChineseDates = [
+    ...text.matchAll(/(?:(\d{4})年\s*)?(\d{1,2})月\s*(\d{1,2})[日号]/g),
   ];
+  const explicitDateAligned = explicitChineseDates.some(
+    (match) =>
+      (match[1] === undefined || Number(match[1]) === start.year) &&
+      Number(match[2]) === start.month &&
+      Number(match[3]) === start.day,
+  );
+  const hasConflictingExplicitDate = explicitChineseDates.some(
+    (match) =>
+      (match[1] !== undefined && Number(match[1]) !== start.year) ||
+      Number(match[2]) !== start.month ||
+      Number(match[3]) !== start.day,
+  );
+  const reference =
+    referenceUtc === undefined
+      ? undefined
+      : DateTime.fromISO(referenceUtc).setZone(item.timezone);
+  const relativeDay =
+    reference !== undefined && reference.isValid
+      ? Math.round(
+          start.startOf("day").diff(reference.startOf("day"), "days").days,
+        )
+      : undefined;
+  const mentionedRelativeDays = [
+    { offset: 0, labels: ["今天", "今日"] },
+    { offset: 1, labels: ["明天", "明日"] },
+    { offset: 2, labels: ["后天"] },
+  ]
+    .filter(({ labels }) => labels.some((label) => text.includes(label)))
+    .map(({ offset }) => offset);
+  const relativeDateAligned =
+    relativeDay !== undefined && mentionedRelativeDays.includes(relativeDay);
+  const hasConflictingRelativeDate = mentionedRelativeDays.some(
+    (offset) => offset !== relativeDay,
+  );
+  const dateAligned =
+    !hasConflictingExplicitDate &&
+    !hasConflictingRelativeDate &&
+    (explicitDateAligned || relativeDateAligned);
   const times = [
     hour + ":" + minute,
     hour.padStart(2, "0") + ":" + minute,
@@ -1248,11 +1298,39 @@ export function containsCommittedScheduleRecall(
   const semanticAnchors = ["北岸书店", "茶"].filter((anchor) =>
     semantics.includes(anchor),
   );
+  const contradictsCommittedSchedule =
+    /(?:没有|没|并未|尚未|还未|未曾|从未).{0,12}(?:确认|约|约定|说好|安排|计划)/u.test(
+      text,
+    ) ||
+    /(?:不是|并非|不在).{0,16}(?:北岸书店|\d{1,2}月\d{1,2}[日号]|\d{1,2}[:：]\d{2})/u.test(
+      text,
+    ) ||
+    /(?:北岸书店|\d{1,2}月\d{1,2}[日号]|\d{1,2}[:：]\d{2}).{0,12}(?:不对|有误|错了|并非)/u.test(
+      text,
+    ) ||
+    /(?:不去|不会去|不能去|去不了|不打算去).{0,12}(?:北岸书店|喝茶)/u.test(
+      text,
+    ) ||
+    /(?:北岸书店|喝茶).{0,12}(?:不去|不会去|不能去|去不了|不打算去)/u.test(
+      text,
+    ) ||
+    /(?:不确定|不记得|想不起来|无法确认).{0,16}(?:是否|是不是|有没有|安排|约|北岸书店)/u.test(
+      text,
+    ) ||
+    /(?:你是(?:在)?问|是否|是不是|有没有).{0,40}(?:北岸书店|\d{1,2}月\d{1,2}[日号]|\d{1,2}[:：]\d{2}).{0,24}(?:吗)?[?？]/u.test(
+      text,
+    ) ||
+    /(?:北岸书店|\d{1,2}月\d{1,2}[日号]|\d{1,2}[:：]\d{2}).{0,40}(?:是否|是不是|有没有).{0,24}(?:吗)?[?？]/u.test(
+      text,
+    ) ||
+    /(?:已经|已|被)(?:取消|撤销|删除)(?:了|掉)?/u.test(text) ||
+    /(?:安排|约定|日程)(?:已经|已|被)?(?:取消|撤销|删除)(?:了|掉)?/u.test(text);
   return (
     semanticAnchors.length === 2 &&
     semanticAnchors.every((anchor) => text.includes(anchor)) &&
-    dates.some((date) => text.includes(date)) &&
-    times.some((time) => text.includes(time))
+    dateAligned &&
+    times.some((time) => text.includes(time)) &&
+    !contradictsCommittedSchedule
   );
 }
 
@@ -1464,6 +1542,7 @@ export function evaluateDeepSeekAcceptance(
   const crossSessionScheduleReply = containsCommittedScheduleRecall(
     finalTurn?.assistantText ?? "",
     matchedScheduleItem,
+    result.startedAtUtc,
   );
   const assertions: AcceptanceAssertion[] = [
     {
@@ -1786,6 +1865,7 @@ export function renderDeepSeekAcceptanceReport(
               containsCommittedScheduleRecall(
                 crossSessionTurn.assistantText,
                 result.turns[3]?.persistence.sharedScheduleItems[0],
+                result.startedAtUtc,
               ),
             ),
         ].join("\n"),

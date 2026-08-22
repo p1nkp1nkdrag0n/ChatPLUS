@@ -1,10 +1,7 @@
 import { DateTime } from "luxon";
 import { settleSchedule, settlementIdempotencyKey } from "@personasim/features";
 
-import type {
-  DatabaseStore,
-  StoredActivityEvent,
-} from "../db/store.js";
+import type { DatabaseStore, StoredActivityEvent } from "../db/store.js";
 import { capabilitiesForTier } from "../domain/capabilities.js";
 import {
   toFeatureScheduleItems,
@@ -457,4 +454,3 @@ export class SettlementService {
       );
   }
 }
-

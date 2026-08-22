@@ -23,6 +23,7 @@ const SESSION_ID = "session-proactive-generation";
 const EVENT_ID = "event-proactive-generation";
 const CANDIDATE_ID = "candidate-proactive-generation";
 const NOW_UTC = "2026-08-21T12:00:00.000Z";
+const TEST_GENERATION_LEASE_MS = 60_000;
 
 describe("ProactiveGenerationService", () => {
   let database: Database;
@@ -162,6 +163,207 @@ describe("ProactiveGenerationService", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("recovers an abandoned generation lease after reopening the database", async () => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "personasim-proactive-crash-"),
+    );
+    const databasePath = join(directory, "proactive.sqlite");
+    const firstDatabase = openDatabase(databasePath);
+    let reopenedDatabase: Database | undefined;
+    try {
+      runMigrations(firstDatabase);
+      seedAgent(firstDatabase);
+      seedActivityCandidate(firstDatabase);
+      const firstRepository = new ProactiveGenerationRepository(firstDatabase);
+      const firstTracker = new ConversationActivityTracker(firstDatabase);
+      const revisions = firstRepository.readAgentRevisions(AGENT_ID);
+      const subject = firstRepository.findNextDueSubject(AGENT_ID, NOW_UTC);
+      if (revisions === undefined || subject === undefined) {
+        throw new Error("Crash recovery fixture is incomplete.");
+      }
+      const activity = firstTracker.snapshot(AGENT_ID);
+      const abandoned = firstRepository.transaction(() =>
+        firstRepository.claimSubject({
+          runId: "generation-abandoned-before-restart",
+          claimToken: "claim-abandoned-before-restart",
+          subject,
+          sessionId: SESSION_ID,
+          specVersion: revisions.specVersion,
+          stateRevision: revisions.stateRevision,
+          messageRowid: activity.messageRowid,
+          lastUserMessageRowid: activity.lastUserMessageRowid,
+          userArrivalEpoch: activity.userArrivalEpoch,
+          snapshot: { fixture: "crash-before-postflight" },
+          startedAtUtc: NOW_UTC,
+        }),
+      );
+      expect(abandoned?.run.status).toBe("generating");
+      firstDatabase.close();
+
+      const restartedClock = new FakeClock(NOW_UTC);
+      restartedClock.advance({ minutes: 2 });
+      reopenedDatabase = openDatabase(databasePath);
+      runMigrations(reopenedDatabase);
+      const restartedService = new ProactiveGenerationService(
+        new ProactiveGenerationRepository(reopenedDatabase),
+        new ConversationActivityTracker(reopenedDatabase),
+        new ActorQueue(),
+        restartedClock,
+        () => eligiblePolicy(),
+        { generationLeaseMs: TEST_GENERATION_LEASE_MS },
+      );
+
+      await expect(
+        restartedService.generate({
+          agentId: AGENT_ID,
+          sessionId: SESSION_ID,
+          compose: () => "Recovered safely after the previous process stopped.",
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+      expect(readGenerationRuns(reopenedDatabase)).toMatchObject([
+        {
+          id: "generation-abandoned-before-restart",
+          status: "stale_discarded",
+          generationEpoch: 1,
+          reasonCode: "generation_lease_expired",
+          messageId: null,
+        },
+        {
+          status: "committed",
+          generationEpoch: 2,
+          reasonCode: null,
+        },
+      ]);
+      expect(readCandidate(reopenedDatabase)).toMatchObject({
+        status: "sent",
+        generationEpoch: 2,
+      });
+      expect(proactiveMessageCount(reopenedDatabase)).toBe(1);
+    } finally {
+      if (firstDatabase.open) firstDatabase.close();
+      if (reopenedDatabase?.open) reopenedDatabase.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fences generated content that returns after its lease expires", async () => {
+    const leasedService = new ProactiveGenerationService(
+      repository,
+      tracker,
+      actorQueue,
+      clock,
+      () => policy,
+      { generationLeaseMs: TEST_GENERATION_LEASE_MS },
+    );
+    const composeStarted = deferred<void>();
+    const releaseCompose = deferred<void>();
+    const expiredGeneration = leasedService.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: async () => {
+        composeStarted.resolve();
+        await releaseCompose.promise;
+        return "This result arrived after its generation lease.";
+      },
+    });
+    await composeStarted.promise;
+    clock.advance({ minutes: 2 });
+    releaseCompose.resolve();
+
+    await expect(expiredGeneration).resolves.toMatchObject({
+      status: "discarded",
+      reasonCode: "generation_lease_expired",
+    });
+    expect(readOnlyRun(database)).toMatchObject({
+      status: "stale_discarded",
+      reasonCode: "generation_lease_expired",
+      messageId: null,
+    });
+    expect(readCandidate(database)).toMatchObject({
+      status: "pending",
+      generationEpoch: 1,
+      claimToken: null,
+      sentMessageId: null,
+    });
+    expect(proactiveMessageCount(database)).toBe(0);
+
+    await expect(
+      leasedService.generate({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        compose: () => "A fresh generation epoch may commit.",
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+    expect(readCandidate(database)).toMatchObject({
+      status: "sent",
+      generationEpoch: 2,
+    });
+    expect(proactiveMessageCount(database)).toBe(1);
+  });
+
+  it("rolls back a partial commit when the sent audit fails and permits retry", async () => {
+    const composeStarted = deferred<void>();
+    const releaseCompose = deferred<void>();
+    const generation = service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: async () => {
+        composeStarted.resolve();
+        await releaseCompose.promise;
+        return "This write will be rolled back with its failed audit.";
+      },
+    });
+    await composeStarted.promise;
+    database.exec(
+      `CREATE TRIGGER reject_proactive_sent_audit
+       BEFORE INSERT ON domain_events
+       WHEN NEW.event_type = 'conversation.proactive_message_sent'
+       BEGIN
+         SELECT RAISE(ABORT, 'fixture proactive sent audit failure');
+       END`,
+    );
+    releaseCompose.resolve();
+    const failed = await generation;
+    database.exec("DROP TRIGGER reject_proactive_sent_audit");
+
+    expect(failed).toMatchObject({
+      status: "failed",
+      reasonCode: "postflight_failed",
+    });
+    expect(readOnlyRun(database)).toMatchObject({
+      status: "failed",
+      reasonCode: "postflight_failed",
+      messageId: null,
+    });
+    expect(readCandidate(database)).toMatchObject({
+      status: "pending",
+      generationEpoch: 1,
+      revision: 1,
+      claimToken: null,
+      sentMessageId: null,
+    });
+    expect(proactiveMessageCount(database)).toBe(0);
+    expect(
+      domainEventCount(database, "conversation.proactive_message_sent"),
+    ).toBe(0);
+
+    await expect(
+      service.generate({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        compose: () => "The retry commits as a new fenced epoch.",
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+    expect(readCandidate(database)).toMatchObject({
+      status: "sent",
+      generationEpoch: 2,
+    });
+    expect(proactiveMessageCount(database)).toBe(1);
+    expect(
+      domainEventCount(database, "conversation.proactive_message_sent"),
+    ).toBe(1);
+  });
+
   it("releases the actor during compose and rejects a user arrival epoch overtake", async () => {
     const started = deferred<void>();
     const releaseCompose = deferred<void>();
@@ -288,6 +490,12 @@ describe("ProactiveGenerationService", () => {
       reasonCode: "agent_revision_changed",
     });
 
+    database
+      .prepare(
+        "UPDATE proactive_candidates SET expires_at_utc = ? WHERE id = ?",
+      )
+      .run("2026-08-21T12:01:00.000Z", CANDIDATE_ID);
+
     const expiryStarted = deferred<void>();
     const releaseExpiry = deferred<void>();
     const expiryGeneration = service.generate({
@@ -300,7 +508,7 @@ describe("ProactiveGenerationService", () => {
       },
     });
     await expiryStarted.promise;
-    clock.setUtc("2026-08-24T12:00:00.000Z");
+    clock.setUtc("2026-08-21T12:02:00.000Z");
     releaseExpiry.resolve();
     await expect(expiryGeneration).resolves.toMatchObject({
       status: "discarded",
@@ -615,6 +823,29 @@ function readFollowUp(database: Database): {
        FROM follow_up_intents WHERE id = 'followup-generation'`,
     )
     .get() as ReturnType<typeof readFollowUp>;
+}
+
+function readGenerationRuns(database: Database): Array<{
+  id: string;
+  status: string;
+  generationEpoch: number;
+  messageId: string | null;
+  reasonCode: string | null;
+}> {
+  return database
+    .prepare(
+      `SELECT id, status, generation_epoch AS generationEpoch,
+              message_id AS messageId, reason_code AS reasonCode
+       FROM proactive_generation_runs ORDER BY rowid`,
+    )
+    .all() as ReturnType<typeof readGenerationRuns>;
+}
+
+function domainEventCount(database: Database, eventType: string): number {
+  const row = database
+    .prepare("SELECT COUNT(*) AS count FROM domain_events WHERE event_type = ?")
+    .get(eventType) as { count: number };
+  return Number(row.count);
 }
 
 function readOnlyRun(database: Database): {

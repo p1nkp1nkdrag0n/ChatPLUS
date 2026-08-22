@@ -78,7 +78,7 @@ export type ProactiveGenerationOutcome =
   | {
       status: "discarded";
       runId: string;
-      reasonCode: ProactivePostflightRejectionCode;
+      reasonCode: ProactivePostflightRejectionCode | "generation_lease_expired";
     }
   | {
       status: "failed";
@@ -94,14 +94,34 @@ type PreflightClaimResult =
       reasonCode: ProactiveClaimRejectionCode;
     };
 
+export interface ProactiveGenerationServiceOptions {
+  generationLeaseMs?: number;
+}
+
+// The provider permits up to four five-minute attempts. Keep the default lease
+// above that retry envelope while still guaranteeing bounded crash recovery.
+export const DEFAULT_PROACTIVE_GENERATION_LEASE_MS = 30 * 60_000;
+
 export class ProactiveGenerationService {
+  private readonly generationLeaseMs: number;
+
   constructor(
     private readonly repository: ProactiveGenerationRepository,
     private readonly activityTracker: ConversationActivityTracker,
     private readonly actorQueue: ActorQueue,
     private readonly clock: Clock,
     private readonly loadPolicy: ProactivePolicyLoader,
-  ) {}
+    options: ProactiveGenerationServiceOptions = {},
+  ) {
+    const generationLeaseMs =
+      options.generationLeaseMs ?? DEFAULT_PROACTIVE_GENERATION_LEASE_MS;
+    if (!Number.isSafeInteger(generationLeaseMs) || generationLeaseMs <= 0) {
+      throw new RangeError(
+        "Proactive generation lease must be a positive safe integer.",
+      );
+    }
+    this.generationLeaseMs = generationLeaseMs;
+  }
 
   async generate(input: {
     agentId: string;
@@ -180,6 +200,11 @@ export class ProactiveGenerationService {
     if (revisions === undefined) {
       return { claimed: false, reasonCode: "agent_state_missing" };
     }
+    this.repository.recoverExpiredGeneratingRuns({
+      agentId: input.agentId,
+      leaseCutoffUtc: generationLeaseCutoffUtc(nowUtc, this.generationLeaseMs),
+      completedAtUtc: nowUtc,
+    });
     if (this.repository.hasGeneratingRun(input.agentId)) {
       return { claimed: false, reasonCode: "generation_in_progress" };
     }
@@ -242,6 +267,28 @@ export class ProactiveGenerationService {
   ): ProactiveGenerationOutcome {
     const nowUtc = this.clock.nowUtc();
     const currentRun = this.repository.getRun(claimed.run.id);
+    if (
+      currentRun !== undefined &&
+      currentRun.status === "generating" &&
+      generationLeaseExpired(
+        currentRun.startedAtUtc,
+        nowUtc,
+        this.generationLeaseMs,
+      )
+    ) {
+      this.repository.discardGeneration({
+        runId: currentRun.id,
+        claimToken: claimed.run.claimToken,
+        reasonCode: "generation_lease_expired",
+        completedAtUtc: nowUtc,
+        generatedContent,
+      });
+      return {
+        status: "discarded",
+        runId: claimed.run.id,
+        reasonCode: "generation_lease_expired",
+      };
+    }
     const currentSubject = this.repository.getSubject({
       kind: claimed.run.sourceKind,
       id: claimed.run.sourceId,
@@ -461,6 +508,30 @@ function localDayBounds(
   };
 }
 
+function generationLeaseCutoffUtc(
+  nowUtc: string,
+  generationLeaseMs: number,
+): string {
+  const nowMs = Date.parse(nowUtc);
+  if (!Number.isFinite(nowMs)) {
+    throw new RangeError("Invalid proactive generation clock value: " + nowUtc);
+  }
+  return new Date(nowMs - generationLeaseMs).toISOString();
+}
+
+function generationLeaseExpired(
+  startedAtUtc: string,
+  nowUtc: string,
+  generationLeaseMs: number,
+): boolean {
+  const startedAtMs = Date.parse(startedAtUtc);
+  const nowMs = Date.parse(nowUtc);
+  return (
+    !Number.isFinite(startedAtMs) ||
+    !Number.isFinite(nowMs) ||
+    nowMs - startedAtMs >= generationLeaseMs
+  );
+}
 function isDeliveryRef(value: ProactiveSubjectRef): boolean {
   return value.kind === "activity_candidate" || value.kind === "follow_up";
 }

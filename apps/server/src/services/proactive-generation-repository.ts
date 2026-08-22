@@ -91,6 +91,40 @@ export class ProactiveGenerationRepository {
     );
   }
 
+  recoverExpiredGeneratingRuns(input: {
+    agentId: string;
+    leaseCutoffUtc: string;
+    completedAtUtc: string;
+  }): number {
+    const expired = this.database
+      .prepare(
+        `SELECT id, claim_token
+         FROM proactive_generation_runs
+         WHERE agent_id = ?
+           AND status = 'generating'
+           AND started_at_utc <= ?
+         ORDER BY started_at_utc, rowid`,
+      )
+      .all(input.agentId, input.leaseCutoffUtc) as Array<{
+      id: string;
+      claim_token: string;
+    }>;
+    let recovered = 0;
+    for (const run of expired) {
+      if (
+        this.discardGeneration({
+          runId: run.id,
+          claimToken: run.claim_token,
+          reasonCode: "generation_lease_expired",
+          completedAtUtc: input.completedAtUtc,
+        })
+      ) {
+        recovered += 1;
+      }
+    }
+    return recovered;
+  }
+
   readAgentRevisions(
     agentId: string,
   ): { specVersion: number; stateRevision: number } | undefined {

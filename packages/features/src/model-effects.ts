@@ -365,6 +365,96 @@ function clockMarkerMinutes(
   return numeric === undefined ? 0 : parser(numeric);
 }
 
+function normalizeChinesePeriodHour(
+  period: string | undefined,
+  hour: number,
+): number | undefined {
+  if (!Number.isInteger(hour)) return undefined;
+  if (period === undefined) return hour >= 0 && hour <= 23 ? hour : undefined;
+
+  if (period === "凌晨") {
+    if (hour === 12) return 0;
+    return hour >= 0 && hour <= 5 ? hour : undefined;
+  }
+
+  if (period === "早上" || period === "早晨" || period === "上午") {
+    // Preserve the established 12-hour-clock interpretation: 12 AM is 00:00.
+    if (hour === 12) return 0;
+    return hour >= 1 && hour <= 11 ? hour : undefined;
+  }
+
+  if (period === "中午") {
+    if (hour === 11 || hour === 12) return hour;
+    return hour === 1 || hour === 2 ? hour + 12 : undefined;
+  }
+
+  if (period === "下午" || period === "傍晚" || period === "晚上") {
+    if (hour === 12) return 12;
+    return hour >= 1 && hour <= 11 ? hour + 12 : undefined;
+  }
+
+  if (period === "午夜") {
+    return hour === 12 ? 0 : undefined;
+  }
+
+  return undefined;
+}
+
+function parseExplicitChineseClock(
+  text: string,
+): (LocalClock & { explicitDay: true }) | undefined {
+  const match =
+    /^(?:(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|午夜)\s*)?(?:(\d{1,2})\s*[:：]\s*(\d{1,2})(?!\d)|(\d{1,2}|[零〇一二两三四五六七八九十]{1,3})\s*[点时]\s*(?:(半|一刻|三刻)|(?:(\d{1,2})\s*分?|([零〇一二两三四五六七八九十]{1,3})\s*分))?)(?:钟)?/u.exec(
+      text,
+    );
+  if (match === null) return undefined;
+
+  // Do not accept a valid prefix of a malformed clock (for example 八点四刻).
+  // Ordinary prose may still follow a complete clock expression.
+  const remainder = text.slice(match[0].length);
+  if (
+    /^\s*(?:\d|[:：点时分刻半]|[零〇一二两三四五六七八九十]+(?:分|刻))/u.test(
+      remainder,
+    )
+  ) {
+    return undefined;
+  }
+
+  const rawHour = match[2] ?? match[4] ?? "";
+  const parsedHour = /^\d+$/u.test(rawHour)
+    ? Number(rawHour)
+    : parseChineseInteger(rawHour);
+  if (parsedHour === undefined) return undefined;
+
+  const period = match[1];
+  const hour = normalizeChinesePeriodHour(period, parsedHour);
+  const rawMinute = match[3] ?? match[6] ?? match[7];
+  const minute =
+    match[5] !== undefined
+      ? clockMarkerMinutes(match[5], undefined)
+      : rawMinute === undefined
+        ? 0
+        : /^\d+$/u.test(rawMinute)
+          ? Number(rawMinute)
+          : parseChineseInteger(rawMinute);
+  if (
+    hour === undefined ||
+    minute === undefined ||
+    !Number.isInteger(minute) ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return undefined;
+  }
+
+  return {
+    dayOffset: period === "午夜" ? 1 : 0,
+    explicitDay: true,
+    hour,
+    minute,
+  };
+}
+
 /**
  * Resolves a model-supplied time reference to a UTC ISO instant. Accepts
  * ISO timestamps (with or without zone), local clock times such as
@@ -391,6 +481,29 @@ export function parseModelTime(
       setZone: true,
     });
     if (iso.isValid) return iso.toUTC().toISO()!;
+  }
+  const chineseDate = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/u.exec(
+    text,
+  );
+  if (chineseDate !== null) {
+    const clockText = text
+      .slice(chineseDate.index + chineseDate[0].length)
+      .trimStart()
+      .replace(/^[，,]\s*/u, "");
+    const clock = parseExplicitChineseClock(clockText);
+    if (clock === undefined) return undefined;
+
+    const absolute = DateTime.fromObject(
+      {
+        year: Number(chineseDate[1]),
+        month: Number(chineseDate[2]),
+        day: Number(chineseDate[3]),
+        hour: clock.hour,
+        minute: clock.minute,
+      },
+      { zone: context.timezone },
+    ).plus({ days: clock.dayOffset });
+    return absolute.isValid ? absolute.toUTC().toISO()! : undefined;
   }
 
   const now = DateTime.fromISO(context.nowUtc).setZone(context.timezone);

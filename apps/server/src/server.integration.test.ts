@@ -125,6 +125,82 @@ describe("PersonaSim server integration", () => {
     ).toBe(true);
   });
 
+  it("uses runtime sleep and meal baselines when deterministic planning falls back for noncanonical routines", async () => {
+    ({ app } = await createTestApp());
+    const planCalls: string[] = [];
+    vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
+      (input) => {
+        if (input.purpose === "plan_schedule") {
+          planCalls.push(input.purpose);
+          return Promise.reject(new Error("force deterministic fallback"));
+        }
+        if (input.fixture === undefined) {
+          throw new Error(`Expected a fixture for ${input.purpose}`);
+        }
+        return Promise.resolve(input.fixture);
+      },
+    );
+
+    const generatedResponse = await app.inject({
+      method: "POST",
+      url: "/api/characters/generate",
+      payload: {
+        name: "林夏",
+        worldSetting: "当代城市生活",
+        workOrRole: "独立剪辑师",
+        coreTraits: ["认真", "有主见", "温暖"],
+        centralContradiction: "既重视工作，也想照顾好自己",
+        primaryGoal: "完成纪录片剪辑",
+        relationshipToUser: "熟悉的朋友",
+        dialogueStyle: "自然、简洁",
+        tier: "daily",
+        timezone: "Asia/Shanghai",
+      },
+    });
+    expect(generatedResponse.statusCode).toBe(201);
+    const draft = jsonBody<{ character: CharacterSpec }>(
+      generatedResponse,
+    ).character;
+    const noncanonicalSpec = structuredClone(draft);
+    noncanonicalSpec.routines = [
+      {
+        id: "model-routine-work",
+        title: "上午专注剪辑",
+        category: "工作",
+        recurrence: "daily",
+        preferredStartLocal: "09:00",
+        preferredDurationMinutes: 180,
+        rigidity: "committed",
+        priority: 0.9,
+      },
+    ];
+
+    const updatedResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/characters/${draft.id}`,
+      payload: { spec: noncanonicalSpec, expectedVersion: draft.version },
+    });
+    expect(updatedResponse.statusCode).toBe(200);
+    const updated = jsonBody<{ character: CharacterSpec }>(
+      updatedResponse,
+    ).character;
+
+    const publishedResponse = await app.inject({
+      method: "POST",
+      url: `/api/characters/${updated.id}/publish`,
+      payload: { expectedVersion: updated.version },
+    });
+    expect(publishedResponse.statusCode).toBe(200);
+    expect(planCalls).toEqual(["plan_schedule"]);
+
+    const schedule = app.personasim.store.listSchedule(updated.id);
+    expect(schedule.some((item) => item.category === "sleep")).toBe(true);
+    expect(schedule.some((item) => item.category === "meal")).toBe(true);
+    expect(app.personasim.store.getCharacterSpec(updated.id)?.routines).toEqual(
+      noncanonicalSpec.routines,
+    );
+  });
+
   it("commits an invitation reply and schedule effects atomically and replays by client id", async () => {
     ({ app } = await createTestApp());
     const character = await createAndPublish(app, "high_fidelity");

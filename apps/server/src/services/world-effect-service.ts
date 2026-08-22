@@ -1,3 +1,5 @@
+import { DateTime } from "luxon";
+
 import {
   applyRelationshipDelta,
   hasScheduleIntent,
@@ -54,6 +56,7 @@ export interface PreparedWorldEffectTurn {
   stateChanged: boolean;
   repairAttempted: boolean;
   usedFallback: boolean;
+  scheduleActionAudit: ResolvedTurn["modelScheduleActionAudit"];
 }
 
 /** Prepares validated world effects and next state without durable writes. */
@@ -61,7 +64,7 @@ export class WorldEffectService {
   private readonly scheduleNegotiations: ScheduleNegotiationService;
 
   constructor(
-    store: DatabaseStore,
+    private readonly store: DatabaseStore,
     schedules: ScheduleService,
     private readonly decisions: TurnDecisionService,
     private readonly repairs: ReplyRepairService,
@@ -132,6 +135,7 @@ export class WorldEffectService {
     let { decision, inspection, repairAttempted } = input.turn;
     let usedFallback = input.turn.usedFallback;
     let negotiationPlan: PreparedScheduleNegotiation | undefined;
+    const scheduleCommitmentRejections: TurnProposalRejection[] = [];
     if (input.effects.scheduleNegotiationEligible) {
       const provisionalUserMessage: StoredMessage = {
         id: input.userMessageId,
@@ -144,12 +148,16 @@ export class WorldEffectService {
         metadata: {},
         createdAtUtc: input.nowUtc,
       };
-      const scheduleAction = materializeAcceptedScheduleAction({
-        action: input.turn.scheduleAction,
-        userText: input.userText,
-        assistantText: decision.reply.text,
-        hasActiveNegotiation: input.effects.activeNegotiation !== undefined,
-      });
+      const scheduleAction =
+        this.options.scheduleNegotiationMode === "enforced"
+          ? input.turn.scheduleAction
+          : materializeAcceptedScheduleAction({
+              action: input.turn.scheduleAction,
+              userText: input.userText,
+              assistantText: decision.reply.text,
+              hasActiveNegotiation:
+                input.effects.activeNegotiation !== undefined,
+            });
       negotiationPlan = this.scheduleNegotiations.prepare({
         agentId: input.agentId,
         sessionId: input.sessionId,
@@ -159,8 +167,27 @@ export class WorldEffectService {
         assistantMessageId: input.assistantMessageId,
         recentMessages: input.recentMessages,
         action: scheduleAction,
+        allowTextActionInference:
+          this.options.scheduleNegotiationMode !== "enforced",
       });
       if (this.options.scheduleNegotiationMode === "enforced") {
+        const proposedScheduleCommitments = decision.memoryCandidates.filter(
+          (candidate) => candidate.kind === "commitment",
+        );
+        const hasAuthoritativeCommittedSchedule = this.store
+          .listSchedule(input.agentId, {
+            fromUtc: input.nowUtc,
+            toUtc: DateTime.fromISO(input.nowUtc)
+              .plus({ hours: 72 })
+              .toUTC()
+              .toISO()!,
+          })
+          .some(
+            (item) =>
+              item.status === "planned" &&
+              item.rigidity === "committed" &&
+              item.source === "user_invitation",
+          );
         const negotiationRejection = negotiationPlan.rejections[0];
         const committedWorldEffects =
           input.turn.worldEffectsAudit?.mode === "enforced"
@@ -170,6 +197,13 @@ export class WorldEffectService {
           input.spec,
           negotiationPlan,
           this.decisions,
+          decision,
+          allowsAuthoritativeScheduleReadback({
+            userText: input.userText,
+            plan: negotiationPlan,
+            hasAuthoritativeCommittedSchedule,
+            hasActiveNegotiation: input.effects.activeNegotiation !== undefined,
+          }),
         );
         if (controlledReply !== undefined) {
           decision = this.decisions.attachValidatedWorldEffects(
@@ -181,7 +215,8 @@ export class WorldEffectService {
         }
         if (
           negotiationPlan.effect === undefined &&
-          negotiationPlan.actionKind !== "none"
+          (negotiationPlan.actionKind !== "none" ||
+            hasScheduleIntent(input.userText))
         ) {
           decision = {
             ...decision,
@@ -190,6 +225,13 @@ export class WorldEffectService {
             ),
           };
         }
+        const allowAuthoritativeScheduleReadback =
+          allowsAuthoritativeScheduleReadback({
+            userText: input.userText,
+            plan: negotiationPlan,
+            hasAuthoritativeCommittedSchedule,
+            hasActiveNegotiation: input.effects.activeNegotiation !== undefined,
+          });
         const negotiationReason = scheduleNegotiationDecisionReason(
           negotiationPlan,
           decision,
@@ -214,6 +256,7 @@ export class WorldEffectService {
           inspection,
           decision.reply.text,
           negotiationPlan.effect !== undefined,
+          allowAuthoritativeScheduleReadback,
         );
         if (inspection.issues.length > 0 && controlledReply === undefined) {
           repairAttempted = true;
@@ -268,6 +311,7 @@ export class WorldEffectService {
             inspection,
             decision.reply.text,
             negotiationPlan.effect !== undefined,
+            allowAuthoritativeScheduleReadback,
           );
           if (inspection.issues.length > 0) {
             usedFallback = true;
@@ -307,6 +351,26 @@ export class WorldEffectService {
           decision = appendNegotiationPresentation(
             decision,
             negotiationPlan.presentationText,
+          );
+        }
+        if (
+          negotiationPlan.effect === undefined &&
+          (negotiationPlan.actionKind !== "none" ||
+            hasScheduleIntent(input.userText))
+        ) {
+          decision = {
+            ...decision,
+            memoryCandidates: decision.memoryCandidates.filter(
+              (candidate) => candidate.kind !== "commitment",
+            ),
+          };
+          scheduleCommitmentRejections.push(
+            ...proposedScheduleCommitments.map((candidate) => ({
+              reasonCode: "uncommitted_schedule_commitment",
+              reasonSummary:
+                "A schedule-related commitment memory requires a server-committed schedule command.",
+              raw: candidate,
+            })),
           );
         }
       }
@@ -351,6 +415,7 @@ export class WorldEffectService {
         raw: rejection.raw,
       })),
       ...personalIntentRejections,
+      ...scheduleCommitmentRejections,
       ...validation.rejections.map((rejection) => ({
         reasonCode: rejection.code,
         reasonSummary: rejection.message,
@@ -385,6 +450,7 @@ export class WorldEffectService {
       proposalRejections,
       decisionPath,
       nextState,
+      scheduleActionAudit: input.turn.modelScheduleActionAudit,
       stateChanged: nextState.revision !== input.state.revision,
       repairAttempted,
       usedFallback,
@@ -414,18 +480,18 @@ function materializeAcceptedScheduleAction(input: {
       input.userText,
     );
   const assistantRefused =
-    /不能|不行|没法|做不到|抱歉|无法|去不了|来不了|can(?:not|'t)|won't|sorry/iu.test(
+    /不能|不行|没法|做不到|抱歉|无法|去不了|来不了|不(?:是很|太|怎么)?(?:愿意|乐意|方便|可以)|can(?:not|'t)|won't|sorry/iu.test(
       input.assistantText,
     );
   const assistantAccepted =
-    /(?:^|[，。！？!\s])(?:好(?:的|啊|呀)?|行|没问题|可以|愿意|确认)(?=[，。！？!\s]|$)|我(?:会|可以|愿意|来)(?=[，。！？!\s]|$)|到时候见|sure|yes|i(?:'ll|\s+will)|can\s+do/iu.test(
+    /(?:^|[，。！？!\s])(?:好(?:的|啊|呀)?|行|没问题|可以|愿意|(?:很)?乐意|确认)(?=[，。！？!\s]|$)|我(?:会|可以|愿意|来)(?=[，。！？!\s]|$)|到时候见|sure|yes|i(?:'ll|\s+will)|can\s+do/iu.test(
       input.assistantText,
     );
   const assistantGroundsOffer =
     /今天|今晚|明天|明早|后天|周[一二三四五六日天]|星期[一二三四五六日天]|\d{1,2}\s*[:：点]\s*\d{0,2}|today|tonight|tomorrow|next\s+(?:week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/iu.test(
       input.assistantText,
     ) &&
-    /一起|散步|跑步|晚会|见面|吃饭|喝咖啡|看电影|逛|活动|together|walk|run|party|meet|dinner|coffee|movie/iu.test(
+    /一起|散步|跑步|晚会|见面|吃饭|喝咖啡|喝茶|看电影|逛|活动|together|walk|run|party|meet|dinner|coffee|tea|movie/iu.test(
       input.assistantText,
     );
 
@@ -480,14 +546,63 @@ function safeNegotiatedDecision(
   };
 }
 
+function allowsAuthoritativeScheduleReadback(input: {
+  userText: string;
+  plan: PreparedScheduleNegotiation;
+  hasAuthoritativeCommittedSchedule: boolean;
+  hasActiveNegotiation: boolean;
+}): boolean {
+  return (
+    input.hasAuthoritativeCommittedSchedule &&
+    input.plan.actionKind === "none" &&
+    input.plan.effect === undefined &&
+    input.plan.presentationText === undefined &&
+    input.plan.rejections.length === 0 &&
+    !input.hasActiveNegotiation &&
+    isExplicitReadOnlyScheduleQuery(input.userText)
+  );
+}
+
+function isExplicitReadOnlyScheduleQuery(text: string): boolean {
+  const normalized = text.trim();
+  if (normalized === "") return false;
+  if (/^(?:确认|确定|同意|没问题|可以|好|就这样)[!！.。]?$/u.test(normalized)) {
+    return false;
+  }
+  if (
+    /(?:写入|加入|新增|添加|创建|修改|更新|取消|删除|撤销|改期|改到|改成|挪到|推迟|提前)|(?:帮我|替我|给我).{0,8}安排|安排(?:到|在|一个|一下)|\b(?:add|save|write|create|update|cancel|delete|remove|reschedule|move)\b/iu.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+  const hasScheduleSubject =
+    /日程|安排|约定|约会|计划|行程|共同活动|共同邀约|见面|碰面|喝茶|喝咖啡|吃饭|聚会|schedule|calendar|appointment|plan|arrangement/iu.test(
+      normalized,
+    );
+  const hasReadOnlyRequest =
+    /(?:告诉我|说说|列出|查看|查询|查一下|回顾|复述|提醒我|还记得|记得吗).{0,30}(?:日程|安排|约定|约会|计划|行程|活动)|(?:日程|安排|约定|约会|计划|行程|活动).{0,20}(?:是什么|有哪些|哪(?:个|一项|天)|几点|什么时候|在哪里|在哪|还在吗|记得吗|确认过吗)|(?:我们|咱们).{0,24}(?:已(?:经)?|之前|刚才|刚刚|刚).{0,12}(?:确认|说定|约定).{0,20}(?:什么|哪|几点|什么时候|在哪里|在哪|吗|[?？])|\b(?:what|when|where|which|show|list|review|remind)\b.{0,50}\b(?:schedule|calendar|appointment|plan|arrangement)\b/iu.test(
+      normalized,
+    );
+  return hasScheduleSubject && hasReadOnlyRequest;
+}
+
 function scheduleNegotiationOutcomeDecision(
   spec: CharacterSpec,
   plan: PreparedScheduleNegotiation,
   decisions: TurnDecisionService,
+  currentDecision: AgentTurnDecision,
+  allowAuthoritativeScheduleReadback: boolean,
 ): AgentTurnDecision | undefined {
   const rejection = plan.rejections[0];
   if (rejection !== undefined) {
-    return rejectedScheduleNegotiationDecision(spec, rejection);
+    if (replyClaimsScheduleMutation(currentDecision.reply.text)) {
+      return rejectedScheduleNegotiationDecision(spec, rejection);
+    }
+    return appendNegotiationPresentation(
+      currentDecision,
+      "【未修改日程】" + scheduleNegotiationRejectionText(rejection.reasonCode),
+    );
   }
   if (plan.effect !== undefined) {
     return safeNegotiatedDecision(spec, true, decisions);
@@ -519,7 +634,20 @@ function scheduleNegotiationOutcomeDecision(
         "\u8fd9\u6b21\u786e\u8ba4\u6ca1\u6709\u5f62\u6210\u53ef\u63d0\u4ea4\u7684\u65e5\u7a0b\u4fee\u6539\uff0c\u65e5\u7a0b\u4fdd\u6301\u4e0d\u53d8\u3002";
       break;
     case "none":
-      if (plan.presentationText === undefined) return undefined;
+      if (plan.presentationText === undefined) {
+        if (
+          allowAuthoritativeScheduleReadback &&
+          !replyClaimsExplicitScheduleMutation(currentDecision.reply.text)
+        ) {
+          return undefined;
+        }
+        if (!replyClaimsScheduleMutation(currentDecision.reply.text)) {
+          return undefined;
+        }
+        text =
+          "\u3010\u672a\u4fee\u6539\u65e5\u7a0b\u3011\u6a21\u578b\u6ca1\u6709\u63d0\u4f9b\u53ef\u6267\u884c\u7684\u7ed3\u6784\u5316\u65e5\u7a0b\u52a8\u4f5c\uff0c\u56e0\u6b64\u65e5\u7a0b\u4fdd\u6301\u4e0d\u53d8\u3002";
+        break;
+      }
       text =
         "\u5f85\u786e\u8ba4\u65b9\u6848\u4ecd\u672a\u5e94\u7528\u3002\u8bf7\u53ea\u56de\u590d\u201c\u786e\u8ba4\u201d\u6216\u201c\u53d6\u6d88\u201d\u3002";
       break;
@@ -679,6 +807,71 @@ function appendNegotiationPresentation(
   };
 }
 
+function replyClaimsExplicitScheduleMutation(text: string): boolean {
+  return sentenceUnits(text).some((clause) => {
+    if (/[?？]/u.test(clause)) return false;
+    if (
+      /(?:没有|并未|尚未|不会|不能|无法).{0,8}(?:写入|加入|记入|添加|新增|创建|修改|更新|取消|撤销|删除|改期|改到|改成)/u.test(
+        clause,
+      ) ||
+      /\b(?:have not|haven't|did not|didn't|cannot|can't|won't)\b.{0,24}\b(?:add|save|write|create|update|cancel|remove|reschedule|move)\b/iu.test(
+        clause,
+      )
+    ) {
+      return false;
+    }
+    return (
+      /(?:【日程已修改】|(?:已经|已|刚刚|刚).{0,8}(?:写入|加入|记入|添加|新增|创建).{0,8}(?:日程|安排|日历)|(?:日程|安排|日历).{0,8}(?:已经|已).{0,8}(?:修改|更新|改好)(?:了)?)/u.test(
+        clause,
+      ) ||
+      /(?:我|我们).{0,12}(?:写入|加入|记入|添加|新增|创建).{0,8}(?:日程|安排|日历)(?:了)?/u.test(
+        clause,
+      ) ||
+      /\b(?:i(?:'ve| have)|we(?:'ve| have)|it(?:'s| has) been)\s+(?:added|saved|written|created|updated)\b/iu.test(
+        clause,
+      ) ||
+      /(?:(?:已经|已|我.{0,4}(?:帮你)?|(?:日程|安排|方案).{0,4})(?:取消|撤销|删除|改期|改到|改成)(?:了|掉)?)/u.test(
+        clause,
+      ) ||
+      /\b(?:i(?:'ve| have)|we(?:'ve| have)|it(?:'s| has) been)\s+(?:cancelled|canceled|removed|rescheduled|moved)\b/iu.test(
+        clause,
+      )
+    );
+  });
+}
+
+function replyClaimsScheduleMutation(text: string): boolean {
+  if (replyClaimsExplicitScheduleMutation(text)) return true;
+  if (replyClaimsRecordedAgreement(text)) return true;
+  return sentenceUnits(text).some((clause) => {
+    if (/[?\uff1f]/u.test(clause)) return false;
+    if (
+      /(?:\u6ca1\u6709|\u5e76\u672a|\u5c1a\u672a|\u4e0d\u4f1a|\u4e0d\u80fd|\u65e0\u6cd5).{0,8}(?:\u5199\u5165|\u52a0\u5165|\u8bb0\u5165|\u6dfb\u52a0|\u4fee\u6539|\u66f4\u65b0|\u53d6\u6d88|\u64a4\u9500|\u5220\u9664|\u6539\u671f|\u6539\u5230|\u6539\u6210)/u.test(
+        clause,
+      ) ||
+      /\b(?:have not|haven't|did not|didn't|cannot|can't|won't)\b.{0,24}\b(?:add|save|write|update|cancel|remove|reschedule|move)\b/iu.test(
+        clause,
+      )
+    ) {
+      return false;
+    }
+    return (
+      /(?:\u3010\u65e5\u7a0b\u5df2\u4fee\u6539\u3011|(?:\u5df2\u7ecf|\u5df2).{0,4}(?:\u5199\u5165|\u52a0\u5165|\u8bb0\u5165|\u6dfb\u52a0\u5230).{0,4}(?:\u65e5\u7a0b|\u5b89\u6392|\u65e5\u5386)|(?:\u65e5\u7a0b|\u5b89\u6392|\u65e5\u5386).{0,4}(?:\u5df2\u7ecf|\u5df2).{0,4}(?:\u4fee\u6539|\u66f4\u65b0|\u6539\u597d)(?:\u4e86)?)/u.test(
+        clause,
+      ) ||
+      /\b(?:i(?:'ve| have)|we(?:'ve| have)|it(?:'s| has) been)\s+(?:added|saved|written|updated)\b/iu.test(
+        clause,
+      ) ||
+      /(?:(?:\u5df2\u7ecf|\u5df2|\u6211.{0,4}(?:\u5e2e\u4f60)?|(?:\u65e5\u7a0b|\u5b89\u6392|\u65b9\u6848).{0,4})(?:\u53d6\u6d88|\u64a4\u9500|\u5220\u9664|\u6539\u671f|\u6539\u5230|\u6539\u6210)(?:\u4e86|\u6389)?)/u.test(
+        clause,
+      ) ||
+      /\b(?:i(?:'ve| have)|we(?:'ve| have)|it(?:'s| has) been)\s+(?:cancelled|canceled|removed|rescheduled|moved)\b/iu.test(
+        clause,
+      )
+    );
+  });
+}
+
 function replyClaimsRecordedAgreement(text: string): boolean {
   return sentenceUnits(text).some((clause) => {
     if (
@@ -704,7 +897,19 @@ function appendNegotiationReplyIssues(
   inspection: { issues: unknown[] },
   text: string,
   committed: boolean,
+  allowAuthoritativeScheduleReadback: boolean,
 ): void {
+  if (!committed && replyClaimsExplicitScheduleMutation(text)) {
+    inspection.issues.push({
+      code: "uncommitted_schedule_mutation",
+      message:
+        "Reply claims a schedule mutation without a server-committed command.",
+    });
+    return;
+  }
+  if (!committed && allowAuthoritativeScheduleReadback) {
+    return;
+  }
   if (!committed && replyClaimsRecordedAgreement(text)) {
     inspection.issues.push({
       code: "uncommitted_schedule_agreement",

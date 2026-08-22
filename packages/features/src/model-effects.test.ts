@@ -157,15 +157,62 @@ describe("parseModelTime", () => {
     expect(parseModelTime("2026-08-16T19:00", context)).toBe(
       "2026-08-16T11:00:00.000Z",
     );
+    expect(parseModelTime("安排在2026年08月23日 11:30", context)).toBe(
+      "2026-08-23T03:30:00.000Z",
+    );
+    expect(parseModelTime("2026年08月23日下午3点", context)).toBe(
+      "2026-08-23T07:00:00.000Z",
+    );
+    expect(parseModelTime("2026年08月23日晚上8点半", context)).toBe(
+      "2026-08-23T12:30:00.000Z",
+    );
+    expect(parseModelTime("2026年08月23日晚上8点 半", context)).toBe(
+      "2026-08-23T12:30:00.000Z",
+    );
+    expect(parseModelTime("2026年08月23日上午十点三刻", context)).toBe(
+      "2026-08-23T02:45:00.000Z",
+    );
+    expect(parseModelTime("2026年08月23日午夜12点", context)).toBe(
+      "2026-08-23T16:00:00.000Z",
+    );
     expect(parseModelTime("2小时后", context)).toBe("2026-08-16T08:00:00.000Z");
     expect(parseModelTime("in 90 minutes", context)).toBe(
       "2026-08-16T07:30:00.000Z",
     );
   });
 
+  it.each([
+    ["2026年08月23日 23:00", "2026-08-23T15:00:00.000Z"],
+    ["2026年08月23日中午10点", undefined],
+    ["2026年08月23日中午1点", "2026-08-23T05:00:00.000Z"],
+    ["2026年08月23日晚上13:00", undefined],
+    ["2026年08月23日凌晨12点", "2026-08-22T16:00:00.000Z"],
+    ["2026年08月23日凌晨6点", undefined],
+    ["2026年08月23日上午10点", "2026-08-23T02:00:00.000Z"],
+    ["2026年08月23日上午12点", "2026-08-22T16:00:00.000Z"],
+    ["2026年08月23日下午12点", "2026-08-23T04:00:00.000Z"],
+    ["2026年08月23日下午1点", "2026-08-23T05:00:00.000Z"],
+    ["2026年08月23日下午0点", undefined],
+  ])(
+    "normalizes explicit Chinese period boundaries in %s",
+    (input, expected) => {
+      expect(parseModelTime(input, context)).toBe(expected);
+    },
+  );
+
   it("returns undefined for garbage", () => {
     expect(parseModelTime("随便", context)).toBeUndefined();
     expect(parseModelTime(null, context)).toBeUndefined();
+  });
+
+  it.each([
+    "2026年08月23日晚上八点四刻",
+    "2026年08月23日晚上八点 四刻",
+    "2026年08月23日晚上八点六十分",
+    "2026年08月23日晚上八点半点",
+    "2026年08月23日晚上八点：30",
+  ])("does not drop an explicit Chinese date from malformed %s", (input) => {
+    expect(parseModelTime(input, context)).toBeUndefined();
   });
 });
 

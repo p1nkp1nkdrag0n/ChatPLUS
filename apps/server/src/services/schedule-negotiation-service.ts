@@ -89,6 +89,12 @@ const ACTIVITY_FAMILIES: Record<string, readonly ActivityFamily[]> = {
   social: [
     { id: "meet", label: "见面", pattern: /见面|碰面|\bmeet\b/iu },
     {
+      id: "tea",
+      label: "喝茶",
+      pattern: /喝茶|品茶|下午茶|\btea\b/iu,
+    },
+    { id: "coffee", label: "喝咖啡", pattern: /喝咖啡|咖啡|\bcoffee\b/iu },
+    {
       id: "party",
       label: "参加聚会",
       pattern: /聚会|晚会|派对|\bparty\b|\bgather(?:ing)?\b/iu,
@@ -205,6 +211,7 @@ export class ScheduleNegotiationService {
     assistantMessageId: string;
     recentMessages: readonly StoredMessage[];
     action: ScheduleNegotiationAction;
+    allowTextActionInference: boolean;
   }): PreparedScheduleNegotiation {
     const rejections: ScheduleNegotiationRejection[] = [];
     const updates: StoredScheduleNegotiation[] = [];
@@ -212,9 +219,9 @@ export class ScheduleNegotiationService {
     const explicitCancellation = isExplicitScheduleCancellation(
       input.userMessage.content,
     );
-    if (explicitCancellation) {
+    if (input.allowTextActionInference && explicitCancellation) {
       input = { ...input, action: { kind: "withdraw_offer" } };
-    } else if (active !== undefined) {
+    } else if (input.allowTextActionInference && active !== undefined) {
       if (isUnambiguousScheduleConfirmation(input.userMessage.content)) {
         input = {
           ...input,
@@ -778,8 +785,9 @@ export function buildScheduleNegotiationContract(input: {
         };
   return [
     "SCHEDULE_NEGOTIATION_CONTRACT",
-    "Return scheduleAction separately from the natural reply. The reply wording never authorizes a schedule change.",
+    "Return exactly one replyDecision.scheduleAction on every schedule-negotiation turn; never omit it. The natural reply wording never authorizes a schedule change.",
     "Allowed kinds: none, request_details, propose_offer, accept_user_offer, accept_pending_offer, decline_offer, withdraw_offer.",
+    "accept_user_offer has this model-side shape: kind plus offer containing activity, category, startAt, optional durationMinutes, and evidenceQuotes. accept_pending_offer has only kind plus evidenceQuotes. Use exact current-user quotes for evidenceQuotes.",
     "Use accept_user_offer only when the character is willing to accept a user-supplied activity and start time. It creates a server-canonical pending offer and never changes the schedule in the same turn. Include the semantic offer and verbatim evidenceQuotes copied from user messages; the server derives the authoritative activity, time, and duration from those quotes.",
     "Use propose_offer when the character introduces or changes any material term. It also creates only a pending offer and never changes the schedule in the same turn.",
     "Only a later, separate user turn may return accept_pending_offer. Use it only when the current user gives an unambiguous affirmative answer to the single active offer without changing any term. Include evidenceQuotes copied exactly from the current user message, but do not restate or modify the offer in this action.",
@@ -787,7 +795,7 @@ export function buildScheduleNegotiationContract(input: {
     "For accept_user_offer, copy relative or local time wording from the evidence instead of inventing an ISO date. Omit durationMinutes when the user did not state a duration.",
     input.legacyEffectsEnabled
       ? "Use request_details when activity or start time is missing. Use none for unrelated conversation. Also return scheduleEffects under the appended legacy contract; the shadow evaluator and legacy writer are validated independently."
-      : "Use request_details when activity or start time is missing. Use none for unrelated conversation. Return scheduleEffects as an empty array; it is ignored by the negotiated writer.",
+      : "Use request_details when activity or start time is missing. Use none only for unrelated conversation. Omit top-level scheduleEffects; the negotiated writer ignores legacy effects.",
     "The natural reply must match scheduleAction: accept_user_offer and propose_offer must ask for confirmation and must not claim the schedule was changed. Never claim an agreement was recorded for none, request_details, decline_offer, or withdraw_offer.",
     `Character timezone: ${input.timezone}`,
     `Character local date/time: ${DateTime.fromISO(input.nowUtc)
@@ -865,7 +873,7 @@ function canonicalizeAcceptedUserOffer(
     ok: true,
     offer: {
       operation: "create",
-      activity: activity.label,
+      activity: groundedActivityLabel(activity, evidence),
       category: activity.category,
       startAtUtc,
       durationMinutes:
@@ -974,7 +982,7 @@ const AFFIRMATIVE_CONFIRMATIONS = new Set([
 ]);
 
 const UNSUPPORTED_SCHEDULE_OPERATION_PATTERN =
-  /(?:取消|删(?:掉|除)?|撤(?:销|掉)?|去掉|作废|不(?:去|参加)(?:了)?|不要(?:了)?|(?:把|将).{0,40}(?:改|换|挪|调|移|推|延|提|删|撤|取消|去掉)|(?:改|换|挪|调|移)(?:到|成|为|期|时间|个时间)|推迟|延后|延到|提前|\b(?:cancel|remove|delete|drop|undo|withdraw|reschedul(?:e|ing)|postpone|shift)\b|\b(?:move|change)\b.{0,40}\b(?:to|into|from)\b|\bpush\s+back\b|\bbring\s+forward\b)/iu;
+  /(?:取消|删(?:掉|除)?|撤(?:销|掉)?|去掉|作废|不(?:去|参加)(?:了)?|(?:把|将).{0,40}(?:改|换|挪|调|移|推|延|提|删|撤|取消|去掉)|(?:改|换|挪|调|移)(?:到|成|为|期|时间|个时间)|推迟|延后|延到|提前|\b(?:cancel|remove|delete|drop|undo|withdraw|reschedul(?:e|ing)|postpone|shift)\b|\b(?:move|change)\b.{0,40}\b(?:to|into|from)\b|\bpush\s+back\b|\bbring\s+forward\b)/iu;
 const QUESTION_MARK_PATTERN = /[?？﹖؟⁇⁈⁉]/u;
 
 function isUnambiguousScheduleConfirmation(text: string): boolean {
@@ -1036,7 +1044,7 @@ function resolveGroundedActivity(
   return category === offeredFamily.category &&
     category === groundedFamily.category &&
     offeredFamily.id === groundedFamily.id
-    ? groundedFamily.label
+    ? groundedActivityLabel(groundedFamily, evidence)
     : undefined;
 }
 
@@ -1054,6 +1062,42 @@ function uniqueActivityFamilies(
   ];
 }
 
+const QUOTED_VENUE_PATTERN = /[“"「『]([^“”"「」『』\r\n]{1,60})[”"」』]/gu;
+const VENUE_SIGNAL_PATTERN =
+  /书店|咖啡馆|咖啡店|茶馆|公园|餐厅|饭店|影院|电影院|健身房|图书馆|博物馆|展馆|商场|中心|bookstore|caf[eé]|tea\s*house|park|restaurant|cinema|gym|library|museum|mall/iu;
+
+function groundedActivityLabel(
+  family: ActivityFamily,
+  evidence: readonly ResolvedEvidence[],
+): string {
+  let selected:
+    | {
+        venue: string;
+        observedAtMs: number;
+      }
+    | undefined;
+  for (const item of evidence) {
+    const observedAtMs = Date.parse(item.message.createdAtUtc);
+    for (const match of item.quote.matchAll(QUOTED_VENUE_PATTERN)) {
+      const venue = (match[1] ?? "").trim();
+      if (!VENUE_SIGNAL_PATTERN.test(venue)) continue;
+      if (
+        selected === undefined ||
+        !Number.isFinite(selected.observedAtMs) ||
+        !Number.isFinite(observedAtMs) ||
+        observedAtMs >= selected.observedAtMs
+      ) {
+        selected = { venue, observedAtMs };
+      }
+    }
+  }
+  if (selected === undefined) return family.label;
+  return (
+    family.pattern.test(selected.venue)
+      ? selected.venue
+      : `${selected.venue}${family.label}`
+  ).slice(0, 160);
+}
 function resolveGroundedStart(
   evidence: readonly ResolvedEvidence[],
   timezone: string,

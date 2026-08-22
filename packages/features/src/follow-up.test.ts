@@ -201,6 +201,14 @@ describe("FollowUp grounding and time", () => {
         ?.earliestAtUtc,
     ).toBe("2026-08-22T07:05:00.000Z");
   });
+  it("resolves 次日 as the next local day", () => {
+    expect(
+      resolveFollowUpWindow("次日下午问问进展", NOW_UTC, "Asia/Shanghai"),
+    ).toEqual({
+      earliestAtUtc: "2026-08-22T10:00:00.000Z",
+      expiresAtUtc: "2026-08-25T10:00:00.000Z",
+    });
+  });
 
   it("uses the subject and local day in a stable dedupe key", () => {
     const base = {

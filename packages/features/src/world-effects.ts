@@ -49,16 +49,53 @@ const STATE_KEYS = [
   "socialBattery",
   "focus",
 ] as const;
-const MODEL_MEMORY_TYPE_TO_KIND = {
-  user_fact: "semantic",
-  user_preference: "semantic",
-  fact: "semantic",
-  preference: "semantic",
-  semantic: "semantic",
-  episodic: "episodic",
-  relationship: "relationship",
-  commitment: "commitment",
-} as const satisfies Record<string, MemoryCandidate["kind"]>;
+type ModelMemoryTypeDescriptor = {
+  kind: MemoryCandidate["kind"];
+  explicitUser: boolean;
+  stability: NonNullable<MemoryCandidate["stability"]>;
+};
+
+const MODEL_MEMORY_TYPES = {
+  user_fact: { kind: "semantic", explicitUser: true, stability: "stable" },
+  user_preference: {
+    kind: "semantic",
+    explicitUser: true,
+    stability: "stable",
+  },
+  fact: { kind: "semantic", explicitUser: true, stability: "stable" },
+  preference: { kind: "semantic", explicitUser: true, stability: "stable" },
+  semantic: {
+    kind: "semantic",
+    explicitUser: false,
+    stability: "situational",
+  },
+  episodic: { kind: "episodic", explicitUser: false, stability: "one_off" },
+  relationship: {
+    kind: "relationship",
+    explicitUser: false,
+    stability: "situational",
+  },
+  commitment: {
+    kind: "commitment",
+    explicitUser: false,
+    stability: "situational",
+  },
+  user_current_challenge: {
+    kind: "episodic",
+    explicitUser: true,
+    stability: "situational",
+  },
+  care_preference: {
+    kind: "semantic",
+    explicitUser: true,
+    stability: "stable",
+  },
+  personal_preference: {
+    kind: "semantic",
+    explicitUser: true,
+    stability: "stable",
+  },
+} as const satisfies Record<string, ModelMemoryTypeDescriptor>;
 
 function boundedUnit(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value)
@@ -86,17 +123,16 @@ function modelMemoryCandidate(
       : typeof record["kind"] === "string"
         ? record["kind"].trim().toLowerCase()
         : "";
-  const kind =
-    MODEL_MEMORY_TYPE_TO_KIND[
-      rawType as keyof typeof MODEL_MEMORY_TYPE_TO_KIND
-    ];
+  const descriptor =
+    MODEL_MEMORY_TYPES[rawType as keyof typeof MODEL_MEMORY_TYPES];
+  const kind = descriptor?.kind;
   const content =
     typeof record["content"] === "string"
       ? record["content"].trim()
       : typeof record["text"] === "string"
         ? record["text"].trim()
         : "";
-  if (kind === undefined || content === "") return { success: false };
+  if (descriptor === undefined || content === "") return { success: false };
 
   for (const key of [
     "id",
@@ -126,11 +162,7 @@ function modelMemoryCandidate(
     }
   }
 
-  const explicitUser =
-    rawType === "user_fact" ||
-    rawType === "user_preference" ||
-    rawType === "fact" ||
-    rawType === "preference";
+  const explicitUser = descriptor.explicitUser;
   const tags = Array.isArray(record["tags"])
     ? record["tags"]
         .filter((tag): tag is string => typeof tag === "string")
@@ -150,12 +182,7 @@ function modelMemoryCandidate(
   const attribution = explicitUser
     ? ("user_explicit" as const)
     : ("model_inference" as const);
-  const stability =
-    rawType === "user_fact" || rawType === "user_preference"
-      ? ("stable" as const)
-      : kind === "episodic"
-        ? ("one_off" as const)
-        : ("situational" as const);
+  const stability = descriptor.stability;
   const materialized = MemoryCandidateSchema.safeParse({
     kind,
     content: content.slice(0, 2_000),
@@ -176,6 +203,76 @@ function modelMemoryCandidate(
       "The server materialized a fuzzy model memory proposal for evidence validation.",
   });
   return materialized.success ? materialized : { success: false };
+}
+
+const MODEL_INTENT_CATEGORY_ALIASES: Record<string, string> = {
+  social_support: "social",
+};
+
+function modelPersonalIntentCandidate(
+  raw: unknown,
+):
+  | { success: true; data: PersonalIntentCandidate }
+  | { success: false; reasonCode?: string; reasonSummary?: string } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { success: false };
+  }
+  const record = raw as Record<string, unknown>;
+  for (const key of [
+    "id",
+    "agentId",
+    "sessionId",
+    "desiredDurationMinutes",
+    "earliestAtUtc",
+    "latestAtUtc",
+    "basisRefIds",
+    "evidenceMessageIds",
+    "priority",
+    "freshness",
+    "status",
+    "dedupeKey",
+    "specVersion",
+    "schemaVersion",
+    "attemptCount",
+    "lastAttemptAtUtc",
+    "createdAtUtc",
+    "updatedAtUtc",
+  ]) {
+    if (record[key] !== undefined && record[key] !== null) {
+      return {
+        success: false,
+        reasonCode: "server_owned_effect_field",
+        reasonSummary: "Personal-intent field " + key + " is server-owned.",
+      };
+    }
+  }
+  const activity =
+    typeof record["activity"] === "string"
+      ? record["activity"]
+      : record["fuzzyActivity"];
+  const rawCategory =
+    typeof record["category"] === "string"
+      ? record["category"].trim().toLowerCase()
+      : undefined;
+  const category =
+    rawCategory === undefined
+      ? undefined
+      : (MODEL_INTENT_CATEGORY_ALIASES[rawCategory] ?? rawCategory);
+  const parsed = PersonalIntentCandidateSchema.safeParse({
+    activity,
+    ...(category === undefined ? {} : { category }),
+    ...(record["durationHint"] === undefined
+      ? {}
+      : { durationHint: record["durationHint"] }),
+    ...(record["timingHint"] === undefined
+      ? {}
+      : { timingHint: record["timingHint"] }),
+    basisKind: record["basisKind"],
+    evidenceQuotes: record["evidenceQuotes"],
+    reasonCode: record["reasonCode"],
+    reasonSummary: record["reasonSummary"],
+  });
+  return parsed.success ? parsed : { success: false };
 }
 
 function clampLiveStateDelta(delta: RuntimeStateDelta): {
@@ -335,7 +432,7 @@ export function validateWorldEffects(
     raw.personalIntentCandidates,
     "personal_intent_candidate",
     8,
-    (candidate) => PersonalIntentCandidateSchema.safeParse(candidate),
+    modelPersonalIntentCandidate,
     intents,
     rejections,
   );

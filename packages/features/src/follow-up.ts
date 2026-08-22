@@ -169,7 +169,9 @@ export function resolveFollowUpWindow(
   let targetDay: DateTime | undefined;
   if (/\u540e\u5929|day after tomorrow/iu.test(text)) {
     targetDay = now.startOf("day").plus({ days: 2 });
-  } else if (/\u660e\u5929|\u660e\u65e5|tomorrow/iu.test(text)) {
+  } else if (
+    /\u660e\u5929|\u660e\u65e5|\u6b21\u65e5|\u7fcc\u65e5|tomorrow/iu.test(text)
+  ) {
     targetDay = now.startOf("day").plus({ days: 1 });
   } else if (/\u4eca\u5929|\u4eca\u65e5|today/iu.test(text)) {
     targetDay = now.startOf("day");

@@ -71,6 +71,15 @@ describe("openai-compatible reply-first conversation path", () => {
         text: "有效回复",
         scheduleEffects: [{ operation: "invalid" }],
       }).success,
+    ).toBe(false);
+    expect(
+      calls[0]?.schema.safeParse({
+        replyDecision: {
+          text: "Valid reply.",
+        },
+        worldEffects: {},
+        scheduleEffects: [{ operation: "invalid" }],
+      }).success,
     ).toBe(true);
   });
 
@@ -603,6 +612,54 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(calls).toEqual([]);
   });
 
+  it("rejects legacy flat world-effect output at the live schema boundary", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const legacyFlat = {
+      text: "Legacy flat reply must be rejected.",
+      stateDelta: { energy: -0.15 },
+    };
+    vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
+      (input) => {
+        calls.push(input);
+        if (input.purpose === "chat_turn") {
+          return Promise.resolve(legacyFlat as never);
+        }
+        if (input.purpose === "repair_chat_turn") {
+          return Promise.resolve({
+            text: "I rewrote that response through the canonical repair path.",
+          } as never);
+        }
+        return Promise.resolve(fixtureFor(input) as never);
+      },
+    );
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "strict-envelope-flat-reject",
+      "Please respond while applying a small energy effect.",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toContain("canonical repair path");
+    expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+    expect(body.state.energy).toBeCloseTo(before.energy);
+    const chatCall = calls.find((input) => input.purpose === "chat_turn");
+    expect(chatCall?.schema.safeParse(legacyFlat).success).toBe(false);
+    expect(calls.map((input) => input.purpose)).toEqual([
+      "chat_turn",
+      "repair_chat_turn",
+    ]);
+  });
+
   it("commits valid world effects while rejecting malformed siblings", async () => {
     const created = await createRealProviderTestApp("enforced");
     app = created.app;
@@ -677,7 +734,7 @@ describe("openai-compatible reply-first conversation path", () => {
         "SELECT reason_code FROM rejected_proposals WHERE agent_id = ? ORDER BY id DESC LIMIT 1",
       )
       .get(character.id) as { reason_code: string } | undefined;
-    expect(rejection?.reason_code).toBe("invalid_effect_candidate");
+    expect(rejection?.reason_code).toBe("server_owned_effect_field");
     const audit = app.personasim.store
       .listDomainEvents(character.id, 100)
       .find(
@@ -690,7 +747,7 @@ describe("openai-compatible reply-first conversation path", () => {
         relationshipDelta: true,
         personalIntentCandidateCount: 1,
       },
-      rejectionCodes: ["invalid_effect_candidate"],
+      rejectionCodes: ["server_owned_effect_field"],
     });
   });
 
@@ -908,8 +965,48 @@ function mockLlm(
 ): void {
   vi.spyOn(llm, "generateObject").mockImplementation((input) => {
     calls.push(input);
-    return Promise.resolve(responder(input));
+    const output = responder(input);
+    return Promise.resolve(
+      input.purpose === "chat_turn"
+        ? (canonicalChatEnvelopeFixture(output) as never)
+        : output,
+    );
   });
+}
+
+function canonicalChatEnvelopeFixture(output: unknown): unknown {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) {
+    return { replyDecision: output, worldEffects: {} };
+  }
+  const record = output as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(record, "replyDecision")) {
+    return output;
+  }
+  const replyDecision: Record<string, unknown> = {};
+  for (const key of [
+    "text",
+    "toneTags",
+    "deliveryMode",
+    "chunks",
+    "scheduleAction",
+  ] as const) {
+    if (record[key] !== undefined) replyDecision[key] = record[key];
+  }
+  const nestedReply =
+    record["reply"] === undefined ? replyDecision : record["reply"];
+  const worldEffects =
+    typeof record["worldEffects"] === "object" &&
+    record["worldEffects"] !== null &&
+    !Array.isArray(record["worldEffects"])
+      ? record["worldEffects"]
+      : {};
+  return {
+    replyDecision: nestedReply,
+    worldEffects,
+    ...(record["scheduleEffects"] === undefined
+      ? {}
+      : { scheduleEffects: record["scheduleEffects"] }),
+  };
 }
 
 function fixtureFor(input: GenerateObjectInput<unknown>): unknown {

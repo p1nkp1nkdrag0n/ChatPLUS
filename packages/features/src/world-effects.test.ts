@@ -62,7 +62,7 @@ describe("validateWorldEffects", () => {
     expect(result.rejections.map((item) => item.reasonCode)).toEqual([
       "server_owned_state_field",
       "invalid_effect_candidate",
-      "invalid_effect_candidate",
+      "server_owned_effect_field",
     ]);
   });
   it("materializes minimal DeepSeek memory proposals with server-owned persistence fields", () => {
@@ -113,5 +113,91 @@ describe("validateWorldEffects", () => {
       attribution: "user_explicit",
       stability: "stable",
     });
+  });
+  it("normalizes bounded DeepSeek memory type aliases without weakening provenance", () => {
+    const envelope = PersonaTurnEnvelopeSchema.parse({
+      replyDecision: { text: "我会谨慎记住。" },
+      worldEffects: {
+        memoryCandidates: [
+          {
+            type: "user_current_challenge",
+            content: "用户因博士资格面谈感到紧张。",
+            importance: 0.7,
+            confidence: 0.9,
+            tags: ["博士面谈", "情绪状态"],
+          },
+          {
+            type: "care_preference",
+            content: "谈到博士资格面谈时，先询问需要安慰还是建议。",
+            importance: 0.9,
+            confidence: 1,
+            tags: ["关怀偏好"],
+          },
+          {
+            type: "personal_preference",
+            content: "重要演讲前会把蓝色玻璃鲸放在左口袋。",
+            importance: 0.8,
+            confidence: 0.9,
+            tags: ["用户习惯"],
+          },
+        ],
+      },
+    });
+
+    const result = validateWorldEffects(envelope.worldEffects);
+
+    expect(result.rejections).toEqual([]);
+    expect(result.effects.memoryCandidates).toMatchObject([
+      {
+        kind: "episodic",
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "situational",
+      },
+      {
+        kind: "semantic",
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "stable",
+      },
+      {
+        kind: "semantic",
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "stable",
+      },
+    ]);
+  });
+
+  it("materializes the documented fuzzy personal-intent alias and category", () => {
+    const envelope = PersonaTurnEnvelopeSchema.parse({
+      replyDecision: { text: "我会先问你的需要。" },
+      worldEffects: {
+        personalIntentCandidates: [
+          {
+            fuzzyActivity: "在用户提到博士面谈时先询问需要安慰还是建议",
+            category: "social_support",
+            durationHint: "即时",
+            timingHint: "下次用户提到面谈时",
+            basisKind: "chat",
+            evidenceQuotes: ["先问我现在更需要安慰还是建议"],
+            reasonCode: "respect_care_preference",
+            reasonSummary: "用户明确要求此关怀方式。",
+          },
+        ],
+      },
+    });
+
+    const result = validateWorldEffects(envelope.worldEffects);
+    expect(result.rejections).toEqual([]);
+    expect(result.effects.personalIntentCandidates).toEqual([
+      expect.objectContaining({
+        activity: "在用户提到博士面谈时先询问需要安慰还是建议",
+        category: "social",
+      }),
+    ]);
   });
 });

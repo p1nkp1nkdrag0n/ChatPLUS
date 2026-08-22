@@ -295,9 +295,9 @@ describe("conversation continuity real path", () => {
       "I want to watch a light movie tonight.",
     );
     expect(unrelated.statusCode).toBe(201);
-    expect(latestCareCueContext(chatCalls.mock.calls)).toEqual({
-      careCues: [],
-    });
+    expect(latestChatTurnPrompt(chatCalls.mock.calls)).not.toContain(
+      "FOLLOWUP_CONTEXT_JSON\n",
+    );
 
     const related = await sendMessage(
       app,
@@ -307,6 +307,7 @@ describe("conversation continuity real path", () => {
       "\u7b54\u8fa9\u3001\u9762\u8bd5 \u4f5c\u54c1\u96c6",
     );
     expect(related.statusCode).toBe(201);
+    const relatedBody = jsonBody<ChatTurnBody>(related);
     const relatedContext = latestCareCueContext(chatCalls.mock.calls);
     expect(relatedContext.careCues).toHaveLength(2);
     expect(
@@ -317,6 +318,9 @@ describe("conversation continuity real path", () => {
           cue.contextSummary.includes("\u4f5c\u54c1\u96c6"),
       ),
     ).toBe(true);
+    expect(
+      relatedBody.assistantMessage.metadata.continuityPromptCueIds,
+    ).toEqual(relatedContext.careCues.map((cue) => cue.id));
     expect(messageCount(app, character.id, "assistant_proactive")).toBe(0);
     expect(activeCareCueCount(app, character.id)).toBe(3);
   });
@@ -508,19 +512,26 @@ function sendMessage(
   });
 }
 
+function latestChatTurnPrompt(
+  calls: ReadonlyArray<
+    readonly [{ purpose: string; prompt: string }, ...unknown[]]
+  >,
+): string {
+  const call = calls.findLast(([input]) => input.purpose === "chat_turn");
+  if (call === undefined) throw new Error("Expected a chat_turn LLM call");
+  return call[0].prompt;
+}
+
 function latestCareCueContext(
   calls: ReadonlyArray<
     readonly [{ purpose: string; prompt: string }, ...unknown[]]
   >,
 ): CareCuePromptContext {
-  const call = calls.findLast(([input]) => input.purpose === "chat_turn");
-  if (call === undefined) throw new Error("Expected a chat_turn LLM call");
+  const prompt = latestChatTurnPrompt(calls);
   const marker = "FOLLOWUP_CONTEXT_JSON\n";
-  const markerIndex = call[0].prompt.lastIndexOf(marker);
+  const markerIndex = prompt.lastIndexOf(marker);
   if (markerIndex < 0) throw new Error("Follow-up context segment is missing");
-  const jsonLine = call[0].prompt
-    .slice(markerIndex + marker.length)
-    .split("\n", 1)[0];
+  const jsonLine = prompt.slice(markerIndex + marker.length).split("\n", 1)[0];
   if (jsonLine === undefined) throw new Error("Follow-up context is empty");
   return JSON.parse(jsonLine) as CareCuePromptContext;
 }
@@ -555,7 +566,11 @@ function jsonBody<T>(response: { body: string }): T {
 
 interface ChatTurnBody {
   userMessage: { id: string; content: string };
-  assistantMessage: { id: string; content: string };
+  assistantMessage: {
+    id: string;
+    content: string;
+    metadata: Record<string, unknown>;
+  };
 }
 
 interface FollowUpRow {

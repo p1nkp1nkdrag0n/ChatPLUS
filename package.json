@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:llm:smoke": "pnpm --filter @personasim/server test:llm:smoke",
+    "test:deepseek:acceptance": "pnpm --filter @personasim/server test:deepseek:acceptance",
     "sim:p1": "tsx apps/server/src/scenarios/run-p1-scenario.ts all",
     "sim:party-invite": "tsx apps/server/src/scenarios/run-p1-scenario.ts party-invite",
     "sim:self-initiated": "tsx apps/server/src/scenarios/run-p1-scenario.ts self-initiated",

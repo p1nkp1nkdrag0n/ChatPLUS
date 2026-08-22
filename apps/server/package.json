@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx src/db/migrate.ts",
     "test": "vitest run --root ../.. apps/server/src",
-    "test:llm:smoke": "tsx src/scripts/llm-smoke.ts"
+    "test:llm:smoke": "tsx src/scripts/llm-smoke.ts",
+    "test:deepseek:acceptance": "tsx src/scripts/deepseek-acceptance.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

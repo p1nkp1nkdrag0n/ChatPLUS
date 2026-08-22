@@ -192,28 +192,20 @@ export class ConversationService {
       ? readActiveMemories(this.store, input.agentId, nowUtc)
       : [];
     const memoryRecallMode = this.options.memoryRecallMode ?? "legacy";
-    const recallPreview =
+    const recallRecording =
       capabilities.longTermMemory && memoryRecallMode !== "legacy"
-        ? this.memoryRecalls.preview({
+        ? this.memoryRecalls.preparePreviewRecording({
             agentId: input.agentId,
+            sessionId,
             query: input.text,
             nowUtc,
             timezone: spec.identity.timezone,
           })
         : undefined;
-    const recallPool =
-      memoryRecallMode === "enforced" && recallPreview !== undefined
-        ? readActiveMemories(this.store, input.agentId, nowUtc, 200)
-        : legacyMemories;
-    const recallPoolById = new Map(
-      recallPool.map((memory) => [memory.id, memory]),
-    );
+    const recallPreview = recallRecording?.preview;
     const selectedRecallMemories =
       memoryRecallMode === "enforced" && recallPreview !== undefined
-        ? recallPreview.result.selectedMemoryIds.flatMap((id) => {
-            const memory = recallPoolById.get(id);
-            return memory === undefined ? [] : [memory];
-          })
+        ? recallPreview.result.selectedMemoryIds.map((id) => ({ id }))
         : legacyMemories;
     const memories =
       memoryRecallMode === "enforced" && recallPreview !== undefined
@@ -277,9 +269,13 @@ export class ConversationService {
         ? {}
         : {
             calendarContext: preparedContext.calendarContext,
-            followUpContext: {
-              careCues: preparedContext.continuity.careCues,
-            },
+            ...(preparedContext.continuity.careCues.length === 0
+              ? {}
+              : {
+                  followUpContext: {
+                    careCues: preparedContext.continuity.careCues,
+                  },
+                }),
             additionalPromptSegments: preparedContext.additionalPromptSegments,
           }),
       maxInputTokens: calculateLlmPromptTokenBudget(this.llm.capabilities),
@@ -338,6 +334,9 @@ export class ConversationService {
       spec,
       nowUtc,
       userMessageId,
+      ...(recallRecording === undefined
+        ? {}
+        : { retrievalRun: recallRecording.retrievalRun }),
       assistantMessageId,
       capabilities,
       ...(recallDiagnostic === undefined ? {} : { recallDiagnostic }),

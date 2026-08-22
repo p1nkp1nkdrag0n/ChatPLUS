@@ -1,4 +1,8 @@
-import { EventCardSchema, type EventCard } from "@personasim/contracts";
+import {
+  EventCardSchema,
+  MemoryCandidateSchema,
+  type EventCard,
+} from "@personasim/contracts";
 import { resolveTemporalQuery } from "@personasim/features";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -8,6 +12,7 @@ import { openDatabase } from "../db/connection.js";
 import { ContinuityRepository } from "./continuity-repository.js";
 import { temporalAnchorsFromEventCards } from "./continuity-index-service.js";
 import type { MemoryRecallService } from "./memory-recall-service.js";
+import { validateMergeAndPersistMemories } from "./memory-service.js";
 
 const SHANGHAI_NOW = "2026-08-21T04:00:00.000Z";
 
@@ -147,6 +152,113 @@ describe("continuity memory recall hierarchy", () => {
     ).toMatchObject({
       finalTier: "none",
     });
+  });
+
+  it("does not let a newer generic Verbatim hit mask an exact rare-code basic memory", async () => {
+    const harness = await createHarness({
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const sessionId = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Rare code recall",
+    ).id;
+    insertUserMessage(app, {
+      id: "message-generic-bookstore-plan",
+      sessionId,
+      agentId: harness.agentId,
+      content: "我们刚确认的共同安排是在北岸书店喝茶，之后再一起讨论细节。",
+      createdAtUtc: "2026-08-21T03:30:00.000Z",
+    });
+
+    const sourceId = "source-rare-code-fact";
+    const memoryContent =
+      "重要演讲仪式的代号 BGW-7419 对应蓝色玻璃鲸，并放在左口袋。";
+    app.personasim.store.insertCharacterSource({
+      id: sourceId,
+      characterId: harness.agentId,
+      sourceType: "test_fixture",
+      title: "Rare code fact",
+      contentExcerpt: memoryContent,
+      sourceHash: "hash-rare-code-fact",
+      createdAtUtc: "2026-08-20T08:00:00.000Z",
+    });
+    const [basicMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        MemoryCandidateSchema.parse({
+          kind: "episodic",
+          content: memoryContent,
+          importance: 0.2,
+          confidence: 1,
+          tags: ["BGW-7419", "演讲仪式"],
+          sourceMessageIds: [],
+          sourceActivityEventIds: [],
+          origin: "runtime_simulation",
+          namespace: "character_self",
+          certainty: "inferred",
+          attribution: "model_inference",
+          stability: "stable",
+          evidence: [
+            {
+              sourceType: "character_source",
+              sourceId,
+              contextSummary: memoryContent,
+              recordedAtUtc: "2026-08-20T08:00:00.000Z",
+            },
+          ],
+          reasonCode: "character_source",
+          reasonSummary: "Grounded by the character source fixture.",
+        }),
+      ],
+      nowUtc: "2026-08-20T08:00:00.000Z",
+      maxCandidates: 1,
+    });
+    if (basicMemory === undefined) {
+      throw new Error("Expected the rare-code basic memory to persist");
+    }
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      query:
+        "请告诉我 BGW-7419 是什么、演讲前放在哪里？另外，我们刚确认的共同安排是什么？",
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+    });
+
+    expect(preview.result).toMatchObject({
+      mode: "basic_memory",
+      abstained: false,
+      selectedMemoryIds: [basicMemory.id],
+    });
+    if (preview.result.abstained) {
+      throw new Error("Expected exact rare-code recall");
+    }
+    expect(preview.result.evidenceBundle.evidence[0]).toMatchObject({
+      memoryId: basicMemory.id,
+      evidence: {
+        sourceType: "character_source",
+        sourceId,
+      },
+    });
+    expect(
+      preview.result.evidenceBundle.evidence[0]?.score,
+    ).toBeGreaterThanOrEqual(0.42);
+
+    const run = latestRun(app, harness.agentId);
+    expect(run.inputSnapshot.hierarchy?.finalTier).toBe("basic_memory");
+    expect(run.inputSnapshot.hierarchy?.candidateTiers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tier: "verbatim_quote" }),
+        expect.objectContaining({
+          memoryId: basicMemory.id,
+          tier: "basic_memory",
+        }),
+      ]),
+    );
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
   });
 
   it("recalls a completion preference instead of rejecting it as a missing temporal anchor", async () => {
@@ -344,6 +456,142 @@ describe("continuity memory recall hierarchy", () => {
         (item) => item.evidence.sourceId,
       ),
     ).toEqual(["activity-dst-inside"]);
+  });
+
+  it("persists bounded mixed-tier snapshots for basic success and final abstention", async () => {
+    const harness = await createHarness({
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const sessionId = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Mixed hierarchy snapshot",
+    ).id;
+    insertUserMessage(app, {
+      id: "message-project-status",
+      sessionId,
+      agentId: harness.agentId,
+      content: "Project status note from an earlier conversation.",
+      createdAtUtc: "2026-08-20T08:00:00.000Z",
+    });
+
+    const sourceId = "source-project-codename";
+    const memoryContent =
+      "The character remembers project codename wing as confidential.";
+    app.personasim.store.insertCharacterSource({
+      id: sourceId,
+      characterId: harness.agentId,
+      sourceType: "test_fixture",
+      title: "Project codename",
+      contentExcerpt: memoryContent,
+      sourceHash: "hash-project-codename",
+      createdAtUtc: SHANGHAI_NOW,
+    });
+    const [basicMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        MemoryCandidateSchema.parse({
+          kind: "episodic",
+          content: memoryContent,
+          importance: 0.2,
+          confidence: 1,
+          tags: ["project", "codename", "wing"],
+          sourceMessageIds: [],
+          sourceActivityEventIds: [],
+          origin: "runtime_simulation",
+          namespace: "character_self",
+          certainty: "inferred",
+          attribution: "model_inference",
+          stability: "stable",
+          evidence: [
+            {
+              sourceType: "character_source",
+              sourceId,
+              contextSummary: memoryContent,
+              recordedAtUtc: SHANGHAI_NOW,
+            },
+          ],
+          reasonCode: "character_source",
+          reasonSummary: "Grounded by the character source fixture.",
+        }),
+      ],
+      nowUtc: SHANGHAI_NOW,
+      maxCandidates: 1,
+    });
+    if (basicMemory === undefined) {
+      throw new Error("Expected a persisted basic memory");
+    }
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      query: {
+        query: "project codename wing",
+        minimumScore: 0.7,
+      },
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+      limit: 5,
+    });
+    expect(preview.result).toMatchObject({
+      mode: "basic_memory",
+      abstained: false,
+      selectedMemoryIds: [basicMemory.id],
+    });
+
+    const run = latestRun(app, harness.agentId);
+    const hierarchy = run.inputSnapshot.hierarchy;
+    expect(hierarchy).toMatchObject({ finalTier: "basic_memory" });
+    expect(run.inputSnapshot.memories.length).toBeLessThanOrEqual(
+      run.inputSnapshot.candidateLimit,
+    );
+    expect(hierarchy?.candidateTiers).toHaveLength(
+      run.inputSnapshot.memories.length,
+    );
+    expect(hierarchy?.candidateTiers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memoryId: basicMemory.id,
+          tier: "basic_memory",
+        }),
+        expect.objectContaining({ tier: "verbatim_quote" }),
+      ]),
+    );
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+
+    const abstained = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      query: {
+        query: "project codename wing",
+        minimumScore: 0.99,
+      },
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+      limit: 5,
+    });
+    expect(abstained.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      selectedMemoryIds: [],
+    });
+
+    const abstainedRun = latestRun(app, harness.agentId);
+    const abstainedHierarchy = abstainedRun.inputSnapshot.hierarchy;
+    expect(abstainedHierarchy).toMatchObject({ finalTier: "none" });
+    expect(abstainedRun.inputSnapshot.memories.length).toBeLessThanOrEqual(
+      abstainedRun.inputSnapshot.candidateLimit,
+    );
+    expect(abstainedHierarchy?.candidateTiers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memoryId: basicMemory.id,
+          tier: "basic_memory",
+        }),
+        expect.objectContaining({ tier: "verbatim_quote" }),
+      ]),
+    );
+    expectReplayExact(app.personasim.memoryRecalls, app, abstainedRun.id);
   });
 
   it("uses only reliable occurred EventCards as named anchors and preserves ambiguity", () => {

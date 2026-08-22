@@ -113,13 +113,24 @@ export type RetrievalRunCandidate = z.infer<typeof RetrievalRunCandidateSchema>;
 
 export const RetrievalHierarchySnapshotSchema = z
   .object({
-    finalTier: z.enum(["event_card", "verbatim_quote", "date_digest", "none"]),
+    finalTier: z.enum([
+      "event_card",
+      "verbatim_quote",
+      "date_digest",
+      "basic_memory",
+      "none",
+    ]),
     candidateTiers: z
       .array(
         z
           .object({
             memoryId: EntityIdSchema,
-            tier: z.enum(["event_card", "verbatim_quote", "date_digest"]),
+            tier: z.enum([
+              "event_card",
+              "verbatim_quote",
+              "date_digest",
+              "basic_memory",
+            ]),
           })
           .strict(),
       )

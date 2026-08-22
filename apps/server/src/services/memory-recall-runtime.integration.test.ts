@@ -1,8 +1,10 @@
 import {
   MemoryCandidateSchema,
+  MemoryEvidenceSchema,
   MemoryRecallPreviewResponseSchema,
   MemorySchema,
   SendMessageResponseSchema,
+  type Memory,
   type MemoryCandidate,
   type EvidenceBundle,
 } from "@personasim/contracts";
@@ -23,6 +25,7 @@ import { validateMergeAndPersistMemories } from "./memory-service.js";
 
 const NOW = "2026-08-21T04:00:00.000Z";
 const QUERY = "What tea do I prefer? jasmine tea";
+const BASIC_QUERY = "project codename \u7ffc";
 
 describe("memory recall runtime integration", () => {
   let app: PersonaSimApp | undefined;
@@ -208,6 +211,18 @@ describe("memory recall runtime integration", () => {
       "size",
       2,
     );
+    expect(recordedRuns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: shadow.sessionId,
+          sourceMessageId: shadow.result.userMessage.id,
+        }),
+        expect.objectContaining({
+          sessionId: enforced.sessionId,
+          sourceMessageId: enforced.result.userMessage.id,
+        }),
+      ]),
+    );
     for (const run of recordedRuns) {
       expect(run.result.abstained).toBe(false);
       expect(run.result.selectedMemoryIds).toEqual([seeded.teaMemoryId]);
@@ -283,6 +298,160 @@ describe("memory recall runtime integration", () => {
     );
   });
 
+  it.each(["shadow", "enforced"] as const)(
+    "rolls back messages and the retrieval run when a later %s commit step fails",
+    async (mode) => {
+      const created = await createTestApp(true, mode);
+      app = created.app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, calls);
+      const character = await createAndPublish(app);
+      seedRecallMemories(app, character.id);
+      calls.length = 0;
+      const session = app.personasim.conversations.createSession(
+        character.id,
+        `${mode} rollback`,
+      );
+      const clientMessageId = `recall-${mode}-rollback`;
+      const insertDomainEvent = app.personasim.store.insertDomainEvent.bind(
+        app.personasim.store,
+      );
+      vi.spyOn(app.personasim.store, "insertDomainEvent").mockImplementation(
+        (event) =>
+          event.eventType === "conversation.turn_committed"
+            ? false
+            : insertDomainEvent(event),
+      );
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${session.id}/messages`,
+        payload: {
+          agentId: character.id,
+          clientMessageId,
+          text: QUERY,
+        },
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(
+        app.personasim.store.database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM messages WHERE session_id = ?",
+          )
+          .get(session.id),
+      ).toEqual({ count: 0 });
+      expect(
+        app.personasim.store.database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM retrieval_runs WHERE agent_id = ?",
+          )
+          .get(character.id),
+      ).toEqual({ count: 0 });
+      expect(
+        app.personasim.store.findTurnByClientMessageId(
+          session.id,
+          clientMessageId,
+        ),
+      ).toBeUndefined();
+    },
+  );
+
+  it("rejects a prepared retrieval run owned by another agent", async () => {
+    const created = await createTestApp(true, "enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls);
+    const character = await createAndPublish(app);
+    const otherCharacter = await createAndPublish(app);
+    seedRecallMemories(app, character.id);
+    calls.length = 0;
+    const session = app.personasim.conversations.createSession(
+      character.id,
+      "mismatched retrieval owner",
+    );
+    const preparePreviewRecording =
+      app.personasim.memoryRecalls.preparePreviewRecording.bind(
+        app.personasim.memoryRecalls,
+      );
+    vi.spyOn(
+      app.personasim.memoryRecalls,
+      "preparePreviewRecording",
+    ).mockImplementation((input) => {
+      const prepared = preparePreviewRecording(input);
+      return {
+        ...prepared,
+        retrievalRun: {
+          ...prepared.retrievalRun,
+          agentId: otherCharacter.id,
+          inputSnapshot: {
+            ...prepared.retrievalRun.inputSnapshot,
+            agentId: otherCharacter.id,
+            memories: prepared.retrievalRun.inputSnapshot.memories.map(
+              (memory) => ({ ...memory, agentId: otherCharacter.id }),
+            ),
+          },
+        },
+      };
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${session.id}/messages`,
+      payload: {
+        agentId: character.id,
+        clientMessageId: "recall-mismatched-owner",
+        text: QUERY,
+      },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(app.personasim.store.listMessages(session.id)).toHaveLength(0);
+    const retrievalRuns = new RetrievalRunRepository(
+      app.personasim.store.database,
+    );
+    expect(retrievalRuns.listByAgent(character.id)).toHaveLength(0);
+    expect(retrievalRuns.listByAgent(otherCharacter.id)).toHaveLength(0);
+  });
+
+  it("keeps one retrieval run across an idempotent client-message replay", async () => {
+    const created = await createTestApp(true, "enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls);
+    const character = await createAndPublish(app);
+    seedRecallMemories(app, character.id);
+    calls.length = 0;
+    const session = app.personasim.conversations.createSession(
+      character.id,
+      "enforced replay",
+    );
+    const command = {
+      agentId: character.id,
+      clientMessageId: "recall-enforced-idempotent",
+      text: QUERY,
+    };
+
+    const first = await app.personasim.conversations.chat(session.id, command);
+    const replay = await app.personasim.conversations.chat(session.id, command);
+
+    expect(first.idempotentReplay).toBe(false);
+    expect(replay.idempotentReplay).toBe(true);
+    expect(replay.userMessage.id).toBe(first.userMessage.id);
+    const runs = new RetrievalRunRepository(
+      app.personasim.store.database,
+    ).listByAgent(character.id);
+    expect(runs).toEqual([
+      expect.objectContaining({
+        sessionId: session.id,
+        sourceMessageId: first.userMessage.id,
+      }),
+    ]);
+    expect(calls.filter((call) => call.purpose === "chat_turn")).toHaveLength(
+      1,
+    );
+  });
+
   it("injects no long-term evidence when enforced recall abstains", async () => {
     const created = await createTestApp();
     app = created.app;
@@ -312,6 +481,96 @@ describe("memory recall runtime integration", () => {
     expect(context.memoryEvidence).toBeUndefined();
   });
 
+  it("uses a bounded query-aware basic-memory tier through composed HTTP chat", async () => {
+    const created = await createTestApp(true, "enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls);
+    const character = await createAndPublish(app);
+    const targetMemoryId = seedBasicMemoryPool(app, character.id);
+    calls.length = 0;
+
+    const previewResponse = await app.inject({
+      method: "POST",
+      url: `/api/developer/agents/${character.id}/memory-recall-preview`,
+      payload: { message: BASIC_QUERY },
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    const preview = MemoryRecallPreviewResponseSchema.parse(
+      JSON.parse(previewResponse.body),
+    );
+    expect(preview.candidateCount).toBe(200);
+    expect(preview.candidateCount).toBeLessThanOrEqual(
+      preview.strategy.candidateLimit,
+    );
+    expect(preview.result).toMatchObject({
+      abstained: false,
+      mode: "basic_memory",
+      selectedMemoryIds: [targetMemoryId],
+    });
+
+    const retrievalRuns = new RetrievalRunRepository(
+      app.personasim.store.database,
+    );
+    const [previewRun] = retrievalRuns.listByAgent(character.id);
+    if (previewRun === undefined) throw new Error("Preview run was not stored");
+    expect(previewRun.inputSnapshot.memories.length).toBeLessThanOrEqual(
+      previewRun.inputSnapshot.candidateLimit,
+    );
+    expect(previewRun.inputSnapshot.hierarchy).toMatchObject({
+      finalTier: "basic_memory",
+    });
+    const replayResponse = await app.inject({
+      method: "GET",
+      url: `/api/developer/retrieval-runs/${previewRun.id}/replay`,
+    });
+    expect(replayResponse.statusCode).toBe(200);
+    expect(
+      jsonBody<{ matchesRecordedResult: boolean }>(replayResponse),
+    ).toMatchObject({ matchesRecordedResult: true });
+
+    const session = app.personasim.conversations.createSession(
+      character.id,
+      "Composed recall",
+    );
+    const callStart = calls.length;
+    const chatResponse = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${session.id}/messages`,
+      payload: {
+        agentId: character.id,
+        clientMessageId: "composed-basic-recall",
+        text: BASIC_QUERY,
+      },
+    });
+    expect(chatResponse.statusCode).toBe(201);
+    const chat = SendMessageResponseSchema.parse(JSON.parse(chatResponse.body));
+    expect(chat.memoryRecall).toMatchObject({
+      rolloutMode: "enforced",
+      recallMode: "basic_memory",
+      promptMemoryIds: [targetMemoryId],
+      selectedMemoryIds: [targetMemoryId],
+    });
+    const chatCall = calls
+      .slice(callStart)
+      .find((item) => item.purpose === "chat_turn");
+    if (chatCall === undefined) {
+      throw new Error("HTTP chat call was not captured");
+    }
+    expect(referenceContext(chatCall.prompt).memoryEvidence).toMatchObject({
+      mode: "basic_memory",
+      evidence: [expect.objectContaining({ memoryId: targetMemoryId })],
+    });
+
+    const runs = retrievalRuns.listByAgent(character.id);
+    expect(runs).toHaveLength(2);
+    for (const run of runs) {
+      expect(run.inputSnapshot.memories.length).toBeLessThanOrEqual(
+        run.inputSnapshot.candidateLimit,
+      );
+    }
+  });
+
   it("does not register retrieval inspector routes when developer routes are disabled", async () => {
     const created = await createTestApp(false);
     app = created.app;
@@ -331,7 +590,10 @@ describe("memory recall runtime integration", () => {
   });
 });
 
-async function createTestApp(developerRoutes = true): Promise<{
+async function createTestApp(
+  developerRoutes = true,
+  memoryRecallMode: "legacy" | "shadow" | "enforced" = "legacy",
+): Promise<{
   app: PersonaSimApp;
   clock: FakeClock;
 }> {
@@ -345,7 +607,7 @@ async function createTestApp(developerRoutes = true): Promise<{
     chatEffectsMode: "off",
     scheduleNegotiationMode: "legacy",
     liveWorldEffectsMode: "off",
-    memoryRecallMode: "legacy",
+    memoryRecallMode,
     llm: {
       provider: "openai-compatible",
       baseUrl: "https://example.invalid",
@@ -483,6 +745,121 @@ function seedRecallMemories(
   };
 }
 
+function seedBasicMemoryPool(app: PersonaSimApp, agentId: string): string {
+  const target = MemorySchema.parse({
+    id: "memory-basic-recall-target",
+    agentId,
+    kind: "semantic",
+    content: "The user's project codename \u7ffc is confidential.",
+    importance: 0.2,
+    confidence: 1,
+    tags: ["project", "codename", "\u7ffc"],
+    sourceMessageIds: [],
+    sourceActivityEventIds: [],
+    origin: "runtime_simulation",
+    namespace: "user_model",
+    certainty: "explicit",
+    attribution: "user_explicit",
+    stability: "stable",
+    temporalMetadata: {
+      recordedAtUtc: NOW,
+      temporalCertainty: "exact",
+      temporalStatus: "unknown",
+    },
+    status: "active",
+    dedupeKey: "basic-recall-target",
+    createdAtUtc: NOW,
+    updatedAtUtc: NOW,
+  });
+  const insert = app.personasim.store.database.prepare(
+    `INSERT INTO memories(
+       id, agent_id, type, content, tags_json, importance, confidence,
+       created_at_utc, memory_json, namespace, certainty, attribution,
+       stability, status, recorded_at_utc, temporal_certainty, temporal_status
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const persist = (memory: Memory): void => {
+    insert.run(
+      memory.id,
+      memory.agentId,
+      memory.kind,
+      memory.content,
+      JSON.stringify(memory.tags),
+      memory.importance,
+      memory.confidence,
+      memory.createdAtUtc,
+      JSON.stringify(memory),
+      memory.namespace,
+      memory.certainty,
+      memory.attribution,
+      memory.stability,
+      memory.status,
+      memory.temporalMetadata?.recordedAtUtc,
+      memory.temporalMetadata?.temporalCertainty,
+      memory.temporalMetadata?.temporalStatus,
+    );
+  };
+  persist(target);
+
+  const evidence = MemoryEvidenceSchema.parse({
+    id: "evidence-basic-recall-target",
+    memoryId: target.id,
+    sourceType: "manual",
+    sourceId: "manual-basic-recall-fixture",
+    quote: "I chose \u7ffc as my project codename.",
+    contextSummary: "Explicit test fixture for authoritative recall.",
+    recordedAtUtc: NOW,
+  });
+  app.personasim.store.database
+    .prepare(
+      `INSERT INTO memory_evidence(
+         id, memory_id, source_type, source_id, quote,
+         context_summary, recorded_at_utc, evidence_json
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      evidence.id,
+      evidence.memoryId,
+      evidence.sourceType,
+      evidence.sourceId,
+      evidence.quote,
+      evidence.contextSummary,
+      evidence.recordedAtUtc,
+      JSON.stringify(evidence),
+    );
+
+  for (let index = 0; index < 250; index += 1) {
+    persist(
+      MemorySchema.parse({
+        id: `memory-basic-recall-filler-${index}`,
+        agentId,
+        kind: "semantic",
+        content: `Project status note ${index} about a routine weekly update.`,
+        importance: 0.9,
+        confidence: 1,
+        tags: ["project", "filler"],
+        sourceMessageIds: [],
+        sourceActivityEventIds: [],
+        origin: "runtime_simulation",
+        namespace: "user_model",
+        certainty: "inferred",
+        attribution: "model_inference",
+        stability: "situational",
+        temporalMetadata: {
+          recordedAtUtc: NOW,
+          temporalCertainty: "unknown",
+          temporalStatus: "unknown",
+        },
+        status: "active",
+        dedupeKey: `basic-recall-filler-${index}`,
+        createdAtUtc: NOW,
+        updatedAtUtc: NOW,
+      }),
+    );
+  }
+  return target.id;
+}
+
 function stableUserMemory(content: string, tags: string[]): MemoryCandidate {
   return MemoryCandidateSchema.parse({
     kind: "semantic",
@@ -583,6 +960,7 @@ async function runTurn(
 ): Promise<{
   result: Awaited<ReturnType<ConversationService["chat"]>>;
   call: GenerateObjectInput<unknown>;
+  sessionId: string;
 }> {
   const conversations = new ConversationService(
     app.personasim.store,
@@ -609,7 +987,7 @@ async function runTurn(
     .slice(callStart)
     .find((item) => item.purpose === "chat_turn");
   if (call === undefined) throw new Error("Chat call was not captured");
-  return { result, call };
+  return { result, call, sessionId: session.id };
 }
 
 function referenceContext(prompt: string): {

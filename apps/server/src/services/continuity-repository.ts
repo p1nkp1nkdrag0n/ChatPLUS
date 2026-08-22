@@ -6,6 +6,11 @@ import type {
   EventCard,
   JsonValue,
 } from "@personasim/contracts";
+import {
+  boundedRecallHanBigrams,
+  boundedRecallQueryTokens,
+  recallExactIdentifiers,
+} from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
 
@@ -108,7 +113,8 @@ export class ContinuityRepository {
               )
               .all(input.agentId, match, limit) as SqlRow[]
           ).map(mapArchivedMessage);
-    const hanTerms = boundedHanBigrams(input.query);
+    const hanTerms = boundedRecallHanBigrams(input.query, HAN_BIGRAM_LIMIT);
+    const tailHanAnchor = singleHanTailAnchor(input.query);
     const hanMatches =
       hanTerms.length === 0
         ? []
@@ -117,8 +123,13 @@ export class ContinuityRepository {
               .prepare(
                 `WITH han_terms(term) AS (
                    SELECT value FROM json_each(?)
-                 )
+                 ),
+                 tail_anchor(term) AS (VALUES (?))
                  SELECT archive.*, messages.in_reply_to_message_id,
+                   EXISTS (
+                     SELECT 1 FROM tail_anchor
+                     WHERE term <> '' AND instr(archive.content, term) > 0
+                   ) AS tail_score,
                    (
                      SELECT COUNT(*) FROM han_terms
                      WHERE instr(archive.content, han_terms.term) > 0
@@ -127,20 +138,28 @@ export class ContinuityRepository {
                  JOIN messages ON messages.id = archive.id
                  WHERE archive.agent_id = ?
                    AND (
-                     SELECT COUNT(*) FROM han_terms
-                     WHERE instr(archive.content, han_terms.term) > 0
-                   ) >= ?
-                 ORDER BY han_score DESC, archive.source_created_at_utc DESC
+                     (
+                       SELECT COUNT(*) FROM han_terms
+                       WHERE instr(archive.content, han_terms.term) > 0
+                     ) >= ?
+                     OR EXISTS (
+                       SELECT 1 FROM tail_anchor
+                       WHERE term <> '' AND instr(archive.content, term) > 0
+                     )
+                   )
+                 ORDER BY tail_score DESC, han_score DESC,
+                   archive.source_created_at_utc DESC
                  LIMIT ?`,
               )
               .all(
                 JSON.stringify(hanTerms),
+                tailHanAnchor ?? "",
                 input.agentId,
                 Math.min(2, hanTerms.length),
                 limit,
               ) as SqlRow[]
           ).map(mapArchivedMessage);
-    return mergeUniqueById(hanMatches, ftsMatches, limit);
+    return mergeSearchMatches(input.query, hanMatches, ftsMatches, limit);
   }
 
   rebuildMessageArchive(agentId: string, indexedAtUtc: string): number {
@@ -533,7 +552,8 @@ export class ContinuityRepository {
               card_json: string;
             }>
           ).map((row) => JSON.parse(row.card_json) as EventCard);
-    const hanTerms = boundedHanBigrams(input.query);
+    const hanTerms = boundedRecallHanBigrams(input.query, HAN_BIGRAM_LIMIT);
+    const tailHanAnchor = singleHanTailAnchor(input.query);
     const hanMatches =
       hanTerms.length === 0
         ? []
@@ -542,8 +562,18 @@ export class ContinuityRepository {
               .prepare(
                 `WITH han_terms(term) AS (
                    SELECT value FROM json_each(?)
-                 )
+                 ),
+                 tail_anchor(term) AS (VALUES (?))
                  SELECT cards.card_json,
+                   EXISTS (
+                     SELECT 1 FROM tail_anchor
+                     WHERE term <> ''
+                       AND (
+                         instr(cards.title, term) > 0
+                         OR instr(cards.summary, term) > 0
+                         OR instr(cards.tags_text, term) > 0
+                       )
+                   ) AS tail_score,
                    (
                      SELECT COUNT(*) FROM han_terms
                      WHERE instr(cards.title, han_terms.term) > 0
@@ -553,23 +583,35 @@ export class ContinuityRepository {
                  FROM event_cards AS cards
                  WHERE cards.agent_id = ? AND cards.status = 'active'
                    AND (
-                     SELECT COUNT(*) FROM han_terms
-                     WHERE instr(cards.title, han_terms.term) > 0
-                       OR instr(cards.summary, han_terms.term) > 0
-                       OR instr(cards.tags_text, han_terms.term) > 0
-                   ) >= ?
-                 ORDER BY han_score DESC, cards.importance DESC,
+                     (
+                       SELECT COUNT(*) FROM han_terms
+                       WHERE instr(cards.title, han_terms.term) > 0
+                         OR instr(cards.summary, han_terms.term) > 0
+                         OR instr(cards.tags_text, han_terms.term) > 0
+                     ) >= ?
+                     OR EXISTS (
+                       SELECT 1 FROM tail_anchor
+                       WHERE term <> ''
+                         AND (
+                           instr(cards.title, term) > 0
+                           OR instr(cards.summary, term) > 0
+                           OR instr(cards.tags_text, term) > 0
+                         )
+                     )
+                   )
+                 ORDER BY tail_score DESC, han_score DESC, cards.importance DESC,
                    cards.recorded_at_utc DESC
                  LIMIT ?`,
               )
               .all(
                 JSON.stringify(hanTerms),
+                tailHanAnchor ?? "",
                 input.agentId,
                 Math.min(2, hanTerms.length),
                 limit,
               ) as Array<{ card_json: string }>
           ).map((row) => JSON.parse(row.card_json) as EventCard);
-    return mergeUniqueById(hanMatches, ftsMatches, limit);
+    return mergeSearchMatches(input.query, hanMatches, ftsMatches, limit);
   }
 
   replaceEventCards(agentId: string, cards: readonly EventCard[]): number {
@@ -728,21 +770,22 @@ function parseStringArray(value: unknown): string[] {
 function boundedLimit(value: number | undefined, fallback: number): number {
   return Math.max(1, Math.min(100, Math.trunc(value ?? fallback)));
 }
-function boundedHanBigrams(query: string): string[] {
-  const bigrams: string[] = [];
-  const seen = new Set<string>();
+
+function singleHanTailAnchor(query: string): string | undefined {
   const runs = query.normalize("NFKC").match(/\p{Script=Han}+/gu) ?? [];
-  for (const run of runs) {
-    const characters = Array.from(run);
-    for (let index = 0; index + 1 < characters.length; index += 1) {
-      const bigram = characters.slice(index, index + 2).join("");
-      if (seen.has(bigram)) continue;
-      seen.add(bigram);
-      bigrams.push(bigram);
-      if (bigrams.length >= HAN_BIGRAM_LIMIT) return bigrams;
-    }
-  }
-  return bigrams;
+  const characters = Array.from(runs.at(-1) ?? "");
+  return characters.length === 2 ? characters.join("") : undefined;
+}
+
+function mergeSearchMatches<T extends { id: string }>(
+  query: string,
+  hanMatches: readonly T[],
+  ftsMatches: readonly T[],
+  limit: number,
+): T[] {
+  return recallExactIdentifiers(query).length > 0
+    ? mergeUniqueById(ftsMatches, hanMatches, limit)
+    : mergeUniqueById(hanMatches, ftsMatches, limit);
 }
 
 function mergeUniqueById<T extends { id: string }>(
@@ -762,12 +805,10 @@ function mergeUniqueById<T extends { id: string }>(
 }
 
 function ftsMatch(query: string): string | undefined {
-  const terms = query
-    .normalize("NFKC")
-    .match(/[\p{L}\p{N}_]+/gu)
-    ?.filter((term) => term.length > 0)
-    .slice(0, 12);
-  return terms === undefined || terms.length === 0
+  const terms = boundedRecallQueryTokens(query, 12).filter((term) =>
+    /^[\p{L}\p{N}_]+$/u.test(term),
+  );
+  return terms.length === 0
     ? undefined
     : terms.map((term) => `"${term}"`).join(" OR ");
 }

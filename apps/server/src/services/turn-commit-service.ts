@@ -11,6 +11,10 @@ import type {
   RuntimeState,
   ScheduleItem,
 } from "../domain/schemas.js";
+import {
+  RetrievalRunRepository,
+  type CreateRetrievalRunInput,
+} from "../repositories/retrieval-run-repository.js";
 import type { SseHub } from "../sse/hub.js";
 import type {
   ConversationContextService,
@@ -61,6 +65,8 @@ export type ChatTurnResult = {
  * publication. Provider/network work is completed before this boundary.
  */
 export class TurnCommitService {
+  private readonly retrievalRuns: RetrievalRunRepository;
+
   constructor(
     private readonly store: DatabaseStore,
     private readonly schedules: ScheduleService,
@@ -68,7 +74,9 @@ export class TurnCommitService {
     private readonly sse: SseHub,
     private readonly contexts?: ConversationContextService,
     private readonly options: TurnCommitServiceOptions = {},
-  ) {}
+  ) {
+    this.retrievalRuns = new RetrievalRunRepository(store.database);
+  }
 
   replay(input: {
     turn: { userMessage: StoredMessage; assistantMessage: StoredMessage };
@@ -86,6 +94,7 @@ export class TurnCommitService {
     spec: CharacterSpec;
     nowUtc: string;
     userMessageId: string;
+    retrievalRun?: CreateRetrievalRunInput;
     assistantMessageId: string;
     capabilities: SimulationCapabilities;
     recallDiagnostic?: MemoryRecallRuntimeDiagnostic;
@@ -122,6 +131,7 @@ export class TurnCommitService {
         repairAttempted: input.world.repairAttempted,
         decisionPath: input.world.decisionPath,
         rejectedProposalCount: input.world.proposalRejections.length,
+        scheduleActionAudit: input.world.scheduleActionAudit,
         ...(input.recallDiagnostic === undefined
           ? {}
           : { memoryRecall: input.recallDiagnostic }),
@@ -130,6 +140,7 @@ export class TurnCommitService {
           ? {}
           : {
               temporalQueryResolution: input.preparedContext.temporalResolution,
+              continuityPromptCueIds: input.preparedContext.continuity.cueIds,
             }),
       },
       createdAtUtc: input.nowUtc,
@@ -165,7 +176,23 @@ export class TurnCommitService {
           }
           effectsToApply = finalValidation.accepted;
         }
+        if (
+          input.retrievalRun !== undefined &&
+          (input.retrievalRun.agentId !== input.command.agentId ||
+            input.retrievalRun.inputSnapshot.agentId !== input.command.agentId)
+        ) {
+          throw new TypeError(
+            "Prepared retrieval run agent must match the chat turn agent",
+          );
+        }
         this.store.insertMessage(userMessage);
+        if (input.retrievalRun !== undefined) {
+          this.retrievalRuns.create({
+            ...input.retrievalRun,
+            sessionId: input.sessionId,
+            sourceMessageId: userMessage.id,
+          });
+        }
         this.persistRecallAudit(input, userMessage);
         personalIntentIds = this.persistPersonalIntents(
           input,

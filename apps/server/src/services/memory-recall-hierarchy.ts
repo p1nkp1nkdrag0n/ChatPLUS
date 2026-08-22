@@ -16,6 +16,7 @@ import {
   type RetrievalScoreBreakdown,
 } from "@personasim/contracts";
 import {
+  recallExactIdentifiers,
   recallMemory,
   stableId,
   type DateDigest,
@@ -37,13 +38,17 @@ import type {
   AgentMemoryRecallInput,
   MemoryRecallPreview,
 } from "./memory-recall-service.js";
-import { readMemoryEvidence } from "./memory-service.js";
+import {
+  readMemoryEvidence,
+  readRecallCandidateRecords,
+} from "./memory-service.js";
 
 const DEFAULT_MINIMUM_SCORE = 0.42;
 const DEFAULT_CANDIDATE_LIMIT = 200;
 const DEFAULT_MAX_EVIDENCE = 3;
 
-type HierarchyTier = "event_card" | "verbatim_quote" | "date_digest";
+type HierarchyTier =
+  "event_card" | "verbatim_quote" | "date_digest" | "basic_memory";
 
 type PreparedRecall = {
   query: MemoryRecallQuery;
@@ -90,6 +95,7 @@ export function inspectContinuityRecall(
 ): ContinuityRecallInspection {
   const started = performance.now();
   const query = normalizeQuery(input.query);
+  const exactIdentifiers = recallExactIdentifiers(query.query);
   const candidateLimit = boundedInteger(
     input.limit ?? DEFAULT_CANDIDATE_LIMIT,
     1,
@@ -160,7 +166,10 @@ export function inspectContinuityRecall(
     eventCandidates,
   );
   const eventResult = evaluateTier(eventPrepared, input.nowUtc, "event_card");
-  if (!eventResult.abstained) {
+  if (
+    !eventResult.abstained &&
+    resultCoversExactIdentifiers(eventResult, exactIdentifiers)
+  ) {
     return buildInspection({
       store,
       input,
@@ -209,7 +218,10 @@ export function inspectContinuityRecall(
     input.nowUtc,
     "verbatim_quote",
   );
-  if (!verbatimResult.abstained) {
+  if (
+    !verbatimResult.abstained &&
+    resultCoversExactIdentifiers(verbatimResult, exactIdentifiers)
+  ) {
     const prepared = prepareCandidates(
       store,
       input.agentId,
@@ -254,7 +266,10 @@ export function inspectContinuityRecall(
       input.nowUtc,
       "date_digest",
     );
-    if (!digestResult.abstained) {
+    if (
+      !digestResult.abstained &&
+      resultCoversExactIdentifiers(digestResult, exactIdentifiers)
+    ) {
       const prepared = prepareCandidates(
         store,
         input.agentId,
@@ -277,30 +292,72 @@ export function inspectContinuityRecall(
     }
   }
 
-  const prepared = prepareCandidates(
+  const basicCandidates = basicMemoryCandidates(
+    store,
+    input.agentId,
+    query.query,
+    input.nowUtc,
+    candidateLimit,
+  );
+  const basicPrepared = prepareCandidates(
     store,
     input.agentId,
     effectiveQuery,
     candidateLimit,
     maxEvidence,
     minimumScore,
-    attempted,
+    basicCandidates,
   );
-  const bestScore = Math.max(eventResult.score, verbatimResult.score);
+  const basicResult = evaluateTier(basicPrepared, input.nowUtc, "basic_memory");
+  const snapshotCandidates = mergeCandidates(
+    attempted,
+    basicCandidates,
+    candidateLimit,
+  );
+  const snapshotPrepared = prepareCandidates(
+    store,
+    input.agentId,
+    effectiveQuery,
+    candidateLimit,
+    maxEvidence,
+    minimumScore,
+    snapshotCandidates,
+  );
+  if (
+    !basicResult.abstained &&
+    resultCoversExactIdentifiers(basicResult, exactIdentifiers)
+  ) {
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: snapshotPrepared,
+      result: basicResult,
+      finalTier: "basic_memory",
+      tierByMemoryId: tierMap(snapshotCandidates),
+      temporalResolution: temporal.resolution,
+    });
+  }
+
+  const bestScore = Math.max(
+    eventResult.score,
+    verbatimResult.score,
+    basicResult.score,
+  );
   const reason =
     temporal.range !== undefined
       ? "date_digest_no_reliable_facts"
-      : attempted.length === 0
+      : snapshotPrepared.memories.length === 0
         ? "no_continuity_evidence"
         : "below_relevance_threshold";
   return buildInspection({
     store,
     input,
     started,
-    prepared,
+    prepared: snapshotPrepared,
     result: abstainResult(reason, bestScore),
     finalTier: "none",
-    tierByMemoryId: tierMap(attempted),
+    tierByMemoryId: tierMap(snapshotCandidates),
     temporalResolution: temporal.resolution,
   });
 }
@@ -664,6 +721,31 @@ function dateDigestCandidates(
     });
 }
 
+function basicMemoryCandidates(
+  store: DatabaseStore,
+  agentId: string,
+  query: string,
+  nowUtc: string,
+  candidateLimit: number,
+): HierarchyCandidate[] {
+  const memories = readRecallCandidateRecords(store, agentId, nowUtc, {
+    candidateLimit,
+    query,
+    keywordLimit: 50,
+  });
+  const evidenceByMemory = groupEvidenceByMemory(
+    readMemoryEvidence(
+      store,
+      memories.map((memory) => memory.id),
+    ),
+  );
+  return memories.map((memory) => ({
+    tier: "basic_memory",
+    memory,
+    evidence: evidenceByMemory.get(memory.id) ?? [],
+  }));
+}
+
 function prepareCandidates(
   store: DatabaseStore,
   agentId: string,
@@ -735,6 +817,24 @@ function forceMode(
       mode: tier,
     },
   });
+}
+
+function resultCoversExactIdentifiers(
+  result: MemoryRecallResult,
+  identifiers: readonly string[],
+): boolean {
+  if (identifiers.length === 0) return true;
+  if (result.abstained) return false;
+
+  const selectedText = result.evidenceBundle.evidence
+    .flatMap((item) => [
+      item.memoryContent,
+      item.evidence.quote ?? "",
+      item.evidence.contextSummary ?? "",
+    ])
+    .join("\n");
+  const covered = new Set(recallExactIdentifiers(selectedText));
+  return identifiers.every((identifier) => covered.has(identifier));
 }
 
 function abstainResult(reason: string, score = 0): MemoryRecallResult {

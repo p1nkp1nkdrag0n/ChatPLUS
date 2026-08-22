@@ -66,6 +66,128 @@ type ScoredCandidate = {
 
 const DEFAULT_MINIMUM_SCORE = 0.42;
 
+const EXACT_IDENTIFIER_PATTERN = /[A-Za-z0-9]+(?:[-_.:/][A-Za-z0-9]+)*/gu;
+
+function boundedRecallTerms(
+  prioritized: readonly string[],
+  ordered: readonly string[],
+  limit: number,
+): string[] {
+  const safeLimit = Math.max(0, Math.min(500, Math.trunc(limit)));
+  if (safeLimit === 0) return [];
+
+  const selected: string[] = [];
+  const seen = new Set<string>();
+  const append = (value: string | undefined): void => {
+    if (value === undefined || value.length === 0 || seen.has(value)) return;
+    seen.add(value);
+    selected.push(value);
+  };
+
+  // Exact identifiers are selected before any general lexical truncation. If
+  // an unusually identifier-heavy query exceeds the bound, alternate between
+  // its head and tail so a late identifier still remains visible.
+  let priorityHead = 0;
+  let priorityTail = prioritized.length - 1;
+  while (selected.length < safeLimit && priorityHead <= priorityTail) {
+    append(prioritized[priorityHead]);
+    priorityHead += 1;
+    if (selected.length >= safeLimit || priorityHead > priorityTail) break;
+    append(prioritized[priorityTail]);
+    priorityTail -= 1;
+  }
+  if (selected.length >= safeLimit) return selected;
+
+  const rare = ordered
+    .map((term, index) => ({ term, index, score: recallTermRarity(term) }))
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        right.index - left.index ||
+        left.term.localeCompare(right.term),
+    );
+  let head = 0;
+  let tail = ordered.length - 1;
+  let rareIndex = 0;
+  while (
+    selected.length < safeLimit &&
+    (head < ordered.length || tail >= 0 || rareIndex < rare.length)
+  ) {
+    append(ordered[head]);
+    head += 1;
+    if (selected.length >= safeLimit) break;
+    append(ordered[tail]);
+    tail -= 1;
+    if (selected.length >= safeLimit) break;
+    append(rare[rareIndex]?.term);
+    rareIndex += 1;
+  }
+  return selected;
+}
+
+function recallTermRarity(term: string): number {
+  const hasLetter = /\p{L}/u.test(term);
+  const hasNumber = /\p{N}/u.test(term);
+  const mixedIdentifier = hasLetter && hasNumber ? 100 : 0;
+  const nonHanLength = /\p{Script=Han}/u.test(term) ? 0 : term.length;
+  return mixedIdentifier + Math.min(32, nonHanLength);
+}
+
+function rawExactIdentifiers(value: string): string[] {
+  const candidates = value.normalize("NFKC").match(EXACT_IDENTIFIER_PATTERN);
+  if (candidates === null) return [];
+  return candidates.filter((candidate) => {
+    const normalized = candidate.replace(/[^A-Za-z0-9]/gu, "").toLowerCase();
+    return (
+      normalized.length >= 4 &&
+      /[a-z]/u.test(normalized) &&
+      /\d/u.test(normalized)
+    );
+  });
+}
+
+/** Exact identifier spellings, normalized for storage prefilters. */
+export function recallExactIdentifierAnchors(value: string): string[] {
+  return [
+    ...new Set(
+      rawExactIdentifiers(value).map((identifier) =>
+        identifier.toLocaleLowerCase(),
+      ),
+    ),
+  ];
+}
+
+/**
+ * Returns normalized alphanumeric identifiers that are precise enough to
+ * constrain a recall, for example "BGW-7419". Pure dates/numbers and ordinary
+ * words are deliberately excluded.
+ */
+export function recallExactIdentifiers(value: string): string[] {
+  const identifiers = new Set<string>();
+  for (const candidate of recallExactIdentifierAnchors(value)) {
+    const normalized = candidate.replace(/[^A-Za-z0-9]/gu, "").toLowerCase();
+    if (
+      normalized.length >= 4 &&
+      /[a-z]/u.test(normalized) &&
+      /\d/u.test(normalized)
+    ) {
+      identifiers.add(normalized);
+    }
+  }
+  return [...identifiers];
+}
+
+function exactIdentifierScore(document: string, query: string): number {
+  const queryIdentifiers = recallExactIdentifiers(query);
+  if (queryIdentifiers.length === 0) return 0;
+
+  const documentIdentifiers = new Set(recallExactIdentifiers(document));
+  const matched = queryIdentifiers.filter((identifier) =>
+    documentIdentifiers.has(identifier),
+  ).length;
+  return clamp(matched / queryIdentifiers.length);
+}
+
 function tokens(value: string): Set<string> {
   const normalized = normalizeText(value);
   const output = new Set(
@@ -93,6 +215,43 @@ function tokens(value: string): Set<string> {
  */
 export function recallQueryTokens(query: string): string[] {
   return [...tokens(query)];
+}
+
+/**
+ * Selects a bounded set of storage-prefilter terms without letting a long
+ * query prefix hide a precise identifier or a useful tail anchor.
+ */
+export function boundedRecallQueryTokens(
+  query: string,
+  limit: number,
+): string[] {
+  const exactTerms = recallExactIdentifierAnchors(query).flatMap((identifier) =>
+    normalizeText(identifier).split(" ").filter(Boolean),
+  );
+  return boundedRecallTerms(exactTerms, recallQueryTokens(query), limit);
+}
+
+/**
+ * Selects Han bigrams with the same head/tail/rare bounded policy used by the
+ * lexical prefilter. Tail bigrams are deliberately retained for long prompts.
+ */
+export function boundedRecallHanBigrams(
+  query: string,
+  limit: number,
+): string[] {
+  const bigrams: string[] = [];
+  const seen = new Set<string>();
+  const runs = query.normalize("NFKC").match(/\p{Script=Han}+/gu) ?? [];
+  for (const run of runs) {
+    const characters = Array.from(run);
+    for (let index = 0; index + 1 < characters.length; index += 1) {
+      const bigram = characters.slice(index, index + 2).join("");
+      if (seen.has(bigram)) continue;
+      seen.add(bigram);
+      bigrams.push(bigram);
+    }
+  }
+  return boundedRecallTerms([], bigrams, limit);
 }
 
 function hanPhraseAnchorScore(document: string, query: string): number {
@@ -129,11 +288,12 @@ function lexicalScore(document: string, query: string): number {
   ) {
     return 1;
   }
+  const exactIdentifier = exactIdentifierScore(document, query);
   const phraseAnchor = hanPhraseAnchorScore(document, query);
   const documentTokens = tokens(document);
   const queryTokens = tokens(query);
   if (documentTokens.size === 0 || queryTokens.size === 0) {
-    return phraseAnchor;
+    return Math.max(exactIdentifier, phraseAnchor);
   }
   let intersection = 0;
   for (const token of queryTokens) {
@@ -142,6 +302,7 @@ function lexicalScore(document: string, query: string): number {
   const coverage = intersection / queryTokens.size;
   const union = new Set([...documentTokens, ...queryTokens]).size;
   return Math.max(
+    exactIdentifier,
     phraseAnchor,
     clamp(coverage * 0.75 + (intersection / union) * 0.25),
   );

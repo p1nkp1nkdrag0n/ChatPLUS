@@ -1,4 +1,6 @@
 import {
+  boundedRecallQueryTokens,
+  recallExactIdentifierAnchors,
   judgeMemoryCandidate,
   mergeMemoryProposal,
   memoryDedupeKey,
@@ -53,23 +55,22 @@ export function readActiveMemoryRecords(
        FROM memories
        WHERE agent_id = ? AND status = 'active'
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
-       ORDER BY importance DESC, created_at_utc DESC LIMIT ?`,
+       ORDER BY importance DESC, created_at_utc DESC, id ASC LIMIT ?`,
     )
     .all(agentId, nowUtc, safeLimit) as MemoryRow[];
   return rows.map(memoryFromRow);
 }
 
 export type RecallCandidatePoolInput = {
-  importanceLimit: number;
-  keywordTokens: readonly string[];
+  candidateLimit: number;
+  query: string;
   keywordLimit?: number;
 };
 
 /**
- * Recall candidate pool: the importance-ordered head plus keyword-matched
- * memories from the whole active set. The keyword prefilter keeps a highly
- * relevant but low-importance memory recallable instead of being structurally
- * truncated by the importance-ordered LIMIT.
+ * Builds one bounded, query-aware pool. Keyword matches are ranked ahead of
+ * the importance fallback by token rarity and coverage, so a rare relevant
+ * memory is not crowded out by many high-importance generic matches.
  */
 export function readRecallCandidateRecords(
   store: DatabaseStore,
@@ -77,29 +78,85 @@ export function readRecallCandidateRecords(
   nowUtc: string,
   input: RecallCandidatePoolInput,
 ): Memory[] {
-  const importanceLimit = Math.max(
+  const candidateLimit = Math.max(
     0,
-    Math.min(500, Math.trunc(input.importanceLimit)),
+    Math.min(500, Math.trunc(input.candidateLimit)),
   );
-  if (importanceLimit === 0) return [];
-  const pool = readActiveMemoryRecords(
+  if (candidateLimit === 0) return [];
+  const importancePool = readActiveMemoryRecords(
     store,
     agentId,
     nowUtc,
-    importanceLimit,
+    candidateLimit,
   );
-  // recallQueryTokens only emits word characters and Han bigrams, so the LIKE
-  // patterns below never need SQL wildcard escaping.
-  const keywordTokens = [...new Set(input.keywordTokens)]
-    .filter((token) => /^[\p{L}\p{N}]+$/u.test(token) && token.length >= 2)
-    .slice(0, 40);
-  if (keywordTokens.length === 0) return pool;
+  const exactAnchors = recallExactIdentifierAnchors(input.query);
+  const exactRows =
+    exactAnchors.length === 0
+      ? []
+      : (store.database
+          .prepare(
+            `SELECT id, agent_id, type, content, tags_json, importance, confidence,
+              source_message_id, source_event_id, created_at_utc, valid_until_utc,
+              memory_json, namespace, certainty, attribution, stability, status,
+              claim_subject_key, claim_disposition, superseded_by_id,
+              merged_into_id, last_reinforced_at_utc,
+              lifecycle_updated_at_utc,
+              mentioned_at_utc, planned_start_at_utc, planned_end_at_utc,
+              occurred_start_at_utc, occurred_end_at_utc, recorded_at_utc,
+              temporal_certainty, temporal_status
+             FROM memories
+             WHERE agent_id = ? AND status = 'active'
+               AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+               AND (${exactAnchors
+                 .flatMap(() => [
+                   "(' ' || lower(content) || ' ') GLOB ?",
+                   "(' ' || lower(tags_json) || ' ') GLOB ?",
+                 ])
+                 .join(" OR ")})
+             ORDER BY importance DESC, created_at_utc DESC, id ASC
+             LIMIT ?`,
+          )
+          .all(
+            agentId,
+            nowUtc,
+            ...exactAnchors.flatMap((anchor) => {
+              const pattern = `*[^a-z0-9_.:/-]${anchor}[^a-z0-9_.:/-]*`;
+              return [pattern, pattern];
+            }),
+            candidateLimit,
+          ) as MemoryRow[]);
+  const keywordTokens = boundedRecallQueryTokens(input.query, 40).filter(
+    (token) =>
+      /^[\p{L}\p{N}]+$/u.test(token) &&
+      (token.length >= 2 || /^\p{Script=Han}$/u.test(token)),
+  );
+  if (keywordTokens.length === 0) {
+    const selected = new Map(
+      exactRows.map((row) => [row.id, memoryFromRow(row)]),
+    );
+    for (const memory of importancePool) {
+      if (selected.size >= candidateLimit) break;
+      selected.set(memory.id, memory);
+    }
+    return [...selected.values()].slice(0, candidateLimit);
+  }
   const keywordLimit = Math.max(
     0,
-    Math.min(500, Math.trunc(input.keywordLimit ?? 50)),
+    Math.min(
+      candidateLimit,
+      Math.min(500, Math.trunc(input.keywordLimit ?? 50)),
+    ),
   );
-  if (keywordLimit === 0) return pool;
-  const poolIds = new Set(pool.map((memory) => memory.id));
+  if (keywordLimit === 0) {
+    const selected = new Map(
+      exactRows.map((row) => [row.id, memoryFromRow(row)]),
+    );
+    for (const memory of importancePool) {
+      if (selected.size >= candidateLimit) break;
+      selected.set(memory.id, memory);
+    }
+    return [...selected.values()].slice(0, candidateLimit);
+  }
   const keywordClauses = keywordTokens
     .flatMap(() => ["content LIKE ?", "tags_json LIKE ?"])
     .join(" OR ");
@@ -107,6 +164,31 @@ export function readRecallCandidateRecords(
     `%${token}%`,
     `%${token}%`,
   ]);
+  const frequencyColumns = keywordTokens
+    .map(
+      (_, index) =>
+        `SUM(CASE WHEN content LIKE ? OR tags_json LIKE ? THEN 1 ELSE 0 END) AS token_${index}`,
+    )
+    .join(", ");
+  const frequencyRow = store.database
+    .prepare(
+      `SELECT ${frequencyColumns}
+       FROM memories
+       WHERE agent_id = ? AND status = 'active'
+         AND (valid_until_utc IS NULL OR valid_until_utc > ?)`,
+    )
+    .get(...keywordParams, agentId, nowUtc) as
+    Record<string, number | null> | undefined;
+  const scoreExpression = keywordTokens
+    .map((_, index) => {
+      const frequency = Number(frequencyRow?.[`token_${index}`] ?? 0);
+      const weight = Math.max(
+        1,
+        Math.round(1_000_000 / (Math.max(0, frequency) + 1)),
+      );
+      return `(CASE WHEN content LIKE ? THEN ${weight} ELSE 0 END + CASE WHEN tags_json LIKE ? THEN ${weight} ELSE 0 END)`;
+    })
+    .join(" + ");
   const keywordRows = store.database
     .prepare(
       `SELECT id, agent_id, type, content, tags_json, importance, confidence,
@@ -122,20 +204,28 @@ export function readRecallCandidateRecords(
        WHERE agent_id = ? AND status = 'active'
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
          AND (${keywordClauses})
-       ORDER BY importance DESC, created_at_utc DESC
+       ORDER BY (${scoreExpression}) DESC, importance DESC, created_at_utc DESC, id ASC
        LIMIT ?`,
     )
     .all(
       agentId,
       nowUtc,
       ...keywordParams,
-      keywordLimit + pool.length,
+      ...keywordParams,
+      keywordLimit,
     ) as MemoryRow[];
-  const extras = keywordRows
-    .filter((row) => !poolIds.has(row.id))
-    .slice(0, keywordLimit)
-    .map(memoryFromRow);
-  return [...pool, ...extras];
+  const selected = new Map(
+    exactRows.map((row) => [row.id, memoryFromRow(row)]),
+  );
+  for (const row of keywordRows) {
+    if (selected.size >= candidateLimit) break;
+    selected.set(row.id, memoryFromRow(row));
+  }
+  for (const memory of importancePool) {
+    if (selected.size >= candidateLimit) break;
+    selected.set(memory.id, memory);
+  }
+  return [...selected.values()].slice(0, candidateLimit);
 }
 
 export function readActiveMemories(

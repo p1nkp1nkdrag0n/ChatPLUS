@@ -13,7 +13,7 @@ import {
   type MemoryRecallResult,
   type RetrievalScoreBreakdown,
 } from "@personasim/contracts";
-import { recallMemory, recallQueryTokens } from "@personasim/features";
+import { recallMemory } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
 import {
@@ -42,6 +42,7 @@ const DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT = 50;
 const DEFAULT_MEMORY_RECALL_MAX_EVIDENCE = 3;
 
 export type AgentMemoryRecallInput = {
+  sessionId?: string;
   agentId: string;
   query: string | MemoryRecallQuery;
   nowUtc: string;
@@ -58,6 +59,11 @@ export interface ContinuityRecallDependencies {
 export type MemoryRecallPreviewCandidate = ContractMemoryRecallPreviewCandidate;
 
 export type MemoryRecallPreview = MemoryRecallPreviewResponse;
+
+export type PreparedMemoryRecallPreview = {
+  preview: MemoryRecallPreview;
+  retrievalRun: CreateRetrievalRunInput;
+};
 
 export function recallAgentMemories(
   store: DatabaseStore,
@@ -91,14 +97,22 @@ export class MemoryRecallService {
   }
 
   preview(input: AgentMemoryRecallInput): MemoryRecallPreview {
+    const prepared = this.preparePreviewRecording(input);
+    this.retrievalRuns.create(prepared.retrievalRun);
+    return prepared.preview;
+  }
+
+  preparePreviewRecording(
+    input: AgentMemoryRecallInput,
+  ): PreparedMemoryRecallPreview {
     const inspection =
       this.continuity === undefined
         ? inspectAgentMemoryRecall(this.store, input)
         : inspectContinuityRecall(this.store, this.continuity, input);
-    this.retrievalRuns.create(
-      toRetrievalRunInput(this.store, input, inspection),
-    );
-    return inspection.preview;
+    return {
+      preview: inspection.preview,
+      retrievalRun: toRetrievalRunInput(this.store, input, inspection),
+    };
   }
 
   replay(input: RetrievalReplayInput): MemoryRecallResult {
@@ -268,7 +282,13 @@ function toRetrievalRunInput(
       maxEvidence: inputSnapshot.maxEvidence,
       minimumScore: inputSnapshot.minimumScore,
     },
-    hierarchy: ["event_card", "verbatim_quote", "date_digest", "none"],
+    hierarchy: [
+      "event_card",
+      "verbatim_quote",
+      "date_digest",
+      "basic_memory",
+      "none",
+    ],
     scoreWeights: {
       lexical: 0.4,
       tag: 0.15,
@@ -304,6 +324,7 @@ function toRetrievalRunInput(
 
   return {
     agentId: input.agentId,
+    ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
     inputSnapshot,
     stages: retrievalRunStages(
       inspection,
@@ -567,8 +588,8 @@ function prepareRecall(
     input.agentId,
     input.nowUtc,
     {
-      importanceLimit: candidateLimit,
-      keywordTokens: recallQueryTokens(query.query),
+      candidateLimit,
+      query: query.query,
       keywordLimit: DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT,
     },
   );

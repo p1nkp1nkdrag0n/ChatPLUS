@@ -5,6 +5,7 @@ import {
   type EventCard,
   type Memory,
 } from "@personasim/contracts";
+import { boundedRecallHanBigrams } from "@personasim/features";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { openDatabase, type Database } from "../db/connection.js";
@@ -123,6 +124,127 @@ describe("continuity services", () => {
         .map((card) => card.sourceId),
     ).toEqual(["activity_han_preference"]);
   });
+
+  it("keeps tail exact IDs and Han anchors visible in bounded continuity searches", () => {
+    insertMessage(store, {
+      id: "msg_tail_rare_code",
+      role: "user",
+      messageKind: "user",
+      content: "两字暗号蓝鲸；仪式代号 BGW-7419 对应蓝色玻璃鲸。",
+      createdAtUtc: "2026-08-21T11:00:00.000Z",
+    });
+    insertActivity(
+      database,
+      "activity_tail_rare_code",
+      "2026-08-21T11:30:00.000Z",
+      "完成了蓝鲸暗号和 BGW-7419 对应的蓝色玻璃鲸仪式。",
+    );
+    const genericHan = longHanPrefix(4);
+    insertMessage(store, {
+      id: "msg_generic_han_head",
+      role: "user",
+      messageKind: "user",
+      content: "干扰" + genericHan + "内容",
+      createdAtUtc: "2026-08-21T11:45:00.000Z",
+    });
+    insertActivity(
+      database,
+      "activity_generic_han_head",
+      "2026-08-21T11:50:00.000Z",
+      "干扰" + genericHan + "活动",
+    );
+    const repository = new ContinuityRepository(store);
+    const index = new ContinuityIndexService(repository, clock);
+    index.rebuildAgent(AGENT_ID);
+
+    const exactQuery = alphabeticFillerWords(30).join(" ") + " BGW-7419";
+    expect(
+      repository
+        .searchArchivedMessages({
+          agentId: AGENT_ID,
+          query: exactQuery,
+          limit: 5,
+        })
+        .map((message) => message.id),
+    ).toContain("msg_tail_rare_code");
+    expect(
+      repository
+        .searchEventCards({
+          agentId: AGENT_ID,
+          query: exactQuery,
+          limit: 5,
+        })
+        .map((card) => card.sourceId),
+    ).toContain("activity_tail_rare_code");
+
+    const hanQuery = longHanPrefix(90) + " 蓝色玻璃鲸";
+    const boundedHanTerms = boundedRecallHanBigrams(hanQuery, 64);
+    expect(boundedHanTerms).toHaveLength(64);
+    expect(boundedHanTerms).toContain(longHanPrefix(2));
+    expect(boundedHanTerms).toEqual(
+      expect.arrayContaining(["蓝色", "色玻", "玻璃", "璃鲸"]),
+    );
+    expect(
+      repository
+        .searchArchivedMessages({
+          agentId: AGENT_ID,
+          query: hanQuery,
+          limit: 5,
+        })
+        .map((message) => message.id),
+    ).toContain("msg_tail_rare_code");
+    expect(
+      repository
+        .searchEventCards({
+          agentId: AGENT_ID,
+          query: hanQuery,
+          limit: 5,
+        })
+        .map((card) => card.sourceId),
+    ).toContain("activity_tail_rare_code");
+
+    const twoCharacterHanQuery = longHanPrefix(90) + " 蓝鲸";
+    expect(boundedRecallHanBigrams(twoCharacterHanQuery, 64)).toContain("蓝鲸");
+    expect(
+      repository
+        .searchArchivedMessages({
+          agentId: AGENT_ID,
+          query: twoCharacterHanQuery,
+          limit: 1,
+        })
+        .map((message) => message.id),
+    ).toEqual(["msg_tail_rare_code"]);
+    expect(
+      repository
+        .searchEventCards({
+          agentId: AGENT_ID,
+          query: twoCharacterHanQuery,
+          limit: 1,
+        })
+        .map((card) => card.sourceId),
+    ).toEqual(["activity_tail_rare_code"]);
+
+    const mixedQuery = longHanPrefix(90) + " BGW-7419";
+    expect(
+      repository
+        .searchArchivedMessages({
+          agentId: AGENT_ID,
+          query: mixedQuery,
+          limit: 1,
+        })
+        .map((message) => message.id),
+    ).toEqual(["msg_tail_rare_code"]);
+    expect(
+      repository
+        .searchEventCards({
+          agentId: AGENT_ID,
+          query: mixedQuery,
+          limit: 1,
+        })
+        .map((card) => card.sourceId),
+    ).toEqual(["activity_tail_rare_code"]);
+  });
+
   it("invalidates an in-flight checkpoint on revision change, preserves the old head, retries, and rebuilds both indexes", async () => {
     insertMessage(store, {
       id: "msg_old_user",
@@ -795,6 +917,20 @@ function persistMemory(database: Database, memory: Memory): void {
       memory.lastReinforcedAtUtc ?? memory.createdAtUtc,
       memory.lifecycleUpdatedAtUtc ?? memory.createdAtUtc,
     );
+}
+
+function alphabeticFillerWords(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => {
+    const high = String.fromCharCode(97 + Math.floor(index / 26));
+    const low = String.fromCharCode(97 + (index % 26));
+    return "preface" + high + low;
+  });
+}
+
+function longHanPrefix(length: number): string {
+  return Array.from({ length }, (_, index) =>
+    String.fromCodePoint(0x4e00 + index),
+  ).join("");
 }
 
 function toEvidenceRef(

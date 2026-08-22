@@ -26,8 +26,11 @@ describe("LLM HTTP smoke flow", () => {
           {
             message: {
               content: JSON.stringify({
-                text: MOCK_REPLY,
-                toneTags: ["warm"],
+                replyDecision: {
+                  text: MOCK_REPLY,
+                  toneTags: ["warm"],
+                },
+                worldEffects: {},
               }),
             },
             finish_reason: "stop",
@@ -102,15 +105,27 @@ describe("LLM HTTP smoke flow", () => {
       })
       .passthrough()
       .parse(JSON.parse(schemaText) as unknown);
-    expect(schema.required).toEqual(["text"]);
+    expect(schema.required).toEqual(["replyDecision", "worldEffects"]);
     expect(Object.keys(schema.properties)).toEqual([
-      "text",
-      "toneTags",
-      "deliveryMode",
-      "chunks",
+      "replyDecision",
+      "worldEffects",
+      "scheduleEffects",
     ]);
-    expect(schema.properties).not.toHaveProperty("scheduleEffects");
+    expect(schema.properties).not.toHaveProperty("text");
     expect(schema.properties).not.toHaveProperty("reasonCode");
     expect(schema.properties).not.toHaveProperty("reasonSummary");
+    const worldEffects = z
+      .object({
+        properties: z.record(z.string(), z.unknown()),
+      })
+      .passthrough()
+      .parse(schema.properties["worldEffects"]);
+    expect(Object.keys(worldEffects.properties)).toEqual([
+      "stateDelta",
+      "relationshipDelta",
+      "memoryCandidates",
+      "personalIntentCandidates",
+      "continuityEffects",
+    ]);
   });
 });

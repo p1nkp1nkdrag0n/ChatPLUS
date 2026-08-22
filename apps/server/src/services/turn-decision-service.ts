@@ -3,7 +3,8 @@ import {
   MemoryCandidateSchema,
   PersonaChatDecisionSchema,
   PersonaChatResponseSchema,
-  PersonaTurnProviderEnvelopeSchema,
+  ScheduleNegotiationActionSchema,
+  StrictPersonaTurnProviderEnvelopeSchema,
   ScheduleEffectProposalSchema,
   type MemoryCandidate,
   type PersonaChatDecision,
@@ -59,6 +60,18 @@ export type DecisionInspection = {
   issues: unknown[];
 };
 
+export type ModelScheduleActionOrigin =
+  | "model_explicit_valid"
+  | "model_missing"
+  | "model_invalid"
+  | "model_unavailable"
+  | "fixture";
+
+export interface ModelScheduleActionAudit {
+  origin: ModelScheduleActionOrigin;
+  kind: ScheduleNegotiationAction["kind"];
+}
+
 export type ResolvedTurn = {
   decision: AgentTurnDecision;
   inspection: DecisionInspection;
@@ -66,12 +79,27 @@ export type ResolvedTurn = {
   usedFallback: boolean;
   modelRejections: ModelEffectRejection[];
   scheduleAction: ScheduleNegotiationAction;
+  modelScheduleActionAudit: ModelScheduleActionAudit;
   continuityEffects?: unknown;
   worldEffectsAudit?: {
     mode: "shadow" | "enforced";
     validation: WorldEffectsValidationResult;
   };
 };
+
+const EnforcedScheduleTurnProviderEnvelopeSchema =
+  StrictPersonaTurnProviderEnvelopeSchema.superRefine((value, context) => {
+    const audit = inspectModelScheduleAction(value.replyDecision);
+    if (audit.origin === "model_explicit_valid") return;
+    context.addIssue({
+      code: "custom",
+      path: ["replyDecision", "scheduleAction"],
+      message:
+        audit.origin === "model_missing"
+          ? "Enforced schedule turns require an explicit scheduleAction."
+          : "Enforced schedule turns require a valid scheduleAction.",
+    });
+  });
 
 /** Resolves provider output without writing durable state. */
 export class TurnDecisionService {
@@ -162,14 +190,22 @@ export class TurnDecisionService {
     let initialIssues: unknown[] = [];
     const continuityEnabled = this.options.liveWorldEffectsMode === "enforced";
     try {
-      const providerDecision = await this.llm.generateObject({
-        purpose: "chat_turn",
-        agentId: input.agentId,
-        system: input.system,
-        prompt: input.prompt,
-        schema: agentTurnDecisionSchema,
-        ...(continuityEnabled ? {} : { fixture: input.fixture }),
-      });
+      const providerEnvelope = StrictPersonaTurnProviderEnvelopeSchema.parse(
+        await this.llm.generateObject({
+          purpose: "chat_turn",
+          agentId: input.agentId,
+          system: input.system,
+          prompt: input.prompt,
+          schema: StrictPersonaTurnProviderEnvelopeSchema,
+          ...(continuityEnabled
+            ? {}
+            : { fixture: fixtureProviderEnvelope(input.fixture) }),
+        }),
+      );
+      const providerDecision = materializeFixtureProviderDecision(
+        providerEnvelope,
+        input.fixture,
+      );
       // The server fixture owns deterministic schedule behavior. In enforced
       // continuity mode the canonical fixture provider still runs so grounded
       // continuity candidates survive without replacing that schedule fixture.
@@ -233,6 +269,7 @@ export class TurnDecisionService {
       usedFallback,
       modelRejections: [],
       scheduleAction: { kind: "none" },
+      modelScheduleActionAudit: { origin: "fixture", kind: "none" },
       ...(continuityEnabled && decision.continuityEffects !== undefined
         ? {
             continuityEffects: decision.continuityEffects,
@@ -254,9 +291,12 @@ export class TurnDecisionService {
     effects: TurnDecisionEffectContext;
   }): Promise<ResolvedTurn> {
     let decisionResponse: PersonaChatDecision | undefined;
-    let replyResponse: PersonaChatResponse | undefined;
     let envelopeResponse: PersonaTurnProviderEnvelope | undefined;
     let initialIssues: unknown[] = [];
+    let modelScheduleActionAudit: ModelScheduleActionAudit = {
+      origin: "model_unavailable",
+      kind: "none",
+    };
     const effectsContract = [
       ...(input.effects.scheduleNegotiationEligible
         ? [
@@ -282,54 +322,41 @@ export class TurnDecisionService {
     const worldEffectsEnabled =
       this.options.liveWorldEffectsMode !== undefined &&
       this.options.liveWorldEffectsMode !== "off";
+    const providerSchema =
+      input.effects.scheduleNegotiationEligible &&
+      input.effects.negotiationEnforced
+        ? EnforcedScheduleTurnProviderEnvelopeSchema
+        : StrictPersonaTurnProviderEnvelopeSchema;
     try {
-      if (worldEffectsEnabled) {
-        envelopeResponse = PersonaTurnProviderEnvelopeSchema.parse(
-          await this.llm.generateObject({
-            purpose: "chat_turn",
-            agentId: input.agentId,
-            system: input.system,
-            prompt:
-              effectsContract === ""
-                ? input.prompt
-                : `${input.prompt}\n${effectsContract}`,
-            schema: PersonaTurnProviderEnvelopeSchema,
-            maxOutputTokens: input.replyStrategy.maxOutputTokens + 800,
-          }),
-        );
-        const parsedReply = PersonaChatDecisionSchema.safeParse(
-          providerReplyCandidate(envelopeResponse),
-        );
-        if (parsedReply.success) {
-          decisionResponse = parsedReply.data;
-        } else {
-          initialIssues = parsedReply.error.issues;
-        }
-      } else if (
-        input.effects.effectsEligible ||
-        input.effects.scheduleNegotiationEligible
-      ) {
-        decisionResponse = PersonaChatDecisionSchema.parse(
-          await this.llm.generateObject({
-            purpose: "chat_turn",
-            agentId: input.agentId,
-            system: input.system,
-            prompt: `${input.prompt}\n${effectsContract}`,
-            schema: PersonaChatDecisionSchema,
-            maxOutputTokens: input.replyStrategy.maxOutputTokens + 800,
-          }),
-        );
+      envelopeResponse = providerSchema.parse(
+        await this.llm.generateObject({
+          purpose: "chat_turn",
+          agentId: input.agentId,
+          system: input.system,
+          prompt:
+            effectsContract === ""
+              ? input.prompt
+              : `${input.prompt}\n${effectsContract}`,
+          schema: providerSchema,
+          maxOutputTokens:
+            input.replyStrategy.maxOutputTokens +
+            (worldEffectsEnabled ||
+            input.effects.effectsEligible ||
+            input.effects.scheduleNegotiationEligible
+              ? 800
+              : 0),
+        }),
+      );
+      modelScheduleActionAudit = inspectModelScheduleAction(
+        envelopeResponse.replyDecision,
+      );
+      const parsedReply = PersonaChatDecisionSchema.safeParse(
+        providerReplyCandidate(envelopeResponse),
+      );
+      if (parsedReply.success) {
+        decisionResponse = parsedReply.data;
       } else {
-        replyResponse = PersonaChatResponseSchema.parse(
-          await this.llm.generateObject({
-            purpose: "chat_turn",
-            agentId: input.agentId,
-            system: input.system,
-            prompt: input.prompt,
-            schema: PersonaChatResponseSchema,
-            maxOutputTokens: input.replyStrategy.maxOutputTokens,
-          }),
-        );
+        initialIssues = parsedReply.error.issues;
       }
     } catch (error) {
       initialIssues = invalidOutputIssues(error);
@@ -337,7 +364,7 @@ export class TurnDecisionService {
 
     const modelRejections: ModelEffectRejection[] = [];
     const worldValidation: WorldEffectsValidationResult | undefined =
-      envelopeResponse === undefined
+      !worldEffectsEnabled || envelopeResponse === undefined
         ? undefined
         : validateWorldEffects(envelopeResponse.worldEffects);
     for (const rejection of worldValidation?.rejections ?? []) {
@@ -352,34 +379,37 @@ export class TurnDecisionService {
         ? worldValidation?.effects
         : undefined;
     const materializedResponse = decisionResponse;
+    const replyOnly =
+      !worldEffectsEnabled &&
+      !input.effects.effectsEligible &&
+      !input.effects.scheduleNegotiationEligible;
     let decision =
       materializedResponse !== undefined
-        ? this.materializeDecisionResponse(
-            materializedResponse,
-            input.spec,
-            input.replyStrategy,
-            {
-              schedule: input.schedule,
-              timezone: input.spec.identity.timezone,
-              nowUtc: input.nowUtc,
-              userText: input.userText,
-              legacyEffectsEnabled: input.effects.effectsEligible,
-              worldEffectsEnabled,
-              ...(validatedWorldEffects === undefined
-                ? {}
-                : { validatedWorldEffects }),
-            },
-            modelRejections,
-          )
-        : replyResponse !== undefined
+        ? replyOnly
           ? materializePersonaReply(
-              replyResponse,
+              materializedResponse,
               input.spec,
               input.replyStrategy,
             )
-          : safePersonaDecision(input.spec);
-    let usedFallback =
-      materializedResponse === undefined && replyResponse === undefined;
+          : this.materializeDecisionResponse(
+              materializedResponse,
+              input.spec,
+              input.replyStrategy,
+              {
+                schedule: input.schedule,
+                timezone: input.spec.identity.timezone,
+                nowUtc: input.nowUtc,
+                userText: input.userText,
+                legacyEffectsEnabled: input.effects.effectsEligible,
+                worldEffectsEnabled,
+                ...(validatedWorldEffects === undefined
+                  ? {}
+                  : { validatedWorldEffects }),
+              },
+              modelRejections,
+            )
+        : safePersonaDecision(input.spec);
+    let usedFallback = materializedResponse === undefined;
     let inspection = usedFallback
       ? undefined
       : this.inspect({
@@ -408,7 +438,7 @@ export class TurnDecisionService {
                   ? {}
                   : { toneTags: materializedResponse.toneTags }),
               }
-            : replyResponse,
+            : undefined,
         issues: inspection?.issues ?? initialIssues,
         replyStrategy: input.replyStrategy,
       });
@@ -462,6 +492,7 @@ export class TurnDecisionService {
             },
           }),
       modelRejections,
+      modelScheduleActionAudit,
       scheduleAction: materializedResponse?.scheduleAction ?? { kind: "none" },
       ...(this.options.liveWorldEffectsMode === "enforced" &&
       envelopeResponse?.worldEffects.continuityEffects !== undefined
@@ -564,6 +595,29 @@ function attachValidatedWorldEffects(
     memoryCandidates: effects.memoryCandidates,
     personalIntentCandidates: effects.personalIntentCandidates,
   };
+}
+
+function inspectModelScheduleAction(value: unknown): ModelScheduleActionAudit {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !Object.prototype.hasOwnProperty.call(value, "scheduleAction")
+  ) {
+    return { origin: "model_missing", kind: "none" };
+  }
+  const parsed = ScheduleNegotiationActionSchema.safeParse(
+    (value as Record<string, unknown>)["scheduleAction"],
+  );
+  return parsed.success
+    ? {
+        origin: "model_explicit_valid",
+        kind: parsed.data.kind,
+      }
+    : {
+        origin: "model_invalid",
+        kind: "none",
+      };
 }
 
 function providerReplyCandidate(
@@ -711,6 +765,58 @@ function sanitizeModelMemoryCandidates(
     if (parsed.success) output.push(parsed.data);
   }
   return output;
+}
+
+function fixtureProviderEnvelope(
+  decision: AgentTurnDecision,
+): PersonaTurnProviderEnvelope {
+  return StrictPersonaTurnProviderEnvelopeSchema.parse({
+    replyDecision: decision.reply,
+    worldEffects: {
+      ...(decision.stateDelta === undefined
+        ? {}
+        : { stateDelta: decision.stateDelta }),
+      ...(decision.relationshipDelta === undefined
+        ? {}
+        : { relationshipDelta: decision.relationshipDelta }),
+      memoryCandidates: decision.memoryCandidates,
+      ...(decision.personalIntentCandidates === undefined
+        ? {}
+        : { personalIntentCandidates: decision.personalIntentCandidates }),
+      ...(decision.continuityEffects === undefined
+        ? {}
+        : { continuityEffects: decision.continuityEffects }),
+    },
+    scheduleEffects: decision.scheduleEffects,
+  });
+}
+
+function materializeFixtureProviderDecision(
+  envelope: PersonaTurnProviderEnvelope,
+  serverDecision: AgentTurnDecision,
+): AgentTurnDecision {
+  return agentTurnDecisionSchema.parse({
+    reply: envelope.replyDecision,
+    scheduleEffects: envelope.scheduleEffects ?? [],
+    ...(envelope.worldEffects.stateDelta === undefined
+      ? {}
+      : { stateDelta: envelope.worldEffects.stateDelta }),
+    ...(envelope.worldEffects.relationshipDelta === undefined
+      ? {}
+      : { relationshipDelta: envelope.worldEffects.relationshipDelta }),
+    memoryCandidates: envelope.worldEffects.memoryCandidates ?? [],
+    ...(envelope.worldEffects.personalIntentCandidates === undefined
+      ? {}
+      : {
+          personalIntentCandidates:
+            envelope.worldEffects.personalIntentCandidates,
+        }),
+    ...(envelope.worldEffects.continuityEffects === undefined
+      ? {}
+      : { continuityEffects: envelope.worldEffects.continuityEffects }),
+    reasonCode: serverDecision.reasonCode,
+    reasonSummary: serverDecision.reasonSummary,
+  });
 }
 
 function fixtureDecision(

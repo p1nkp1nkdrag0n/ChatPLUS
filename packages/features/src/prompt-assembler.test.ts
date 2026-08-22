@@ -92,7 +92,7 @@ describe("assembleChatPrompt registry integration", () => {
     expect(result.system).toContain(
       "external action or schedule change has been completed",
     );
-    expect(result.system).toContain('"text" is the only required key');
+    expect(result.system).toContain("replyDecision and worldEffects");
     expect(result.prompt).toContain("REFERENCE_CONTEXT_JSON\n");
     const promptLines = result.prompt.split("\n");
     const referenceIndex = promptLines.indexOf("REFERENCE_CONTEXT_JSON");
@@ -107,6 +107,54 @@ describe("assembleChatPrompt registry integration", () => {
       { role: "user", content: result.prompt },
     ]);
   });
+
+  it.each([
+    ["reply_only", false],
+    ["legacy_effects", true],
+    ["schedule_negotiation", false],
+    ["schedule_negotiation_shadow", true],
+  ] as const)(
+    "advertises a canonical envelope in %s mode",
+    (decisionMode, scheduleEffectsAllowed) => {
+      const result = assembleChatPrompt(
+        baseInput({
+          decisionMode,
+          liveWorldEffectsMode: "off",
+        }),
+      );
+      const lines = result.prompt.split("\n");
+      const contractIndex = lines.indexOf("OUTPUT_CONTRACT_JSON");
+      expect(contractIndex).toBeGreaterThan(-1);
+      const contract = JSON.parse(lines[contractIndex + 1] ?? "") as Record<
+        string,
+        unknown
+      >;
+
+      expect(contract).toHaveProperty("replyDecision");
+      expect(contract.worldEffects).toEqual({});
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          contract["replyDecision"],
+          "scheduleEffects",
+        ),
+      ).toBe(false);
+      expect(
+        Object.prototype.hasOwnProperty.call(contract, "scheduleEffects"),
+      ).toBe(scheduleEffectsAllowed);
+      expect(result.system).toContain(
+        "Return exactly one JSON object with replyDecision and worldEffects.",
+      );
+      if (
+        decisionMode === "schedule_negotiation" ||
+        decisionMode === "schedule_negotiation_shadow"
+      ) {
+        expect(result.system).toContain(
+          "replyDecision.text and replyDecision.scheduleAction are required",
+        );
+        expect(result.system).not.toContain("optional scheduleAction");
+      }
+    },
+  );
 
   it("registers bounded extensions per call without putting content in the trace", () => {
     const extensionSecret = "PLUGIN_CONTEXT_CONTENT";
@@ -226,9 +274,19 @@ describe("assembleChatPrompt registry integration", () => {
     expect(instructions).toContain("model-side proposals");
     expect(instructions).toContain("exact verbatim turn evidence");
     expect(instructions).toContain("Keep followUpTransitions empty");
+    expect(instructions).toContain("user_goal, user_event");
+    expect(instructions).toContain(
+      "evidenceQuotes must always be a JSON array",
+    );
+    expect(instructions).toContain("次日");
     expect(instructions).toContain("Never emit ids");
     expect(instructions).toContain("persisted timestamps");
     expect(instructions).toContain("reason metadata");
+    expect(instructions).toContain("user_fact, user_preference");
+    expect(instructions).toContain(
+      "exact JSON keys activity (a fuzzy natural-language description)",
+    );
+    expect(instructions).toContain("self_care, errand, or other");
 
     const promptLines = result.prompt.split("\n");
     const contractIndex = promptLines.indexOf("OUTPUT_CONTRACT_JSON");
@@ -246,6 +304,142 @@ describe("assembleChatPrompt registry integration", () => {
       },
     });
   });
+  it("keeps the required schedule action visible when world effects are enabled", () => {
+    const result = assembleChatPrompt(
+      baseInput({
+        decisionMode: "schedule_negotiation",
+        liveWorldEffectsMode: "enforced",
+      }),
+    );
+    const promptLines = result.prompt.split("\n");
+    const contractIndex = promptLines.indexOf("OUTPUT_CONTRACT_JSON");
+    const contract = JSON.parse(promptLines[contractIndex + 1] ?? "") as {
+      replyDecision?: Record<string, unknown>;
+      worldEffects?: Record<string, unknown>;
+    };
+
+    expect(contract.replyDecision).toMatchObject({
+      text: "the complete reply",
+      scheduleAction: { kind: "none" },
+    });
+    expect(contract.worldEffects).toHaveProperty("continuityEffects");
+    expect(result.system).toContain(
+      "replyDecision.scheduleAction is required on every schedule-negotiation turn",
+    );
+    expect(result.system).toContain(
+      "Questions that only recall, inspect, or describe an existing",
+    );
+    expect(result.system).toContain("must use kind none");
+  });
+  it("keeps a parseable authoritative schedule payload under the segment budget", () => {
+    const schedule: AssemblePromptInput["schedule"] = Array.from(
+      { length: 24 },
+      (_, index) => {
+        const sharedCommitment = index === 23;
+        const startAtUtc = new Date(
+          Date.parse(NOW) + (index + 1) * 60 * 60 * 1_000,
+        ).toISOString();
+        const endAtUtc = new Date(
+          Date.parse(startAtUtc) + 45 * 60 * 1_000,
+        ).toISOString();
+        return {
+          id: sharedCommitment
+            ? "shared-committed-invitation"
+            : `ordinary-${index}`,
+          agentId: "agent-private-id",
+          title: sharedCommitment
+            ? "Tea with the user at North Shore Bookshop"
+            : `Long ordinary project ${index} ${"t".repeat(100)}`,
+          description: `Detailed schedule context ${index} ${"d".repeat(900)}`,
+          category: "social",
+          startAtUtc,
+          endAtUtc,
+          timezone: "Asia/Shanghai",
+          rigidity: sharedCommitment ? "committed" : "flexible",
+          priority: 0.7,
+          source: sharedCommitment ? "user_invitation" : "self_initiated",
+          adherenceProbability: 0.8,
+          narrativeImportance: 0.7,
+          shareable: true,
+          stateEffects: {},
+          status: "planned",
+          revision: 0,
+          createdAtUtc: NOW,
+          updatedAtUtc: NOW,
+        };
+      },
+    );
+    const result = assembleChatPrompt(baseInput({ schedule }));
+    const lines = result.prompt.split("\n");
+    const scheduleIndex = lines.indexOf("FUTURE_SCHEDULE_JSON");
+    const serialized = lines[scheduleIndex + 1] ?? "";
+    const payload = JSON.parse(serialized) as {
+      authority: string;
+      asOfUtc: string;
+      timezone: string;
+      items: Array<Record<string, unknown>>;
+      omittedItemCount: number;
+    };
+
+    expect(payload).toMatchObject({
+      authority: "server_persisted_current_schedule",
+      asOfUtc: NOW,
+      timezone: "Asia/Shanghai",
+    });
+    expect(payload.omittedItemCount).toBeGreaterThan(0);
+    const committedInvitation = payload.items.find(
+      (item) => item["title"] === "Tea with the user at North Shore Bookshop",
+    );
+    expect(committedInvitation).toMatchObject({
+      title: "Tea with the user at North Shore Bookshop",
+      source: "user_invitation",
+      timezone: "Asia/Shanghai",
+      status: "planned",
+      rigidity: "committed",
+    });
+    expect(typeof committedInvitation?.["description"]).toBe("string");
+    expect(typeof committedInvitation?.["startAtUtc"]).toBe("string");
+    expect(typeof committedInvitation?.["endAtUtc"]).toBe("string");
+    expect(payload.items.map((item) => String(item["startAtUtc"]))).toEqual(
+      payload.items
+        .map((item) => String(item["startAtUtc"]))
+        .sort((left, right) => left.localeCompare(right)),
+    );
+    expect(
+      "FUTURE_SCHEDULE_JSON\n".length + serialized.length,
+    ).toBeLessThanOrEqual(700 * 4);
+    expect(
+      result.segmentTrace.segments.find(
+        (segment) => segment.id === "12_future_schedule",
+      ),
+    ).toMatchObject({ included: true, truncated: false });
+    expect(result.system).toContain(
+      "authority=server_persisted_current_schedule",
+    );
+    expect(result.system).toContain(
+      "not a claim that this turn performed a write",
+    );
+
+    const tight = assembleChatPrompt(
+      baseInput({ schedule, maxInputTokens: 512 }),
+    );
+    const tightTrace = tight.segmentTrace.segments.find(
+      (segment) => segment.id === "12_future_schedule",
+    );
+    expect(tightTrace).toBeDefined();
+    expect(tightTrace?.truncated).toBe(false);
+    const tightLines = tight.prompt.split("\n");
+    const tightScheduleIndex = tightLines.indexOf("FUTURE_SCHEDULE_JSON");
+    if (tightTrace?.included === true) {
+      expect(() => {
+        JSON.parse(tightLines[tightScheduleIndex + 1] ?? "");
+      }).not.toThrow();
+    } else {
+      expect(tightScheduleIndex).toBe(-1);
+      expect(tightTrace?.reason).toBe("global_budget");
+    }
+  });
+
   it("keeps bounded schedule truth visible throughout the loaded 72-hour horizon", () => {
     const scheduleBase = {
       agentId: "agent-private-id",

@@ -1,8 +1,8 @@
 import {
   ActivityEnrichmentBatchSchema,
   AutobiographyRevisionProposalSchema,
-  AgentTurnDecisionSchema,
   ContinuityTurnEffectsSchema,
+  PersonaChatResponseSchema,
   PersonaTurnProviderEnvelopeSchema,
 } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
@@ -79,14 +79,17 @@ describe("Fixture LLM checkpoint autobiography", () => {
 });
 
 describe("Fixture LLM chat turn purpose contract", () => {
-  it("keeps the legacy flat decision shape for fixture output", async () => {
+  it("returns the canonical provider envelope by default", async () => {
     const response = await createFixtureLlmProvider().generate({
       purpose: "chat_turn",
       payload: { userMessage: "今天晚饭吃什么？" },
     });
 
-    const decision = AgentTurnDecisionSchema.parse(response.data);
-    expect(decision.reply.text.length).toBeGreaterThan(0);
+    const envelope = PersonaTurnProviderEnvelopeSchema.parse(response.data);
+    const reply = PersonaChatResponseSchema.parse(envelope.replyDecision);
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(response.data).toHaveProperty("replyDecision");
+    expect(response.data).not.toHaveProperty("reply");
   });
 
   it("accepts a canonical turn envelope override and normalizes it", async () => {
@@ -114,7 +117,46 @@ describe("Fixture LLM chat turn purpose contract", () => {
     expect(envelope.replyDecision).toMatchObject({
       text: " envelopes are the canonical provider shape.",
     });
-    expect(envelope.worldEffects).toMatchObject({ stateDelta: { energy: -0.05 } });
+    expect(envelope.worldEffects).toMatchObject({
+      stateDelta: { energy: -0.05 },
+    });
+  });
+  it("rejects a legacy flat AgentTurnDecision override", () => {
+    const provider = createFixtureLlmProvider({
+      fixtures: {
+        chat_turn: {
+          reply: {
+            text: "Legacy flat output must not pass the provider gate.",
+            chunks: ["Legacy flat output must not pass the provider gate."],
+            toneTags: ["neutral"],
+          },
+          scheduleEffects: [],
+          memoryCandidates: [],
+          reasonCode: "legacy_flat_decision",
+          reasonSummary: "This is a valid old decision but not an envelope.",
+        },
+      },
+    });
+
+    expect(() =>
+      provider.generate({
+        purpose: "chat_turn",
+        payload: { userMessage: "test" },
+      }),
+    ).toThrow();
+  });
+
+  it("keeps repair_chat_turn mapped to the reply-only response schema", async () => {
+    const response = await createFixtureLlmProvider().generate({
+      purpose: "repair_chat_turn",
+      payload: { userMessage: "repair this reply" },
+    });
+
+    const reply = PersonaChatResponseSchema.parse(response.data);
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(response.data).not.toHaveProperty("reply");
+    expect(response.data).not.toHaveProperty("scheduleEffects");
+    expect(response.data).not.toHaveProperty("stateDelta");
   });
 });
 
@@ -142,9 +184,9 @@ describe("Fixture LLM continuity effects", () => {
         purpose: "chat_turn",
         payload: { userMessage },
       });
-      const decision = AgentTurnDecisionSchema.parse(response.data);
+      const envelope = PersonaTurnProviderEnvelopeSchema.parse(response.data);
       const continuity = ContinuityTurnEffectsSchema.parse(
-        decision.continuityEffects,
+        envelope.worldEffects.continuityEffects,
       );
 
       expect(continuity.followUpCandidates).toHaveLength(1);
@@ -172,9 +214,12 @@ describe("Fixture LLM continuity effects", () => {
       purpose: "chat_turn",
       payload: { userMessage: "今天午饭还不错。" },
     });
-    const decision = AgentTurnDecisionSchema.parse(response.data);
+    const envelope = PersonaTurnProviderEnvelopeSchema.parse(response.data);
+    const continuity = ContinuityTurnEffectsSchema.parse(
+      envelope.worldEffects.continuityEffects,
+    );
 
-    expect(decision.continuityEffects).toEqual({
+    expect(continuity).toEqual({
       followUpCandidates: [],
       followUpTransitions: [],
       careCueCandidates: [],

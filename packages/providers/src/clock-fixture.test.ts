@@ -1,6 +1,8 @@
 import {
-  AgentTurnDecisionSchema,
   CharacterCompilationProposalSchema,
+  PersonaChatResponseSchema,
+  PersonaTurnProviderEnvelopeSchema,
+  ScheduleEffectProposalSchema,
   type LLMRequest,
 } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
@@ -72,9 +74,13 @@ describe("fixture LLM", () => {
         ],
       },
     });
-    const parsed = AgentTurnDecisionSchema.parse(result.data);
-    expect(parsed.reasonCode).toBe("accepted_social_invitation");
-    expect(parsed.scheduleEffects.map((effect) => effect.operation)).toEqual([
+    const parsed = PersonaTurnProviderEnvelopeSchema.parse(result.data);
+    const reply = PersonaChatResponseSchema.parse(parsed.replyDecision);
+    const effects = ScheduleEffectProposalSchema.array().parse(
+      parsed.scheduleEffects,
+    );
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(effects.map((effect) => effect.operation)).toEqual([
       "cancel",
       "create",
     ]);

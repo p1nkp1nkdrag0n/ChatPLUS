@@ -3,7 +3,9 @@ import { ContinuityTurnEffectsSchema } from "./follow-up.js";
 
 import {
   PersonaTurnEnvelopeSchema,
+  PersonaChatDecisionSchema,
   PersonaTurnProviderEnvelopeSchema,
+  StrictPersonaTurnProviderEnvelopeSchema,
 } from "./persona-chat-decision.js";
 
 describe("PersonaTurnEnvelope", () => {
@@ -72,6 +74,69 @@ describe("PersonaTurnEnvelope", () => {
       memoryCandidates: [{ content: "untrusted" }],
     });
     expect(parsed).not.toHaveProperty("scheduleMutationBundle");
+  });
+
+  it("requires an own replyDecision before strict provider normalization", () => {
+    const legacyFlat = {
+      text: "Legacy flat reply.",
+      stateDelta: { stress: 0.05 },
+    };
+
+    expect(
+      PersonaTurnProviderEnvelopeSchema.safeParse(legacyFlat).success,
+    ).toBe(true);
+    const strictLegacy =
+      StrictPersonaTurnProviderEnvelopeSchema.safeParse(legacyFlat);
+    expect(strictLegacy.success).toBe(false);
+    if (!strictLegacy.success) {
+      expect(strictLegacy.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: ["replyDecision"] }),
+        ]),
+      );
+    }
+
+    const inheritedReply = Object.assign(
+      Object.create({
+        replyDecision: { text: "Inherited reply must not count." },
+      }) as Record<string, unknown>,
+      { worldEffects: {} },
+    );
+    expect(
+      StrictPersonaTurnProviderEnvelopeSchema.safeParse(inheritedReply).success,
+    ).toBe(false);
+    expect(
+      StrictPersonaTurnProviderEnvelopeSchema.parse({
+        replyDecision: { text: "Canonical reply." },
+        stateDelta: { stress: 0.05 },
+      }),
+    ).toMatchObject({
+      replyDecision: { text: "Canonical reply." },
+      worldEffects: { stateDelta: { stress: 0.05 } },
+    });
+  });
+
+  it("keeps valid canonical reply text when optional reply siblings are malformed", () => {
+    expect(
+      PersonaChatDecisionSchema.parse({
+        replyDecision: {
+          text: "The valid reply survives.",
+          toneTags: ["warm", 42, "", "x".repeat(65)],
+          deliveryMode: "many_tiny_messages",
+          chunks: ["A valid chunk.", 42, "x".repeat(4_001)],
+          scheduleEffects: [{ operation: "destroy_everything" }],
+        },
+        scheduleEffects: "not-an-array",
+      }),
+    ).toEqual({
+      text: "The valid reply survives.",
+      toneTags: ["warm"],
+      chunks: ["A valid chunk."],
+      scheduleAction: { kind: "none" },
+      scheduleEffects: [],
+      memoryCandidates: [],
+      personalIntentCandidates: [],
+    });
   });
 
   it("keeps transitional flat replies and legacy schedule proposals", () => {

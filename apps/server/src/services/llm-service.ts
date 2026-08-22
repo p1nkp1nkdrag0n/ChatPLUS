@@ -127,15 +127,35 @@ export class LlmService {
   private fixtureProvider<T>(input: GenerateObjectInput<T>): LlmProvider {
     if (this.providerName !== "fixture" || input.fixture === undefined)
       return this.provider;
-    const fixtures = { [input.purpose]: toJsonValue(input.fixture) } as Partial<
-      Record<LlmPurpose, JsonValue>
-    >;
+    const fixtures = {
+      [input.purpose]: fixtureValueForPurpose(input.purpose, input.fixture),
+    } as Partial<Record<LlmPurpose, JsonValue>>;
     return createFixtureLlmProvider({ fixtures });
   }
 }
 
 function toJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function fixtureValueForPurpose(
+  purpose: LlmPurpose,
+  value: unknown,
+): JsonValue {
+  const serialized = toJsonValue(value);
+  if (
+    purpose === "chat_turn" &&
+    (typeof serialized !== "object" ||
+      serialized === null ||
+      Array.isArray(serialized) ||
+      !Object.prototype.hasOwnProperty.call(serialized, "replyDecision"))
+  ) {
+    throw new LlmServiceError(
+      "chat_turn fixture overrides must use the canonical provider envelope.",
+      "invalid_fixture_contract",
+    );
+  }
+  return serialized;
 }
 
 function errorCodeFrom(error: unknown): string {

@@ -1,4 +1,5 @@
 export type PromptSegmentPlacement = "system" | "prompt";
+export type PromptSegmentGlobalOverflowPolicy = "truncate" | "drop";
 
 /**
  * Prompt segments intentionally accept a structural context. The future server
@@ -16,6 +17,8 @@ export interface PromptSegment<TContext extends PromptContext = PromptContext> {
   readonly tokenBudget: number;
   readonly required: boolean;
   readonly cacheable: boolean;
+  /** Defaults to truncate when an optional segment exceeds the global budget. */
+  readonly globalOverflowPolicy?: PromptSegmentGlobalOverflowPolicy;
   readonly cacheKey?: (context: TContext) => string | null;
   render(context: TContext): string | null;
 }

@@ -609,9 +609,31 @@ function chatFixture(request: LLMRequest): JsonValue {
   const turn = /晚会|party|一起去|邀请/iu.test(promptText(request))
     ? partyTurnFixture(request)
     : normalTurnFixture();
+  const decision = asRecord(turn);
+  const replyDecision = decision.reply;
+  if (replyDecision === undefined) {
+    throw new TypeError("Fixture chat turn is missing replyDecision.");
+  }
   return {
-    ...asRecord(turn),
-    continuityEffects: continuityEffectsFixture(request),
+    replyDecision,
+    worldEffects: {
+      ...(decision.stateDelta === undefined
+        ? {}
+        : { stateDelta: decision.stateDelta }),
+      ...(decision.relationshipDelta === undefined
+        ? {}
+        : { relationshipDelta: decision.relationshipDelta }),
+      ...(decision.memoryCandidates === undefined
+        ? {}
+        : { memoryCandidates: decision.memoryCandidates }),
+      ...(decision.personalIntentCandidates === undefined
+        ? {}
+        : { personalIntentCandidates: decision.personalIntentCandidates }),
+      continuityEffects: continuityEffectsFixture(request),
+    },
+    ...(decision.scheduleEffects === undefined
+      ? {}
+      : { scheduleEffects: decision.scheduleEffects }),
   };
 }
 

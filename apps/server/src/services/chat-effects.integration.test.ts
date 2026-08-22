@@ -180,10 +180,18 @@ describe("live chat schedule-effect proposals", () => {
     expect(body.assistantMessage.metadata.decisionPath).toBe("reply_only");
     const chatCall = calls.find((input) => input.purpose === "chat_turn");
     expect(chatCall).toBeDefined();
-    // The reply schema strips action-shaped extras instead of failing.
+    // The strict boundary rejects legacy flat output while the canonical
+    // envelope keeps action-shaped proposals independently untrusted.
     expect(
       chatCall?.schema.safeParse({
         text: "有效回复",
+        scheduleEffects: [{ operation: "cancel" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      chatCall?.schema.safeParse({
+        replyDecision: { text: "valid reply" },
+        worldEffects: {},
         scheduleEffects: [{ operation: "cancel" }],
       }).success,
     ).toBe(true);
@@ -234,8 +242,45 @@ function mockLlm(
       }
       return Promise.resolve(input.fixture as never);
     }
-    return Promise.resolve(responder(input) as never);
+    return Promise.resolve(
+      canonicalChatEnvelopeFixture(responder(input)) as never,
+    );
   });
+}
+
+function canonicalChatEnvelopeFixture(output: unknown): unknown {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) {
+    return { replyDecision: output, worldEffects: {} };
+  }
+  const record = output as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(record, "replyDecision")) {
+    return output;
+  }
+  const replyDecision: Record<string, unknown> = {};
+  for (const key of [
+    "text",
+    "toneTags",
+    "deliveryMode",
+    "chunks",
+    "scheduleAction",
+  ] as const) {
+    if (record[key] !== undefined) replyDecision[key] = record[key];
+  }
+  const nestedReply =
+    record["reply"] === undefined ? replyDecision : record["reply"];
+  const worldEffects =
+    typeof record["worldEffects"] === "object" &&
+    record["worldEffects"] !== null &&
+    !Array.isArray(record["worldEffects"])
+      ? record["worldEffects"]
+      : {};
+  return {
+    replyDecision: nestedReply,
+    worldEffects,
+    ...(record["scheduleEffects"] === undefined
+      ? {}
+      : { scheduleEffects: record["scheduleEffects"] }),
+  };
 }
 
 async function createEffectsTestApp(

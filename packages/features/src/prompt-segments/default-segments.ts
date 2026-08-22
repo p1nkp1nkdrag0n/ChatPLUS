@@ -57,6 +57,9 @@ type DefaultDefinition = {
   readonly tokenBudget: number;
   readonly required: boolean;
   readonly cacheable: boolean;
+  readonly globalOverflowPolicy?: NonNullable<
+    PromptSegment["globalOverflowPolicy"]
+  >;
   readonly field: keyof DefaultPromptContext;
   readonly label: string;
   readonly cacheKeyField?: "appPolicyCacheKey" | "characterCacheKey";
@@ -188,6 +191,7 @@ const DEFINITIONS: readonly DefaultDefinition[] = [
     tokenBudget: 700,
     required: false,
     cacheable: false,
+    globalOverflowPolicy: "drop",
     field: "futureSchedule",
     label: "FUTURE_SCHEDULE_JSON",
   },
@@ -278,6 +282,9 @@ function toSegment(
     tokenBudget: definition.tokenBudget,
     required: definition.required,
     cacheable: definition.cacheable,
+    ...(definition.globalOverflowPolicy === undefined
+      ? {}
+      : { globalOverflowPolicy: definition.globalOverflowPolicy }),
     ...(cacheKey === undefined ? {} : { cacheKey }),
     render: (context) =>
       renderLabeledValue(

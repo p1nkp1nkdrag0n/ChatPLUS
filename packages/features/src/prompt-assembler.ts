@@ -270,11 +270,64 @@ function compactMemoryEvidence(bundle: EvidenceBundle): EvidenceBundle {
 function compactScheduleItem(item: ScheduleItemLike) {
   return {
     title: truncate(item.title, 100),
-    category: item.category,
+    description: truncate(item.description, 240),
+    category: truncate(item.category, 80),
     startAtUtc: item.startAtUtc,
     endAtUtc: item.endAtUtc,
+    timezone: truncate(item.timezone, 120),
     status: item.status,
     rigidity: item.rigidity,
+    source: item.source,
+  };
+}
+
+const FUTURE_SCHEDULE_SEGMENT_CHARACTER_BUDGET = 700 * 4;
+const FUTURE_SCHEDULE_LABEL = "FUTURE_SCHEDULE_JSON\n";
+const FUTURE_SCHEDULE_JSON_CHARACTER_BUDGET =
+  FUTURE_SCHEDULE_SEGMENT_CHARACTER_BUDGET - FUTURE_SCHEDULE_LABEL.length;
+
+function compactFutureSchedule(
+  items: readonly ScheduleItemLike[],
+  asOfUtc: string,
+  timezone: string,
+) {
+  const compacted = items.map(compactScheduleItem);
+  const preferred = compacted.filter(
+    (item) =>
+      item.source === "user_invitation" || item.rigidity === "committed",
+  );
+  const ordinary = compacted.filter(
+    (item) =>
+      item.source !== "user_invitation" && item.rigidity !== "committed",
+  );
+  const selected: (typeof compacted)[number][] = [];
+
+  for (const candidate of [...preferred, ...ordinary]) {
+    const proposed = [...selected, candidate].sort((left, right) =>
+      left.startAtUtc.localeCompare(right.startAtUtc),
+    );
+    const payload = {
+      authority: "server_persisted_current_schedule",
+      asOfUtc,
+      timezone: truncate(timezone, 120),
+      items: proposed,
+      omittedItemCount: compacted.length - proposed.length,
+    };
+    if (
+      JSON.stringify(payload).length <= FUTURE_SCHEDULE_JSON_CHARACTER_BUDGET
+    ) {
+      selected.push(candidate);
+    }
+  }
+
+  return {
+    authority: "server_persisted_current_schedule",
+    asOfUtc,
+    timezone: truncate(timezone, 120),
+    items: selected.sort((left, right) =>
+      left.startAtUtc.localeCompare(right.startAtUtc),
+    ),
+    omittedItemCount: compacted.length - selected.length,
   };
 }
 
@@ -307,15 +360,18 @@ export function assembleChatPrompt(
   );
   const now = parseInstant(input.nowUtc);
   const scheduleEnd = now.plus({ hours: 72 });
-  const schedule = input.schedule
+  const scheduleItems = input.schedule
     .filter((item) => {
       const end = parseInstant(item.endAtUtc);
       const start = parseInstant(item.startAtUtc);
       return end > now && start < scheduleEnd && item.status !== "cancelled";
     })
-    .sort((left, right) => left.startAtUtc.localeCompare(right.startAtUtc))
-    .slice(0, 20)
-    .map(compactScheduleItem);
+    .sort((left, right) => left.startAtUtc.localeCompare(right.startAtUtc));
+  const schedule = compactFutureSchedule(
+    scheduleItems,
+    input.nowUtc,
+    input.character.identity.timezone,
+  );
   const currentActivityItem =
     input.state.currentActivityId === undefined
       ? input.schedule.find(
@@ -363,25 +419,25 @@ export function assembleChatPrompt(
   const legacyDecisionInstructions =
     decisionMode === "schedule_negotiation"
       ? [
-          "Use schedules, memories, state and relationship as conversational context. The optional scheduleAction describes bounded dialogue behavior only; it is not a database mutation and must not contain database identifiers.",
-          'Return exactly one JSON object. "text" is required and must contain the complete in-character reply. The optional keys are "toneTags", "deliveryMode", "chunks", "scheduleAction" and "memoryCandidates". Do not return scheduleEffects in this mode.',
+          "Use schedules, memories, state and relationship as conversational context. replyDecision.scheduleAction is required and describes bounded dialogue behavior only; it is not a database mutation and must not contain database identifiers.",
+          'replyDecision.text and replyDecision.scheduleAction are required. The optional replyDecision keys are "toneTags", "deliveryMode" and "chunks". worldEffects must be an empty object. Do not return top-level scheduleEffects in this mode.',
           "The application owns negotiation state, time normalization, schedule commands, validation and persistence. Reply wording never authorizes a change.",
         ]
       : decisionMode === "schedule_negotiation_shadow"
         ? [
-            "Evaluate scheduleAction as shadow data while preserving the legacy scheduleEffects proposal path. Application code independently validates both; reply wording authorizes neither.",
-            'Return exactly one JSON object. "text" is required. The optional keys are "toneTags", "deliveryMode", "chunks", "scheduleAction", "scheduleEffects" and "memoryCandidates".',
+            "Evaluate the required replyDecision.scheduleAction as shadow data while preserving the legacy scheduleEffects proposal path. Application code independently validates both; reply wording authorizes neither.",
+            'replyDecision.text and replyDecision.scheduleAction are required. The optional replyDecision keys are "toneTags", "deliveryMode" and "chunks". worldEffects must be an empty object. Top-level scheduleEffects is optional under the appended legacy contract.',
             "The application owns negotiation state, scheduling identifiers, validation and persistence.",
           ]
         : decisionMode === "legacy_effects"
           ? [
               "Use schedules, memories, state and relationship as conversational context. Bounded scheduleEffects and memoryCandidates are allowed only under the appended contract; application code validates every proposal.",
-              'Return exactly one JSON object. "text" is required and must contain the complete in-character reply. The optional keys are "toneTags", "deliveryMode", "chunks", "scheduleEffects" and "memoryCandidates".',
+              'replyDecision.text is required and must contain the complete in-character reply. Inside replyDecision, the optional keys are "toneTags", "deliveryMode" and "chunks". worldEffects must be an empty object. Top-level scheduleEffects is optional under the appended legacy contract.',
               "The application, not you, owns actions, scheduling identifiers, validation and persistence.",
             ]
           : [
               "Use schedules, memories, state and relationship only as conversational context. Do not return schedules, memory records, mutations, identifiers, timestamps, reason codes or decision metadata.",
-              'Return exactly one JSON object. "text" is the only required key and must always contain the complete in-character reply. The only optional keys are "toneTags", "deliveryMode" and "chunks".',
+              'replyDecision.text is required and must always contain the complete in-character reply. Inside replyDecision, the only optional keys are "toneTags", "deliveryMode" and "chunks". worldEffects must be an empty object and top-level scheduleEffects must be omitted.',
               "The application, not you, owns actions, scheduling, identifiers, validation and persistence.",
             ];
   const worldEffectsEnabled =
@@ -391,20 +447,26 @@ export function assembleChatPrompt(
     decisionMode === "legacy_effects" ||
     decisionMode === "schedule_negotiation_shadow";
   const decisionInstructions = !worldEffectsEnabled
-    ? legacyDecisionInstructions
+    ? [
+        "Return exactly one JSON object with replyDecision and worldEffects.",
+        ...legacyDecisionInstructions,
+      ]
     : [
         "Return exactly one JSON object with replyDecision and worldEffects.",
-        "replyDecision.text is required and contains the complete in-character reply. toneTags, deliveryMode, chunks, and a bounded scheduleAction are optional.",
+        "replyDecision.text is required and contains the complete in-character reply. toneTags, deliveryMode, and chunks are optional.",
         "worldEffects may contain only stateDelta, relationshipDelta, memoryCandidates, personalIntentCandidates, and continuityEffects. Every effect is optional and independently validated by the application.",
         "State and relationship deltas describe small changes from this turn. Never return currentActivityId, locationContext, persisted state, or server identifiers.",
-        "Memory candidates are conservative model-side proposals and may contain only type or kind, content, importance, confidence, tags, and evidenceQuotes. Never return source ids, timestamps, origin, lifecycle, persistence state, or reason metadata; the server attaches verified evidence and owns every durable field.",
-        "Personal-intent candidates may contain only fuzzy activity, category, durationHint, timingHint, basisKind chat, evidenceQuotes, reasonCode, and reasonSummary. Never provide exact timestamps, ids, status, or schedule source.",
+        "Memory candidates are conservative model-side proposals and may contain only type or kind, content, importance, confidence, tags, and evidenceQuotes. type or kind must be exactly one of user_fact, user_preference, fact, preference, semantic, episodic, relationship, or commitment; use user_fact/user_preference for facts/preferences explicitly stated by the user. Never return source ids, timestamps, origin, lifecycle, persistence state, or reason metadata; the server attaches verified evidence and owns every durable field.",
+        "Personal-intent candidates may contain only the exact JSON keys activity (a fuzzy natural-language description), category, durationHint, timingHint, basisKind, evidenceQuotes, reasonCode, and reasonSummary. category, when present, must be one of sleep, work, study, meal, exercise, social, travel, leisure, self_care, errand, or other; basisKind must be chat. Never provide exact timestamps, ids, status, or schedule source.",
         "continuityEffects may contain only followUpCandidates, followUpTransitions, and careCueCandidates. A follow-up proposal may contain only subjectType, contextSummary, expectedOutcomeDescription, timingHint, and evidenceQuotes. A care proposal may contain only cueType, contextSummary, mentionGuidance, timingHint, and evidenceQuotes.",
-        "Use fuzzy timingHint language and exact verbatim turn evidence. Keep followUpTransitions empty because the server resolves transitions deterministically. Never emit ids, persisted timestamps, lifecycle state, retry state, dedupe keys, reason metadata, or claims that a proposal was stored.",
+        "A follow-up subjectType, when present, must be exactly one of user_goal, user_event, shared_commitment, or character_commitment. evidenceQuotes must always be a JSON array of exact verbatim turn evidence strings copied from the current user message, even when there is only one quote.",
+        "Use only supported fuzzy timingHint language such as today, tomorrow, next day, day after tomorrow, next week, in N days, 今天, 明天, 明日, 次日, 翌日, 后天, 下周, or N天后, optionally with a local clock. Keep followUpTransitions empty because the server resolves transitions deterministically. Never emit ids, persisted timestamps, lifecycle state, retry state, dedupe keys, reason metadata, or claims that a proposal was stored.",
         ...(decisionMode === "schedule_negotiation" ||
         decisionMode === "schedule_negotiation_shadow"
           ? [
+              "replyDecision.scheduleAction is required on every schedule-negotiation turn. Use kind none only when the current message is unrelated to scheduling; never omit it for an offer, confirmation, decline, withdrawal, or request for missing details.",
               "scheduleAction only describes the bounded shared-negotiation dialogue action and is never a database mutation.",
+              "Use accept_user_offer only for a new offer explicitly present in the current user message, and copy its evidenceQuotes verbatim from that current message. Questions that only recall, inspect, or describe an existing or previously confirmed arrangement must use kind none.",
             ]
           : []),
         ...(legacyScheduleEffectsAllowed
@@ -434,30 +496,40 @@ export function assembleChatPrompt(
   ].join("\n");
 
   const relationship = input.relationship ?? input.state.relationship;
-  const legacyOutputContract =
+  const replyOutputContract =
     decisionMode === "schedule_negotiation"
       ? '{"text":"the complete reply","scheduleAction":{"kind":"none"}}'
       : decisionMode === "schedule_negotiation_shadow"
-        ? '{"text":"the complete reply","scheduleAction":{"kind":"none"},"scheduleEffects":[]}'
+        ? '{"text":"the complete reply","scheduleAction":{"kind":"none"}}'
         : decisionMode === "legacy_effects"
-          ? '{"text":"the complete reply","scheduleEffects":[]}'
+          ? '{"text":"the complete reply"}'
           : '{"text":"the complete reply"}';
-  const legacyOutputGuidance =
+  const replyOutputGuidance =
     decisionMode === "schedule_negotiation"
       ? "text and scheduleAction are required. toneTags, deliveryMode, chunks and memoryCandidates are optional. scheduleAction must follow the appended negotiation contract."
       : decisionMode === "schedule_negotiation_shadow"
-        ? "text is required. scheduleAction and scheduleEffects are evaluated independently under their appended contracts; toneTags, deliveryMode, chunks and memoryCandidates are optional."
+        ? "text and scheduleAction are required. scheduleAction is evaluated under its appended contract; toneTags, deliveryMode and chunks are optional."
         : decisionMode === "legacy_effects"
-          ? "text is required. scheduleEffects, memoryCandidates, toneTags, deliveryMode and chunks are optional and must follow the appended proposal contract."
+          ? "text is required. toneTags, deliveryMode and chunks are optional."
           : "text is required. toneTags and deliveryMode are optional. chunks is optional and intended only for sequential delivery.";
-  const outputContract = worldEffectsEnabled
-    ? legacyScheduleEffectsAllowed
-      ? '{"replyDecision":{"text":"the complete reply"},"worldEffects":{"continuityEffects":{"followUpCandidates":[],"followUpTransitions":[],"careCueCandidates":[]}},"scheduleEffects":[]}'
-      : '{"replyDecision":{"text":"the complete reply"},"worldEffects":{"continuityEffects":{"followUpCandidates":[],"followUpTransitions":[],"careCueCandidates":[]}}}'
-    : legacyOutputContract;
+  const worldOutputContract = worldEffectsEnabled
+    ? '{"continuityEffects":{"followUpCandidates":[],"followUpTransitions":[],"careCueCandidates":[]}}'
+    : "{}";
+  const outputContract = `{"replyDecision":${replyOutputContract},"worldEffects":${worldOutputContract}${
+    legacyScheduleEffectsAllowed ? ',"scheduleEffects":[]' : ""
+  }}`;
   const outputGuidance = worldEffectsEnabled
-    ? "replyDecision.text is required. replyDecision and every worldEffects field must follow the canonical envelope contract. Omit unsupported effects; continuity proposals require fuzzy timing and exact verbatim user evidence, never database ids or exact persisted times."
-    : legacyOutputGuidance;
+    ? `replyDecision.text is required. replyDecision and every worldEffects field must follow the canonical envelope contract. Omit unsupported effects; continuity proposals require fuzzy timing and exact verbatim user evidence, never database ids or exact persisted times.${
+        decisionMode === "schedule_negotiation" ||
+        decisionMode === "schedule_negotiation_shadow"
+          ? " replyDecision.scheduleAction is required and must follow the appended negotiation contract."
+          : ""
+      }`
+    : `Inside replyDecision, ${replyOutputGuidance} worldEffects must be an empty object.${
+        legacyScheduleEffectsAllowed
+          ? " Top-level scheduleEffects is optional under the appended legacy contract."
+          : " Omit top-level scheduleEffects."
+      }`;
   const compactCharacterData = compactCharacter(input.character);
   const memoryEvidence =
     input.memoryEvidence === undefined
@@ -507,6 +579,8 @@ export function assembleChatPrompt(
           compactCharacterData.knowledge.forbiddenMetaKnowledge,
       }),
       "DECISION_POLICY",
+      "FUTURE_SCHEDULE_JSON declares authority=server_persisted_current_schedule and is authoritative for whether an item is currently planned or confirmed. If historical memoryEvidence, relevantMemories, or recent messages conflict with it, follow FUTURE_SCHEDULE_JSON for current schedule state.",
+      "Describing an item already present in FUTURE_SCHEDULE_JSON, including its planned or confirmed state, is not a claim that this turn performed a write. Never claim this turn created, updated, cancelled, or persisted an item.",
       ...decisionInstructions,
     ].join("\n"),
     ...(input.autobiography === undefined

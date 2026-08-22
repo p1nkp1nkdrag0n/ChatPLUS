@@ -22,6 +22,7 @@ function segment(input: {
   tokenBudget?: number;
   required?: boolean;
   placement?: "system" | "prompt";
+  globalOverflowPolicy?: "truncate" | "drop";
 }): PromptSegment<TestContext> {
   return {
     id: input.id,
@@ -30,6 +31,9 @@ function segment(input: {
     tokenBudget: input.tokenBudget ?? 100,
     required: input.required ?? false,
     cacheable: false,
+    ...(input.globalOverflowPolicy === undefined
+      ? {}
+      : { globalOverflowPolicy: input.globalOverflowPolicy }),
     render: () => input.content,
   };
 }
@@ -123,6 +127,43 @@ describe("PromptSegmentRegistry", () => {
     ).toBe(true);
   });
 
+  it("drops opt-in structured segments under global pressure while preserving truncate by default", () => {
+    const createRegistry = (globalOverflowPolicy?: "truncate" | "drop") =>
+      new PromptSegmentRegistry<TestContext>([
+        segment({
+          id: "01_required",
+          content: "R".repeat(16),
+          required: true,
+          tokenBudget: 4,
+        }),
+        segment({
+          id: "02_structured",
+          content: 'STRUCTURED_JSON\n{"items":[1,2,3,4,5,6]}',
+          tokenBudget: 100,
+          ...(globalOverflowPolicy === undefined
+            ? {}
+            : { globalOverflowPolicy }),
+        }),
+      ]);
+
+    const truncated = createRegistry().render({}, { maxInputTokens: 8 });
+    expect(truncated.prompt).toContain("STRUCTURED_JSON");
+    expect(
+      truncated.trace.segments.find((item) => item.id === "02_structured"),
+    ).toMatchObject({ included: true, truncated: true });
+
+    const dropped = createRegistry("drop").render({}, { maxInputTokens: 8 });
+    expect(dropped.prompt).toBe("R".repeat(16));
+    expect(dropped.trace.droppedSegmentIds).toContain("02_structured");
+    expect(
+      dropped.trace.segments.find((item) => item.id === "02_structured"),
+    ).toMatchObject({
+      included: false,
+      truncated: false,
+      reason: "global_budget",
+    });
+  });
+
   it("enforces each segment token budget before the global budget", () => {
     const registry = new PromptSegmentRegistry<TestContext>([
       segment({
@@ -202,6 +243,15 @@ describe("default prompt segments", () => {
     const defaults = createDefaultPromptSegments();
     expect(defaults.map((item) => item.id)).toEqual(DEFAULT_PROMPT_SEGMENT_IDS);
     expect(new Set(defaults.map((item) => item.id)).size).toBe(17);
+    expect(
+      defaults.find((item) => item.id === "12_future_schedule")
+        ?.globalOverflowPolicy,
+    ).toBe("drop");
+    expect(
+      defaults
+        .filter((item) => item.id !== "12_future_schedule")
+        .every((item) => item.globalOverflowPolicy === undefined),
+    ).toBe(true);
   });
 
   it("marks runtime, user, evidence, calendar, and follow-up content as uncacheable", () => {

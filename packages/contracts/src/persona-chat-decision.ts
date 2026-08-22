@@ -58,13 +58,26 @@ function looseScheduleAction(
   return parsed.success ? parsed.data : undefined;
 }
 
-function looseTextList(value: unknown, maximum: number): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value
+function looseTextList(
+  value: unknown,
+  maximum: number,
+  maximumLength: number,
+): string[] | undefined {
+  const candidates = typeof value === "string" ? [value] : value;
+  if (!Array.isArray(candidates)) return undefined;
+  const normalized = candidates
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
-    .filter((item) => item !== "")
+    .filter((item) => item.length > 0 && item.length <= maximumLength)
     .slice(0, maximum);
+  return normalized.length === 0 ? undefined : normalized;
+}
+
+function looseDeliveryMode(
+  value: unknown,
+): "single_block" | "sequential" | undefined {
+  const parsed = PersonaChatDeliveryModeSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export const PersonaChatDecisionSchema = z.preprocess((value) => {
@@ -106,26 +119,28 @@ export const PersonaChatDecisionSchema = z.preprocess((value) => {
   const stateDelta = nestedWorldEffects?.["stateDelta"] ?? value["stateDelta"];
   const relationshipDelta =
     nestedWorldEffects?.["relationshipDelta"] ?? value["relationshipDelta"];
+  const deliveryMode = looseDeliveryMode(
+    value["deliveryMode"] === undefined
+      ? nestedReply?.["deliveryMode"]
+      : value["deliveryMode"],
+  );
   const toneTags = looseTextList(
     value["toneTags"] === undefined
       ? nestedReply?.["toneTags"]
       : value["toneTags"],
     12,
+    64,
   );
   const chunks = looseTextList(
     value["chunks"] === undefined ? nestedReply?.["chunks"] : value["chunks"],
     12,
+    4_000,
   );
 
   return {
     ...(text === undefined ? {} : { text }),
     ...(toneTags === undefined ? {} : { toneTags }),
-    ...(value["deliveryMode"] === undefined &&
-    nestedReply?.["deliveryMode"] === undefined
-      ? {}
-      : {
-          deliveryMode: value["deliveryMode"] ?? nestedReply?.["deliveryMode"],
-        }),
+    ...(deliveryMode === undefined ? {} : { deliveryMode }),
     ...(chunks === undefined ? {} : { chunks }),
     ...(scheduleAction === undefined ? {} : { scheduleAction }),
     ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
@@ -210,6 +225,31 @@ export const PersonaTurnProviderEnvelopeSchema = z.preprocess((value) => {
     ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
   };
 }, PersonaTurnProviderEnvelopeShapeSchema);
+
+/**
+ * Strict model/provider boundary for canonical live chat. It requires an own
+ * replyDecision field before the rollout normalizer runs, so legacy flat
+ * decisions cannot be accepted through preprocessing.
+ */
+const ExplicitPersonaTurnProviderEnvelopeSchema = z
+  .unknown()
+  .superRefine((value, context) => {
+    if (
+      !isPlainRecord(value) ||
+      !Object.prototype.hasOwnProperty.call(value, "replyDecision")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["replyDecision"],
+        message: "chat_turn requires an explicit replyDecision field.",
+      });
+    }
+  });
+
+export const StrictPersonaTurnProviderEnvelopeSchema =
+  ExplicitPersonaTurnProviderEnvelopeSchema.pipe(
+    PersonaTurnProviderEnvelopeSchema,
+  );
 
 export type PersonaTurnProviderEnvelope = z.infer<
   typeof PersonaTurnProviderEnvelopeSchema

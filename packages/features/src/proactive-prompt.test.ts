@@ -235,7 +235,7 @@ describe("prompt and persona guard", () => {
     expect(assembled.prompt).not.toContain(memoryId);
     expect(assembled.prompt).not.toContain(userId);
     expect(assembled.prompt).not.toContain("agent-1");
-    expect(assembled.system).toContain('"text" is the only required key');
+    expect(assembled.system).toContain("replyDecision and worldEffects");
     expect(assembled.system).toContain(
       "For complex questions, explain naturally and completely",
     );

@@ -186,18 +186,40 @@ export function normalizeCharacterCompilationModelOutput(
   const draft = value["draft"];
   if (!isPlainRecord(draft)) return value;
   const schedulePolicy = draft["schedulePolicy"];
-  if (!isPlainRecord(schedulePolicy)) return value;
+  const sources = Array.isArray(draft["sources"])
+    ? draft["sources"].map(stripRuntimeOwnedSourceFields)
+    : draft["sources"];
 
   return {
     ...value,
     draft: {
       ...draft,
-      schedulePolicy: {
-        ...schedulePolicy,
-        horizonHours: 72,
-      },
+      ...(sources === undefined ? {} : { sources }),
+      ...(isPlainRecord(schedulePolicy)
+        ? {
+            schedulePolicy: {
+              ...schedulePolicy,
+              horizonHours: 72,
+            },
+          }
+        : {}),
     },
   };
+}
+
+function stripRuntimeOwnedSourceFields(value: unknown): unknown {
+  if (!isPlainRecord(value)) return value;
+  const normalized = { ...value };
+  for (const key of [
+    "workTitle",
+    "locator",
+    "excerpt",
+    "checksum",
+    "createdAtUtc",
+  ]) {
+    delete normalized[key];
+  }
+  return normalized;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

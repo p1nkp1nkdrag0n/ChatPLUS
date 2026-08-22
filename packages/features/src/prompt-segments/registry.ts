@@ -126,6 +126,10 @@ export class PromptSegmentRegistry<
         selected.push(candidate);
         continue;
       }
+      if (candidate.segment.globalOverflowPolicy === "drop") {
+        dropped.add(candidate.segment.id);
+        continue;
+      }
       const fitted = fitOptionalCandidate(selected, candidate, maximumTokens);
       if (fitted) selected.push(candidate);
       else dropped.add(candidate.segment.id);
@@ -194,6 +198,16 @@ function validateSegment<TContext extends PromptContext>(
       'Prompt segment "' +
         segment.id +
         '" must have a positive integer token budget.',
+    );
+  }
+  if (
+    segment.globalOverflowPolicy !== undefined &&
+    segment.globalOverflowPolicy !== "truncate" &&
+    segment.globalOverflowPolicy !== "drop"
+  ) {
+    throw new PromptSegmentRegistryError(
+      "invalid_segment",
+      `Prompt segment "${segment.id}" has an invalid global overflow policy.`,
     );
   }
 }

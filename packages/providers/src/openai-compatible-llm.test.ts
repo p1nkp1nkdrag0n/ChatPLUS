@@ -1,5 +1,6 @@
 import {
   CharacterCompilationProposalSchema,
+  StrictPersonaTurnProviderEnvelopeSchema,
   type JsonValue,
   type LLMRequest,
 } from "@personasim/contracts";
@@ -28,6 +29,7 @@ type MutableCharacterProposal = {
   draft: {
     identity: { name: string };
     schedulePolicy: { horizonHours: number };
+    sources: Array<Record<string, unknown>>;
   };
 };
 
@@ -89,6 +91,41 @@ describe("OpenAI-compatible provider", () => {
     });
 
     expect(value.draft.schedulePolicy.horizonHours).toBe(72);
+    expect(CharacterCompilationProposalSchema.safeParse(value).success).toBe(
+      true,
+    );
+  });
+
+  it("strips runtime-owned optional source metadata before strict character validation", async () => {
+    const proposal = await validCharacterProposal();
+    proposal.draft.sources[0] = {
+      ...proposal.draft.sources[0]!,
+      workTitle: "",
+      locator: "",
+      excerpt: "",
+      checksum: "not-a-sha256",
+      createdAtUtc: "not-a-utc-instant",
+    };
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      fetch: () =>
+        Promise.resolve(characterResponse(proposal as unknown as JsonValue)),
+      maxRetries: 0,
+      retryDelay: () => Promise.resolve(),
+    });
+
+    const value = await provider.generateObject({
+      purpose: "compile_character",
+      system: "Return JSON.",
+      prompt: "Compile a character.",
+      schema: CharacterCompilationProposalSchema,
+    });
+
+    expect(value.draft.sources[0]).not.toHaveProperty("workTitle");
+    expect(value.draft.sources[0]).not.toHaveProperty("locator");
+    expect(value.draft.sources[0]).not.toHaveProperty("excerpt");
+    expect(value.draft.sources[0]).not.toHaveProperty("checksum");
+    expect(value.draft.sources[0]).not.toHaveProperty("createdAtUtc");
     expect(CharacterCompilationProposalSchema.safeParse(value).success).toBe(
       true,
     );
@@ -170,6 +207,39 @@ describe("OpenAI-compatible provider", () => {
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(body).toHaveProperty("max_tokens");
     expect(JSON.stringify(value)).not.toContain("reasoning");
+  });
+
+  it("rejects legacy flat chat output at the strict generateObject boundary", async () => {
+    const legacyFlat = {
+      text: "Legacy flat output must not reach the server.",
+      stateDelta: { energy: -0.1 },
+    } as JsonValue;
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      fetch: () => Promise.resolve(characterResponse(legacyFlat)),
+      maxRetries: 0,
+      retryDelay: () => Promise.resolve(),
+    });
+
+    let thrown: unknown;
+    try {
+      await provider.generateObject({
+        purpose: "chat_turn",
+        system: "Return the canonical chat envelope.",
+        prompt: "Test",
+        schema: StrictPersonaTurnProviderEnvelopeSchema,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(StructuredOutputError);
+    if (!(thrown instanceof StructuredOutputError)) {
+      throw new TypeError("Expected strict structured-output validation");
+    }
+    expect(thrown.issues.some((issue) => issue.includes("replyDecision"))).toBe(
+      true,
+    );
   });
 
   it("omits unsupported controls in prompt JSON mode and clamps output tokens", async () => {

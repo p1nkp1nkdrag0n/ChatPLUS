@@ -9,6 +9,12 @@ import {
   stableId,
 } from "./shared.js";
 
+/**
+ * Canonical minimum real sleep minutes preserved by schedule planning and
+ * validation.
+ */
+export const DEFAULT_MINIMUM_SLEEP_MINUTES = 360;
+
 export type ScheduleRigidityLike =
   "fixed" | "committed" | "flexible" | "filler";
 export type ScheduleStatusLike =
@@ -447,12 +453,13 @@ export function validateScheduleProposal(
     proposal.operation === "reschedule" &&
     affected !== undefined &&
     isSleepItem(affected) &&
-    minutesBetween(affected.startAtUtc, affected.endAtUtc) < 240
+    minutesBetween(affected.startAtUtc, affected.endAtUtc) <
+      DEFAULT_MINIMUM_SLEEP_MINUTES
   ) {
     errors.push({
       code: "SLEEP_REQUIRED",
       path: "newEndAtUtc",
-      message: "A sleep block must preserve at least four hours",
+      message: "A sleep block must preserve at least six hours",
     });
   }
 

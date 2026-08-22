@@ -4,6 +4,7 @@ import type {
 } from "@personasim/contracts";
 import { DateTime } from "luxon";
 import {
+  DEFAULT_MINIMUM_SLEEP_MINUTES,
   plan72HoursDetailed,
   validateFinalScheduleProjection,
   type FinalScheduleProjectionError,
@@ -569,8 +570,9 @@ function buildDeterministicPlan(
   endUtc: string,
   existing: ScheduleItem[],
 ): SchedulePlanProposal {
+  const planningCharacter = withRuntimeScheduleBaselines(spec);
   const planned = plan72HoursDetailed({
-    character: spec,
+    character: planningCharacter,
     nowUtc,
     existingItems: toFeatureScheduleItems(existing),
     horizonHours: 72,
@@ -587,6 +589,95 @@ function buildDeterministicPlan(
     reasonCode: "deterministic_schedule",
     reasonSummary: "根据角色日常习惯生成可重复的未来七十二小时日程。",
   };
+}
+
+function withRuntimeScheduleBaselines(spec: CharacterSpec): CharacterSpec {
+  const categories = new Set(spec.routines.map((routine) => routine.category));
+  const baselines: CharacterSpec["routines"] = [];
+  const usedIds = new Set(spec.routines.map((routine) => routine.id));
+  const nextId = (base: string): string => {
+    let candidate = base;
+    let suffix = 1;
+    while (usedIds.has(candidate)) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(candidate);
+    return candidate;
+  };
+
+  if (!categories.has("sleep")) {
+    const sleepDuration = Math.max(
+      DEFAULT_MINIMUM_SLEEP_MINUTES,
+      localWindowMinutes(
+        spec.schedulePolicy.sleepWindow.startLocal,
+        spec.schedulePolicy.sleepWindow.endLocal,
+      ),
+    );
+    baselines.push({
+      id: nextId("runtime-baseline-sleep"),
+      title: "睡眠",
+      category: "sleep",
+      recurrence: "daily",
+      preferredStartLocal: spec.schedulePolicy.sleepWindow.startLocal,
+      preferredDurationMinutes: sleepDuration,
+      rigidity: "fixed",
+      priority: 1,
+    });
+  }
+
+  if (!categories.has("meal")) {
+    const breakfastStart = addLocalMinutes(
+      spec.schedulePolicy.sleepWindow.endLocal,
+      30,
+    );
+    baselines.push(
+      {
+        id: nextId("runtime-baseline-breakfast"),
+        title: "早餐",
+        category: "meal",
+        recurrence: "daily",
+        preferredStartLocal: breakfastStart,
+        preferredDurationMinutes: 30,
+        rigidity: "committed",
+        priority: 0.8,
+      },
+      {
+        id: nextId("runtime-baseline-meal"),
+        title: "正餐",
+        category: "meal",
+        recurrence: "daily",
+        preferredStartLocal: addLocalMinutes(breakfastStart, 270),
+        preferredDurationMinutes: 60,
+        rigidity: "committed",
+        priority: 0.75,
+      },
+    );
+  }
+
+  if (baselines.length === 0) return spec;
+  return {
+    ...spec,
+    routines: [
+      ...baselines,
+      ...spec.routines.slice(0, Math.max(0, 50 - baselines.length)),
+    ],
+  };
+}
+
+function localWindowMinutes(startLocal: string, endLocal: string): number {
+  const [startHour, startMinute] = startLocal.split(":").map(Number);
+  const [endHour, endMinute] = endLocal.split(":").map(Number);
+  const start = (startHour ?? 0) * 60 + (startMinute ?? 0);
+  const end = (endHour ?? 0) * 60 + (endMinute ?? 0);
+  const duration = (end - start + 24 * 60) % (24 * 60);
+  return duration === 0 ? 8 * 60 : duration;
+}
+
+function addLocalMinutes(local: string, minutes: number): string {
+  const [hour, minute] = local.split(":").map(Number);
+  const total = ((hour ?? 0) * 60 + (minute ?? 0) + minutes) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
 function stripItemMetadata(item: object): Record<string, unknown> {

@@ -79,6 +79,42 @@ describe("schedule validation", () => {
     );
   });
 
+  it("uses the canonical six-hour minimum for legacy sleep reschedules", () => {
+    const sleep = item(
+      "sleep-1",
+      "2026-06-01T23:00:00.000Z",
+      "2026-06-02T07:00:00.000Z",
+      "flexible",
+      "sleep",
+    );
+    const validateStart = (newStartAtUtc: string) =>
+      validateScheduleProposal(
+        {
+          operation: "reschedule",
+          itemId: sleep.id,
+          newStartAtUtc,
+          newEndAtUtc: "2026-06-02T07:00:00.000Z",
+          reasonCode: "user_request",
+          reasonSummary: "requested",
+        },
+        {
+          agentId: "agent-1",
+          nowUtc: NOW,
+          timezone: "UTC",
+          existingItems: [sleep],
+          policy,
+        },
+      );
+
+    const fiveHour = validateStart("2026-06-02T02:00:00.000Z");
+    const sixHour = validateStart("2026-06-02T01:00:00.000Z");
+
+    expect(fiveHour.errors.map((error) => error.code)).toContain(
+      "SLEEP_REQUIRED",
+    );
+    expect(sixHour.ok).toBe(true);
+  });
+
   it("validates cancellation and creation as one projected proposal sequence", () => {
     const study = item(
       "study-1",

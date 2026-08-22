@@ -32,7 +32,10 @@ function toUtcIso(value: DateTime): string {
   return value.toUTC().toISO() ?? value.toJSDate().toISOString();
 }
 
-function clockParts(value: string, routineId: string): {
+function clockParts(
+  value: string,
+  routineId: string,
+): {
   hour: number;
   minute: number;
 } {
@@ -91,7 +94,7 @@ export function deriveRoutineHardIntervals(
     const lastDay = parseInstant(input.horizonEndAtUtc, "horizonEndAtUtc")
       .setZone(zone)
       .startOf("day");
-    while (day < lastDay && intervals.length < MAX_DERIVED_INTERVALS) {
+    while (day <= lastDay && intervals.length < MAX_DERIVED_INTERVALS) {
       const start = day.set({ hour, minute });
       const end = start.plus({ minutes: routine.preferredDurationMinutes });
       day = day.plus({ days: 1 });

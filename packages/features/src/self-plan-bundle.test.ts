@@ -284,7 +284,7 @@ describe("night self-plan bundles", () => {
     expect(result.lostSleepMinutes).toBe(0);
   });
 
-  it("rejects adjustments below the configured minimum sleep", () => {
+  it("rejects five-hour sleep adjustments under the canonical default", () => {
     const sleep = item(
       "sleep-1",
       "2026-06-01T23:00:00.000Z",
@@ -296,20 +296,17 @@ describe("night self-plan bundles", () => {
       intentId: "intent-1",
       activity: activity(
         "2026-06-01T23:00:00.000Z",
-        "2026-06-02T03:00:00.000Z",
+        "2026-06-02T02:00:00.000Z",
       ),
       sleepAdjustment: {
         sleepItemId: sleep.id,
-        newStartAtUtc: "2026-06-02T03:00:00.000Z",
+        newStartAtUtc: "2026-06-02T02:00:00.000Z",
         newEndAtUtc: "2026-06-02T07:00:00.000Z",
-        lostSleepMinutes: 240,
+        lostSleepMinutes: 180,
       },
     };
 
-    const result = validateFinalScheduleProjection(
-      bundle,
-      context([sleep], 300),
-    );
+    const result = validateFinalScheduleProjection(bundle, context([sleep]));
 
     expect(result.errors.map((error) => error.code)).toContain(
       "MINIMUM_SLEEP_REQUIRED",

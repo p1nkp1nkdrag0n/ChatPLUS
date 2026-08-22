@@ -9,9 +9,10 @@ import {
 } from "@personasim/contracts";
 import type { DateTime } from "luxon";
 
-import type {
-  ScheduleItemLike,
-  ScheduleValidationContext,
+import {
+  DEFAULT_MINIMUM_SLEEP_MINUTES as CANONICAL_MINIMUM_SLEEP_MINUTES,
+  type ScheduleItemLike,
+  type ScheduleValidationContext,
 } from "./schedule-validator.js";
 import {
   localDayKey,
@@ -43,7 +44,7 @@ const DEFAULT_MAX_NIGHT_SELF_PLANS_PER_ROLLING_7_DAYS = 2;
  * The planner and the projection validator share this default so a bundle is
  * never validated against a laxer bound than it was planned with.
  */
-export const DEFAULT_MINIMUM_SLEEP_MINUTES = 360;
+export { DEFAULT_MINIMUM_SLEEP_MINUTES } from "./schedule-validator.js";
 const ROLLING_7_DAYS_HOURS = 7 * 24;
 const MATERIAL_SLEEP_WINDOW_OVERLAP_MINUTES = 60;
 
@@ -81,7 +82,7 @@ export interface FinalScheduleProjectionError {
 }
 
 export interface FinalScheduleProjectionContext extends ScheduleValidationContext {
-  /** Defaults to the legacy validator's four-hour floor. */
+  /** Defaults to the canonical six-hour floor. */
   minimumSleepMinutes?: number;
   /**
    * Maximum material self-initiated sleep-window intrusions in the rolling
@@ -457,7 +458,7 @@ export function validateFinalScheduleProjection(
   }
 
   const minimumSleepMinutes =
-    context.minimumSleepMinutes ?? DEFAULT_MINIMUM_SLEEP_MINUTES;
+    context.minimumSleepMinutes ?? CANONICAL_MINIMUM_SLEEP_MINUTES;
   if (
     !Number.isFinite(minimumSleepMinutes) ||
     minimumSleepMinutes < 0 ||

@@ -31,6 +31,30 @@ const CHARACTER = {
 };
 
 describe("deriveRoutineHardIntervals", () => {
+  it("includes a meal inside a same-local-day horizon", () => {
+    const intervals = deriveRoutineHardIntervals(CHARACTER, {
+      horizonStartAtUtc: "2026-08-21T02:00:00.000Z", // 10:00 local
+      horizonEndAtUtc: "2026-08-21T12:00:00.000Z", // 20:00 local
+    });
+
+    expect(intervals).toEqual([
+      expect.objectContaining({
+        category: "meal",
+        startAtUtc: "2026-08-21T04:00:00.000Z",
+        endAtUtc: "2026-08-21T05:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("excludes a same-day meal when the horizon ends before lunch", () => {
+    const intervals = deriveRoutineHardIntervals(CHARACTER, {
+      horizonStartAtUtc: "2026-08-21T02:00:00.000Z", // 10:00 local
+      horizonEndAtUtc: "2026-08-21T03:00:00.000Z", // 11:00 local
+    });
+
+    expect(intervals).toEqual([]);
+  });
+
   it("expands meal routines per local day and excludes sleep and work", () => {
     const intervals = deriveRoutineHardIntervals(CHARACTER, {
       horizonStartAtUtc: "2026-08-21T04:00:00.000Z", // 12:00 local

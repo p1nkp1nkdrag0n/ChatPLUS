@@ -25,6 +25,7 @@ const START_UTC = "2026-03-07T21:00:00.000Z";
 const SETTLEMENT_UTC = "2026-03-09T02:00:00.000Z";
 const TIMEZONE = "America/New_York";
 const SLEEP_ID = "schedule-long-run-dst-sleep";
+const ADJUSTED_SLEEP_START_UTC = "2026-03-08T03:00:00.000Z";
 const CLIENT_MESSAGE_ID = "long-run-riverside-intent";
 const USER_TEXT = "I recently noticed the riverside night view is beautiful.";
 
@@ -85,9 +86,12 @@ describe("P0 personal-life long-run acceptance", () => {
       return fixtureFor(input);
     });
     const character = await createAndPublish(first);
-    replaceGeneratedScheduleWithDstSleep(first.personasim.store, character.id);
+    const sleepId = replaceGeneratedScheduleWithDstSleep(
+      first.personasim.store,
+      character.id,
+    );
     const sessionId = await createSession(first, character.id);
-    const seededSleep = requireScheduleItem(first.personasim.store, SLEEP_ID);
+    const seededSleep = requireScheduleItem(first.personasim.store, sleepId);
     expect(minutesBetween(seededSleep.startAtUtc, seededSleep.endAtUtc)).toBe(
       540,
     );
@@ -124,9 +128,9 @@ describe("P0 personal-life long-run acceptance", () => {
 
     const plannedState = first.personasim.store.getRuntimeState(character.id);
     expect(plannedState?.sleepDebtMinutes).toBe(120);
-    const sleep = requireScheduleItem(first.personasim.store, SLEEP_ID);
+    const sleep = requireScheduleItem(first.personasim.store, sleepId);
     expect(sleep).toMatchObject({
-      startAtUtc: "2026-03-08T03:00:00.000Z",
+      startAtUtc: ADJUSTED_SLEEP_START_UTC,
       endAtUtc: "2026-03-08T10:00:00.000Z",
       revision: 1,
     });
@@ -610,33 +614,51 @@ async function createAndPublish(
 function replaceGeneratedScheduleWithDstSleep(
   store: DatabaseStore,
   agentId: string,
-): void {
+): string {
   store.database
     .prepare("DELETE FROM schedule_items WHERE agent_id = ?")
     .run(agentId);
-  store.insertScheduleItem(
-    scheduleItemSchema.parse({
-      id: SLEEP_ID,
-      agentId,
-      title: "DST transition sleep",
-      description: "Sleep spanning the spring-forward transition.",
-      category: "sleep",
-      startAtUtc: "2026-03-08T01:00:00.000Z",
-      endAtUtc: "2026-03-08T10:00:00.000Z",
-      timezone: TIMEZONE,
-      status: "planned",
-      rigidity: "fixed",
-      priority: 1,
-      source: "initial_plan",
-      adherenceProbability: 1,
-      narrativeImportance: 0.2,
-      shareable: false,
-      stateEffects: { energy: 0.25, stress: -0.08 },
-      revision: 0,
-      createdAtUtc: START_UTC,
-      updatedAtUtc: START_UTC,
-    }),
-  );
+  let suffix = 0;
+  let sleep = scheduleItemSchema.parse({
+    id: SLEEP_ID,
+    agentId,
+    title: "DST transition sleep",
+    description: "Sleep spanning the spring-forward transition.",
+    category: "sleep",
+    startAtUtc: "2026-03-08T01:00:00.000Z",
+    endAtUtc: "2026-03-08T10:00:00.000Z",
+    timezone: TIMEZONE,
+    status: "planned",
+    rigidity: "fixed",
+    priority: 1,
+    source: "initial_plan",
+    adherenceProbability: 1,
+    narrativeImportance: 0.2,
+    shareable: false,
+    stateEffects: { energy: 0.25, stress: -0.08 },
+    revision: 0,
+    createdAtUtc: START_UTC,
+    updatedAtUtc: START_UTC,
+  });
+  // Fixed items have at least 0.9 completion probability; select an ID whose
+  // final adjusted start produces a roll below that floor so this acceptance
+  // test always exercises sleep-debt repayment rather than a valid skip.
+  while (
+    seededUnit(
+      activitySeed(agentId, {
+        ...sleep,
+        startAtUtc: ADJUSTED_SLEEP_START_UTC,
+      }),
+    ) >= 0.9
+  ) {
+    suffix += 1;
+    sleep = scheduleItemSchema.parse({
+      ...sleep,
+      id: `${SLEEP_ID}-${suffix}`,
+    });
+  }
+  store.insertScheduleItem(sleep);
+  return sleep.id;
 }
 
 async function createSession(

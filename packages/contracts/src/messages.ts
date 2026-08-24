@@ -19,6 +19,51 @@ export const MessageOriginSchema = z.enum([
 ]);
 export type MessageOrigin = z.infer<typeof MessageOriginSchema>;
 
+export type DeliveredTextMode = "single_block" | "sequential";
+
+export interface CanonicalDeliveredText {
+  text: string;
+  reconstructedText: string;
+  chunksMatch: boolean;
+}
+
+const UNICODE_SPACE_PATTERN = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/gu;
+
+function canonicalizeTextBlock(value: string): string {
+  return value
+    .replace(/\r\n?/gu, "\n")
+    .replace(UNICODE_SPACE_PATTERN, " ")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trimEnd();
+}
+
+/**
+ * Canonical representation shared by persistence, delivery, and acceptance
+ * checks. Sequential bubbles are separated by one newline, matching the
+ * persisted message contract.
+ */
+export function canonicalizeDeliveredText(input: {
+  text: string;
+  chunks: readonly string[];
+  deliveryMode: DeliveredTextMode;
+}): CanonicalDeliveredText {
+  const text = canonicalizeTextBlock(input.text);
+  const canonicalChunks = input.chunks.map(canonicalizeTextBlock);
+  const reconstructedText = canonicalizeTextBlock(
+    input.deliveryMode === "sequential"
+      ? canonicalChunks.join("\n")
+      : (canonicalChunks[0] ?? ""),
+  );
+  return {
+    text,
+    reconstructedText,
+    chunksMatch: canonicalChunks.length > 0 && reconstructedText === text,
+  };
+}
+
 export const MessageSchema = z
   .object({
     id: EntityIdSchema,
@@ -37,7 +82,13 @@ export const MessageSchema = z
   })
   .strict()
   .superRefine((message, context) => {
-    if (message.chunks.join("\n") !== message.text) {
+    if (
+      !canonicalizeDeliveredText({
+        text: message.text,
+        chunks: message.chunks,
+        deliveryMode: message.chunks.length > 1 ? "sequential" : "single_block",
+      }).chunksMatch
+    ) {
       context.addIssue({
         code: "custom",
         message: "text must equal chunks joined with a newline",
@@ -98,10 +149,18 @@ export const AgentReplySchema = z
     toneTags: z.array(z.string().trim().min(1).max(64)).max(12),
   })
   .strict()
-  .refine((reply) => reply.chunks.join("\n") === reply.text, {
-    message: "text must equal chunks joined with a newline",
-    path: ["chunks"],
-  });
+  .refine(
+    (reply) =>
+      canonicalizeDeliveredText({
+        text: reply.text,
+        chunks: reply.chunks,
+        deliveryMode: reply.chunks.length > 1 ? "sequential" : "single_block",
+      }).chunksMatch,
+    {
+      message: "text must equal chunks joined with a newline",
+      path: ["chunks"],
+    },
+  );
 export type AgentReply = z.infer<typeof AgentReplySchema>;
 
 export const SendMessageRequestSchema = z

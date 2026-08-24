@@ -11,7 +11,10 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "test": "vitest run --root ../.. apps/server/src",
     "test:llm:smoke": "tsx src/scripts/llm-smoke.ts",
-    "test:deepseek:acceptance": "tsx src/scripts/deepseek-acceptance.ts"
+    "test:deepseek:acceptance": "tsx src/scripts/deepseek-acceptance.ts",
+    "test:companion:long-run": "tsx src/scripts/deepseek-long-run-acceptance.ts --provider fixture --turns 100 --runs 1 --pipeline target --report-dir tmp/companion-long-run/reports",
+    "test:deepseek:long-run": "tsx src/scripts/deepseek-long-run-acceptance.ts --provider deepseek",
+    "test:deepseek:long-run:release": "tsx src/scripts/deepseek-long-run-acceptance.ts --provider deepseek --turns 100 --runs 3 --pipeline target"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

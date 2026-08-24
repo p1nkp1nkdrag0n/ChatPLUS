@@ -21,6 +21,15 @@ import type {
   FollowUpService,
   UserContinuityTransitions,
 } from "./follow-up-service.js";
+import {
+  deriveExplicitCareCueCandidate,
+  hasAuthoritativeExplicitDurableCareDirective,
+} from "./explicit-care-cue-fallback.js";
+import {
+  classifyMemoryEpistemicStatus,
+  isMemoryEpistemicStatus,
+  type MemoryEpistemicStatus,
+} from "./memory-epistemic.js";
 import type {
   MemoryLifecycleService,
   MemoryReconciliationResult,
@@ -98,6 +107,10 @@ export class ConversationContinuityService {
     const rejections: ConversationContinuityRejection[] = [];
     const followUpIds: string[] = [];
     const careCueIds: string[] = [];
+    let syntacticallyValidCareCandidateCount = 0;
+    const sourceCareEpistemicStatus = careCueSourceEpistemicStatus(
+      input.userMessage,
+    );
 
     if (!parsed.success) {
       rejections.push({
@@ -119,6 +132,20 @@ export class ConversationContinuityService {
               proposal.error.issues.map((issue) => issue.message),
               rawCandidate,
             ),
+          );
+          continue;
+        }
+        const source = followUpProposalSource(
+          proposal.data.subjectType ?? "user_goal",
+          proposal.data,
+          input,
+        );
+        if (
+          groundedQuotes(proposal.data.evidenceQuotes, source.content)
+            .length === 0
+        ) {
+          rejections.push(
+            missingGroundedEvidenceRejection("follow_up", rawCandidate),
           );
           continue;
         }
@@ -152,6 +179,29 @@ export class ConversationContinuityService {
               proposal.error.issues.map((issue) => issue.message),
               rawCandidate,
             ),
+          );
+          continue;
+        }
+        syntacticallyValidCareCandidateCount += 1;
+
+        if (isNonAuthoritativeCareSourceStatus(sourceCareEpistemicStatus)) {
+          rejections.push(
+            nonAuthoritativeCareSourceRejection(
+              rawCandidate,
+              sourceCareEpistemicStatus,
+            ),
+          );
+          continue;
+        }
+
+        if (
+          groundedQuotes(
+            proposal.data.evidenceQuotes,
+            input.userMessage.content,
+          ).length === 0
+        ) {
+          rejections.push(
+            missingGroundedEvidenceRejection("care_cue", rawCandidate),
           );
           continue;
         }
@@ -205,8 +255,19 @@ export class ConversationContinuityService {
       }
     }
 
-    if (careCueIds.length === 0) {
-      const deterministicCandidate = deriveExplicitCareCueCandidate(input);
+    if (
+      careCueIds.length === 0 &&
+      (!parsed.success ||
+        parsed.data.careCueCandidates.length === 0 ||
+        syntacticallyValidCareCandidateCount === 0) &&
+      !isNonAuthoritativeCareSourceStatus(sourceCareEpistemicStatus)
+    ) {
+      // This projection is derived only from the authoritative current user
+      // message. Invalid model input remains rejected above; no raw candidate
+      // is repaired or accepted through this path.
+      const deterministicCandidate = deriveExplicitCareCueCandidate(
+        input.userMessage.content,
+      );
       if (deterministicCandidate !== undefined) {
         const result = this.followUps.createCareCue({
           agentId: input.agentId,
@@ -393,37 +454,6 @@ function explicitFollowUpCancellationTargetsRequest(userText: string): boolean {
   );
 }
 
-function deriveExplicitCareCueCandidate(
-  input: ContinuityTurnMaterializationInput,
-): CareCueCandidate | undefined {
-  const userText = input.userMessage.content;
-  const explicitPreference =
-    /(?:\u8bf7)?\u8bb0\u4f4f.{0,30}(?:\u5173\u6000|\u5173\u5fc3|\u65b9\u5f0f)|(?:\u5173\u6000|\u5173\u5fc3)(?:\u65b9\u5f0f|\u504f\u597d)/iu.test(
-      userText,
-    );
-  const careInstruction =
-    /(?:\u5148|\u9996\u5148).{0,30}(?:\u95ee\u6211|\u95ee)|(?:\u4e0d\u8981|\u522b).{0,20}(?:\u8bb2|\u8bf4).{0,20}(?:\u9053\u7406|\u8bf4\u6559)/iu.test(
-      userText,
-    );
-  if (!explicitPreference || !careInstruction) return undefined;
-
-  const evidence = messageExcerpt(userText);
-  const hasTiming =
-    /\u4eca\u5929|\u4eca\u65e5|\u660e\u5929|\u660e\u65e5|\u540e\u5929|\u4e0b\u5468|today|tomorrow|next\s+week|\d{1,2}\s*[:\uff1a\u70b9]\s*\d{0,2}/iu.test(
-      userText,
-    );
-  return CareCueCandidateSchema.parse({
-    contextSummary: evidence,
-    mentionGuidance:
-      "\u5728\u540e\u7eed\u76f8\u5173\u8bed\u5883\u4e2d\uff0c\u5148\u6309\u7528\u6237\u6307\u5b9a\u7684\u65b9\u5f0f\u5173\u5fc3\uff0c\u4e0d\u8981\u7acb\u523b\u8bb2\u9053\u7406\u3002",
-    evidenceQuotes: [evidence],
-    reasonCode: "explicit_user_care_preference",
-    reasonSummary:
-      "\u7528\u6237\u660e\u786e\u8981\u6c42\u8bb0\u4f4f\u4e00\u79cd\u6709\u8fb9\u754c\u7684\u5173\u6000\u65b9\u5f0f\u3002",
-    ...(hasTiming ? { timingHint: compactContractText(userText, 240) } : {}),
-  });
-}
-
 function followUpProposalSource(
   subjectType: FollowUpCandidate["subjectType"],
   proposal: ModelFollowUpCandidate,
@@ -493,6 +523,67 @@ function schemaCandidateRejection(
     effect,
     reasonCode: "schema_mismatch",
     reasonSummary: issues.join("; ").slice(0, 1_000),
+    raw,
+  };
+}
+
+function missingGroundedEvidenceRejection(
+  effect: "follow_up" | "care_cue",
+  raw: unknown,
+): ConversationContinuityRejection {
+  return {
+    effect,
+    reasonCode: "missing_grounded_quote",
+    reasonSummary:
+      "The model continuity candidate did not quote its authoritative source message.",
+    raw,
+  };
+}
+
+function careCueSourceEpistemicStatus(
+  message: Pick<StoredMessage, "content" | "metadata">,
+): MemoryEpistemicStatus {
+  const storedStatus = message.metadata["epistemicStatus"];
+  const status = isMemoryEpistemicStatus(storedStatus)
+    ? storedStatus
+    : classifyMemoryEpistemicStatus(message.content);
+  // The generic classifier intentionally treats any hypothetical frame as
+  // non-authoritative. A durable care command can contain a later conditional
+  // response branch, so correct only that narrow false positive. Explicit
+  // retracted/negated/quoted metadata continues to win unchanged.
+  return status === "hypothetical" &&
+    hasAuthoritativeExplicitDurableCareDirective(message.content)
+    ? "asserted_fact"
+    : status;
+}
+
+function isNonAuthoritativeCareSourceStatus(
+  status: MemoryEpistemicStatus,
+): status is Extract<
+  MemoryEpistemicStatus,
+  "hypothetical" | "quoted_third_party" | "negated" | "retracted"
+> {
+  return (
+    status === "hypothetical" ||
+    status === "quoted_third_party" ||
+    status === "negated" ||
+    status === "retracted"
+  );
+}
+
+function nonAuthoritativeCareSourceRejection(
+  raw: unknown,
+  status: Extract<
+    MemoryEpistemicStatus,
+    "hypothetical" | "quoted_third_party" | "negated" | "retracted"
+  >,
+): ConversationContinuityRejection {
+  return {
+    effect: "care_cue",
+    reasonCode: "non_authoritative_care_source",
+    reasonSummary:
+      `The current user message has epistemic status ${status} and cannot ` +
+      "authorize a persistent care cue.",
     raw,
   };
 }

@@ -49,6 +49,19 @@ export type PartialProposalValidation = {
 
 export type ScheduleBundleTransactionMode = "auto" | "caller_owned";
 
+export const schedulePlanningFallbackReasonCodes = [
+  "llm_timeout",
+  "llm_invalid_structured_output",
+  "llm_generation_failed",
+  "llm_plan_schema_invalid",
+  "llm_plan_rejected",
+  "deterministic_plan_failed",
+  "deterministic_plan_rejected",
+] as const;
+
+export type SchedulePlanningFallbackReasonCode =
+  (typeof schedulePlanningFallbackReasonCodes)[number];
+
 export interface ApplyScheduleBundleOptions {
   /**
    * The default opens a local transaction. Use caller_owned only while
@@ -95,6 +108,8 @@ export type ScheduleBundleApplyResult =
 
 type ServerOwnedScheduleBundle = ScheduleMutationBundle | SelfPlanBundle;
 
+const SCHEDULE_PLANNING_MAX_OUTPUT_TOKENS = 8_192;
+
 export class ScheduleService {
   constructor(
     private readonly store: DatabaseStore,
@@ -117,6 +132,7 @@ export class ScheduleService {
     created: ScheduleItem[];
     horizonEndUtc: string;
     fallbackUsed: boolean;
+    fallbackReasonCodes: SchedulePlanningFallbackReasonCode[];
   }> {
     const spec = this.store.getCharacterSpec(agentId);
     const cursor = this.store.getCursor(agentId);
@@ -131,6 +147,7 @@ export class ScheduleService {
         created: [],
         horizonEndUtc: cursor.scheduleHorizonEndUtc,
         fallbackUsed: false,
+        fallbackReasonCodes: [],
       };
     }
     const targetEndUtc = DateTime.fromISO(nowUtc, { setZone: true })
@@ -149,6 +166,7 @@ export class ScheduleService {
         created: [],
         horizonEndUtc: cursor.scheduleHorizonEndUtc,
         fallbackUsed: false,
+        fallbackReasonCodes: [],
       };
     }
 
@@ -162,17 +180,25 @@ export class ScheduleService {
         : compareUtc(cursor.scheduleHorizonEndUtc, nowUtc) >= 0
           ? cursor.scheduleHorizonEndUtc
           : nowUtc;
-    const deterministicPlan = buildDeterministicPlan(
-      spec,
-      nowUtc,
-      startUtc,
-      targetEndUtc,
-      existing,
-    );
-    let plan = deterministicPlan;
-    let fallbackUsed = false;
+    let deterministicPlan: SchedulePlanProposal | undefined;
+    let deterministicPlanBuildFailed = false;
     try {
-      plan = await this.llm.generateObject({
+      deterministicPlan = buildDeterministicPlan(
+        spec,
+        nowUtc,
+        startUtc,
+        targetEndUtc,
+        existing,
+      );
+    } catch {
+      deterministicPlanBuildFailed = true;
+    }
+
+    const fallbackReasonCodes: SchedulePlanningFallbackReasonCode[] = [];
+    let proposedPlan: unknown;
+    let proposedPlanReturned = false;
+    try {
+      proposedPlan = await this.llm.generateObject({
         purpose: "plan_schedule",
         agentId,
         system:
@@ -191,46 +217,90 @@ export class ScheduleService {
           `Copy horizonStartAtUtc and horizonEndAtUtc exactly as shown; do not omit, round, translate, or replace them. ` +
           `Do not add other top-level fields or Markdown fences.`,
         schema: schedulePlanSchema,
-        fixture: deterministicPlan,
+        // Initial schedule planning is a pure optional enrichment with a
+        // validated deterministic fallback. Retrying the same malformed or
+        // timed-out response only delays character publication and spends a
+        // second large output budget without improving product safety.
+        maxRetries: 0,
+        maxOutputTokens: SCHEDULE_PLANNING_MAX_OUTPUT_TOKENS,
+        ...(deterministicPlan === undefined
+          ? {}
+          : { fixture: deterministicPlan }),
       });
-    } catch {
-      fallbackUsed = true;
-      plan = deterministicPlan;
+      proposedPlanReturned = true;
+    } catch (error) {
+      fallbackReasonCodes.push(classifySchedulePlanningError(error));
     }
 
-    let drafts = plan.items.filter(
-      (item) =>
-        compareUtc(item.startAtUtc, startUtc) >= 0 &&
-        compareUtc(item.endAtUtc, targetEndUtc) <= 0,
-    );
-    const planIssues = [
-      ...validatePlanCoverage(plan, drafts, startUtc, targetEndUtc),
-      ...validateDraftSet(spec, drafts, existing, nowUtc, targetEndUtc),
-    ];
-    if (planIssues.length > 0) {
-      fallbackUsed = true;
-      drafts = deterministicPlan.items;
-      const fallbackIssues = [
-        ...validatePlanCoverage(
-          deterministicPlan,
-          drafts,
-          startUtc,
-          targetEndUtc,
-        ),
-        ...validateDraftSet(spec, drafts, existing, nowUtc, targetEndUtc),
-      ];
-      if (fallbackIssues.length > 0) {
-        throw new ApiError(
-          500,
-          "schedule_fallback_invalid",
-          "The deterministic schedule failed validation.",
-          {
-            issues: fallbackIssues,
-          },
+    let selected = validateSchedulePlanCandidate(proposedPlan, {
+      spec,
+      existing,
+      nowUtc,
+      startUtc,
+      targetEndUtc,
+    });
+    if (!selected.ok) {
+      if (proposedPlanReturned) {
+        fallbackReasonCodes.push(
+          selected.issueCodes.includes("schema_invalid")
+            ? "llm_plan_schema_invalid"
+            : "llm_plan_rejected",
         );
+      }
+      selected = deterministicPlanBuildFailed
+        ? {
+            ok: false,
+            issueCodes: ["deterministic_builder_failed"],
+          }
+        : validateSchedulePlanCandidate(deterministicPlan, {
+            spec,
+            existing,
+            nowUtc,
+            startUtc,
+            targetEndUtc,
+          });
+      if (!selected.ok) {
+        fallbackReasonCodes.push(
+          deterministicPlanBuildFailed
+            ? "deterministic_plan_failed"
+            : "deterministic_plan_rejected",
+        );
+        const issueCodes = selected.issueCodes;
+        this.store.transaction(() => {
+          this.store.insertDomainEvent({
+            agentId,
+            streamType: "schedule",
+            streamId: agentId,
+            streamVersion: this.store.nextDomainEventStreamVersion(
+              "schedule",
+              agentId,
+            ),
+            eventType: "schedule.planning_degraded",
+            recordedAtUtc: nowUtc,
+            payload: {
+              startUtc,
+              targetEndUtc,
+              fallbackReasonCodes: uniqueFallbackReasons(fallbackReasonCodes),
+              issueCodes,
+              createdCount: 0,
+              cursorRevision: cursor.revision,
+            },
+            idempotencyKey: `schedule:${agentId}:planning-degraded:${targetEndUtc}:revision:${cursor.revision}`,
+          });
+        });
+        return {
+          created: [],
+          horizonEndUtc: cursor.scheduleHorizonEndUtc,
+          fallbackUsed: true,
+          fallbackReasonCodes: uniqueFallbackReasons(fallbackReasonCodes),
+        };
       }
     }
 
+    const drafts = selected.drafts;
+    const normalizedFallbackReasons =
+      uniqueFallbackReasons(fallbackReasonCodes);
+    const fallbackUsed = normalizedFallbackReasons.length > 0;
     const createdAtUtc = this.clock.nowUtc();
     const created = drafts.map((draft) =>
       materializeScheduleItem(agentId, draft, createdAtUtc),
@@ -253,7 +323,10 @@ export class ScheduleService {
           agentId,
           streamType: "schedule",
           streamId: agentId,
-          streamVersion: cursor.revision + 1,
+          streamVersion: this.store.nextDomainEventStreamVersion(
+            "schedule",
+            agentId,
+          ),
           eventType:
             existing.length === 0
               ? "schedule.initialized"
@@ -264,12 +337,19 @@ export class ScheduleService {
             startUtc,
             targetEndUtc,
             fallbackUsed,
+            fallbackReasonCodes: normalizedFallbackReasons,
+            cursorRevision: cursor.revision + 1,
           },
           idempotencyKey: `schedule:${agentId}:horizon:${targetEndUtc}`,
         });
       }
     });
-    return { created, horizonEndUtc: targetEndUtc, fallbackUsed };
+    return {
+      created,
+      horizonEndUtc: targetEndUtc,
+      fallbackUsed,
+      fallbackReasonCodes: normalizedFallbackReasons,
+    };
   }
 
   validateEffects(
@@ -561,6 +641,83 @@ function legacyEffectsAsMutationBundle(
     ...(reschedule.length === 0 ? {} : { reschedule }),
     ...(cancel.length === 0 ? {} : { cancel }),
   };
+}
+
+type SchedulePlanCandidateValidation =
+  | { ok: true; drafts: ScheduleItemDraft[] }
+  | { ok: false; issueCodes: string[] };
+
+function validateSchedulePlanCandidate(
+  candidate: unknown,
+  input: {
+    spec: CharacterSpec;
+    existing: ScheduleItem[];
+    nowUtc: string;
+    startUtc: string;
+    targetEndUtc: string;
+  },
+): SchedulePlanCandidateValidation {
+  const parsed = schedulePlanSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return { ok: false, issueCodes: ["schema_invalid"] };
+  }
+
+  try {
+    const drafts = parsed.data.items.filter(
+      (item) =>
+        compareUtc(item.startAtUtc, input.startUtc) >= 0 &&
+        compareUtc(item.endAtUtc, input.targetEndUtc) <= 0,
+    );
+    const issues = [
+      ...validatePlanCoverage(
+        parsed.data,
+        drafts,
+        input.startUtc,
+        input.targetEndUtc,
+      ),
+      ...validateDraftSet(
+        input.spec,
+        drafts,
+        input.existing,
+        input.nowUtc,
+        input.targetEndUtc,
+      ),
+    ];
+    if (issues.length > 0) {
+      return {
+        ok: false,
+        issueCodes: [...new Set(issues.map((issue) => issue.code))],
+      };
+    }
+    return { ok: true, drafts };
+  } catch {
+    return { ok: false, issueCodes: ["validation_failed"] };
+  }
+}
+
+function classifySchedulePlanningError(
+  error: unknown,
+): SchedulePlanningFallbackReasonCode {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code.toLocaleUpperCase()
+      : error instanceof Error
+        ? error.name.toLocaleUpperCase()
+        : "";
+  if (code === "TIMEOUT" || code === "ABORTERROR") return "llm_timeout";
+  if (code === "INVALID_STRUCTURED_OUTPUT") {
+    return "llm_invalid_structured_output";
+  }
+  return "llm_generation_failed";
+}
+
+function uniqueFallbackReasons(
+  reasons: readonly SchedulePlanningFallbackReasonCode[],
+): SchedulePlanningFallbackReasonCode[] {
+  return [...new Set(reasons)];
 }
 
 function buildDeterministicPlan(

@@ -37,6 +37,7 @@ export interface LlmCallMetric {
   provider: string;
   model: string;
   purpose: string;
+  /** One-based physical request attempt within the logical provider call. */
   attempt: number;
   latencyMs: number;
   success: boolean;

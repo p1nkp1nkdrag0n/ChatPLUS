@@ -4,6 +4,7 @@ import type {
   MemoryCertainty,
   MemoryEvidence,
   MemoryKind,
+  MemoryClaim,
   MemoryNamespace,
   MemoryStatus,
   MemoryRecallQuery,
@@ -46,6 +47,7 @@ export interface RecallableMemory {
   sourceMessageIds?: readonly string[] | undefined;
   sourceActivityEventIds?: readonly string[] | undefined;
   evidence?: readonly MemoryEvidence[] | undefined;
+  claim?: MemoryClaim | undefined;
 }
 
 export interface MemoryRecallInput {
@@ -67,6 +69,31 @@ type ScoredCandidate = {
 const DEFAULT_MINIMUM_SCORE = 0.42;
 
 const EXACT_IDENTIFIER_PATTERN = /[A-Za-z0-9]+(?:[-_.:/][A-Za-z0-9]+)*/gu;
+
+/** High-precision CJK entity anchors used by questions such as “小林是谁？”. */
+export function recallExactEntityAnchors(value: string): string[] {
+  const normalized = value
+    .normalize("NFKC")
+    .replace(/\s+/gu, "")
+    .replace(/[？?！!。.]$/u, "");
+  const patterns = [
+    /^([\p{Script=Han}]{2,6})是谁$/u,
+    /(?:^|以及|还有|并且|[，。；、])([\p{Script=Han}]{2,6}?)是谁(?:$|[，。；、])/u,
+    /^([\p{Script=Han}]{2,6})和我是什么关系$/u,
+    /(?:^|以及|还有|并且|[，。；、])([\p{Script=Han}]{2,6}?)和我(?:(?:的)?关系|是(?:什么)?关系)/u,
+    /^([\p{Script=Han}]{2,6})(?:现在)?住(?:在)?哪里$/u,
+    /(?:^|以及|还有|并且|[，。；、])([\p{Script=Han}]{2,6}?)(?:现在)?住(?:在)?哪里/u,
+    /(?:我(?:现在)?对|我对|对)([\p{Script=Han}]{1,8})的(?:准确|真实|当前|现在)?偏好(?:是(?:什么)?|如何)?/u,
+  ];
+  return [
+    ...new Set(
+      patterns.flatMap((pattern) => {
+        const anchor = pattern.exec(normalized)?.[1];
+        return anchor === undefined ? [] : [anchor];
+      }),
+    ),
+  ];
+}
 
 function boundedRecallTerms(
   prioritized: readonly string[],
@@ -475,6 +502,51 @@ function modeFor(evidence: MemoryEvidence): EvidenceBundleMode {
   return "basic_memory";
 }
 
+/**
+ * A bare CJK name such as `小林` is too short for the global lexical score to
+ * clear the normal recall threshold reliably. Boost it only after the server has
+ * classified the turn as a user-fact query and only when both the authoritative
+ * user-model memory and its verbatim message evidence contain the same exact
+ * entity anchor. Compound questions can therefore select one verified memory per
+ * requested entity, while the high-precision lane remains unavailable to general
+ * knowledge or externally-owned entity questions.
+ */
+function exactVerifiedUserEntityScore(
+  memory: RecallableMemory,
+  evidence: MemoryEvidence,
+  query: string,
+  purpose: "general" | "user_fact_query" | "user_memory_summary",
+): number {
+  if (
+    purpose !== "user_fact_query" ||
+    memoryNamespace(memory) !== "user_model" ||
+    certaintyFor(memory) !== "explicit" ||
+    memory.attribution !== "user_explicit" ||
+    evidence.sourceType !== "message" ||
+    evidence.quote === undefined
+  ) {
+    return 0;
+  }
+  const anchors = recallExactEntityAnchors(query);
+  if (anchors.length === 0) return 0;
+  const memoryText = normalizedExactEntityText(memory.content);
+  const evidenceText = normalizedExactEntityText(evidence.quote);
+  return anchors.some((anchor) => {
+    const normalizedAnchor = normalizedExactEntityText(anchor);
+    return (
+      normalizedAnchor.length > 0 &&
+      memoryText.includes(normalizedAnchor) &&
+      evidenceText.includes(normalizedAnchor)
+    );
+  })
+    ? 1
+    : 0;
+}
+
+function normalizedExactEntityText(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/gu, "").toLocaleLowerCase();
+}
+
 function certaintyFor(memory: RecallableMemory): MemoryCertainty {
   return memory.certainty ?? "inferred";
 }
@@ -494,6 +566,7 @@ function resolve(input: MemoryRecallInput): {
   namespaces: readonly MemoryNamespace[] | undefined;
   range: TemporalQueryRange | undefined;
   threshold: number;
+  purpose: "general" | "user_fact_query" | "user_memory_summary";
 } {
   if (typeof input.query === "string") {
     return {
@@ -501,6 +574,7 @@ function resolve(input: MemoryRecallInput): {
       namespaces: input.namespaceFilters,
       range: input.temporalRange,
       threshold: clamp(input.minimumScore ?? DEFAULT_MINIMUM_SCORE),
+      purpose: "general",
     };
   }
   return {
@@ -510,6 +584,7 @@ function resolve(input: MemoryRecallInput): {
     threshold: clamp(
       input.minimumScore ?? input.query.minimumScore ?? DEFAULT_MINIMUM_SCORE,
     ),
+    purpose: input.query.purpose ?? "general",
   };
 }
 
@@ -552,6 +627,18 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
   );
   if (temporalMatched.length === 0) return abstain("no_temporal_match");
 
+  if (query.purpose === "user_memory_summary") {
+    return recallUserMemorySummary({
+      query: query.query,
+      memories: temporalMatched,
+      evidence: input.evidence ?? [],
+      nowUtc: input.nowUtc,
+      ...(input.maxEvidence === undefined
+        ? {}
+        : { maxEvidence: input.maxEvidence }),
+    });
+  }
+
   let evidenceCount = 0;
   const candidates: ScoredCandidate[] = [];
   for (const memory of temporalMatched) {
@@ -574,6 +661,7 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
     const lexical = Math.max(
       lexicalScore(memory.content, query.query),
       lexicalScore(chosen.quote ?? chosen.contextSummary ?? "", query.query),
+      exactVerifiedUserEntityScore(memory, chosen, query.query, query.purpose),
     );
     const tag = tagScore(memory.tags, query.query);
     if (lexical === 0 && tag === 0 && query.range === undefined) continue;
@@ -646,6 +734,112 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       ...new Set(bundle.evidence.map((item) => item.memoryId)),
     ],
     selectedEvidenceIds: bundle.evidence.map((item) => item.evidence.id),
+    score: bundle.score,
+    abstained: false,
+    evidenceBundle: bundle,
+  });
+}
+
+function recallUserMemorySummary(input: {
+  query: string;
+  memories: readonly RecallableMemory[];
+  evidence: readonly MemoryEvidence[];
+  nowUtc: string;
+  maxEvidence?: number;
+}): MemoryRecallResult {
+  const unsafeTags = new Set([
+    "hypothetical",
+    "quoted_third_party",
+    "retracted",
+    "negated",
+    "假设",
+    "引用",
+    "撤回",
+  ]);
+  const deduped = new Map<string, RecallableMemory>();
+  const eligible = input.memories
+    .filter(
+      (memory) =>
+        memoryNamespace(memory) === "user_model" &&
+        certaintyFor(memory) === "explicit" &&
+        memory.attribution === "user_explicit" &&
+        !memory.tags.some((tag) => unsafeTags.has(normalizeText(tag))),
+    )
+    .sort(
+      (left, right) =>
+        right.importance - left.importance ||
+        right.updatedAtUtc.localeCompare(left.updatedAtUtc) ||
+        left.id.localeCompare(right.id),
+    );
+  for (const memory of eligible) {
+    const key =
+      memory.claim?.subjectKey === undefined
+        ? `memory:${normalizeText(memory.content)}`
+        : `claim:${normalizeText(memory.claim.subjectKey)}`;
+    if (!deduped.has(key)) deduped.set(key, memory);
+  }
+
+  const selected: ScoredCandidate[] = [];
+  for (const memory of deduped.values()) {
+    const formal = evidenceFor(memory, input.evidence);
+    const chosen = formal
+      .filter((item) => item.sourceType === "message")
+      .sort(
+        (left, right) =>
+          right.recordedAtUtc.localeCompare(left.recordedAtUtc) ||
+          left.id.localeCompare(right.id),
+      )[0];
+    if (chosen === undefined) continue;
+    const breakdown: RetrievalScoreBreakdown = {
+      lexical: 0,
+      tag: 0,
+      importance: roundScore(memory.importance),
+      recency: roundScore(recencyScore(memory, input.nowUtc)),
+      temporal: roundScore(timeScore(memoryTemporal(memory), undefined)),
+      namespace: 1,
+    };
+    const score = roundScore(
+      0.45 +
+        breakdown.importance * 0.2 +
+        breakdown.recency * 0.1 +
+        clamp(memory.confidence) * 0.25,
+    );
+    selected.push({
+      mode: modeFor(chosen),
+      retrieved: {
+        memoryId: memory.id,
+        memoryContent: memory.content,
+        memoryKind: memory.kind,
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: memory.stability ?? "situational",
+        ...(memoryTemporal(memory) === undefined
+          ? {}
+          : { temporalMetadata: memoryTemporal(memory) }),
+        evidence: chosen,
+        score,
+        scoreBreakdown: breakdown,
+      },
+    });
+  }
+  const bounded = selected.slice(
+    0,
+    Math.min(3, Math.max(1, input.maxEvidence ?? 3)),
+  );
+  if (bounded.length === 0) return abstain("no_authoritative_user_facts");
+  const evidence = bounded.map((candidate) => candidate.retrieved);
+  const bundle = EvidenceBundleSchema.parse({
+    query: input.query,
+    mode: bounded[0]?.mode ?? "verbatim_quote",
+    generatedAtUtc: input.nowUtc,
+    score: evidence[0]?.score ?? 0,
+    evidence,
+  });
+  return MemoryRecallResultSchema.parse({
+    mode: bundle.mode,
+    selectedMemoryIds: evidence.map((item) => item.memoryId),
+    selectedEvidenceIds: evidence.map((item) => item.evidence.id),
     score: bundle.score,
     abstained: false,
     evidenceBundle: bundle,

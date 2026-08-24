@@ -121,6 +121,7 @@ export class TurnDecisionService {
     replyStrategy: ReplyStrategy;
     schedule: ScheduleItem[];
     effects: TurnDecisionEffectContext;
+    repairPersonaContext?: unknown;
   }): Promise<ResolvedTurn> {
     if (this.llm.providerName === "fixture") {
       const rawFixture = fixtureDecision(
@@ -185,6 +186,7 @@ export class TurnDecisionService {
     system: string;
     prompt: string;
     fixture: AgentTurnDecision;
+    repairPersonaContext?: unknown;
   }): Promise<ResolvedTurn> {
     let decision: AgentTurnDecision | undefined;
     let initialIssues: unknown[] = [];
@@ -242,6 +244,9 @@ export class TurnDecisionService {
         invalidDecision: decision,
         issues: inspection?.issues ?? initialIssues,
         fallback: safeScheduleDecision(input.spec),
+        ...(input.repairPersonaContext === undefined
+          ? {}
+          : { personaContext: input.repairPersonaContext }),
       });
       inspection = this.inspect({
         agentId: input.agentId,
@@ -289,6 +294,7 @@ export class TurnDecisionService {
     replyStrategy: ReplyStrategy;
     schedule: ScheduleItem[];
     effects: TurnDecisionEffectContext;
+    repairPersonaContext?: unknown;
   }): Promise<ResolvedTurn> {
     let decisionResponse: PersonaChatDecision | undefined;
     let envelopeResponse: PersonaTurnProviderEnvelope | undefined;
@@ -441,6 +447,9 @@ export class TurnDecisionService {
             : undefined,
         issues: inspection?.issues ?? initialIssues,
         replyStrategy: input.replyStrategy,
+        ...(input.repairPersonaContext === undefined
+          ? {}
+          : { personaContext: input.repairPersonaContext }),
       });
       if (repaired) {
         usedFallback = false;

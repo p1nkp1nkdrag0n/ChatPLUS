@@ -38,4 +38,25 @@ describe("server configuration", () => {
       }),
     ).toThrowError(/softTokenLimit/u);
   });
+
+  it("keeps both new rollout controls in legacy unless explicitly promoted", () => {
+    const config = readConfig({
+      databasePath: ":memory:",
+      turnPipelineMode: "legacy",
+      personaContextMode: "legacy",
+    });
+
+    expect(config.turnPipelineMode).toBe("legacy");
+    expect(config.personaContextMode).toBe("legacy");
+  });
+
+  it("rejects an enforced split pipeline backed by the legacy schedule writer", () => {
+    expect(() =>
+      readConfig({
+        databasePath: ":memory:",
+        turnPipelineMode: "enforced",
+        scheduleNegotiationMode: "legacy",
+      }),
+    ).toThrow(/legacy schedule writer/u);
+  });
 });

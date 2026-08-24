@@ -24,6 +24,7 @@ import {
 import { ConversationContinuityService } from "../services/conversation-continuity-service.js";
 import { ConversationContextService } from "../services/conversation-context-service.js";
 import { ConversationService } from "../services/conversation-service.js";
+import { ContextPlanService } from "../services/context-plan-service.js";
 import { ContinuityIndexService } from "../services/continuity-index-service.js";
 import { ContinuityMemoryRepository } from "../services/continuity-memory-repository.js";
 import { ContinuityRepository } from "../services/continuity-repository.js";
@@ -37,6 +38,7 @@ import { MemoryRecallService } from "../services/memory-recall-service.js";
 import { PersonalIntentService } from "../services/personal-intent-service.js";
 import { PersonalLifeService } from "../services/personal-life-service.js";
 import { ReplyRepairService } from "../services/reply-repair-service.js";
+import { ReplyGenerationService } from "../services/reply-generation-service.js";
 import { SelfPlanningService } from "../services/self-planning-service.js";
 import { ScheduleService } from "../services/schedule-service.js";
 import { SettlementService } from "../services/settlement-service.js";
@@ -45,6 +47,8 @@ import { ProactiveGenerationRepository } from "../services/proactive-generation-
 import { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import { TurnCommitService } from "../services/turn-commit-service.js";
 import { TurnDecisionService } from "../services/turn-decision-service.js";
+import { TurnExecutionService } from "../services/turn-execution-service.js";
+import { TurnUnderstandingService } from "../services/turn-understanding-service.js";
 import { WorldEffectService } from "../services/world-effect-service.js";
 import { SseHub } from "../sse/hub.js";
 import type { ServerSimulationBundle } from "./bundles.js";
@@ -57,6 +61,7 @@ import {
   CONVERSATION_CONTINUITY_SERVICE_TOKEN,
   CONVERSATION_CONTEXT_SERVICE_TOKEN,
   CONVERSATION_SERVICE_TOKEN,
+  CONTEXT_PLAN_SERVICE_TOKEN,
   CONTINUITY_INDEX_SERVICE_TOKEN,
   CONVERSATION_ACTIVITY_TRACKER_TOKEN,
   DATE_DIGEST_SERVICE_TOKEN,
@@ -68,6 +73,7 @@ import {
   PROACTIVE_DELIVERY_SERVICE_TOKEN,
   PROACTIVE_GENERATION_SERVICE_TOKEN,
   REPLY_REPAIR_SERVICE_TOKEN,
+  REPLY_GENERATION_SERVICE_TOKEN,
   RETRIEVAL_RUN_REPOSITORY_TOKEN,
   SELF_PLANNING_SERVICE_TOKEN,
   SCHEDULE_SERVICE_TOKEN,
@@ -82,6 +88,8 @@ import {
   STORE_TOKEN,
   TURN_COMMIT_SERVICE_TOKEN,
   TURN_DECISION_SERVICE_TOKEN,
+  TURN_EXECUTION_SERVICE_TOKEN,
+  TURN_UNDERSTANDING_SERVICE_TOKEN,
   WORLD_EFFECT_SERVICE_TOKEN,
 } from "./service-tokens.js";
 
@@ -231,6 +239,10 @@ function createDomainPlugin(
         SERVER_SERVICE_IDS.personalLife,
         SERVER_SERVICE_IDS.conversations,
         SERVER_SERVICE_IDS.turnDecisions,
+        SERVER_SERVICE_IDS.turnUnderstandings,
+        SERVER_SERVICE_IDS.turnExecutions,
+        SERVER_SERVICE_IDS.replyGenerations,
+        SERVER_SERVICE_IDS.contextPlans,
         SERVER_SERVICE_IDS.worldEffects,
         SERVER_SERVICE_IDS.turnCommits,
         SERVER_SERVICE_IDS.replyRepairs,
@@ -360,12 +372,22 @@ function createDomainPlugin(
       proactiveDeliveryRef.current = proactiveDelivery;
       const conversationOptions = {
         chatEffectsMode: config.chatEffectsMode,
+        turnPipelineMode: config.turnPipelineMode,
+        personaContextMode: config.personaContextMode,
         liveWorldEffectsMode: config.liveWorldEffectsMode,
         scheduleNegotiationMode: config.scheduleNegotiationMode,
         memoryRecallMode: config.memoryRecallMode,
         conversationRetention: config.conversationRetention,
       };
       const replyRepairs = new ReplyRepairService(llm);
+      const turnUnderstandings = new TurnUnderstandingService(llm);
+      const turnExecutions = new TurnExecutionService(
+        store,
+        schedules,
+        conversationOptions,
+      );
+      const contextPlans = new ContextPlanService();
+      const replyGenerations = new ReplyGenerationService(llm, replyRepairs);
       const turnDecisions = new TurnDecisionService(
         llm,
         schedules,
@@ -386,6 +408,7 @@ function createDomainPlugin(
         sse,
         conversationContext,
         conversationOptions,
+        memoryLifecycle,
       );
       const conversations = new ConversationService(
         store,
@@ -403,6 +426,10 @@ function createDomainPlugin(
           decisions: turnDecisions,
           worldEffects,
           commits: turnCommits,
+          turnUnderstandings,
+          turnExecutions,
+          contextPlans,
+          replyGenerations,
         },
       );
 
@@ -442,6 +469,16 @@ function createDomainPlugin(
       );
       context.services.provide(RETRIEVAL_RUN_REPOSITORY_TOKEN, retrievalRuns);
       context.services.provide(REPLY_REPAIR_SERVICE_TOKEN, replyRepairs);
+      context.services.provide(
+        TURN_UNDERSTANDING_SERVICE_TOKEN,
+        turnUnderstandings,
+      );
+      context.services.provide(TURN_EXECUTION_SERVICE_TOKEN, turnExecutions);
+      context.services.provide(CONTEXT_PLAN_SERVICE_TOKEN, contextPlans);
+      context.services.provide(
+        REPLY_GENERATION_SERVICE_TOKEN,
+        replyGenerations,
+      );
       context.services.provide(TURN_DECISION_SERVICE_TOKEN, turnDecisions);
       context.services.provide(WORLD_EFFECT_SERVICE_TOKEN, worldEffects);
       context.services.provide(TURN_COMMIT_SERVICE_TOKEN, turnCommits);

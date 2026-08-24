@@ -42,8 +42,11 @@ export interface DefaultPromptContext extends PromptContext {
   readonly currentActivity?: unknown;
   readonly futureSchedule?: unknown;
   readonly retrievedEvidence?: EvidenceBundle | null;
+  readonly activatedPersona?: unknown;
+  readonly topicFatigue?: unknown;
   readonly recentVerbatim?: unknown;
   readonly replyStrategy?: unknown;
+  readonly validatedTurnOutcome?: unknown;
   readonly userMessage?: unknown;
   readonly outputContract?: unknown;
   readonly calendarContext?: unknown;
@@ -264,6 +267,37 @@ export function createFollowUpContextPromptSegment(): PromptSegment<DefaultPromp
   );
 }
 
+export function createActivatedPersonaPromptSegment(): PromptSegment<DefaultPromptContext> {
+  return dynamicExtension(
+    "13b_activated_persona",
+    "ACTIVATED_PERSONA_JSON",
+    "activatedPersona",
+    91,
+    1_600,
+  );
+}
+
+export function createTopicFatiguePromptSegment(): PromptSegment<DefaultPromptContext> {
+  return dynamicExtension(
+    "13c_topic_fatigue",
+    "TOPIC_FATIGUE_JSON",
+    "topicFatigue",
+    87,
+    500,
+  );
+}
+
+export function createValidatedTurnOutcomePromptSegment(): PromptSegment<DefaultPromptContext> {
+  return dynamicExtension(
+    "16a_validated_turn_outcome",
+    "VALIDATED_TURN_OUTCOME_JSON",
+    "validatedTurnOutcome",
+    100,
+    1_600,
+    true,
+  );
+}
+
 function toSegment(
   definition: DefaultDefinition,
 ): PromptSegment<DefaultPromptContext> {
@@ -298,16 +332,22 @@ function toSegment(
 function dynamicExtension(
   id: string,
   label: string,
-  field: "calendarContext" | "followUpContext",
+  field:
+    | "calendarContext"
+    | "followUpContext"
+    | "activatedPersona"
+    | "topicFatigue"
+    | "validatedTurnOutcome",
   priority: number,
   tokenBudget: number,
+  required = false,
 ): PromptSegment<DefaultPromptContext> {
   return {
     id,
     placement: "prompt",
     priority,
     tokenBudget,
-    required: false,
+    required,
     cacheable: false,
     render: (context) => renderLabeledValue(label, context[field]),
   };

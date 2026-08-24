@@ -98,6 +98,12 @@ const envSchema = z.object({
   LOG_LEVEL: z.string().default("info"),
   SEED_DEMO: booleanFromEnv,
   CHAT_EFFECTS_MODE: z.enum(["off", "gated"]).default("gated"),
+  TURN_PIPELINE_MODE: z
+    .enum(["legacy", "shadow", "enforced"])
+    .default("legacy"),
+  PERSONA_CONTEXT_MODE: z
+    .enum(["legacy", "shadow", "enforced"])
+    .default("legacy"),
   SCHEDULE_NEGOTIATION_MODE: z
     .enum(["legacy", "shadow", "enforced"])
     .default("shadow"),
@@ -133,6 +139,8 @@ export type ServerConfig = {
   seedDemo: boolean;
   developerRoutes: boolean;
   chatEffectsMode: "off" | "gated";
+  turnPipelineMode: "legacy" | "shadow" | "enforced";
+  personaContextMode: "legacy" | "shadow" | "enforced";
   scheduleNegotiationMode: "legacy" | "shadow" | "enforced";
   selfInitiatedPlanningMode: "off" | "shadow" | "enforced";
   liveWorldEffectsMode: "off" | "shadow" | "enforced";
@@ -200,6 +208,8 @@ export function readConfig(
     seedDemo: env.SEED_DEMO,
     developerRoutes: env.NODE_ENV !== "production",
     chatEffectsMode: env.CHAT_EFFECTS_MODE,
+    turnPipelineMode: env.TURN_PIPELINE_MODE,
+    personaContextMode: env.PERSONA_CONTEXT_MODE,
     scheduleNegotiationMode: env.SCHEDULE_NEGOTIATION_MODE,
     selfInitiatedPlanningMode: env.SELF_INITIATED_PLANNING,
     liveWorldEffectsMode: env.LIVE_WORLD_EFFECTS,
@@ -212,6 +222,14 @@ export function readConfig(
     ...overrides,
     llm: { ...base.llm, ...overrides.llm },
   };
+  if (
+    merged.turnPipelineMode === "enforced" &&
+    merged.scheduleNegotiationMode === "legacy"
+  ) {
+    throw new TypeError(
+      "TURN_PIPELINE_MODE=enforced requires SCHEDULE_NEGOTIATION_MODE=shadow or enforced; the legacy schedule writer cannot authorize split turns.",
+    );
+  }
   return {
     ...merged,
     conversationRetention: ConversationRetentionPolicySchema.parse(

@@ -234,8 +234,16 @@ export function plan72HoursDetailed(
     minute: 0,
   });
 
-  for (let offset = -1; offset <= 4; offset += 1) {
-    const day = localNow.startOf("day").plus({ days: offset });
+  const planningDays = Array.from({ length: 6 }, (_, index) =>
+    localNow.startOf("day").plus({ days: index - 1 }),
+  );
+
+  // Sleep is a health invariant, not an ordinary routine competing on
+  // insertion order. Reserve every sleep window for the complete horizon
+  // before placing meals or character-authored routines. In particular, a
+  // late routine that ends exactly when sleep starts must yield to the
+  // planner's safety buffer instead of silently deleting every sleep block.
+  for (const day of planningDays) {
     const sleepFrom = day.set(sleepStart);
     let sleepTo = day.set(sleepEnd);
     if (sleepTo <= sleepFrom) sleepTo = sleepTo.plus({ days: 1 });
@@ -256,7 +264,9 @@ export function plan72HoursDetailed(
       now,
       horizon,
     );
+  }
 
+  for (const day of planningDays) {
     const meals = [
       { title: "早餐", hour: 8, minute: 15, duration: 30 },
       { title: "午餐", hour: 12, minute: 30, duration: 45 },

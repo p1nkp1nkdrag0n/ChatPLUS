@@ -7,6 +7,7 @@ import {
   StrictPersonaTurnProviderEnvelopeSchema,
   ProactiveMessageProposalSchema,
   SchedulePlanProposalSchema,
+  TurnObservationProposalSchema,
   type LlmPurpose,
 } from "@personasim/contracts";
 import type { ZodType } from "zod";
@@ -16,6 +17,8 @@ export const PURPOSE_OUTPUT_SCHEMAS: Record<LlmPurpose, ZodType> = {
   plan_schedule: SchedulePlanProposalSchema,
   chat_turn: StrictPersonaTurnProviderEnvelopeSchema,
   repair_chat_turn: PersonaChatResponseSchema,
+  turn_understanding: TurnObservationProposalSchema,
+  reply_generation: PersonaChatResponseSchema,
   enrich_activity: ActivityEnrichmentBatchSchema,
   compose_proactive_message: ProactiveMessageProposalSchema,
   checkpoint_autobiography: AutobiographyRevisionProposalSchema,

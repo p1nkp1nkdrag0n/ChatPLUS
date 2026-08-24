@@ -1,7 +1,6 @@
 import { DateTime } from "luxon";
 
 import {
-  applyRelationshipDelta,
   hasScheduleIntent,
   normalizePersonalIntentCandidate,
   type ModelEffectRejection,
@@ -31,6 +30,7 @@ import {
   type TurnDecisionEffectContext,
   type TurnDecisionService,
 } from "./turn-decision-service.js";
+import { projectTurnState } from "./turn-state-projection.js";
 
 export type ChatTurnDecisionPath =
   "full" | "partial" | "effects_rejected" | "reply_only" | "fallback";
@@ -131,6 +131,7 @@ export class WorldEffectService {
     replyStrategy: ReplyStrategy;
     effects: TurnDecisionEffectContext;
     turn: ResolvedTurn;
+    repairPersonaContext?: unknown;
   }): Promise<PreparedWorldEffectTurn> {
     let { decision, inspection, repairAttempted } = input.turn;
     let usedFallback = input.turn.usedFallback;
@@ -269,6 +270,9 @@ export class WorldEffectService {
             },
             issues: inspection.issues,
             replyStrategy: input.replyStrategy,
+            ...(input.repairPersonaContext === undefined
+              ? {}
+              : { personaContext: input.repairPersonaContext }),
           });
           const repairedBase = repaired
             ? this.decisions.materializeReply(
@@ -436,13 +440,14 @@ export class WorldEffectService {
           : acceptedCount > 0
             ? "partial"
             : "effects_rejected";
-    const nextState = applyTurnState(
-      input.state,
-      decision.stateDelta,
-      decision.relationshipDelta,
-      input.nowUtc,
-      input.capabilities,
-    );
+    const stateProjection = projectTurnState({
+      state: input.state,
+      stateDelta: decision.stateDelta,
+      relationshipDelta: decision.relationshipDelta,
+      nowUtc: input.nowUtc,
+      capabilities: input.capabilities,
+    });
+    const nextState = stateProjection.nextState;
     return {
       decision,
       validation,
@@ -451,7 +456,7 @@ export class WorldEffectService {
       decisionPath,
       nextState,
       scheduleActionAudit: input.turn.modelScheduleActionAudit,
-      stateChanged: nextState.revision !== input.state.revision,
+      stateChanged: stateProjection.stateChanged,
       repairAttempted,
       usedFallback,
     };
@@ -922,80 +927,4 @@ function appendNegotiationReplyIssues(
       message: "Reply rejects an agreement represented by a committed command.",
     });
   }
-}
-
-function applyTurnState(
-  state: RuntimeState,
-  delta: AgentTurnDecision["stateDelta"],
-  relationshipDelta: AgentTurnDecision["relationshipDelta"],
-  nowUtc: string,
-  capabilities: SimulationCapabilities,
-): RuntimeState {
-  const next = structuredClone(state);
-  if (delta === undefined && relationshipDelta === undefined) return next;
-  if (!capabilities.dynamicState && !capabilities.relationshipDynamics) {
-    return next;
-  }
-  if (capabilities.dynamicState) {
-    if (delta?.moodValence !== undefined) {
-      next.moodValence = clampSigned(next.moodValence + delta.moodValence);
-    }
-    if (delta?.moodArousal !== undefined) {
-      next.moodArousal = clamp01(next.moodArousal + delta.moodArousal);
-    }
-    if (delta?.energy !== undefined) {
-      next.energy = clamp01(next.energy + delta.energy);
-    }
-    if (delta?.stress !== undefined) {
-      next.stress = clamp01(next.stress + delta.stress);
-    }
-    if (delta?.socialBattery !== undefined) {
-      next.socialBattery = clamp01(next.socialBattery + delta.socialBattery);
-    }
-    if (delta?.focus !== undefined) {
-      next.focus = clamp01(next.focus + delta.focus);
-    }
-  }
-  if (capabilities.relationshipDynamics) {
-    const scale = capabilities.relationshipDeltaScale;
-    next.relationship = applyRelationshipDelta(
-      {
-        userId: next.relationship.userId,
-        closeness: next.relationship.closeness,
-        trust: next.relationship.trust,
-        familiarity: next.relationship.familiarity,
-        recentInteractionValence: next.relationship.recentInteractionValence,
-        ...(next.relationship.lastInteractionAtUtc
-          ? { lastInteractionAtUtc: next.relationship.lastInteractionAtUtc }
-          : {}),
-      },
-      {
-        ...(relationshipDelta?.closeness === undefined
-          ? {}
-          : { closeness: relationshipDelta.closeness * scale }),
-        ...(relationshipDelta?.trust === undefined
-          ? {}
-          : { trust: relationshipDelta.trust * scale }),
-        familiarity: (relationshipDelta?.familiarity ?? 0.006) * scale,
-        ...(relationshipDelta?.recentInteractionValence === undefined
-          ? {}
-          : {
-              recentInteractionValence:
-                relationshipDelta.recentInteractionValence * scale,
-            }),
-      },
-      nowUtc,
-    ).state;
-  }
-  next.asOfUtc = nowUtc;
-  next.revision += 1;
-  return next;
-}
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function clampSigned(value: number): number {
-  return Math.max(-1, Math.min(1, value));
 }

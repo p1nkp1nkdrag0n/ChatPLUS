@@ -1,5 +1,7 @@
 import {
+  auditEvidenceOnlyTextGrounding,
   boundedRecallQueryTokens,
+  recallExactEntityAnchors,
   recallExactIdentifierAnchors,
   judgeMemoryCandidate,
   mergeMemoryProposal,
@@ -22,6 +24,11 @@ import {
 } from "@personasim/contracts";
 
 import type { DatabaseStore } from "../db/store.js";
+import {
+  isExplicitMemoryCorrection,
+  memorySourceCanAuthorizeUserFact,
+  type MemoryEpistemicStatus,
+} from "./memory-epistemic.js";
 
 export type PersistMemoryInput = {
   store: DatabaseStore;
@@ -31,6 +38,34 @@ export type PersistMemoryInput = {
   maxCandidates: number;
   authoritativeMessageId?: string;
   authoritativeActivityEventId?: string;
+};
+
+export type AuthoritativeMemoryMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAtUtc: string;
+  epistemicStatus?: MemoryEpistemicStatus;
+};
+
+export type MemoryCandidatePreflightRejection = {
+  index: number;
+  reasonCode: string;
+  reasonSummary: string;
+};
+
+export type MemoryCandidatePreflightResult = {
+  accepted: MemoryCandidate[];
+  rejections: MemoryCandidatePreflightRejection[];
+};
+
+type PreparedMemoryCandidate = {
+  candidate: MemoryCandidate;
+  memory: Memory;
+};
+
+type PrepareMemoryCandidatesInput = PersistMemoryInput & {
+  authoritativeMessage?: AuthoritativeMemoryMessage;
 };
 
 export function readActiveMemoryRecords(
@@ -90,6 +125,7 @@ export function readRecallCandidateRecords(
     candidateLimit,
   );
   const exactAnchors = recallExactIdentifierAnchors(input.query);
+  const exactEntityAnchors = recallExactEntityAnchors(input.query);
   const exactRows =
     exactAnchors.length === 0
       ? []
@@ -125,6 +161,38 @@ export function readRecallCandidateRecords(
             }),
             candidateLimit,
           ) as MemoryRow[]);
+  const exactEntityRows =
+    exactEntityAnchors.length === 0
+      ? []
+      : (store.database
+          .prepare(
+            `SELECT id, agent_id, type, content, tags_json, importance, confidence,
+              source_message_id, source_event_id, created_at_utc, valid_until_utc,
+              memory_json, namespace, certainty, attribution, stability, status,
+              claim_subject_key, claim_disposition, superseded_by_id,
+              merged_into_id, last_reinforced_at_utc,
+              lifecycle_updated_at_utc,
+              mentioned_at_utc, planned_start_at_utc, planned_end_at_utc,
+              occurred_start_at_utc, occurred_end_at_utc, recorded_at_utc,
+              temporal_certainty, temporal_status
+             FROM memories
+             WHERE agent_id = ? AND status = 'active'
+               AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+               AND (${exactEntityAnchors
+                 .flatMap(() => ["content LIKE ?", "tags_json LIKE ?"])
+                 .join(" OR ")})
+             ORDER BY importance DESC, created_at_utc DESC, id ASC
+             LIMIT ?`,
+          )
+          .all(
+            agentId,
+            nowUtc,
+            ...exactEntityAnchors.flatMap((anchor) => [
+              `%${anchor}%`,
+              `%${anchor}%`,
+            ]),
+            candidateLimit,
+          ) as MemoryRow[]);
   const keywordTokens = boundedRecallQueryTokens(input.query, 40).filter(
     (token) =>
       /^[\p{L}\p{N}]+$/u.test(token) &&
@@ -132,7 +200,10 @@ export function readRecallCandidateRecords(
   );
   if (keywordTokens.length === 0) {
     const selected = new Map(
-      exactRows.map((row) => [row.id, memoryFromRow(row)]),
+      [...exactEntityRows, ...exactRows].map((row) => [
+        row.id,
+        memoryFromRow(row),
+      ]),
     );
     for (const memory of importancePool) {
       if (selected.size >= candidateLimit) break;
@@ -149,7 +220,10 @@ export function readRecallCandidateRecords(
   );
   if (keywordLimit === 0) {
     const selected = new Map(
-      exactRows.map((row) => [row.id, memoryFromRow(row)]),
+      [...exactEntityRows, ...exactRows].map((row) => [
+        row.id,
+        memoryFromRow(row),
+      ]),
     );
     for (const memory of importancePool) {
       if (selected.size >= candidateLimit) break;
@@ -215,7 +289,10 @@ export function readRecallCandidateRecords(
       keywordLimit,
     ) as MemoryRow[];
   const selected = new Map(
-    exactRows.map((row) => [row.id, memoryFromRow(row)]),
+    [...exactEntityRows, ...exactRows].map((row) => [
+      row.id,
+      memoryFromRow(row),
+    ]),
   );
   for (const row of keywordRows) {
     if (selected.size >= candidateLimit) break;
@@ -276,8 +353,47 @@ export function readMemoryEvidence(
 export function validateMergeAndPersistMemories(
   input: PersistMemoryInput,
 ): Memory[] {
-  if (input.maxCandidates <= 0 || input.candidates.length === 0) return [];
-  const catalog = loadEvidenceCatalog(input.store, input.agentId);
+  const prepared = prepareMemoryCandidates(input);
+  for (const item of prepared.accepted) {
+    upsertMemory(input.store, item.memory);
+    persistMemoryEvidence(
+      input.store,
+      item.memory.id,
+      item.candidate.evidence ?? [],
+      input.nowUtc,
+    );
+  }
+  return prepared.accepted.map((item) => item.memory);
+}
+
+/**
+ * Runs the exact grounding, judge, proposal, merge, and schema checks used by
+ * persistence without writing. A not-yet-inserted authoritative turn message
+ * may be supplied so split execution can establish memory authority before it
+ * asks the reply model to speak about the outcome.
+ */
+export function preflightMemoryCandidates(
+  input: PrepareMemoryCandidatesInput,
+): MemoryCandidatePreflightResult {
+  const prepared = prepareMemoryCandidates(input);
+  return {
+    accepted: prepared.accepted.map((item) => item.candidate),
+    rejections: prepared.rejections,
+  };
+}
+
+function prepareMemoryCandidates(input: PrepareMemoryCandidatesInput): {
+  accepted: PreparedMemoryCandidate[];
+  rejections: MemoryCandidatePreflightRejection[];
+} {
+  if (input.candidates.length === 0) {
+    return { accepted: [], rejections: [] };
+  }
+  const catalog = loadEvidenceCatalog(
+    input.store,
+    input.agentId,
+    input.authoritativeMessage,
+  );
   const existingRecords = readActiveMemoryRecords(
     input.store,
     input.agentId,
@@ -285,11 +401,29 @@ export function validateMergeAndPersistMemories(
     500,
   );
   const existing = existingRecords.map(toFeatureMemory);
-  const persisted: Memory[] = [];
+  const accepted: PreparedMemoryCandidate[] = [];
+  const rejections: MemoryCandidatePreflightRejection[] = [];
+  const maxCandidates = Math.max(0, Math.trunc(input.maxCandidates));
 
-  for (const rawCandidate of input.candidates.slice(0, input.maxCandidates)) {
+  for (const [index, rawCandidate] of input.candidates.entries()) {
+    if (index >= maxCandidates) {
+      rejections.push({
+        index,
+        reasonCode: "memory_candidate_limit",
+        reasonSummary:
+          "The candidate exceeds the authoritative per-turn memory limit.",
+      });
+      continue;
+    }
     const parsedCandidate = MemoryCandidateSchema.safeParse(rawCandidate);
-    if (!parsedCandidate.success) continue;
+    if (!parsedCandidate.success) {
+      rejections.push({
+        index,
+        reasonCode: "invalid_memory_candidate_schema",
+        reasonSummary: "The candidate failed the strict memory schema.",
+      });
+      continue;
+    }
     const candidate = normalizeCandidateForJudge(
       parsedCandidate.data,
       catalog,
@@ -297,27 +431,63 @@ export function validateMergeAndPersistMemories(
       input.authoritativeMessageId,
       input.authoritativeActivityEventId,
     );
-    if (candidate === undefined) continue;
+    if (candidate === undefined) {
+      rejections.push({
+        index,
+        reasonCode: "ungrounded_memory_candidate",
+        reasonSummary:
+          "The candidate has no authoritative evidence that supports its content and attribution.",
+      });
+      continue;
+    }
     const judgement = judgeMemoryCandidate(candidate);
-    if (!judgement.accepted) continue;
+    if (!judgement.accepted) {
+      rejections.push({
+        index,
+        reasonCode:
+          judgement.issues[0]?.code.toLocaleLowerCase() ??
+          "memory_candidate_rejected",
+        reasonSummary:
+          judgement.issues[0]?.message ??
+          "The candidate failed the authoritative memory judge.",
+      });
+      continue;
+    }
 
     const proposal = toRuntimeProposal(candidate);
     const validation = validateMemoryProposal(proposal);
-    if (!validation.accepted || validation.proposal === undefined) continue;
+    if (!validation.accepted || validation.proposal === undefined) {
+      rejections.push({
+        index,
+        reasonCode: "invalid_memory_proposal",
+        reasonSummary:
+          validation.errors[0] ??
+          "The candidate failed authoritative memory proposal validation.",
+      });
+      continue;
+    }
     const merged = mergeMemoryProposal(
       input.agentId,
       validation.proposal,
       existing,
       input.nowUtc,
     );
-    if (merged === undefined) continue;
+    if (merged === undefined) {
+      rejections.push({
+        index,
+        reasonCode: "memory_merge_rejected",
+        reasonSummary:
+          "The candidate could not be merged into authoritative memory state.",
+      });
+      continue;
+    }
 
     const prior = existingRecords.find((item) => item.id === merged.memory.id);
     const temporalMetadata =
       candidate.temporalMetadata ??
       candidate.temporal ??
       defaultTemporalMetadata(candidate, catalog, input.nowUtc);
-    const memory = MemorySchema.parse({
+    const parsedMemory = MemorySchema.safeParse({
       ...merged.memory,
       namespace:
         prior?.namespace ?? candidate.namespace ?? "runtime_simulation",
@@ -328,13 +498,16 @@ export function validateMergeAndPersistMemories(
       temporalMetadata,
       status: "active",
     });
-    upsertMemory(input.store, memory);
-    persistMemoryEvidence(
-      input.store,
-      memory.id,
-      candidate.evidence ?? [],
-      input.nowUtc,
-    );
+    if (!parsedMemory.success) {
+      rejections.push({
+        index,
+        reasonCode: "invalid_memory_materialization",
+        reasonSummary:
+          "The candidate could not be materialized as authoritative memory.",
+      });
+      continue;
+    }
+    const memory = parsedMemory.data;
 
     const featureMemory = toFeatureMemory(memory);
     const existingIndex = existing.findIndex((item) => item.id === memory.id);
@@ -345,9 +518,9 @@ export function validateMergeAndPersistMemories(
     );
     if (recordIndex >= 0) existingRecords[recordIndex] = memory;
     else existingRecords.push(memory);
-    persisted.push(memory);
+    accepted.push({ candidate, memory });
   }
-  return persisted;
+  return { accepted, rejections };
 }
 
 type EvidenceCatalog = {
@@ -359,10 +532,11 @@ type EvidenceCatalog = {
 function loadEvidenceCatalog(
   store: DatabaseStore,
   agentId: string,
+  authoritativeMessage?: AuthoritativeMemoryMessage,
 ): EvidenceCatalog {
   const messages = store.database
     .prepare(
-      `SELECT id, role, content, created_at_utc
+      `SELECT id, role, content, metadata_json, created_at_utc
        FROM messages WHERE agent_id = ?`,
     )
     .all(agentId) as MessageSourceRow[];
@@ -378,8 +552,23 @@ function loadEvidenceCatalog(
        FROM character_sources WHERE character_id = ?`,
     )
     .all(agentId) as CharacterSourceRow[];
+  const messageMap = new Map(messages.map((row) => [row.id, row]));
+  if (authoritativeMessage !== undefined) {
+    messageMap.set(authoritativeMessage.id, {
+      id: authoritativeMessage.id,
+      role: authoritativeMessage.role,
+      content: authoritativeMessage.content,
+      metadata_json:
+        authoritativeMessage.epistemicStatus === undefined
+          ? "{}"
+          : JSON.stringify({
+              epistemicStatus: authoritativeMessage.epistemicStatus,
+            }),
+      created_at_utc: authoritativeMessage.createdAtUtc,
+    });
+  }
   return {
-    messages: new Map(messages.map((row) => [row.id, row])),
+    messages: messageMap,
     activities: new Map(activities.map((row) => [row.id, row])),
     characterSources: new Map(characterSources.map((row) => [row.id, row])),
   };
@@ -446,6 +635,27 @@ function normalizeCandidateForJudge(
   const stability =
     candidate.stability ??
     (hasActivity || candidate.kind === "episodic" ? "one_off" : "situational");
+  const correction = sourceMessageIds.some((sourceId) => {
+    const source = catalog.messages.get(sourceId);
+    return (
+      source?.role === "user" && isExplicitMemoryCorrection(source.content)
+    );
+  });
+  const tags = correction
+    ? [...new Set([...candidate.tags, "correction"])]
+    : candidate.tags;
+  const claim =
+    candidate.claim ??
+    deriveUserModelClaim(
+      {
+        ...candidate,
+        namespace,
+        certainty,
+        attribution,
+        tags,
+      },
+      nowUtc,
+    );
   const suppliedTemporal = candidate.temporalMetadata ?? candidate.temporal;
   const temporalMetadata = TemporalMetadataSchema.parse({
     ...(suppliedTemporal ??
@@ -460,6 +670,8 @@ function normalizeCandidateForJudge(
     certainty,
     attribution,
     stability,
+    tags,
+    ...(claim === undefined ? {} : { claim }),
     temporalMetadata,
     evidence,
     shouldWrite: candidate.shouldWrite ?? true,
@@ -485,6 +697,17 @@ function collectVerifiedEvidence(
       !messageRoleCanSupportCandidate(candidate, source.role)
     )
       return;
+    if (
+      (candidate.namespace === "user_model" ||
+        candidate.attribution === "user_explicit") &&
+      source.role === "user" &&
+      !memorySourceCanAuthorizeUserFact({
+        text: source.content,
+        status: messageEpistemicStatus(source),
+      })
+    ) {
+      return;
+    }
     if (
       requestedQuote !== undefined &&
       !groundedQuote(source.content, requestedQuote)
@@ -544,6 +767,126 @@ function collectVerifiedEvidence(
     }
   }
   return [...result.values()];
+}
+
+function deriveUserModelClaim(
+  candidate: MemoryCandidate,
+  nowUtc: string,
+): MemoryCandidate["claim"] {
+  if (
+    candidate.namespace !== "user_model" ||
+    candidate.certainty !== "explicit" ||
+    candidate.attribution !== "user_explicit"
+  ) {
+    return undefined;
+  }
+  const content = candidate.content.normalize("NFKC").trim();
+  const normalizedTags = candidate.tags.map((tag) =>
+    tag.normalize("NFKC").trim().toLocaleLowerCase(),
+  );
+  let subjectKey: string | undefined;
+  if (/香菜|cilantro/iu.test(content) || normalizedTags.includes("cilantro")) {
+    subjectKey = "user.preference.food.cilantro";
+  } else {
+    const person = extractPersonEntity(content, normalizedTags);
+    if (person !== undefined) {
+      subjectKey = `user.person.${subjectKeySegment(person)}.profile`;
+    } else {
+      const identifier = recallExactIdentifierAnchors(content)[0];
+      if (identifier !== undefined) {
+        subjectKey = `user.fact.identifier.${subjectKeySegment(identifier)}`;
+      } else if (
+        normalizedTags.includes("user_preference") ||
+        normalizedTags.includes("preference")
+      ) {
+        const topics = normalizedTags
+          .filter((tag) => !NON_SUBJECT_TAGS.has(tag))
+          .map(subjectKeySegment)
+          .filter(Boolean)
+          .slice(0, 2);
+        if (topics.length > 0) {
+          subjectKey = `user.preference.${topics.join(".")}`;
+        }
+      }
+    }
+  }
+  return subjectKey === undefined
+    ? undefined
+    : { subjectKey, disposition: "affirmed", recordedAtUtc: nowUtc };
+}
+
+const NON_SUBJECT_TAGS = new Set([
+  "correction",
+  "corrected",
+  "fact",
+  "preference",
+  "reinforcement",
+  "semantic",
+  "user_fact",
+  "user_preference",
+  "更正",
+  "事实",
+  "修正",
+  "偏好",
+  "纠正",
+]);
+
+const NON_ENTITY_TAGS = new Set([
+  "人物",
+  "人名",
+  "关系",
+  "同学",
+  "大学同学",
+  "高中同学",
+  "朋友",
+  "地点",
+  "搬家",
+  "苏州",
+  "偏好",
+  "事实",
+  "食物",
+  "饮食",
+  "香菜",
+  "纠正",
+  "更正",
+]);
+
+function extractPersonEntity(
+  content: string,
+  tags: readonly string[],
+): string | undefined {
+  const named = /(?:叫|名叫)\s*([\p{Script=Han}]{2,6})/u.exec(content)?.[1];
+  if (named !== undefined) return named;
+  const related =
+    /(?:同学|朋友|同事)(?:叫|是)?\s*([\p{Script=Han}]{2,4}?)(?=最近|刚|已经|搬|住|[，。；：、\s]|$)/u.exec(
+      content,
+    )?.[1];
+  if (related !== undefined) return related;
+  const subject =
+    /(?:^|[，。；：])\s*([\p{Script=Han}]{2,6}?)(?:不是|是我|和我|搬到|住在)/u.exec(
+      content,
+    )?.[1];
+  if (subject !== undefined) return subject;
+  return tags.find(
+    (tag) => /^[\p{Script=Han}]{2,6}$/u.test(tag) && !NON_ENTITY_TAGS.has(tag),
+  );
+}
+
+function subjectKeySegment(value: string): string {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ".")
+    .replace(/^\.+|\.+$/gu, "")
+    .slice(0, 80);
+}
+
+function messageEpistemicStatus(source: MessageSourceRow): unknown {
+  const metadata = parseJson(source.metadata_json);
+  return typeof metadata === "object" && metadata !== null
+    ? (metadata as Record<string, unknown>)["epistemicStatus"]
+    : undefined;
 }
 
 function groundedQuote(source: string, quote: string): boolean {
@@ -653,6 +996,16 @@ function memoryContentGrounded(
   candidate: MemoryCandidate,
   evidenceText: string,
 ): boolean {
+  if (
+    candidate.namespace === "user_model" ||
+    candidate.attribution === "user_explicit"
+  ) {
+    return auditEvidenceOnlyTextGrounding({
+      text: userModelCandidateTextForGrounding(candidate.content),
+      sources: [{ memoryContent: evidenceText }],
+      requireGroundedClaim: true,
+    }).passed;
+  }
   const normalizedContent = candidate.content
     .normalize("NFKC")
     .toLocaleLowerCase()
@@ -673,11 +1026,17 @@ function memoryContentGrounded(
     candidateFeatures.has(feature),
   );
   if (shared.length >= 2) return true;
-  return (
-    shared.some((feature) => feature.length >= 6) &&
-    (candidate.namespace === "user_model" ||
-      candidate.attribution === "user_explicit")
-  );
+  return false;
+}
+
+function userModelCandidateTextForGrounding(value: string): string {
+  return value
+    .replace(/用户的/gu, "我的")
+    .replace(/用户/gu, "我")
+    .replace(/\bthe user is\b/giu, "I am")
+    .replace(/\bthe user has\b/giu, "I have")
+    .replace(/\bthe user\b/giu, "I")
+    .replace(/\b(prefers|likes|lives|keeps)\b/giu, (verb) => verb.slice(0, -1));
 }
 function defaultTemporalMetadata(
   candidate: MemoryCandidate,
@@ -1053,6 +1412,7 @@ type MessageSourceRow = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  metadata_json: string;
   created_at_utc: string;
 };
 

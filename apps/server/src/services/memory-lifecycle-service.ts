@@ -29,6 +29,11 @@ export interface MemoryReconciliationResult {
   conflictId?: string;
 }
 
+export interface MemoryReconciliationAuditContext {
+  correlationId?: string;
+  causationId?: string;
+}
+
 type ActionableMemoryReconciliation = Omit<
   MemoryClaimReconciliation,
   "kind" | "subjectKey"
@@ -113,6 +118,7 @@ export class MemoryLifecycleService {
   reconcileNewMemories(
     agentId: string,
     incomingMemoryIds: readonly string[],
+    audit: MemoryReconciliationAuditContext = {},
   ): MemoryReconciliationResult[] {
     const results: MemoryReconciliationResult[] = [];
     for (const incomingMemoryId of new Set(incomingMemoryIds)) {
@@ -142,6 +148,7 @@ export class MemoryLifecycleService {
         this.reconcile({
           existingMemoryId: existing.memory.id,
           incomingMemoryId,
+          ...audit,
         }),
       );
     }
@@ -151,6 +158,8 @@ export class MemoryLifecycleService {
   reconcile(input: {
     existingMemoryId: string;
     incomingMemoryId: string;
+    correlationId?: string;
+    causationId?: string;
   }): MemoryReconciliationResult {
     const nowUtc = this.clock.nowUtc();
     return this.repository.transaction(() => {
@@ -225,6 +234,12 @@ export class MemoryLifecycleService {
           reasonCode: reconciliation.reasonCode,
           changedMemoryIds,
         },
+        ...(input.correlationId === undefined
+          ? {}
+          : { correlationId: input.correlationId }),
+        ...(input.causationId === undefined
+          ? {}
+          : { causationId: input.causationId }),
         idempotencyKey: `domain:${idempotencyKey}`,
       });
       return {
@@ -424,6 +439,7 @@ function toLifecycleMemory(memory: Memory): LifecycleMemoryLike {
     content: memory.content,
     importance: memory.importance,
     confidence: memory.confidence,
+    tags: memory.tags,
     status: memory.status,
     ...(memory.stability === undefined ? {} : { stability: memory.stability }),
     ...(memory.certainty === undefined ? {} : { certainty: memory.certainty }),

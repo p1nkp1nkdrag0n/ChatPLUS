@@ -22,6 +22,18 @@ import type {
   LlmProvider,
 } from "./types.js";
 
+const ProviderUsageSchema = z
+  .object({
+    prompt_tokens: z.number().int().nonnegative().optional(),
+    completion_tokens: z.number().int().nonnegative().optional(),
+    total_tokens: z.number().int().nonnegative().optional(),
+  })
+  .passthrough();
+
+const ProviderUsageEnvelopeSchema = z
+  .object({ usage: ProviderUsageSchema.optional() })
+  .passthrough();
+
 const ChatCompletionResponseSchema = z
   .object({
     model: z.string().optional(),
@@ -50,14 +62,7 @@ const ChatCompletionResponseSchema = z
           .passthrough(),
       )
       .min(1),
-    usage: z
-      .object({
-        prompt_tokens: z.number().int().nonnegative().optional(),
-        completion_tokens: z.number().int().nonnegative().optional(),
-        total_tokens: z.number().int().nonnegative().optional(),
-      })
-      .passthrough()
-      .optional(),
+    usage: ProviderUsageSchema.optional(),
   })
   .passthrough();
 
@@ -207,29 +212,23 @@ function responseFormat(
 }
 
 function isRetryable(error: unknown): boolean {
+  // A schema mismatch is a transient model-output failure for these pure
+  // structured inference calls. Retrying the unchanged request is safe: no
+  // application mutation has happened yet, and the invalid raw output is
+  // never reflected into a repair prompt or persisted diagnostic.
   if (error instanceof StructuredOutputError) return true;
   if (error instanceof LlmProviderError) {
-    if (
-      [
-        "TIMEOUT",
-        "NETWORK_ERROR",
-        "INVALID_RESPONSE_ENVELOPE",
-        "EMPTY_RESPONSE",
-      ].includes(error.code)
-    ) {
+    if (error.code === "OUTPUT_TRUNCATED") return true;
+    if (["TIMEOUT", "NETWORK_ERROR"].includes(error.code)) {
       return true;
     }
     return (
       error.status === 408 ||
-      error.status === 409 ||
       error.status === 429 ||
-      (error.status ?? 0) >= 500
+      ((error.status ?? 0) >= 500 && (error.status ?? 0) < 600)
     );
   }
-  return (
-    error instanceof TypeError ||
-    (error instanceof DOMException && error.name === "AbortError")
-  );
+  return false;
 }
 
 function safeCode(error: unknown): string {
@@ -249,27 +248,7 @@ function isEmptyJsonObject(value: JsonValue): boolean {
   );
 }
 
-function repairMessage(issues: readonly string[]): LLMChatMessage {
-  const issueLines =
-    issues.length === 0
-      ? ["- <root>: the previous response was not valid JSON"]
-      : issues.slice(0, 12).map((issue) => `- ${issue}`);
-  return {
-    role: "user",
-    content: [
-      "STRUCTURED_OUTPUT_REPAIR",
-      "The previous response failed validation against the original JSON schema.",
-      "Return one complete replacement JSON object only. Do not return a patch, Markdown, commentary, or reasoning.",
-      "LATEST_VALIDATION_ISSUES",
-      ...issueLines,
-    ].join("\n"),
-  };
-}
-
-function asMessages(
-  request: LLMRequest,
-  repairIssues?: readonly string[],
-): LLMChatMessage[] {
+function asMessages(request: LLMRequest): LLMChatMessage[] {
   const jsonInstruction: LLMChatMessage = {
     role: "system",
     content:
@@ -284,7 +263,6 @@ function asMessages(
   if (originalMessages.length === 0 || !isEmptyJsonObject(request.payload)) {
     messages.push(payload);
   }
-  if (repairIssues !== undefined) messages.push(repairMessage(repairIssues));
   return messages;
 }
 
@@ -342,8 +320,33 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     request: LLMRequest,
     attempt: number,
     schema?: ZodType<unknown>,
-    repairIssues?: readonly string[],
   ): Promise<RawCallResult> {
+    // Build and validate the request before opening the physical-attempt
+    // boundary. A local schema-conversion/body-construction failure did not
+    // dispatch HTTP and therefore must not be counted as a provider attempt.
+    const structuredFormat = responseFormat(
+      this.capabilities,
+      request.purpose,
+      schema,
+    );
+    const requestBody = JSON.stringify({
+      model: this.model,
+      messages: asMessages(request),
+      ...(this.capabilities.supportsThinkingControl
+        ? { thinking: { type: "disabled" } }
+        : {}),
+      ...(structuredFormat === undefined
+        ? {}
+        : { response_format: structuredFormat }),
+      stream: false,
+      max_tokens: Math.min(
+        normalizeMaxTokens(request.maxOutputTokens, this.#maxOutputTokens),
+        this.#maxOutputTokens,
+      ),
+      ...(request.temperature === undefined
+        ? {}
+        : { temperature: request.temperature }),
+    });
     const controller = new AbortController();
     const timeout = globalThis.setTimeout(
       () => controller.abort(),
@@ -351,36 +354,16 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     );
     const startedAt = Date.now();
     let status: number | undefined;
+    let providerUsage:
+      z.infer<typeof ChatCompletionResponseSchema>["usage"] | undefined;
     try {
-      const structuredFormat = responseFormat(
-        this.capabilities,
-        request.purpose,
-        schema,
-      );
       const response = await this.#fetch(this.#endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: asMessages(request, repairIssues),
-          ...(this.capabilities.supportsThinkingControl
-            ? { thinking: { type: "disabled" } }
-            : {}),
-          ...(structuredFormat === undefined
-            ? {}
-            : { response_format: structuredFormat }),
-          stream: false,
-          max_tokens: Math.min(
-            normalizeMaxTokens(request.maxOutputTokens, this.#maxOutputTokens),
-            this.#maxOutputTokens,
-          ),
-          ...(request.temperature === undefined
-            ? {}
-            : { temperature: request.temperature }),
-        }),
+        body: requestBody,
         signal: controller.signal,
       });
       status = response.status;
@@ -405,6 +388,11 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
             cause: error,
           },
         );
+      }
+      const providerUsageEnvelope =
+        ProviderUsageEnvelopeSchema.safeParse(untrusted);
+      if (providerUsageEnvelope.success) {
+        providerUsage = providerUsageEnvelope.data.usage;
       }
       const envelope = ChatCompletionResponseSchema.safeParse(untrusted);
       if (!envelope.success) {
@@ -439,22 +427,6 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       }
       const data = parseJsonText(content) as JsonValue;
       const latencyMs = Date.now() - startedAt;
-      const usage = envelope.data.usage;
-      this.#emitMetric({
-        provider: this.name,
-        model: this.model,
-        purpose: request.purpose,
-        attempt,
-        latencyMs,
-        success: true,
-        status,
-        ...(usage?.prompt_tokens === undefined
-          ? {}
-          : { inputTokens: usage.prompt_tokens }),
-        ...(usage?.completion_tokens === undefined
-          ? {}
-          : { outputTokens: usage.completion_tokens }),
-      });
       return { content, data, response: envelope.data, latencyMs, status };
     } catch (error) {
       const safeError =
@@ -481,6 +453,12 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         latencyMs: Date.now() - startedAt,
         success: false,
         ...(status === undefined ? {} : { status }),
+        ...(providerUsage?.prompt_tokens === undefined
+          ? {}
+          : { inputTokens: providerUsage.prompt_tokens }),
+        ...(providerUsage?.completion_tokens === undefined
+          ? {}
+          : { outputTokens: providerUsage.completion_tokens }),
         errorCode: safeCode(safeError),
       });
       throw safeError;
@@ -496,40 +474,66 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   ): Promise<{ value: T | JsonValue; raw: RawCallResult }> {
     const retries = normalizeRetries(retryOverride, this.#maxRetries);
     let lastError: unknown;
-    let latestStructuredIssues: readonly string[] | undefined;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
+      let raw: RawCallResult | undefined;
       try {
-        const raw = await this.#callOnce(
-          request,
-          attempt + 1,
-          schema,
-          latestStructuredIssues,
-        );
-        if (schema === undefined) return { value: raw.data, raw };
-        const parsed = schema.safeParse(
-          normalizePurposeOutput(request.purpose, raw.data),
-        );
-        if (!parsed.success) {
-          const issues = parsed.error.issues.slice(0, 12).map((issue) => {
-            const path =
-              issue.path.length === 0 ? "<root>" : issue.path.join(".");
-            return `${path}: ${issue.message}`;
-          });
-          throw new StructuredOutputError(
-            "The model JSON did not match the requested schema",
-            issues,
+        raw = await this.#callOnce(request, attempt + 1, schema);
+        let value: T | JsonValue = raw.data;
+        if (schema !== undefined) {
+          const parsed = schema.safeParse(
+            normalizePurposeOutput(request.purpose, raw.data),
           );
-        }
-        return { value: parsed.data, raw };
-      } catch (error) {
-        lastError = error;
-        if (error instanceof StructuredOutputError) {
-          latestStructuredIssues = error.issues
-            .slice(0, 12)
-            .map((issue) =>
-              redactSensitiveText(issue, [this.#apiKey]).slice(0, 400),
+          if (!parsed.success) {
+            const issues = parsed.error.issues.slice(0, 12).map((issue) => {
+              const path =
+                issue.path.length === 0 ? "<root>" : issue.path.join(".");
+              return `${path}: ${issue.message}`;
+            });
+            throw new StructuredOutputError(
+              "The model JSON did not match the requested schema",
+              issues,
             );
+          }
+          value = parsed.data;
         }
+        const usage = raw.response.usage;
+        this.#emitMetric({
+          provider: this.name,
+          model: this.model,
+          purpose: request.purpose,
+          attempt: attempt + 1,
+          latencyMs: raw.latencyMs,
+          success: true,
+          status: raw.status,
+          ...(usage?.prompt_tokens === undefined
+            ? {}
+            : { inputTokens: usage.prompt_tokens }),
+          ...(usage?.completion_tokens === undefined
+            ? {}
+            : { outputTokens: usage.completion_tokens }),
+        });
+        return { value, raw };
+      } catch (error) {
+        if (raw !== undefined) {
+          const usage = raw.response.usage;
+          this.#emitMetric({
+            provider: this.name,
+            model: this.model,
+            purpose: request.purpose,
+            attempt: attempt + 1,
+            latencyMs: raw.latencyMs,
+            success: false,
+            status: raw.status,
+            ...(usage?.prompt_tokens === undefined
+              ? {}
+              : { inputTokens: usage.prompt_tokens }),
+            ...(usage?.completion_tokens === undefined
+              ? {}
+              : { outputTokens: usage.completion_tokens }),
+            errorCode: safeCode(error),
+          });
+        }
+        lastError = error;
         if (attempt >= retries || !isRetryable(error)) break;
         await this.#retryDelay(125 * (attempt + 1));
       }

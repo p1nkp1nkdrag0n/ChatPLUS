@@ -637,6 +637,211 @@ function chatFixture(request: LLMRequest): JsonValue {
   };
 }
 
+function turnUnderstandingFixture(request: LLMRequest): JsonValue {
+  const userMessage = continuityUserMessage(request).trim();
+  const quote = userMessage.slice(0, 500) || "（空消息）";
+  const evidenceQuotes = [{ text: quote }];
+  const isScheduleQuery =
+    /(?:日程|行程|安排|有空|忙吗|答应).*(?:吗|没|没有|什么|哪些|何时|什么时候|\?|？)|(?:show|check|what(?:'s| is)|when).*(?:calendar|schedule|available)/iu.test(
+      userMessage,
+    );
+  const isQuotedOrHypothetical =
+    /(?:他说|她说|有人说|如果|假如|要是|万一|还没决定|还不确定|再看看|\b(?:he|she|they)\s+said\b|\bif\b|\bmaybe\b|\bnot\s+(?:sure|decided)\b)/iu.test(
+      userMessage,
+    );
+  const isExplicitMemory =
+    /(?:请|帮我)?(?:记住|记得|别忘|记下来)|\b(?:remember|keep in mind|note that)\b/iu.test(
+      userMessage,
+    );
+  const isUnsupportedMutation =
+    /(?:取消|删除|删掉|改期|改到|挪到|推迟|延后|\b(?:cancel|delete|remove|reschedule|postpone|move)\b)/iu.test(
+      userMessage,
+    );
+  const isSharedInvitation =
+    /(?:一起|和我|跟我|我们).{0,24}(?:去|来|吃|喝|看|逛|散步|见面|参加|玩|聊|聚)|\b(?:let(?:'s| us)|join me|meet me)\b/iu.test(
+      userMessage,
+    );
+
+  let route:
+    | "conversation"
+    | "schedule_query"
+    | "schedule_mutation"
+    | "explicit_memory"
+    | "ambiguous" = "conversation";
+  let dialogueActs: JsonValue[] = ["inform"];
+  let scheduleIntent: JsonValue = { kind: "none" };
+  let uncertainty: JsonValue[] = [];
+  let confidence = 0.76;
+
+  if (isScheduleQuery) {
+    route = "schedule_query";
+    dialogueActs = ["ask"];
+    scheduleIntent = { kind: "query_schedule", evidenceQuotes };
+    confidence = 0.9;
+  } else if (
+    isQuotedOrHypothetical &&
+    (isSharedInvitation || /明天|今晚|schedule|calendar/iu.test(userMessage))
+  ) {
+    route = "ambiguous";
+    dialogueActs = [isQuotedOrHypothetical ? "hypothesize" : "inform"];
+    scheduleIntent = {
+      kind: "ambiguous",
+      evidenceQuotes,
+      missingFields: ["direct mutation request"],
+    };
+    uncertainty = [
+      "The message does not directly authorize a schedule mutation.",
+    ];
+    confidence = 0.62;
+  } else if (isExplicitMemory) {
+    route = "explicit_memory";
+    dialogueActs = ["request_memory"];
+    confidence = 0.9;
+  } else if (isUnsupportedMutation) {
+    route = "schedule_mutation";
+    dialogueActs = ["inform"];
+    scheduleIntent = {
+      kind: "unsupported_mutation",
+      operation: /改期|改到|推迟|延后|reschedule|postpone|move/iu.test(
+        userMessage,
+      )
+        ? "reschedule"
+        : /删除|删掉|delete|remove/iu.test(userMessage)
+          ? "delete"
+          : "cancel",
+      evidenceQuotes,
+    };
+    confidence = 0.86;
+  } else if (isSharedInvitation) {
+    const timeMatch = userMessage.match(
+      /今晚|明天|后天|周[一二三四五六日天]|星期[一二三四五六日天]|(?:today|tonight|tomorrow|(?:mon|tues|wednes|thurs|fri|satur|sun)day)/iu,
+    );
+    const participantMatch = userMessage.match(
+      /一起|和我|跟我|我们|(?:join|with|meet) me/iu,
+    );
+    route = "schedule_mutation";
+    dialogueActs = ["invite"];
+    scheduleIntent = {
+      kind: "create_shared_activity",
+      activityQuote: { text: quote },
+      ...(timeMatch === null ? {} : { timeQuote: { text: timeMatch[0] } }),
+      ...(participantMatch === null
+        ? {}
+        : { participantQuote: { text: participantMatch[0] } }),
+      missingFields: [
+        ...(timeMatch === null ? ["time"] : []),
+        ...(participantMatch === null ? ["participant"] : []),
+      ],
+    };
+    confidence = 0.84;
+  }
+
+  return {
+    schemaVersion: 1,
+    route,
+    dialogueActs,
+    topics: [],
+    scheduleIntent,
+    worldEffects: {},
+    salientUserQuotes: userMessage.length === 0 ? [] : evidenceQuotes,
+    uncertainty,
+    confidence,
+  };
+}
+
+function replyGenerationFixture(request: LLMRequest): JsonValue {
+  const userMessage = continuityUserMessage(request);
+  const activatedGoalTitle = fixtureActivatedGoalTitle(request);
+  const baseText =
+    activatedGoalTitle === undefined
+      ? fixtureConversationReply(userMessage)
+      : `最近我在推进${activatedGoalTitle}，已经理清了一部分，接下来会继续处理最关键的一步。`;
+  const text = /总结|概括|recap|summari[sz]e/iu.test(userMessage)
+    ? `${baseText} 总结一下，今天就先聊到这里。`
+    : baseText;
+  return {
+    text,
+    toneTags: ["温和", "自然"],
+    deliveryMode: "single_block",
+    chunks: [text],
+  };
+}
+
+/**
+ * Deterministic conversational variety for the local fixture provider. This
+ * simulates reply generation only; it never authorizes or applies domain
+ * mutations.
+ */
+function fixtureConversationReply(userMessage: string): string {
+  if (/晚饭|吃|清淡|辣/iu.test(userMessage)) {
+    return "晚饭可以先选清淡一点的，再看你当下是不是还想加点辣。";
+  }
+  if (/天气|下雨|雨天/iu.test(userMessage)) {
+    return "雨把空气压得凉了一点，出门记得带伞，也可以听听窗外的雨声。";
+  }
+  if (/朋友|见面|她/iu.test(userMessage)) {
+    return "朋友临时取消见面确实会让人失落，可以坦率回应，再问她哪天方便。";
+  }
+  if (/家里|家人|家庭|聚餐/iu.test(userMessage)) {
+    return "家庭聚餐轻松一点就好，不必勉强每个人一直找话题。";
+  }
+  if (/睡|身体|健康|休息|舒服/iu.test(userMessage)) {
+    return "昨晚没睡好就先把今天的节奏放慢，补水，也给身体留出休息时间。";
+  }
+  if (/陶艺|杯子|手作|兴趣/iu.test(userMessage)) {
+    return "陶艺从杯子开始很合适，形状直观，也能很快看到手作的变化。";
+  }
+  if (/河边|老街|城里|散步/iu.test(userMessage)) {
+    return "在城里散步我会选河边，风和沿路的灯光都适合慢慢走。";
+  }
+  if (/沮丧|难过|情绪|说说话/iu.test(userMessage)) {
+    return "听起来你今天有些沮丧，我在听，你可以从最难受的那一刻慢慢说起。";
+  }
+  if (/工作|设计|进展|忙什么/iu.test(userMessage)) {
+    return "今天的设计工作主要在整理稿件，进度平稳，也留了一点调整余地。";
+  }
+
+  const anchor = userMessage.trim().slice(0, 80) || "刚才那件事";
+  return /[?？]/u.test(userMessage)
+    ? `关于“${anchor}”，我会按现在已经确认的信息回答，不确定的部分会直说。`
+    : `我听见你说的“${anchor}”了。你愿意的话，我们可以顺着这件事继续聊。`;
+}
+
+function fixtureActivatedGoalTitle(request: LLMRequest): string | undefined {
+  const activatedPersona = promptObjectAfterMarker(
+    request,
+    "ACTIVATED_PERSONA_JSON",
+  );
+  const goals = Array.isArray(activatedPersona["goals"])
+    ? activatedPersona["goals"]
+    : [];
+  const firstGoal = asRecord(goals[0] ?? {});
+  const title = firstGoal["title"];
+  return typeof title === "string" && title.trim() !== ""
+    ? title.trim().slice(0, 160)
+    : undefined;
+}
+
+function promptObjectAfterMarker(
+  request: LLMRequest,
+  marker: string,
+): Record<string, JsonValue> {
+  const root = asRecord(request.payload);
+  if (typeof root.prompt !== "string") return {};
+  const markerLine = marker + "\n";
+  const markerIndex = root.prompt.lastIndexOf(markerLine);
+  if (markerIndex < 0) return {};
+  const jsonLine = root.prompt
+    .slice(markerIndex + markerLine.length)
+    .split("\n", 1)[0];
+  if (jsonLine === undefined) return {};
+  try {
+    return asRecord(JSON.parse(jsonLine) as JsonValue);
+  } catch {
+    return {};
+  }
+}
+
 function repairTurnFixture(): JsonValue {
   const text = "我想去，不过得先确认今晚哪些安排真的能调整，确认后再答复你。";
   return {
@@ -768,6 +973,8 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   plan_schedule: planFixture,
   chat_turn: chatFixture,
   repair_chat_turn: () => repairTurnFixture(),
+  turn_understanding: turnUnderstandingFixture,
+  reply_generation: replyGenerationFixture,
   enrich_activity: enrichFixture,
   compose_proactive_message: proactiveFixture,
   checkpoint_autobiography: checkpointAutobiographyFixture,

@@ -159,11 +159,11 @@ const CATEGORY_KEYWORDS: readonly [RegExp, ScheduleCategory][] = [
     "meal",
   ],
   [
-    /\u8dd1\u6b65|\u6563\u6b65|\u5065\u8eab|\u8fd0\u52a8|\u953b\u70bc|exercise|fitness|workout|jog|run/iu,
+    /\u8dd1\u6b65|\u6563\u6b65|\u8d70\u8d70|\u516c\u56ed.{0,12}\u8d70|\u5065\u8eab|\u8fd0\u52a8|\u953b\u70bc|exercise|fitness|workout|jog|run/iu,
     "exercise",
   ],
   [
-    /\u805a\u4f1a|\u89c1\u9762|\u670b\u53cb|\u793e\u4ea4|\u6d3e\u5bf9|social|party|gather|meet/iu,
+    /\u805a\u4f1a|\u89c1\u9762|\u670b\u53cb|\u793e\u4ea4|\u6d3e\u5bf9|\u559d\u8336|\u8336\u9986|\u559d\u5496\u5561|social|party|gather|meet/iu,
     "social",
   ],
   [

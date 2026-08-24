@@ -13,6 +13,7 @@ import type { CharacterService } from "../services/character-service.js";
 import type { CheckpointService } from "../services/checkpoint-service.js";
 import type { ConversationContinuityService } from "../services/conversation-continuity-service.js";
 import type { ConversationContextService } from "../services/conversation-context-service.js";
+import type { ContextPlanService } from "../services/context-plan-service.js";
 import type { ConversationService } from "../services/conversation-service.js";
 import type { ContinuityIndexService } from "../services/continuity-index-service.js";
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
@@ -26,11 +27,14 @@ import type { PersonalIntentService } from "../services/personal-intent-service.
 import type { PersonalLifeService } from "../services/personal-life-service.js";
 import type { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import type { ReplyRepairService } from "../services/reply-repair-service.js";
+import type { ReplyGenerationService } from "../services/reply-generation-service.js";
 import type { SelfPlanningService } from "../services/self-planning-service.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
 import type { TurnCommitService } from "../services/turn-commit-service.js";
 import type { TurnDecisionService } from "../services/turn-decision-service.js";
+import type { TurnExecutionService } from "../services/turn-execution-service.js";
+import type { TurnUnderstandingService } from "../services/turn-understanding-service.js";
 import type { WorldEffectService } from "../services/world-effect-service.js";
 import type { SseHub } from "../sse/hub.js";
 import type { ServerSimulationBundle } from "./bundles.js";
@@ -46,6 +50,10 @@ export const SERVER_SERVICE_IDS = {
   settlements: "server.settlements",
   conversations: "server.conversations",
   turnDecisions: "server.turn-decisions",
+  turnUnderstandings: "server.turn-understandings",
+  turnExecutions: "server.turn-executions",
+  replyGenerations: "server.reply-generations",
+  contextPlans: "server.context-plans",
   worldEffects: "server.world-effects",
   turnCommits: "server.turn-commits",
   replyRepairs: "server.reply-repairs",
@@ -146,6 +154,18 @@ export const CONVERSATION_SERVICE_TOKEN =
   createServiceToken<ConversationService>(SERVER_SERVICE_IDS.conversations);
 export const TURN_DECISION_SERVICE_TOKEN =
   createServiceToken<TurnDecisionService>(SERVER_SERVICE_IDS.turnDecisions);
+export const TURN_UNDERSTANDING_SERVICE_TOKEN =
+  createServiceToken<TurnUnderstandingService>(
+    SERVER_SERVICE_IDS.turnUnderstandings,
+  );
+export const TURN_EXECUTION_SERVICE_TOKEN =
+  createServiceToken<TurnExecutionService>(SERVER_SERVICE_IDS.turnExecutions);
+export const REPLY_GENERATION_SERVICE_TOKEN =
+  createServiceToken<ReplyGenerationService>(
+    SERVER_SERVICE_IDS.replyGenerations,
+  );
+export const CONTEXT_PLAN_SERVICE_TOKEN =
+  createServiceToken<ContextPlanService>(SERVER_SERVICE_IDS.contextPlans);
 export const WORLD_EFFECT_SERVICE_TOKEN =
   createServiceToken<WorldEffectService>(SERVER_SERVICE_IDS.worldEffects);
 export const TURN_COMMIT_SERVICE_TOKEN = createServiceToken<TurnCommitService>(

@@ -35,11 +35,13 @@ import {
   readMemoryEvidence,
   readRecallCandidateRecords,
 } from "./memory-service.js";
+import { memorySourceCanAuthorizeUserFact } from "./memory-epistemic.js";
 
 export const DEFAULT_MEMORY_RECALL_MINIMUM_SCORE = 0.42;
 const DEFAULT_MEMORY_RECALL_CANDIDATE_LIMIT = 200;
 const DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT = 50;
 const DEFAULT_MEMORY_RECALL_MAX_EVIDENCE = 3;
+const MAX_CANDIDATE_EVIDENCE_IDS = 20;
 
 export type AgentMemoryRecallInput = {
   sessionId?: string;
@@ -191,7 +193,9 @@ function inspectAgentMemoryRecall(
       temporalStatus:
         (memory.temporalMetadata ?? memory.temporal)?.temporalStatus ??
         "unknown",
-      evidenceIds: candidateEvidence.map((item) => item.id),
+      evidenceIds: candidateEvidence
+        .slice(0, MAX_CANDIDATE_EVIDENCE_IDS)
+        .map((item) => item.id),
       score: individual.score,
       selected,
       ...(rejectionReason === undefined ? {} : { rejectionReason }),
@@ -662,7 +666,11 @@ function rejectedEvidenceReason(
   store: DatabaseStore,
   agentId: string,
   evidence: MemoryEvidence,
-): "evidence_source_not_found" | "unsupported_evidence_source" | undefined {
+):
+  | "evidence_source_not_found"
+  | "unsafe_epistemic_source"
+  | "unsupported_evidence_source"
+  | undefined {
   if (evidence.sourceType === "manual") return undefined;
   if (evidence.sourceType === "schedule_event") {
     return "unsupported_evidence_source";
@@ -670,7 +678,9 @@ function rejectedEvidenceReason(
   const source =
     evidence.sourceType === "message"
       ? store.database
-          .prepare("SELECT 1 FROM messages WHERE id = ? AND agent_id = ?")
+          .prepare(
+            "SELECT content, metadata_json FROM messages WHERE id = ? AND agent_id = ?",
+          )
           .get(evidence.sourceId, agentId)
       : evidence.sourceType === "activity_event"
         ? store.database
@@ -683,7 +693,33 @@ function rejectedEvidenceReason(
               "SELECT 1 FROM character_sources WHERE id = ? AND character_id = ?",
             )
             .get(evidence.sourceId, agentId);
-  return source === undefined ? "evidence_source_not_found" : undefined;
+  if (source === undefined) return "evidence_source_not_found";
+  if (evidence.sourceType === "message") {
+    const message = source as { content: string; metadata_json: string };
+    const metadata = parseRecord(message.metadata_json);
+    if (
+      !memorySourceCanAuthorizeUserFact({
+        text: message.content,
+        status: metadata["epistemicStatus"],
+      })
+    ) {
+      return "unsafe_epistemic_source";
+    }
+  }
+  return undefined;
+}
+
+function parseRecord(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 function candidateRejectionReason(

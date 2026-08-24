@@ -37,7 +37,7 @@ const ACCEPTANCE_TIMEZONE = "Asia/Shanghai";
 const UNIQUE_FACT_CODE = "BGW-7419";
 const UNIQUE_FACT_OBJECT = "蓝色玻璃鲸";
 const UNIQUE_FACT_LOCATION = "左口袋";
-const REQUIRED_SEGMENT_IDS = [
+const LEGACY_REQUIRED_SEGMENT_IDS = [
   "01_app_policy",
   "02_character_identity",
   "03_core_persona",
@@ -46,6 +46,56 @@ const REQUIRED_SEGMENT_IDS = [
   "15_reply_strategy",
   "16_user_message",
   "17_output_contract",
+] as const;
+const SPLIT_REQUIRED_SEGMENT_IDS = [
+  "01_app_policy",
+  "02_character_identity",
+  "03_core_persona",
+  "05_boundaries",
+  "08_runtime_state",
+  "10_current_time",
+  "15_reply_strategy",
+  "16_user_message",
+  "16a_validated_turn_outcome",
+  "17_output_contract",
+] as const;
+const MODEL_UNDERSTANDING_ORIGINS = new Set(["model_valid", "model_partial"]);
+const TECHNICAL_FALLBACK_LANGUAGE =
+  /(?:未(?:修改|写入|变更|更新).{0,8}(?:日程|安排)|结构化(?:日程|输出)|日程(?:动作|保持不变)|(?:模型|系统).{0,12}(?:动作|字段|输出|解析|校验)|(?:解析|校验).{0,8}失败|(?:内部|技术).{0,6}(?:错误|失败)|internal error|structured[_ -]?output|schema|json|fallback|turn[_ -]?understanding|reply[_ -]?generation|scheduleOutcome|reasonCode)/iu;
+const SAFE_ASSISTANT_METADATA_KEYS = [
+  "chunks",
+  "deliveryMode",
+  "toneTags",
+  "reasonCode",
+  "reasonSummary",
+  "repairAttempted",
+  "usedFallback",
+  "replyIssueCodes",
+  "decisionPath",
+  "rejectedProposalCount",
+  "proposalRejectionCodes",
+  "scheduleActionAudit",
+  "memoryRecall",
+  "promptSegmentTrace",
+  "turnPipelineShadow",
+  "contextPlan",
+  "temporalQueryResolution",
+  "continuityPromptCueIds",
+  "turnPipelineMode",
+  "turnRoute",
+  "understandingOrigin",
+  "observationConfidence",
+  "observationRejectedFields",
+  "scheduleOutcomeKind",
+  "scheduleOutcome",
+  "acceptedEffectKinds",
+  "acceptedEffectCount",
+  "worldEffectsMode",
+  "worldEffectsWritesEnabled",
+  "worldEffectsApplied",
+  "replyMutationAuthorization",
+  "turnTopics",
+  "topicKeys",
 ] as const;
 
 const PromptSegmentTraceSchema = z
@@ -73,7 +123,7 @@ const PromptAssemblyTraceSchema = z
   })
   .strict();
 
-const LlmCallSchema = z
+export const LlmCallSchema = z
   .object({
     id: z.string().min(1),
     agentId: z.string().nullable().optional(),
@@ -82,12 +132,71 @@ const LlmCallSchema = z
     model: z.string().min(1),
     inputTokens: z.number().int().nonnegative(),
     outputTokens: z.number().int().nonnegative(),
+    providerInputTokens: z.number().int().nonnegative().optional(),
+    providerOutputTokens: z.number().int().nonnegative().optional(),
+    usageSource: z.enum(["provider", "estimated"]).optional(),
+    attemptCount: z.number().int().nonnegative().optional(),
+    failedAttemptCount: z.number().int().nonnegative().optional(),
+    providerInputUsageAttemptCount: z.number().int().nonnegative().optional(),
+    providerOutputUsageAttemptCount: z.number().int().nonnegative().optional(),
+    attemptTelemetrySource: z.enum(["exact", "inferred"]).optional(),
     latencyMs: z.number().int().nonnegative(),
     success: z.boolean(),
     errorCode: z.string().nullable().optional(),
     createdAtUtc: z.string().min(1),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((call, context) => {
+    const attemptCount = call.attemptCount;
+    const failedAttemptCount = call.failedAttemptCount;
+    if (
+      attemptCount !== undefined &&
+      failedAttemptCount !== undefined &&
+      failedAttemptCount > attemptCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["failedAttemptCount"],
+        message: "failedAttemptCount must not exceed attemptCount",
+      });
+    }
+    for (const field of [
+      "providerInputUsageAttemptCount",
+      "providerOutputUsageAttemptCount",
+    ] as const) {
+      const coveredAttempts = call[field];
+      if (
+        coveredAttempts !== undefined &&
+        attemptCount !== undefined &&
+        coveredAttempts > attemptCount
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${field} must not exceed attemptCount`,
+        });
+      }
+    }
+    if (call.attemptTelemetrySource !== "exact") return;
+    if (attemptCount === undefined || failedAttemptCount === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["attemptTelemetrySource"],
+        message: "exact attempt telemetry requires both attempt counters",
+      });
+      return;
+    }
+    const exactOutcomeAligned = call.success
+      ? attemptCount >= 1 && failedAttemptCount < attemptCount
+      : failedAttemptCount === attemptCount;
+    if (!exactOutcomeAligned) {
+      context.addIssue({
+        code: "custom",
+        path: ["attemptTelemetrySource"],
+        message: "exact attempt telemetry contradicts the logical outcome",
+      });
+    }
+  });
 
 const LlmCallsResponseSchema = z.object({
   calls: z.array(LlmCallSchema).max(500),
@@ -106,6 +215,19 @@ const RejectedProposalsResponseSchema = z.object({
 });
 
 export type LlmCallRecord = z.infer<typeof LlmCallSchema>;
+
+function hasCompleteProviderUsage(call: LlmCallRecord): boolean {
+  return (
+    call.usageSource === "provider" &&
+    call.attemptTelemetrySource === "exact" &&
+    call.attemptCount !== undefined &&
+    call.attemptCount >= 1 &&
+    call.providerInputUsageAttemptCount === call.attemptCount &&
+    call.providerOutputUsageAttemptCount === call.attemptCount &&
+    call.providerInputTokens !== undefined &&
+    call.providerOutputTokens !== undefined
+  );
+}
 export type RetrievalRunRecord = RetrievalRun;
 export type RejectedProposalRecord = z.infer<typeof RejectedProposalSchema>;
 
@@ -188,6 +310,8 @@ export interface DeepSeekAcceptanceResult {
     clockMode: string;
     flags: {
       chatEffectsMode: string;
+      turnPipelineMode: string;
+      personaContextMode: string;
       scheduleNegotiationMode: string;
       selfInitiatedPlanningMode: string;
       liveWorldEffectsMode: string;
@@ -424,6 +548,8 @@ export async function runDeepSeekAcceptance(
     seedDemo: false,
     developerRoutes: true,
     chatEffectsMode: "gated",
+    turnPipelineMode: "enforced",
+    personaContextMode: "enforced",
     scheduleNegotiationMode: "enforced",
     selfInitiatedPlanningMode: "enforced",
     liveWorldEffectsMode: "enforced",
@@ -480,6 +606,8 @@ export async function runDeepSeekAcceptance(
       clockMode: config.clockMode,
       flags: {
         chatEffectsMode: config.chatEffectsMode,
+        turnPipelineMode: config.turnPipelineMode,
+        personaContextMode: config.personaContextMode,
         scheduleNegotiationMode: config.scheduleNegotiationMode,
         selfInitiatedPlanningMode: config.selfInitiatedPlanningMode,
         liveWorldEffectsMode: config.liveWorldEffectsMode,
@@ -571,7 +699,21 @@ export async function runDeepSeekAcceptance(
     let sessionId = firstSession.data.session.id;
     const plans = buildTurnPlans(result.sharedSlot);
 
-    for (const [index, plan] of plans.entries()) {
+    for (const [index, initialPlan] of plans.entries()) {
+      let plan = initialPlan;
+      if (index === 2) {
+        // A normal non-schedule turn may commit a self-initiated plan after
+        // the publish response was produced. Revalidate against the current
+        // authoritative store immediately before sending the invitation so
+        // the acceptance scenario never relies on that stale response.
+        result.sharedSlot = revalidateSharedSlot(
+          result.sharedSlot,
+          app.personasim.store.listSchedule(agentId),
+          startedAt,
+          ACCEPTANCE_TIMEZONE,
+        );
+        plan = buildTurnPlans(result.sharedSlot)[index]!;
+      }
       if (plan.startedNewSession) {
         const nextSession = await createSession(
           origin,
@@ -787,17 +929,32 @@ export function selectSharedSlot(
     21,
   ];
   for (let dayOffset = 1; dayOffset <= 3; dayOffset += 1) {
-    for (const hour of candidateHours) {
-      const start = localNow
-        .plus({ days: dayOffset })
-        .set({ hour, minute: 30, second: 0, millisecond: 0 });
+    const day = localNow
+      .plus({ days: dayOffset })
+      .set({ second: 0, millisecond: 0 });
+    const preferredStarts = candidateHours.map((hour) =>
+      day.set({ hour, minute: 30 }),
+    );
+    const fallbackStarts = Array.from(
+      { length: Math.floor((21 * 60 + 30 - (7 * 60 + 30)) / 5) + 1 },
+      (_, index) => {
+        const minuteOfDay = 7 * 60 + 30 + index * 5;
+        return day.set({
+          hour: Math.floor(minuteOfDay / 60),
+          minute: minuteOfDay % 60,
+        });
+      },
+    );
+    const seenStarts = new Set<string>();
+    for (const start of [...preferredStarts, ...fallbackStarts]) {
+      const startKey = start.toUTC().toISO();
+      if (startKey === null || seenStarts.has(startKey)) continue;
+      seenStarts.add(startKey);
       const end = start.plus({ minutes: durationMinutes });
       if (start <= localNow || end > horizonEnd) continue;
-      const overlaps = schedule.some((item) => {
-        const itemStart = DateTime.fromISO(item.startAtUtc);
-        const itemEnd = DateTime.fromISO(item.endAtUtc);
-        return start.toUTC() < itemEnd && end.toUTC() > itemStart;
-      });
+      const overlaps = schedule.some((item) =>
+        intervalsOverlap(start.toUTC(), end.toUTC(), item),
+      );
       if (overlaps) continue;
       return {
         startAtUtc: start.toUTC().toISO()!,
@@ -807,7 +964,47 @@ export function selectSharedSlot(
     }
   }
   throw new Error(
-    "No 45-minute 07:30-22:15 gap exists in the published 72h plan.",
+    "No 45-minute 07:30-22:15 gap exists in the authoritative 72h plan.",
+  );
+}
+
+export function revalidateSharedSlot(
+  proposedSlot: DeepSeekAcceptanceResult["sharedSlot"],
+  authoritativeSchedule: readonly ScheduleItem[],
+  now: Date,
+  timezone: string,
+): NonNullable<DeepSeekAcceptanceResult["sharedSlot"]> {
+  if (proposedSlot === undefined) {
+    return selectSharedSlot(authoritativeSchedule, now, timezone);
+  }
+
+  const localNow = DateTime.fromJSDate(now).setZone(timezone);
+  const horizonEnd = localNow.plus({ hours: 72 }).toUTC();
+  const start = DateTime.fromISO(proposedSlot.startAtUtc).toUTC();
+  const end = DateTime.fromISO(proposedSlot.endAtUtc).toUTC();
+  const remainsUsable =
+    start.isValid &&
+    end.isValid &&
+    start > localNow.toUTC() &&
+    end <= horizonEnd &&
+    end.diff(start, "minutes").minutes === 45 &&
+    !authoritativeSchedule.some((item) => intervalsOverlap(start, end, item));
+
+  return remainsUsable
+    ? proposedSlot
+    : selectSharedSlot(authoritativeSchedule, now, timezone);
+}
+
+function intervalsOverlap(
+  start: DateTime,
+  end: DateTime,
+  item: ScheduleItem,
+): boolean {
+  if (item.status === "cancelled") return false;
+  const itemStart = DateTime.fromISO(item.startAtUtc).toUTC();
+  const itemEnd = DateTime.fromISO(item.endAtUtc).toUTC();
+  return (
+    itemStart.isValid && itemEnd.isValid && start < itemEnd && end > itemStart
   );
 }
 
@@ -1212,6 +1409,57 @@ function scheduleActionAuditLabel(
   return `${origin}:${kind}`;
 }
 
+function splitScheduleObservationAligned(
+  turn: AcceptanceTurn | undefined,
+  expectedIntentKind: string,
+  expectedOutcomeKind: string,
+): boolean {
+  if (turn === undefined) return false;
+  const route = metadataString(turn.persistedContract, "turnRoute");
+  const outcomeKind = metadataString(
+    turn.persistedContract,
+    "scheduleOutcomeKind",
+  );
+  const understandingEvents = turn.domainEvents.filter(
+    (event) =>
+      event.eventType === "conversation.turn_understanding_resolved" &&
+      event.correlationId === turn.clientMessageId &&
+      event.causationId === turn.userMessageId &&
+      isRecord(event.payload),
+  );
+  const understandingPayload = understandingEvents[0]?.payload;
+  return (
+    turn.persistedContract["turnPipelineMode"] === "enforced" &&
+    (route === "schedule_mutation" || route === "mixed") &&
+    outcomeKind === expectedOutcomeKind &&
+    understandingEvents.length === 1 &&
+    isRecord(understandingPayload) &&
+    understandingPayload["scheduleIntentKind"] === expectedIntentKind
+  );
+}
+
+function scheduleTurnContractLabel(
+  turn: AcceptanceTurn | undefined,
+  legacyAudit: Record<string, unknown> | undefined,
+  splitPipelineEnforced: boolean,
+): string {
+  if (!splitPipelineEnforced) return scheduleActionAuditLabel(legacyAudit);
+  if (turn === undefined) return "split:missing";
+  const intentEvent = turn.domainEvents.find(
+    (event) =>
+      event.eventType === "conversation.turn_understanding_resolved" &&
+      event.correlationId === turn.clientMessageId &&
+      isRecord(event.payload),
+  );
+  const intentValue = isRecord(intentEvent?.payload)
+    ? intentEvent.payload["scheduleIntentKind"]
+    : undefined;
+  const intent = typeof intentValue === "string" ? intentValue : "missing";
+  return `split:${intent}:${
+    metadataString(turn.persistedContract, "scheduleOutcomeKind") || "missing"
+  }`;
+}
+
 export function containsCompleteAnchor(value: unknown): boolean {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   const contradictsIdentity =
@@ -1353,6 +1601,83 @@ export function evaluateDeepSeekAcceptance(
   const chatCalls = result.llmCalls.filter(
     (call) => call.purpose === "chat_turn",
   );
+  const understandingCalls = result.llmCalls.filter(
+    (call) => call.purpose === "turn_understanding",
+  );
+  const replyGenerationCalls = result.llmCalls.filter(
+    (call) => call.purpose === "reply_generation",
+  );
+  const requiredSegmentIds =
+    result.config.flags.turnPipelineMode === "enforced"
+      ? SPLIT_REQUIRED_SEGMENT_IDS
+      : LEGACY_REQUIRED_SEGMENT_IDS;
+  const modelUnderstandingTurns = turns.filter((turn) =>
+    MODEL_UNDERSTANDING_ORIGINS.has(
+      metadataString(turn.persistedContract, "understandingOrigin"),
+    ),
+  ).length;
+  const fallbackUnderstandingTurns = turns.filter(
+    (turn) =>
+      metadataString(turn.persistedContract, "understandingOrigin") ===
+      "fallback",
+  ).length;
+  const successfulUnderstandingCalls = understandingCalls.filter(
+    (call) => call.success,
+  ).length;
+  const failedUnderstandingCalls =
+    understandingCalls.length - successfulUnderstandingCalls;
+  const perTurnSplitCallAudit = turns.every((turn) => {
+    const origin = metadataString(
+      turn.persistedContract,
+      "understandingOrigin",
+    );
+    const turnUnderstandingCalls = turn.llmCalls.filter(
+      (call) => call.purpose === "turn_understanding",
+    );
+    const turnReplyCalls = turn.llmCalls.filter(
+      (call) => call.purpose === "reply_generation",
+    );
+    const turnLegacyCalls = turn.llmCalls.filter(
+      (call) => call.purpose === "chat_turn",
+    );
+    const understandingAligned = MODEL_UNDERSTANDING_ORIGINS.has(origin)
+      ? turnUnderstandingCalls.length === 1 &&
+        turnUnderstandingCalls[0]?.success === true
+      : origin === "deterministic"
+        ? turnUnderstandingCalls.length === 0
+        : origin === "fallback"
+          ? turnUnderstandingCalls.length === 1 &&
+            turnUnderstandingCalls[0]?.success === false
+          : false;
+    return (
+      turnReplyCalls.length === 1 &&
+      turnLegacyCalls.length === 0 &&
+      understandingAligned
+    );
+  });
+  const nonScheduleTurns = turns.slice(0, 2);
+  const nonScheduleIsolated =
+    nonScheduleTurns.length === 2 &&
+    nonScheduleTurns.every((turn) => {
+      const route = metadataString(turn.persistedContract, "turnRoute");
+      const reasonCode = metadataString(turn.persistedContract, "reasonCode");
+      return (
+        turn.scheduleChanges.length === 0 &&
+        turn.persistedContract["scheduleOutcomeKind"] === "none" &&
+        route.length > 0 &&
+        route !== "schedule_query" &&
+        route !== "schedule_mutation" &&
+        !reasonCode.startsWith("schedule_negotiation_") &&
+        turn.persistence.scheduleNegotiations.length === 0 &&
+        turn.persistence.sharedScheduleItems.length === 0 &&
+        !TECHNICAL_FALLBACK_LANGUAGE.test(turn.assistantText) &&
+        !turn.domainEvents.some(
+          (event) =>
+            event.eventType.startsWith("schedule.negotiation_") ||
+            event.eventType === "schedule.command_committed",
+        )
+      );
+    });
   const anchorPersistence = anchoredMemoryPersistence(firstTurn);
   const worldEffectAccepted = acceptedAnchorWorldEffect(firstTurn);
   const persistedCareCueIds =
@@ -1379,9 +1704,16 @@ export function evaluateDeepSeekAcceptance(
   const invitationScheduleAudit = isRecord(invitationScheduleAuditValue)
     ? invitationScheduleAuditValue
     : undefined;
-  const invitationModelContractAligned =
-    invitationScheduleAudit?.["origin"] === "model_explicit_valid" &&
-    invitationScheduleAudit["kind"] === "accept_user_offer";
+  const splitPipelineEnforced =
+    result.config.flags.turnPipelineMode === "enforced";
+  const invitationTurnContractAligned = splitPipelineEnforced
+    ? splitScheduleObservationAligned(
+        invitationTurn,
+        "create_shared_activity",
+        "pending_confirmation",
+      )
+    : invitationScheduleAudit?.["origin"] === "model_explicit_valid" &&
+      invitationScheduleAudit["kind"] === "accept_user_offer";
   const pendingNegotiation =
     invitationTurn?.persistence.scheduleNegotiations.find(
       (item) =>
@@ -1464,9 +1796,14 @@ export function evaluateDeepSeekAcceptance(
   const confirmationScheduleAudit = isRecord(confirmationScheduleAuditValue)
     ? confirmationScheduleAuditValue
     : undefined;
-  const confirmationModelContractAligned =
-    confirmationScheduleAudit?.["origin"] === "model_explicit_valid" &&
-    confirmationScheduleAudit["kind"] === "accept_pending_offer";
+  const confirmationTurnContractAligned = splitPipelineEnforced
+    ? splitScheduleObservationAligned(
+        confirmationTurn,
+        "confirm_pending_offer",
+        "committed",
+      )
+    : confirmationScheduleAudit?.["origin"] === "model_explicit_valid" &&
+      confirmationScheduleAudit["kind"] === "accept_pending_offer";
   const scheduleCommandEvents =
     confirmationTurn?.domainEvents.filter(
       (event) =>
@@ -1544,7 +1881,74 @@ export function evaluateDeepSeekAcceptance(
     matchedScheduleItem,
     result.startedAtUtc,
   );
+  const objectiveReplyChecks = [
+    firstTurn !== undefined &&
+      (firstTurn.assistantText.includes(UNIQUE_FACT_CODE) ||
+        /面谈|紧张|安慰|建议/u.test(firstTurn.assistantText)),
+    careTurn !== undefined &&
+      /面谈|紧张|感受|理解|陪/u.test(careTurn.assistantText) &&
+      /十\s*分钟|10\s*分钟/u.test(careTurn.assistantText),
+    invitationTurn !== undefined &&
+      /北岸书店/u.test(invitationTurn.assistantText) &&
+      /茶/u.test(invitationTurn.assistantText) &&
+      /待.{0,4}确认|等.{0,4}(?:你)?确认|确认.{0,8}(?:后|再)|还没.{0,8}(?:日程|安排)|先.{0,8}(?:待定|保留)/u.test(
+        invitationTurn.assistantText,
+      ),
+    confirmationTurn !== undefined &&
+      /北岸书店|喝茶/u.test(confirmationTurn.assistantText) &&
+      /确认|约定|约好|说定|安排|到时候见/u.test(confirmationTurn.assistantText),
+    finalTurn !== undefined && crossSessionReply && crossSessionScheduleReply,
+  ];
+  const objectiveReplyAligned =
+    turns.length >= 5 && objectiveReplyChecks.every(Boolean);
   const assertions: AcceptanceAssertion[] = [
+    {
+      id: "non_schedule_isolation",
+      description: "记忆与关怀轮不会进入日程协商或输出日程技术文案",
+      passed: nonScheduleIsolated,
+      evidence: `checked=${nonScheduleTurns.length}, routes=${nonScheduleTurns.map((turn) => metadataString(turn.persistedContract, "turnRoute") || "missing").join(",")}, isolated=${String(nonScheduleIsolated)}`,
+    },
+    {
+      id: "objective_reply_alignment",
+      description: "每轮回复回应当前用户目标，而非只满足结构化契约",
+      passed: objectiveReplyAligned,
+      evidence: `turns=${objectiveReplyChecks.map((passed, index) => `t${index + 1}:${String(passed)}`).join(",")}`,
+    },
+    {
+      id: "reply_mutation_independence",
+      description: "持久化审计明确表明回复文本不参与 mutation 授权",
+      passed:
+        turns.length >= 5 &&
+        turns.every(
+          (turn) =>
+            turn.persistedContract["replyMutationAuthorization"] === "disabled",
+        ),
+      evidence: `disabled=${turns.filter((turn) => turn.persistedContract["replyMutationAuthorization"] === "disabled").length}/${turns.length}`,
+    },
+    {
+      id: "split_call_audit",
+      description:
+        "enforced 模式只审计 turn_understanding 与 reply_generation，不调用 legacy chat_turn",
+      passed:
+        result.config.flags.turnPipelineMode === "enforced" &&
+        turns.length >= 5 &&
+        chatCalls.length === 0 &&
+        replyGenerationCalls.length === turns.length &&
+        successfulUnderstandingCalls === modelUnderstandingTurns &&
+        failedUnderstandingCalls === fallbackUnderstandingTurns &&
+        perTurnSplitCallAudit,
+      evidence: `mode=${result.config.flags.turnPipelineMode}, turn_understanding=${understandingCalls.length} (${successfulUnderstandingCalls} successful/${failedUnderstandingCalls} failed), model_origin_turns=${modelUnderstandingTurns}, fallback_turns=${fallbackUnderstandingTurns}, reply_generation=${replyGenerationCalls.length}/${turns.length}, chat_turn=${chatCalls.length}, per_turn=${String(perTurnSplitCallAudit)}`,
+    },
+    {
+      id: "no_technical_fallback_language",
+      description: "所有角色回复均不暴露 schema、模型输出或日程内部技术文案",
+      passed:
+        turns.length >= 5 &&
+        turns.every(
+          (turn) => !TECHNICAL_FALLBACK_LANGUAGE.test(turn.assistantText),
+        ),
+      evidence: `clean=${turns.filter((turn) => !TECHNICAL_FALLBACK_LANGUAGE.test(turn.assistantText)).length}/${turns.length}`,
+    },
     {
       id: "real_http",
       description: "所有主流程经 app.listen 暴露的真实 HTTP 端口完成",
@@ -1597,7 +2001,7 @@ export function evaluateDeepSeekAcceptance(
             turn.promptSegmentTrace.estimatedInputTokens > 0 &&
             turn.promptSegmentTrace.estimatedInputTokens <=
               result.config.promptTokenBudget &&
-            REQUIRED_SEGMENT_IDS.every((id) =>
+            requiredSegmentIds.every((id) =>
               traceIncludes(turn.promptSegmentTrace, id, true),
             ),
         ),
@@ -1607,7 +2011,8 @@ export function evaluateDeepSeekAcceptance(
             (turn) =>
               `t${turn.number}=${turn.promptSegmentTrace.estimatedInputTokens}`,
           )
-          .join(", ") + `; budget=${result.config.promptTokenBudget}`,
+          .join(", ") +
+        `; mode=${result.config.flags.turnPipelineMode}; required=${requiredSegmentIds.join(",")}; budget=${result.config.promptTokenBudget}`,
     },
     {
       id: "memory_world_effect",
@@ -1625,10 +2030,10 @@ export function evaluateDeepSeekAcceptance(
     {
       id: "shared_schedule",
       description:
-        "模型显式输出两阶段日程契约；邀请轮零写入，确认轮由服务器恰好提交一项",
+        "权威理解产生两阶段日程契约；邀请轮零写入，确认轮由服务器恰好提交一项",
       passed:
-        invitationModelContractAligned &&
-        confirmationModelContractAligned &&
+        invitationTurnContractAligned &&
+        confirmationTurnContractAligned &&
         pendingOfferAligned &&
         offerPresentationAligned &&
         invitationHasNoScheduleWrite &&
@@ -1636,7 +2041,7 @@ export function evaluateDeepSeekAcceptance(
         scheduleCommandAligned &&
         confirmationAtomicWrite &&
         scheduledSlotAligned,
-      evidence: `invitation_action=${scheduleActionAuditLabel(invitationScheduleAudit)}, confirmation_action=${scheduleActionAuditLabel(confirmationScheduleAudit)}, negotiation_id=${isRecord(committedNegotiation) ? String(committedNegotiation["id"]) : "none"}, pending_offer_aligned=${String(pendingOfferAligned)}, offer_event_aligned=${String(offerPresentationAligned)}, invitation_zero_write=${String(invitationHasNoScheduleWrite)}, command_ids_aligned=${String(scheduleCommandAligned)}, confirmation_exactly_one=${String(confirmationAtomicWrite)}, item_id=${matchedScheduleItem?.id ?? "none"}, title=${matchedScheduleItem?.title ?? "none"}, exact_slot_and_semantics=${String(scheduledSlotAligned)}`,
+      evidence: `mode=${result.config.flags.turnPipelineMode}, invitation_contract=${scheduleTurnContractLabel(invitationTurn, invitationScheduleAudit, splitPipelineEnforced)}, confirmation_contract=${scheduleTurnContractLabel(confirmationTurn, confirmationScheduleAudit, splitPipelineEnforced)}, negotiation_id=${isRecord(committedNegotiation) ? String(committedNegotiation["id"]) : "none"}, pending_offer_aligned=${String(pendingOfferAligned)}, offer_event_aligned=${String(offerPresentationAligned)}, invitation_zero_write=${String(invitationHasNoScheduleWrite)}, command_ids_aligned=${String(scheduleCommandAligned)}, confirmation_exactly_one=${String(confirmationAtomicWrite)}, item_id=${matchedScheduleItem?.id ?? "none"}, title=${matchedScheduleItem?.title ?? "none"}, exact_slot_and_semantics=${String(scheduledSlotAligned)}`,
     },
     {
       id: "cross_session_recall",
@@ -1656,15 +2061,18 @@ export function evaluateDeepSeekAcceptance(
       description: "真实 DeepSeek LLM 调用可审计且全部成功",
       passed:
         compiledByModel &&
-        chatCalls.length >= 5 &&
+        chatCalls.length === 0 &&
+        replyGenerationCalls.length === turns.length &&
+        turns.length >= 5 &&
         result.llmCalls.length > 0 &&
         result.llmCalls.every(
           (call) =>
             call.success &&
             call.provider === "openai-compatible" &&
-            call.model === result.config.model,
+            call.model === result.config.model &&
+            hasCompleteProviderUsage(call),
         ),
-      evidence: `total=${result.llmCalls.length}, chat_turn=${chatCalls.length}, failures=${result.llmCalls.filter((call) => !call.success).length}`,
+      evidence: `total=${result.llmCalls.length}, turn_understanding=${understandingCalls.length}, reply_generation=${replyGenerationCalls.length}, chat_turn=${chatCalls.length}, failures=${result.llmCalls.filter((call) => !call.success).length}, incomplete_provider_usage=${result.llmCalls.filter((call) => !hasCompleteProviderUsage(call)).length}`,
     },
   ];
   return assertions;
@@ -1788,7 +2196,7 @@ export function renderDeepSeekAcceptanceReport(
       jsonDetails(
         "Persisted assistant contract / metadata",
         {
-          message: turn.persistedAssistant,
+          message: persistedAssistantForReport(turn.persistedAssistant),
           contractErrors: turn.contractErrors,
         },
         secrets,
@@ -1892,11 +2300,51 @@ export function renderDeepSeekAcceptanceReport(
     "",
     "- 报告只记录应用侧 LLM call 元数据（purpose、tokens、latency、success），不会记录 API key 或 Authorization。",
     "- Prompt 只保留 promptSegmentTrace 的段 ID、预算和大小；不会把完整系统 Prompt 写入报告。",
+    "- Assistant metadata 使用固定字段 allowlist；未知字段（包括潜在 raw prompt/output）不会进入报告。",
     "- StructuredOutputError 只保留固定 name/code、截断后的 schema issues 与 requestId 路由关联；不保存 raw output、system prompt、secret、cause 或 stack。",
     "- worldEffects、continuity 和 schedule 结论来自服务器验证后的持久化记录、domain events 与严格 response contract，不以自然语言回复自行推断。",
     "",
   );
   return lines.join("\n");
+}
+
+function persistedAssistantForReport(
+  persisted: ApiStoredMessage,
+): Record<string, unknown> {
+  const metadataRecord = isRecord(persisted.metadata) ? persisted.metadata : {};
+  const safeMetadata: Record<string, unknown> = {};
+  for (const key of SAFE_ASSISTANT_METADATA_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(metadataRecord, key)) {
+      safeMetadata[key] = metadataRecord[key];
+    }
+  }
+  return {
+    id: persisted.id,
+    sessionId: persisted.sessionId,
+    agentId: persisted.agentId,
+    role: persisted.role,
+    content: persisted.content,
+    messageKind: persisted.messageKind,
+    ...(persisted.triggerEventId === undefined
+      ? {}
+      : { triggerEventId: persisted.triggerEventId }),
+    ...(persisted.clientMessageId === undefined
+      ? {}
+      : { clientMessageId: persisted.clientMessageId }),
+    ...(persisted.inReplyToMessageId === undefined
+      ? {}
+      : { inReplyToMessageId: persisted.inReplyToMessageId }),
+    metadata: safeMetadata,
+    createdAtUtc: persisted.createdAtUtc,
+  };
+}
+
+function metadataString(
+  metadata: Readonly<Record<string, unknown>>,
+  key: string,
+): string {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
 }
 
 function stringArray(value: unknown): string[] {
@@ -1949,15 +2397,15 @@ function renderPromptTrace(trace: PromptAssemblyTrace): string[] {
 function renderLlmCallTable(calls: readonly LlmCallRecord[]): string[] {
   if (calls.length === 0) return ["_No LLM calls recorded._"];
   return [
-    "| Time | Purpose | Provider / model | Tokens in / out | Latency | Success | Error |",
-    "| --- | --- | --- | --- | --- | --- | --- |",
+    "| Time | Purpose | Provider / model | Attempts / failed | Estimated in / out | Provider actual in / out | Usage-covered attempts in / out | Attempt source | Latency | Success | Error |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...[...calls]
       .sort((left, right) =>
         left.createdAtUtc.localeCompare(right.createdAtUtc),
       )
       .map(
         (call) =>
-          `| ${escapeTable(call.createdAtUtc)} | ${escapeTable(call.purpose)} | ${escapeTable(call.provider)} / ${escapeTable(call.model)} | ${call.inputTokens} / ${call.outputTokens} | ${call.latencyMs} ms | ${String(call.success)} | ${escapeTable(call.errorCode ?? "")} |`,
+          `| ${escapeTable(call.createdAtUtc)} | ${escapeTable(call.purpose)} | ${escapeTable(call.provider)} / ${escapeTable(call.model)} | ${String(call.attemptCount ?? 1)} / ${String(call.failedAttemptCount ?? (call.success ? 0 : (call.attemptCount ?? 1)))} | ${call.inputTokens} / ${call.outputTokens} | ${call.providerInputTokens ?? "—"} / ${call.providerOutputTokens ?? "—"} | ${call.providerInputUsageAttemptCount ?? "—"} / ${call.providerOutputUsageAttemptCount ?? "—"} | ${call.attemptTelemetrySource ?? "unknown"} | ${call.latencyMs} ms | ${String(call.success)} | ${escapeTable(call.errorCode ?? "")} |`,
       ),
   ];
 }

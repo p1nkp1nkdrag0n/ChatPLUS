@@ -3,6 +3,7 @@ export * from "./autobiography.js";
 export * from "./calendar.js";
 export * from "./character.js";
 export * from "./checkpoint.js";
+export * from "./context-plan.js";
 export * from "./event-card.js";
 export * from "./events.js";
 export * from "./follow-up.js";
@@ -26,6 +27,7 @@ export * from "./settings.js";
 export * from "./simulation.js";
 export * from "./state.js";
 export * from "./turn.js";
+export * from "./turn-understanding.js";
 export * from "./temporal.js";
 
 // Conventional camel-case aliases used at runtime by Fastify feature modules.

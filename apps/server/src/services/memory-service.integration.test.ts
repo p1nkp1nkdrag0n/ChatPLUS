@@ -9,11 +9,15 @@ import {
 import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore } from "../db/store.js";
+import { FakeClock } from "../runtime/clock.js";
+import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
+import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
 import {
   previewAgentMemoryRecall,
   recallAgentMemories,
 } from "./memory-recall-service.js";
 import {
+  preflightMemoryCandidates,
   readActiveMemoryRecords,
   readMemoryEvidence,
   validateMergeAndPersistMemories,
@@ -248,6 +252,297 @@ describe("memory service evidence integration", () => {
     ]);
   });
 
+  it("preflights a pending turn message with the same grounding used by persistence", () => {
+    const pendingMessageId = "message-memory-pending-user";
+    const grounded = stableUserCandidate();
+    const ungrounded = stableUserCandidate({
+      content: "The user has a cat named Moon.",
+      tags: ["pet", "cat"],
+    });
+
+    const preflight = preflightMemoryCandidates({
+      store,
+      agentId: AGENT_ID,
+      candidates: [grounded, ungrounded],
+      nowUtc: NOW,
+      maxCandidates: 2,
+      authoritativeMessageId: pendingMessageId,
+      authoritativeMessage: {
+        id: pendingMessageId,
+        role: "user",
+        content: "I am vegetarian and prefer simple meals.",
+        createdAtUtc: MESSAGE_TIME,
+      },
+    });
+
+    expect(preflight.accepted).toHaveLength(1);
+    expect(preflight.accepted[0]).toMatchObject({
+      content: grounded.content,
+      sourceMessageIds: [pendingMessageId],
+      evidence: [
+        expect.objectContaining({
+          sourceType: "message",
+          sourceId: pendingMessageId,
+          quote: "I am vegetarian and prefer simple meals.",
+        }),
+      ],
+    });
+    expect(preflight.rejections).toEqual([
+      expect.objectContaining({
+        index: 1,
+        reasonCode: "ungrounded_memory_candidate",
+      }),
+    ]);
+    expect(readActiveMemoryRecords(store, AGENT_ID, NOW)).toEqual([]);
+
+    insertMessage(
+      database,
+      pendingMessageId,
+      "user",
+      "I am vegetarian and prefer simple meals.",
+    );
+    const persisted = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: preflight.accepted,
+      nowUtc: NOW,
+      maxCandidates: 2,
+      authoritativeMessageId: pendingMessageId,
+    });
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.content).toBe(grounded.content);
+  });
+
+  it("assigns one stable claim identity and supersedes an explicit correction", () => {
+    const originalMessageId = "message-memory-cilantro-original";
+    insertMessage(database, originalMessageId, "user", "我通常不吃香菜。", NOW);
+    const [original] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "我通常不吃香菜",
+          tags: ["user_preference", "food", "cilantro"],
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: originalMessageId,
+    });
+    expect(original?.claim?.subjectKey).toBe("user.preference.food.cilantro");
+
+    const correctionMessageId = "message-memory-cilantro-correction";
+    insertMessage(
+      database,
+      correctionMessageId,
+      "user",
+      "我纠正一下：前面说我不吃香菜太绝对了。准确说法是，我可以接受少量香菜，但不喜欢整把香菜。",
+      NOW,
+    );
+    const [correction] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "我可以接受少量香菜，但不喜欢整把香菜",
+          tags: ["user_preference", "food", "cilantro"],
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: correctionMessageId,
+    });
+    expect(correction?.claim?.subjectKey).toBe(original?.claim?.subjectKey);
+    expect(correction?.tags).toContain("correction");
+
+    const lifecycle = new MemoryLifecycleService(
+      new ContinuityMemoryRepository(store),
+      new FakeClock(NOW),
+    );
+    const [result] = lifecycle.reconcileNewMemories(
+      AGENT_ID,
+      [correction?.id ?? "missing"],
+      {
+        correlationId: "client-cilantro-correction",
+        causationId: correctionMessageId,
+      },
+    );
+    expect(result?.replayed).toBe(false);
+    expect(result?.reconciliation.kind).toBe("supersede");
+    expect(result?.changedMemoryIds).toEqual([original?.id]);
+
+    expect(readActiveMemoryRecords(store, AGENT_ID, NOW)).toEqual([
+      expect.objectContaining({
+        id: correction?.id,
+        content: "我可以接受少量香菜，但不喜欢整把香菜",
+      }),
+    ]);
+    expect(
+      database
+        .prepare("SELECT status, superseded_by_id FROM memories WHERE id = ?")
+        .get(original?.id),
+    ).toEqual({ status: "superseded", superseded_by_id: correction?.id });
+    expect(
+      database
+        .prepare(
+          "SELECT correlation_id, causation_id FROM domain_events WHERE event_type = 'memory.claim.supersede'",
+        )
+        .get(),
+    ).toEqual({
+      correlation_id: "client-cilantro-correction",
+      causation_id: correctionMessageId,
+    });
+    expect(
+      lifecycle.reconcile({
+        existingMemoryId: original?.id ?? "missing",
+        incomingMemoryId: correction?.id ?? "missing",
+      }),
+    ).toMatchObject({ replayed: true, changedMemoryIds: [] });
+  });
+
+  it("keeps a Chinese person claim key stable across a relationship correction", () => {
+    const originalMessageId = "message-memory-xiaolin-original";
+    insertMessage(
+      database,
+      originalMessageId,
+      "user",
+      "我大学同学叫小林，她最近刚搬到苏州。",
+      NOW,
+    );
+    const [original] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "我大学同学叫小林，她最近刚搬到苏州",
+          tags: ["user fact", "person", "小林"],
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: originalMessageId,
+    });
+    expect(original?.claim?.subjectKey).toBe("user.person.小林.profile");
+
+    const correctionMessageId = "message-memory-xiaolin-correction";
+    insertMessage(
+      database,
+      correctionMessageId,
+      "user",
+      "我纠正一下：小林不是我的大学同学，是我高中同学。她搬到苏州这件事没变。",
+      NOW,
+    );
+    const correctionCandidate = stableUserCandidate({
+      content: "小林是我高中同学。她搬到苏州",
+      tags: ["user fact", "person", "小林", "correction"],
+    });
+    const preflight = preflightMemoryCandidates({
+      store,
+      agentId: AGENT_ID,
+      candidates: [correctionCandidate],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: correctionMessageId,
+    });
+    expect(preflight.accepted).toEqual([
+      expect.objectContaining({
+        content: correctionCandidate.content,
+        evidence: [
+          expect.objectContaining({
+            sourceId: correctionMessageId,
+            quote:
+              "我纠正一下：小林不是我的大学同学，是我高中同学。她搬到苏州这件事没变。",
+          }),
+        ],
+      }),
+    ]);
+    const [correction] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: preflight.accepted,
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: correctionMessageId,
+    });
+    expect(correction?.claim?.subjectKey).toBe(original?.claim?.subjectKey);
+
+    const lifecycle = new MemoryLifecycleService(
+      new ContinuityMemoryRepository(store),
+      new FakeClock(NOW),
+    );
+    const [result] = lifecycle.reconcileNewMemories(
+      AGENT_ID,
+      [correction?.id ?? "missing"],
+      {
+        correlationId: "client-xiaolin-correction",
+        causationId: correctionMessageId,
+      },
+    );
+    expect(result?.reconciliation.kind).toBe("supersede");
+    expect(result?.changedMemoryIds).toEqual([original?.id]);
+    expect(
+      database
+        .prepare("SELECT status, superseded_by_id FROM memories WHERE id = ?")
+        .get(original?.id),
+    ).toEqual({ status: "superseded", superseded_by_id: correction?.id });
+  });
+
+  it.each([
+    {
+      id: "message-memory-hypothesis",
+      text: "假设我养了一只叫豆包的狗，我可能每天带它散步。这里只是举例。",
+      content: "我养了一只叫豆包的狗",
+      tags: ["user_fact", "pet", "豆包"],
+    },
+    {
+      id: "message-memory-third-party-quote",
+      text: "小林说她最喜欢香菜。这是她的偏好，不是我的。",
+      content: "我最喜欢香菜",
+      tags: ["user_preference", "food", "cilantro"],
+    },
+    {
+      id: "message-memory-retraction",
+      text: "刚才关于豆包只是举例，不要把它记成真实宠物。",
+      content: "豆包是我的真实宠物",
+      tags: ["user_fact", "pet", "豆包"],
+    },
+    {
+      id: "message-memory-attributed-direct-contrast",
+      text: "我纠正一下：小林不是我的大学同学，是我高中同学。根据张伟的说法。",
+      content: "小林是我高中同学",
+      tags: ["user_fact", "person", "小林", "correction"],
+    },
+    {
+      id: "message-memory-attributed-marker-correction",
+      text: "我纠正一下：准确说法是，我喜欢咖啡。信息来源是张伟。",
+      content: "我喜欢咖啡",
+      tags: ["user_preference", "coffee", "correction"],
+    },
+  ])("rejects $id as authority for a user-model fact", (scenario) => {
+    const candidate = stableUserCandidate({
+      content: scenario.content,
+      tags: scenario.tags,
+    });
+    const result = preflightMemoryCandidates({
+      store,
+      agentId: AGENT_ID,
+      candidates: [candidate],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: scenario.id,
+      authoritativeMessage: {
+        id: scenario.id,
+        role: "user",
+        content: scenario.text,
+        createdAtUtc: NOW,
+      },
+    });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejections).toEqual([
+      expect.objectContaining({ reasonCode: "ungrounded_memory_candidate" }),
+    ]);
+  });
+
   it("recalls only active verified evidence and exposes a preview", () => {
     const [active] = validateMergeAndPersistMemories({
       store,
@@ -288,6 +583,111 @@ describe("memory service evidence integration", () => {
         selected: true,
       }),
     ]);
+  });
+
+  it("bounds candidate evidence ids while preserving the full evidence audit trail", () => {
+    let memoryId: string | undefined;
+    for (let index = 0; index < 21; index += 1) {
+      const messageId = `message-memory-jasmine-${index}`;
+      insertMessage(database, messageId, "user", "I prefer jasmine tea.");
+      const [memory] = validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [
+          stableUserCandidate({
+            content: "The user prefers jasmine tea.",
+            tags: ["preference", "jasmine", "tea"],
+          }),
+        ],
+        nowUtc: NOW,
+        maxCandidates: 1,
+        authoritativeMessageId: messageId,
+      });
+      expect(memory).toBeDefined();
+      memoryId = memory?.id;
+    }
+
+    const evidence = readMemoryEvidence(store, [memoryId ?? "missing"]);
+    expect(evidence).toHaveLength(21);
+
+    const preview = previewAgentMemoryRecall(store, {
+      agentId: AGENT_ID,
+      query: "jasmine tea",
+      nowUtc: NOW,
+    });
+    const candidate = preview.candidates.find(
+      (item) => item.memoryId === memoryId,
+    );
+    expect(preview.evidenceCount).toBe(21);
+    expect(candidate?.evidenceIds).toEqual(
+      evidence.slice(0, 20).map((item) => item.id),
+    );
+  });
+
+  it("recalls an exact Chinese person from authoritative user-model evidence", () => {
+    const xiaolinMessageId = "message-memory-xiaolin";
+    const xiaoliMessageId = "message-memory-xiaoli";
+    insertMessage(
+      database,
+      xiaolinMessageId,
+      "user",
+      "我大学同学叫小林，她最近刚搬到苏州。",
+    );
+    insertMessage(
+      database,
+      xiaoliMessageId,
+      "user",
+      "我大学同学叫小李，她最近刚搬到无锡。",
+    );
+    const persisted = [
+      ...validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [
+          stableUserCandidate({
+            content: "我大学同学叫小林，她最近刚搬到苏州",
+            importance: 0.22,
+            tags: ["user_fact", "person", "小林"],
+          }),
+        ],
+        nowUtc: NOW,
+        maxCandidates: 1,
+        authoritativeMessageId: xiaolinMessageId,
+      }),
+      ...validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [
+          stableUserCandidate({
+            content: "我大学同学叫小李，她最近刚搬到无锡",
+            importance: 1,
+            tags: ["user_fact", "person", "小李"],
+          }),
+        ],
+        nowUtc: NOW,
+        maxCandidates: 1,
+        authoritativeMessageId: xiaoliMessageId,
+      }),
+    ];
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0]?.claim?.subjectKey).toBe("user.person.小林.profile");
+
+    const result = recallAgentMemories(store, {
+      agentId: AGENT_ID,
+      query: {
+        query: "小林是谁？",
+        namespaces: ["user_model"],
+        purpose: "user_fact_query",
+      },
+      nowUtc: NOW,
+    });
+    expect(result.abstained).toBe(false);
+    expect(result.selectedMemoryIds).toEqual([persisted[0]?.id]);
+    if (!result.abstained) {
+      expect(result.evidenceBundle.evidence[0]?.memoryContent).toContain(
+        "苏州",
+      );
+    }
   });
 });
 
@@ -355,6 +755,7 @@ function insertMessage(
   id: string,
   role: "user" | "assistant" | "system",
   content: string,
+  createdAtUtc = MESSAGE_TIME,
 ): void {
   database
     .prepare(
@@ -367,7 +768,7 @@ function insertMessage(
       role,
       content,
       role === "user" ? "user" : "assistant_reply",
-      MESSAGE_TIME,
+      createdAtUtc,
     );
 }
 

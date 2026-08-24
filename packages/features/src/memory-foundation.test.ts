@@ -271,4 +271,232 @@ describe("deterministic evidence recall", () => {
       );
     }
   });
+
+  it("uses an exact Chinese entity channel without lowering the global threshold", () => {
+    const base: RecallableMemory = {
+      id: "memory-xiaolin",
+      kind: "semantic",
+      content: "用户有一位大学同学叫小林，最近刚搬到苏州。",
+      importance: 0.65,
+      confidence: 0.99,
+      tags: ["user fact", "friend", "relocation"],
+      status: "active",
+      namespace: "user_model",
+      certainty: "explicit",
+      attribution: "user_explicit",
+      stability: "stable",
+      createdAtUtc: NOW,
+      updatedAtUtc: NOW,
+    };
+    const distractor: RecallableMemory = {
+      ...base,
+      id: "memory-xiaoli",
+      content: "我大学同学叫小李，她最近刚搬到无锡。",
+      tags: ["person", "小李"],
+    };
+    const result = recallMemory({
+      query: {
+        query: "小林是谁？",
+        namespaces: ["user_model"],
+        purpose: "user_fact_query",
+      },
+      memories: [distractor, base],
+      evidence: [
+        {
+          id: "evidence-xiaolin",
+          memoryId: base.id,
+          sourceType: "message",
+          sourceId: "message-xiaolin",
+          quote: "我大学同学叫小林，她最近刚搬到苏州。",
+          recordedAtUtc: NOW,
+        },
+        {
+          id: "evidence-xiaoli",
+          memoryId: distractor.id,
+          sourceType: "message",
+          sourceId: "message-xiaoli",
+          quote: distractor.content,
+          recordedAtUtc: NOW,
+        },
+      ],
+      nowUtc: NOW,
+    });
+
+    expect(result.abstained).toBe(false);
+    expect(result.selectedMemoryIds).toEqual([base.id]);
+    expect(result.score).toBeGreaterThanOrEqual(0.42);
+    if (!result.abstained) {
+      expect(result.evidenceBundle.evidence[0]?.scoreBreakdown.lexical).toBe(1);
+      expect(result.selectedEvidenceIds).toEqual(["evidence-xiaolin"]);
+    }
+  });
+
+  it.each([
+    {
+      query: { query: "小林是谁？", purpose: "general" as const },
+      label: "an unclassified bare entity",
+    },
+    {
+      query: {
+        query: "你认识的小林是谁？",
+        purpose: "user_fact_query" as const,
+      },
+      label: "an externally-owned entity",
+    },
+    {
+      query: { query: "孔子是谁？", purpose: "user_fact_query" as const },
+      label: "an unknown entity",
+    },
+  ])("does not use the exact user-entity lane for $label", ({ query }) => {
+    const memory: RecallableMemory = {
+      id: "memory-xiaolin-guard",
+      kind: "semantic",
+      content: "用户有一位大学同学叫小林，最近刚搬到苏州。",
+      importance: 0.6,
+      confidence: 0.9,
+      tags: ["user fact", "friend", "relocation"],
+      status: "active",
+      namespace: "user_model",
+      certainty: "explicit",
+      attribution: "user_explicit",
+      stability: "stable",
+      createdAtUtc: NOW,
+      updatedAtUtc: NOW,
+    };
+    const result = recallMemory({
+      query: { ...query, namespaces: ["user_model"] },
+      memories: [memory],
+      evidence: [
+        {
+          id: "evidence-xiaolin-guard",
+          memoryId: memory.id,
+          sourceType: "message",
+          sourceId: "message-xiaolin-guard",
+          quote: "我大学同学叫小林，她最近刚搬到苏州。",
+          recordedAtUtc: NOW,
+        },
+      ],
+      nowUtc: NOW,
+    });
+
+    expect(result.abstained).toBe(true);
+    expect(result.selectedEvidenceIds).toEqual([]);
+  });
+
+  it("recalls every exact fact requested by a compound Chinese query", () => {
+    const cilantro: RecallableMemory = {
+      id: "memory-cilantro",
+      kind: "semantic",
+      content: "我可以接受少量香菜，但不喜欢整把香菜。",
+      importance: 0.82,
+      confidence: 0.99,
+      tags: ["user preference", "food", "cilantro"],
+      status: "active",
+      namespace: "user_model",
+      certainty: "explicit",
+      attribution: "user_explicit",
+      stability: "stable",
+      createdAtUtc: NOW,
+      updatedAtUtc: NOW,
+    };
+    const xiaolin: RecallableMemory = {
+      ...cilantro,
+      id: "memory-xiaolin-corrected",
+      content: "小林不是我的大学同学，是我高中同学。她搬到苏州这件事没变。",
+      tags: ["user fact", "person", "小林", "correction"],
+    };
+    const result = recallMemory({
+      query: {
+        query: "请说出我现在对香菜的准确偏好，以及小林和我的关系。",
+        namespaces: ["user_model"],
+        purpose: "user_fact_query",
+      },
+      memories: [cilantro, xiaolin],
+      evidence: [cilantro, xiaolin].map((memory) => ({
+        id: `evidence-${memory.id}`,
+        memoryId: memory.id,
+        sourceType: "message" as const,
+        sourceId: `message-${memory.id}`,
+        quote: memory.content,
+        recordedAtUtc: NOW,
+      })),
+      nowUtc: NOW,
+    });
+
+    expect(result.abstained).toBe(false);
+    expect(result.selectedMemoryIds).toEqual([
+      "memory-xiaolin-corrected",
+      "memory-cilantro",
+    ]);
+    if (!result.abstained) {
+      expect(result.evidenceBundle.evidence).toHaveLength(2);
+      expect(
+        result.evidenceBundle.evidence.every((item) => item.score >= 0.42),
+      ).toBe(true);
+    }
+  });
+
+  it("summarizes only active explicit user facts and deduplicates claims", () => {
+    const reliable: RecallableMemory = {
+      id: "memory-cilantro-current",
+      kind: "semantic",
+      content: "我可以接受少量香菜，但不喜欢整把香菜。",
+      importance: 0.9,
+      confidence: 1,
+      tags: ["food", "cilantro", "correction"],
+      status: "active",
+      namespace: "user_model",
+      certainty: "explicit",
+      attribution: "user_explicit",
+      stability: "stable",
+      claim: {
+        subjectKey: "user.preference.food.cilantro",
+        disposition: "affirmed",
+        recordedAtUtc: NOW,
+      },
+      createdAtUtc: NOW,
+      updatedAtUtc: NOW,
+    };
+    const poison: RecallableMemory = {
+      ...reliable,
+      id: "memory-dog-hypothesis",
+      content: "我养了一只叫豆包的狗。",
+      tags: ["pet", "hypothetical"],
+      claim: {
+        subjectKey: "user.pet.dog.doubao",
+        disposition: "affirmed",
+        recordedAtUtc: NOW,
+      },
+    };
+    const result = recallMemory({
+      query: {
+        query: "说说你确定记得的我",
+        namespaces: ["user_model"],
+        purpose: "user_memory_summary",
+      },
+      memories: [poison, reliable],
+      evidence: [
+        {
+          id: "evidence-cilantro-current",
+          memoryId: reliable.id,
+          sourceType: "message",
+          sourceId: "message-cilantro-current",
+          quote: reliable.content,
+          recordedAtUtc: NOW,
+        },
+        {
+          id: "evidence-dog-hypothesis",
+          memoryId: poison.id,
+          sourceType: "message",
+          sourceId: "message-dog-hypothesis",
+          quote: poison.content,
+          recordedAtUtc: NOW,
+        },
+      ],
+      nowUtc: NOW,
+    });
+
+    expect(result.abstained).toBe(false);
+    expect(result.selectedMemoryIds).toEqual([reliable.id]);
+  });
 });

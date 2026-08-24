@@ -392,6 +392,30 @@ describe("CareCue lifecycle", () => {
     expect(selected.map((item) => item.id)).toEqual(["cue-2", "cue-1"]);
   });
 
+  it("does not retrieve a listen-first cue from generic guidance words and honors current advice opt-in", () => {
+    const listenFirst = cue({
+      id: "cue-public-sharing",
+      contextSummary: "下周四我要做一次公开分享，现在有点紧张。",
+      mentionGuidance:
+        "当用户再次谈到这项事件或相关感受时，先倾听并确认感受，不要马上给建议。",
+      dedupeKey: "carecue:v1:public-sharing",
+    });
+    const select = (userText: string) =>
+      selectRelevantCareCues({
+        cues: [listenFirst],
+        userText,
+        nowUtc: "2026-08-22T04:00:00.000Z",
+      }).map((item) => item.id);
+
+    expect(select("现在我愿意听一个很短的建议，但不要超过三点。")).toEqual([]);
+    expect(select("说回下周四的公开分享，现在我愿意听一个简短建议。")).toEqual(
+      [],
+    );
+    expect(select("想到下周四的公开分享，我还是有点紧张。")).toEqual([
+      "cue-public-sharing",
+    ]);
+  });
+
   it("records an actual mention once and exhausts the cue", () => {
     const item = cue();
     expect(didMentionCareCue(item, "How is the portfolio layout going?")).toBe(

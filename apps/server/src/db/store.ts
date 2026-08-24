@@ -92,6 +92,22 @@ export type StoredScheduleNegotiation = {
   updatedAtUtc: string;
 };
 
+export interface HistoricalScheduleReadAuthorization extends Record<
+  string,
+  unknown
+> {
+  authorizedItemId: string;
+  scheduleCommandEventId: string;
+  negotiationId: string;
+  offerVersion: number;
+  negotiationStatus: string;
+}
+
+export interface AuthorizedHistoricalSharedSchedule {
+  item: ScheduleItem;
+  authorization: HistoricalScheduleReadAuthorization;
+}
+
 export class DatabaseStore {
   constructor(readonly database: Database) {}
 
@@ -326,6 +342,39 @@ export class DatabaseStore {
       );
   }
 
+  compareAndSetRuntimeState(
+    state: RuntimeState,
+    expectedRevision: number,
+  ): boolean {
+    const result = this.database
+      .prepare(
+        `UPDATE runtime_states SET state_json = ?, revision = ?, updated_at_utc = ?, sleep_debt_minutes = ?
+         WHERE agent_id = ? AND revision = ?`,
+      )
+      .run(
+        JSON.stringify(state),
+        state.revision,
+        state.asOfUtc,
+        state.sleepDebtMinutes,
+        state.agentId,
+        expectedRevision,
+      );
+    return result.changes === 1;
+  }
+
+  runtimeStateRevisionMatches(
+    agentId: string,
+    expectedRevision: number,
+  ): boolean {
+    const row = this.database
+      .prepare(
+        `SELECT 1 AS matches FROM runtime_states
+         WHERE agent_id = ? AND revision = ?`,
+      )
+      .get(agentId, expectedRevision) as { matches: number } | undefined;
+    return row !== undefined;
+  }
+
   getCursor(agentId: string): SimulationCursor | undefined {
     const row = this.database
       .prepare("SELECT * FROM simulation_cursors WHERE agent_id = ?")
@@ -386,6 +435,101 @@ export class DatabaseStore {
     return row
       ? scheduleItemSchema.parse(JSON.parse(row.item_json))
       : undefined;
+  }
+
+  listAuthorizedHistoricalSharedSchedulesByEntity(input: {
+    agentId: string;
+    entityText: string;
+    nowUtc: string;
+    limit?: number;
+  }): AuthorizedHistoricalSharedSchedule[] {
+    const entity = normalizeHistoricalScheduleEntity(input.entityText);
+    if (!isSpecificHistoricalScheduleEntityText(input.entityText)) return [];
+    const limit = Math.max(1, Math.min(Math.trunc(input.limit ?? 3), 3));
+    const rows = this.database
+      .prepare(
+        `SELECT si.item_json AS itemJson,
+                de.id AS scheduleCommandEventId,
+                json_extract(de.payload_json, '$.negotiationId') AS negotiationId,
+                json_extract(de.payload_json, '$.offerVersion') AS offerVersion,
+                sn.status AS negotiationStatus
+         FROM domain_events AS de
+         JOIN json_each(de.payload_json, '$.changedItemIds') AS changed
+           ON changed.type = 'text'
+         JOIN schedule_items AS si
+           ON si.id = changed.value
+          AND si.agent_id = de.agent_id
+         JOIN schedule_negotiations AS sn
+           ON sn.id = json_extract(de.payload_json, '$.negotiationId')
+          AND sn.agent_id = de.agent_id
+          AND sn.status = 'committed'
+          AND sn.offer_version = json_extract(de.payload_json, '$.offerVersion')
+         WHERE de.agent_id = @agentId
+           AND de.event_type = 'schedule.command_committed'
+           AND de.recorded_at_utc <= @nowUtc
+           AND json_type(de.payload_json, '$.negotiationId') = 'text'
+           AND json_type(de.payload_json, '$.offerVersion') = 'integer'
+           AND json_extract(de.payload_json, '$.operation') = 'create'
+           AND si.end_at_utc < @nowUtc
+           AND si.status <> 'cancelled'
+           AND si.rigidity = 'committed'
+           AND si.source = 'user_invitation'
+           AND si.shareable = 1
+         ORDER BY si.start_at_utc DESC, de.recorded_at_utc DESC, de.id DESC`,
+      )
+      .all({
+        agentId: input.agentId,
+        nowUtc: canonicalUtc(input.nowUtc),
+      }) as Array<{
+      itemJson: string;
+      scheduleCommandEventId: string;
+      negotiationId: string;
+      offerVersion: number;
+      negotiationStatus: string;
+    }>;
+
+    const seen = new Set<string>();
+    return rows
+      .map((row) => {
+        const item = scheduleItemSchema.parse(JSON.parse(row.itemJson));
+        return {
+          item,
+          authorization: {
+            authorizedItemId: item.id,
+            scheduleCommandEventId: String(row.scheduleCommandEventId),
+            negotiationId: String(row.negotiationId),
+            offerVersion: Number(row.offerVersion),
+            negotiationStatus: row.negotiationStatus,
+          },
+        };
+      })
+      .filter((candidate) => {
+        if (!Number.isSafeInteger(candidate.authorization.offerVersion)) {
+          return false;
+        }
+        if (seen.has(candidate.item.id)) return false;
+        if (
+          !normalizeHistoricalScheduleEntity(candidate.item.title).includes(
+            entity,
+          )
+        ) {
+          return false;
+        }
+        seen.add(candidate.item.id);
+        return true;
+      })
+      .sort((left, right) => {
+        const leftSurplus =
+          normalizeHistoricalScheduleEntity(left.item.title).length -
+          entity.length;
+        const rightSurplus =
+          normalizeHistoricalScheduleEntity(right.item.title).length -
+          entity.length;
+        return leftSurplus !== rightSurplus
+          ? leftSurplus - rightSurplus
+          : right.item.startAtUtc.localeCompare(left.item.startAtUtc);
+      })
+      .slice(0, limit);
   }
 
   insertScheduleItem(item: ScheduleItem): void {
@@ -745,6 +889,17 @@ export class DatabaseStore {
     return result.changes > 0;
   }
 
+  nextDomainEventStreamVersion(streamType: string, streamId: string): number {
+    const row = this.database
+      .prepare(
+        `SELECT COALESCE(MAX(stream_version), 0) + 1 AS next_version
+         FROM domain_events
+         WHERE stream_type = ? AND stream_id = ?`,
+      )
+      .get(streamType, streamId) as { next_version: number };
+    return Number(row.next_version);
+  }
+
   listDomainEvents(
     agentId?: string,
     limit = 100,
@@ -775,17 +930,35 @@ export class DatabaseStore {
     model: string;
     inputTokens: number;
     outputTokens: number;
+    providerInputTokens?: number;
+    providerOutputTokens?: number;
+    usageSource?: "estimated" | "provider";
+    attemptCount: number;
+    failedAttemptCount: number;
+    providerInputUsageAttemptCount: number;
+    providerOutputUsageAttemptCount: number;
+    attemptTelemetrySource: "exact" | "inferred";
     latencyMs: number;
     success: boolean;
     errorCode?: string;
     createdAtUtc: string;
   }): void {
+    const usageSource =
+      input.usageSource ??
+      (input.providerInputTokens !== undefined ||
+      input.providerOutputTokens !== undefined
+        ? "provider"
+        : "estimated");
     this.database
       .prepare(
         `INSERT INTO llm_calls(
           id, agent_id, purpose, provider, model, input_tokens, output_tokens,
+          provider_input_tokens, provider_output_tokens, usage_source,
+          attempt_count, failed_attempt_count,
+          provider_input_usage_attempt_count,
+          provider_output_usage_attempt_count, attempt_telemetry_source,
           latency_ms, success, error_code, created_at_utc
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         createEntityId("llmcall"),
@@ -795,6 +968,14 @@ export class DatabaseStore {
         input.model,
         input.inputTokens,
         input.outputTokens,
+        input.providerInputTokens ?? null,
+        input.providerOutputTokens ?? null,
+        usageSource,
+        input.attemptCount,
+        input.failedAttemptCount,
+        input.providerInputUsageAttemptCount,
+        input.providerOutputUsageAttemptCount,
+        input.attemptTelemetrySource,
         input.latencyMs,
         input.success ? 1 : 0,
         input.errorCode ?? null,
@@ -807,6 +988,14 @@ export class DatabaseStore {
       .prepare(
         `SELECT id, agent_id AS agentId, purpose, provider, model,
           input_tokens AS inputTokens, output_tokens AS outputTokens,
+          provider_input_tokens AS providerInputTokens,
+          provider_output_tokens AS providerOutputTokens,
+          usage_source AS usageSource,
+          attempt_count AS attemptCount,
+          failed_attempt_count AS failedAttemptCount,
+          provider_input_usage_attempt_count AS providerInputUsageAttemptCount,
+          provider_output_usage_attempt_count AS providerOutputUsageAttemptCount,
+          attempt_telemetry_source AS attemptTelemetrySource,
           latency_ms AS latencyMs, success, error_code AS errorCode,
           created_at_utc AS createdAtUtc
          FROM llm_calls ORDER BY created_at_utc DESC, rowid DESC LIMIT ?`,
@@ -925,6 +1114,38 @@ export class DatabaseStore {
       }),
     );
   }
+}
+
+const GENERIC_HISTORICAL_SCHEDULE_ENTITIES = new Set([
+  "书店",
+  "公园",
+  "咖啡馆",
+  "咖啡店",
+  "茶馆",
+  "餐厅",
+  "饭店",
+  "影院",
+  "电影院",
+  "健身房",
+  "图书馆",
+  "博物馆",
+  "展馆",
+  "商场",
+]);
+
+export function normalizeHistoricalScheduleEntity(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\p{P}\p{Z}\s]/gu, "");
+}
+
+export function isSpecificHistoricalScheduleEntityText(value: string): boolean {
+  const entity = normalizeHistoricalScheduleEntity(value);
+  return (
+    Array.from(entity).length >= 3 &&
+    !GENERIC_HISTORICAL_SCHEDULE_ENTITIES.has(entity)
+  );
 }
 
 function mapCharacterSummary(row: SqlRow): CharacterSummary {

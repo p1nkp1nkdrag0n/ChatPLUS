@@ -4,6 +4,7 @@ import {
   ContinuityTurnEffectsSchema,
   PersonaChatResponseSchema,
   PersonaTurnProviderEnvelopeSchema,
+  TurnObservationProposalSchema,
 } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -157,6 +158,37 @@ describe("Fixture LLM chat turn purpose contract", () => {
     expect(response.data).not.toHaveProperty("reply");
     expect(response.data).not.toHaveProperty("scheduleEffects");
     expect(response.data).not.toHaveProperty("stateDelta");
+  });
+});
+
+describe("Fixture LLM split turn purposes", () => {
+  it("returns a reply-free grounded observation for turn_understanding", async () => {
+    const response = await createFixtureLlmProvider().generate({
+      purpose: "turn_understanding",
+      payload: { userMessage: "明天和我一起去散步吧" },
+    });
+
+    const observation = TurnObservationProposalSchema.parse(response.data);
+    expect(observation.route).toBe("schedule_mutation");
+    expect(observation.scheduleIntent).toMatchObject({
+      kind: "create_shared_activity",
+      timeQuote: { text: "明天" },
+      participantQuote: { text: "和我" },
+    });
+    expect(response.data).not.toHaveProperty("text");
+    expect(response.data).not.toHaveProperty("reply");
+  });
+
+  it("keeps reply_generation on the reply-only schema", async () => {
+    const response = await createFixtureLlmProvider().generate({
+      purpose: "reply_generation",
+      payload: { userMessage: "请记住我不喜欢香菜。" },
+    });
+
+    const reply = PersonaChatResponseSchema.parse(response.data);
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(response.data).not.toHaveProperty("scheduleAction");
+    expect(response.data).not.toHaveProperty("worldEffects");
   });
 });
 

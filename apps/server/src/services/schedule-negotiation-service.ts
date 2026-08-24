@@ -21,7 +21,10 @@ import type {
   StoredScheduleNegotiation,
 } from "../db/store.js";
 import { createEntityId } from "../domain/id.js";
-import type { ScheduleService } from "./schedule-service.js";
+import type {
+  PartialProposalValidation,
+  ScheduleService,
+} from "./schedule-service.js";
 
 const NEGOTIATION_TTL_MINUTES = 30;
 export const SCHEDULE_NEGOTIATION_POLICY_VERSION = 2;
@@ -82,7 +85,7 @@ const ACTIVITY_FAMILIES: Record<string, readonly ActivityFamily[]> = {
     {
       id: "walk",
       label: "散步",
-      pattern: /散步|\b(?:walk|walks|walking)\b/iu,
+      pattern: /散步|走走|公园.{0,12}走|\b(?:walk|walks|walking)\b/iu,
     },
     { id: "exercise", label: "运动", pattern: /运动|锻炼|\bexercise\b/iu },
   ],
@@ -202,6 +205,32 @@ export class ScheduleNegotiationService {
     };
   }
 
+  /**
+   * Preflights a newly presented offer without changing negotiation state.
+   * The split pipeline uses this before reply generation so it does not ask
+   * the user to confirm terms that already conflict with authoritative state.
+   */
+  validatePresentedOffer(
+    agentId: string,
+    plan: PreparedScheduleNegotiation,
+    nowUtc: string,
+  ): PartialProposalValidation | undefined {
+    const presented = [...plan.updates]
+      .reverse()
+      .find((update) => update.status === "awaiting_confirmation");
+    const offer =
+      presented === undefined
+        ? undefined
+        : canonicalOfferFromStoredNegotiation(presented);
+    return offer === undefined
+      ? undefined
+      : this.schedules.validateEffectsPartial(
+          agentId,
+          [offerToEffect(offer)],
+          nowUtc,
+        );
+  }
+
   prepare(input: {
     agentId: string;
     sessionId: string;
@@ -319,6 +348,7 @@ export class ScheduleNegotiationService {
     }
 
     if (
+      input.action.kind !== "withdraw_offer" &&
       !explicitCancellation &&
       UNSUPPORTED_SCHEDULE_OPERATION_PATTERN.test(input.userMessage.content)
     ) {
@@ -743,6 +773,43 @@ export class ScheduleNegotiationService {
   }
 }
 
+export function canonicalOfferFromStoredNegotiation(
+  stored: StoredScheduleNegotiation,
+): CanonicalScheduleOffer | undefined {
+  const negotiation = stored.record["negotiation"];
+  if (
+    typeof negotiation !== "object" ||
+    negotiation === null ||
+    Array.isArray(negotiation)
+  ) {
+    return undefined;
+  }
+  const offer = (negotiation as { offer?: unknown }).offer;
+  if (typeof offer !== "object" || offer === null || Array.isArray(offer)) {
+    return undefined;
+  }
+  const candidate = offer as Record<string, unknown>;
+  if (
+    candidate["operation"] !== "create" ||
+    typeof candidate["activity"] !== "string" ||
+    typeof candidate["category"] !== "string" ||
+    typeof candidate["startAtUtc"] !== "string" ||
+    typeof candidate["durationMinutes"] !== "number" ||
+    !Number.isInteger(candidate["durationMinutes"]) ||
+    typeof candidate["timezone"] !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    operation: "create",
+    activity: candidate["activity"],
+    category: candidate["category"],
+    startAtUtc: candidate["startAtUtc"],
+    durationMinutes: candidate["durationMinutes"],
+    timezone: candidate["timezone"],
+  };
+}
+
 export function buildScheduleNegotiationContract(input: {
   active?: ActiveScheduleNegotiation;
   timezone: string;
@@ -1063,6 +1130,8 @@ function uniqueActivityFamilies(
 }
 
 const QUOTED_VENUE_PATTERN = /[“"「『]([^“”"「」『』\r\n]{1,60})[”"」』]/gu;
+const UNQUOTED_VENUE_PATTERN =
+  /([\p{Script=Han}A-Za-z0-9·_-]{0,20}(?:书店|公园|咖啡馆|咖啡店|茶馆|餐厅|饭店|影院|电影院|健身房|图书馆|博物馆|展馆|商场))/gu;
 const VENUE_SIGNAL_PATTERN =
   /书店|咖啡馆|咖啡店|茶馆|公园|餐厅|饭店|影院|电影院|健身房|图书馆|博物馆|展馆|商场|中心|bookstore|caf[eé]|tea\s*house|park|restaurant|cinema|gym|library|museum|mall/iu;
 
@@ -1078,8 +1147,11 @@ function groundedActivityLabel(
     | undefined;
   for (const item of evidence) {
     const observedAtMs = Date.parse(item.message.createdAtUtc);
-    for (const match of item.quote.matchAll(QUOTED_VENUE_PATTERN)) {
-      const venue = (match[1] ?? "").trim();
+    for (const match of [
+      ...item.quote.matchAll(QUOTED_VENUE_PATTERN),
+      ...item.quote.matchAll(UNQUOTED_VENUE_PATTERN),
+    ]) {
+      const venue = cleanGroundedVenue((match[1] ?? "").trim());
       if (!VENUE_SIGNAL_PATTERN.test(venue)) continue;
       if (
         selected === undefined ||
@@ -1097,6 +1169,16 @@ function groundedActivityLabel(
       ? selected.venue
       : `${selected.venue}${family.label}`
   ).slice(0, 160);
+}
+
+function cleanGroundedVenue(value: string): string {
+  return value
+    .replace(
+      /^.*(?:刚才的|当前真正生效的|真正生效的|已经确认的|已确认的|那个|这个|把)/u,
+      "",
+    )
+    .replace(/^(?:去|在)/u, "")
+    .trim();
 }
 function resolveGroundedStart(
   evidence: readonly ResolvedEvidence[],
@@ -1468,22 +1550,30 @@ function offerToEffect(offer: CanonicalScheduleOffer): ScheduleEffectProposal {
   });
 }
 
-function formatPendingOffer(
+export function formatPendingOffer(
   offer: CanonicalScheduleOffer,
   timezone: string,
 ): string {
   const local = DateTime.fromISO(offer.startAtUtc).setZone(timezone);
   const startLocal = local.toFormat("yyyy-MM-dd HH:mm");
-  return `【待确认日程】${startLocal}，${offer.activity}，${offer.durationMinutes} 分钟（${timezone}，UTC${local.toFormat("ZZ")}）。日程尚未修改；请明确回复“确认”应用该方案，或回复“取消”放弃。`;
+  return `【待确认日程】${startLocal}，${offer.activity}，${offer.durationMinutes} 分钟（${timezone}，UTC${local.toFormat("ZZ")}）。本地时间：${local.toFormat("yyyy年MM月dd日 HH:mm")}。日程尚未修改；请明确回复“确认”应用该方案，或回复“取消”放弃。`;
 }
 
-function formatCommittedOffer(
+export function formatCommittedOffer(
   offer: CanonicalScheduleOffer,
   timezone: string,
 ): string {
   const local = DateTime.fromISO(offer.startAtUtc).setZone(timezone);
   const startLocal = local.toFormat("yyyy-MM-dd HH:mm");
-  return `【日程已修改】${startLocal}，${offer.activity}，${offer.durationMinutes} 分钟（${timezone}，UTC${local.toFormat("ZZ")}）。`;
+  return `【日程已修改】${startLocal}，${offer.activity}，${offer.durationMinutes} 分钟（${timezone}，UTC${local.toFormat("ZZ")}）。本地时间：${local.toFormat("yyyy年MM月dd日 HH:mm")}。`;
+}
+
+export function formatWithdrawnOffer(
+  offer: CanonicalScheduleOffer,
+  timezone: string,
+): string {
+  const local = DateTime.fromISO(offer.startAtUtc).setZone(timezone);
+  return `【已取消待确认方案】${local.toFormat("yyyy-MM-dd HH:mm")}，${offer.activity}，${offer.durationMinutes} 分钟（${timezone}，UTC${local.toFormat("ZZ")}）。本地时间：${local.toFormat("yyyy年MM月dd日 HH:mm")}。该方案未写入日程。`;
 }
 
 function negotiationStateFromStored(

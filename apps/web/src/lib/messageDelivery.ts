@@ -1,3 +1,5 @@
+import { canonicalizeDeliveredText } from "@personasim/contracts";
+
 import type { ChatMessage } from "../api/types";
 
 export interface MessageDelivery {
@@ -27,7 +29,11 @@ export function resolveMessageDelivery(
       (chunk): chunk is string =>
         typeof chunk === "string" && chunk.trim().length > 0,
     ) ||
-    chunks.join("\n") !== message.text
+    !canonicalizeDeliveredText({
+      text: message.text,
+      chunks,
+      deliveryMode: "sequential",
+    }).chunksMatch
   ) {
     return { mode: "single_block", chunks: [message.text] };
   }

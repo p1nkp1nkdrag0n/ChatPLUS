@@ -164,7 +164,11 @@ export const PersonaReplyDecisionSchema = PersonaChatDecisionShapeSchema.omit({
 });
 export type PersonaReplyDecision = z.infer<typeof PersonaReplyDecisionSchema>;
 
-const PersonaTurnWorldEffectsSchema = z
+/**
+ * Reply-free model proposal boundary. Each field intentionally stays unknown
+ * so domain validators can accept or reject siblings independently.
+ */
+export const ModelTurnEffectsProposalSchema = z
   .object({
     stateDelta: z.unknown().optional(),
     relationshipDelta: z.unknown().optional(),
@@ -173,6 +177,11 @@ const PersonaTurnWorldEffectsSchema = z
     continuityEffects: z.unknown().optional(),
   })
   .strip();
+export type ModelTurnEffectsProposal = z.infer<
+  typeof ModelTurnEffectsProposalSchema
+>;
+
+const PersonaTurnWorldEffectsSchema = ModelTurnEffectsProposalSchema;
 
 const PersonaTurnProviderEnvelopeShapeSchema = z
   .object({

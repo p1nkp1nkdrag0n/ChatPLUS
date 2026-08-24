@@ -494,7 +494,15 @@ export function registerRoutes(
       activeSseConnections: sse.connectionCount(),
       activeActorQueues: actors.activeActors,
       tables: store.tableCounts(),
-      runtime: { llmProvider: llm.providerName, llmModel: llm.modelName },
+      runtime: {
+        llmProvider: llm.providerName,
+        llmModel: llm.modelName,
+        turnPipelineMode: config.turnPipelineMode,
+        personaContextMode: config.personaContextMode,
+        scheduleNegotiationMode: config.scheduleNegotiationMode,
+        liveWorldEffectsMode: config.liveWorldEffectsMode,
+        memoryRecallMode: config.memoryRecallMode,
+      },
     }));
 
     app.get("/api/developer/events", (request) => {

@@ -60,6 +60,9 @@ export const MemoryRecallQuerySchema = z
       .optional(),
     timeRange: TemporalQueryRangeSchema.optional(),
     minimumScore: UnitIntervalSchema.optional(),
+    purpose: z
+      .enum(["general", "user_fact_query", "user_memory_summary"])
+      .optional(),
   })
   .strict();
 export type MemoryRecallQuery = z.infer<typeof MemoryRecallQuerySchema>;

@@ -10,12 +10,14 @@ import {
   acceptanceReportPathFor,
   assertDeepSeekAcceptanceConfig,
   evaluateDeepSeekAcceptance,
+  LlmCallSchema,
   containsCommittedScheduleRecall,
   containsCompleteAnchor,
   redactAcceptanceValue,
   matchSelectedAnchorEvidence,
   toSafeStructuredOutputDiagnostic,
   renderDeepSeekAcceptanceReport,
+  revalidateSharedSlot,
   selectSharedSlot,
   type DeepSeekAcceptanceResult,
   type AcceptanceTurn,
@@ -23,6 +25,26 @@ import {
 } from "./deepseek-acceptance-flow.js";
 
 describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
+  it("rejects contradictory exact physical-attempt telemetry at the API boundary", () => {
+    expect(() =>
+      LlmCallSchema.parse({
+        id: "llm-invalid",
+        purpose: "reply_generation",
+        provider: "openai-compatible",
+        model: "deepseek-chat",
+        inputTokens: 1,
+        outputTokens: 1,
+        attemptCount: 1,
+        failedAttemptCount: 2,
+        providerInputUsageAttemptCount: 2,
+        providerOutputUsageAttemptCount: 1,
+        attemptTelemetrySource: "exact",
+        latencyMs: 1,
+        success: true,
+        createdAtUtc: "2026-08-22T00:00:00.000Z",
+      }),
+    ).toThrow();
+  });
   it("uses a timestamp and short run id so same-day reports stay distinct", () => {
     const now = new Date("2026-08-21T18:30:00.000Z");
     const first = acceptanceReportPathFor(now, "E:/workspace", "run-alpha");
@@ -78,6 +100,54 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
     } as ScheduleItem;
     const next = selectSharedSlot([conflict], now, "Asia/Shanghai");
     expect(next.startAtUtc).toBe("2026-08-23T04:30:00.000Z");
+  });
+
+  it("reselects against authoritative schedule when a late self-plan occupies the published slot", () => {
+    const now = new Date("2026-08-22T02:00:00.000Z");
+    const publishedSlot = selectSharedSlot([], now, "Asia/Shanghai");
+    const lateSelfPlan = {
+      startAtUtc: "2026-08-23T03:15:00.000Z",
+      endAtUtc: "2026-08-23T04:15:00.000Z",
+      source: "self_initiated",
+    } as ScheduleItem;
+
+    const invitationSlot = revalidateSharedSlot(
+      publishedSlot,
+      [lateSelfPlan],
+      now,
+      "Asia/Shanghai",
+    );
+
+    expect(publishedSlot.startAtUtc).toBe("2026-08-23T03:30:00.000Z");
+    expect(invitationSlot).toMatchObject({
+      startAtUtc: "2026-08-23T04:30:00.000Z",
+      endAtUtc: "2026-08-23T05:15:00.000Z",
+      localLabel: "2026年08月23日 12:30",
+    });
+  });
+
+  it("finds a real 45-minute gap even when every preferred half-hour candidate overlaps", () => {
+    const now = new Date("2026-08-22T02:00:00.000Z");
+    const denseSchedule = [
+      {
+        startAtUtc: "2026-08-22T23:30:00.000Z",
+        endAtUtc: "2026-08-23T09:00:00.000Z",
+        status: "planned",
+      },
+      {
+        startAtUtc: "2026-08-23T10:00:00.000Z",
+        endAtUtc: "2026-08-23T14:15:00.000Z",
+        status: "planned",
+      },
+    ] as ScheduleItem[];
+
+    expect(selectSharedSlot(denseSchedule, now, "Asia/Shanghai")).toMatchObject(
+      {
+        startAtUtc: "2026-08-23T09:00:00.000Z",
+        endAtUtc: "2026-08-23T09:45:00.000Z",
+        localLabel: "2026年08月23日 17:00",
+      },
+    );
   });
 
   it("searches the final morning window inside the exact 72-hour horizon", () => {
@@ -293,6 +363,233 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
       ).matched,
     ).toBe(false);
   });
+
+  it("passes all five split-pipeline semantic assertions from offline evidence", () => {
+    const result = semanticAcceptanceResult();
+    const assertions = new Map(
+      evaluateDeepSeekAcceptance(result).map((assertion) => [
+        assertion.id,
+        assertion,
+      ]),
+    );
+
+    for (const id of [
+      "non_schedule_isolation",
+      "objective_reply_alignment",
+      "reply_mutation_independence",
+      "split_call_audit",
+      "no_technical_fallback_language",
+    ]) {
+      expect(assertions.get(id), id).toMatchObject({ id, passed: true });
+    }
+    expect(assertions.get("split_call_audit")?.evidence).toContain(
+      "reply_generation=5/5",
+    );
+    expect(assertions.get("split_call_audit")?.evidence).toContain(
+      "chat_turn=0",
+    );
+    expect(assertions.get("split_call_audit")?.evidence).toContain(
+      "model_origin_turns=4",
+    );
+  });
+
+  it("fails the real-call gate when retry usage covers only some attempts", () => {
+    const result = semanticAcceptanceResult();
+    result.llmCalls.unshift(
+      llmCallFixture("compile-character", "compile_character"),
+    );
+    expect(
+      evaluateDeepSeekAcceptance(result).find(
+        (assertion) => assertion.id === "llm_calls",
+      ),
+    ).toMatchObject({ passed: true });
+
+    const partial = result.llmCalls[0]!;
+    partial.attemptCount = 2;
+    partial.failedAttemptCount = 1;
+    partial.providerInputUsageAttemptCount = 1;
+    partial.providerOutputUsageAttemptCount = 1;
+    expect(
+      evaluateDeepSeekAcceptance(result).find(
+        (assertion) => assertion.id === "llm_calls",
+      ),
+    ).toMatchObject({ passed: false });
+  });
+
+  it("rejects non-schedule routing leakage and technical fallback language", () => {
+    const routedAsSchedule = semanticAcceptanceResult();
+    routedAsSchedule.turns[0]!.persistedContract["turnRoute"] =
+      "schedule_mutation";
+    expect(
+      evaluateDeepSeekAcceptance(routedAsSchedule).find(
+        (assertion) => assertion.id === "non_schedule_isolation",
+      ),
+    ).toMatchObject({ passed: false });
+
+    const leakedInternals = semanticAcceptanceResult();
+    leakedInternals.turns[1]!.assistantText =
+      "reply_generation 的 JSON schema 解析失败，fallback 后日程保持不变。";
+    const leakedAssertions = evaluateDeepSeekAcceptance(leakedInternals);
+    expect(
+      leakedAssertions.find(
+        (assertion) => assertion.id === "non_schedule_isolation",
+      ),
+    ).toMatchObject({ passed: false });
+    expect(
+      leakedAssertions.find(
+        (assertion) => assertion.id === "no_technical_fallback_language",
+      ),
+    ).toMatchObject({ passed: false });
+  });
+
+  it("checks objective alignment independently from reply mutation authorization", () => {
+    const baseline = semanticAcceptanceResult();
+    const reworded = semanticAcceptanceResult();
+    reworded.turns[2]!.assistantText =
+      "我愿意去北岸书店喝茶；先保持待确认，等你确认后再落实安排。";
+    reworded.turns[3]!.assistantText = "嗯，可以，北岸书店喝茶的安排确认了。";
+    expect({
+      scheduleChanges: reworded.turns[3]!.scheduleChanges,
+      domainEvents: reworded.turns[3]!.domainEvents,
+      sharedScheduleItems: reworded.turns[3]!.persistence.sharedScheduleItems,
+    }).toEqual({
+      scheduleChanges: baseline.turns[3]!.scheduleChanges,
+      domainEvents: baseline.turns[3]!.domainEvents,
+      sharedScheduleItems: baseline.turns[3]!.persistence.sharedScheduleItems,
+    });
+    expect(
+      evaluateDeepSeekAcceptance(reworded).find(
+        (assertion) => assertion.id === "reply_mutation_independence",
+      ),
+    ).toMatchObject({ passed: true });
+
+    reworded.turns[4]!.assistantText = "我记得你问过这件事。";
+    expect(
+      evaluateDeepSeekAcceptance(reworded).find(
+        (assertion) => assertion.id === "objective_reply_alignment",
+      ),
+    ).toMatchObject({ passed: false });
+
+    const replyAuthorized = semanticAcceptanceResult();
+    replyAuthorized.turns[3]!.persistedContract["replyMutationAuthorization"] =
+      "enabled";
+    expect(
+      evaluateDeepSeekAcceptance(replyAuthorized).find(
+        (assertion) => assertion.id === "reply_mutation_independence",
+      ),
+    ).toMatchObject({ passed: false });
+  });
+
+  it("maps understanding calls to model origins without charging deterministic turns", () => {
+    const fallback = semanticAcceptanceResult();
+    fallback.turns[0]!.persistedContract["understandingOrigin"] = "fallback";
+    const fallbackUnderstanding = fallback.turns[0]!.llmCalls.find(
+      (call) => call.purpose === "turn_understanding",
+    )!;
+    fallbackUnderstanding.success = false;
+    fallbackUnderstanding.errorCode = "INVALID_STRUCTURED_OUTPUT";
+    expect(
+      evaluateDeepSeekAcceptance(fallback).find(
+        (assertion) => assertion.id === "split_call_audit",
+      ),
+    ).toMatchObject({ passed: true });
+
+    const deterministicCall = semanticAcceptanceResult();
+    const unexpectedUnderstanding = llmCallFixture(
+      "understanding-unexpected",
+      "turn_understanding",
+    );
+    deterministicCall.turns[3]!.llmCalls.push(unexpectedUnderstanding);
+    deterministicCall.llmCalls.push(unexpectedUnderstanding);
+    expect(
+      evaluateDeepSeekAcceptance(deterministicCall).find(
+        (assertion) => assertion.id === "split_call_audit",
+      ),
+    ).toMatchObject({ passed: false });
+
+    const missingModelCall = semanticAcceptanceResult();
+    const missingId = missingModelCall.turns[0]!.llmCalls.find(
+      (call) => call.purpose === "turn_understanding",
+    )!.id;
+    missingModelCall.turns[0]!.llmCalls =
+      missingModelCall.turns[0]!.llmCalls.filter(
+        (call) => call.id !== missingId,
+      );
+    missingModelCall.llmCalls = missingModelCall.llmCalls.filter(
+      (call) => call.id !== missingId,
+    );
+    expect(
+      evaluateDeepSeekAcceptance(missingModelCall).find(
+        (assertion) => assertion.id === "split_call_audit",
+      ),
+    ).toMatchObject({ passed: false });
+
+    const legacyCall = semanticAcceptanceResult();
+    const chatTurn = llmCallFixture("legacy-chat", "chat_turn");
+    legacyCall.turns[0]!.llmCalls.push(chatTurn);
+    legacyCall.llmCalls.push(chatTurn);
+    expect(
+      evaluateDeepSeekAcceptance(legacyCall).find(
+        (assertion) => assertion.id === "split_call_audit",
+      ),
+    ).toMatchObject({ passed: false });
+
+    const missingReply = semanticAcceptanceResult();
+    const replyId = missingReply.turns[2]!.llmCalls.find(
+      (call) => call.purpose === "reply_generation",
+    )!.id;
+    missingReply.turns[2]!.llmCalls = missingReply.turns[2]!.llmCalls.filter(
+      (call) => call.id !== replyId,
+    );
+    missingReply.llmCalls = missingReply.llmCalls.filter(
+      (call) => call.id !== replyId,
+    );
+    expect(
+      evaluateDeepSeekAcceptance(missingReply).find(
+        (assertion) => assertion.id === "split_call_audit",
+      ),
+    ).toMatchObject({ passed: false });
+  });
+
+  it("requires split-only prompt segments only when the split path is enforced", () => {
+    const result = fiveTurnCareResult();
+    for (const turn of result.turns) {
+      turn.promptSegmentTrace = requiredPromptTraceFixture(false);
+    }
+
+    result.config.flags.turnPipelineMode = "legacy";
+    expect(
+      evaluateDeepSeekAcceptance(result).find(
+        (assertion) => assertion.id === "prompt_trace",
+      ),
+    ).toMatchObject({ passed: true });
+
+    result.config.flags.turnPipelineMode = "shadow";
+    expect(
+      evaluateDeepSeekAcceptance(result).find(
+        (assertion) => assertion.id === "prompt_trace",
+      ),
+    ).toMatchObject({ passed: true });
+
+    result.config.flags.turnPipelineMode = "enforced";
+    expect(
+      evaluateDeepSeekAcceptance(result).find(
+        (assertion) => assertion.id === "prompt_trace",
+      ),
+    ).toMatchObject({ passed: false });
+
+    for (const turn of result.turns) {
+      turn.promptSegmentTrace = requiredPromptTraceFixture(true);
+    }
+    const splitPromptAssertion = evaluateDeepSeekAcceptance(result).find(
+      (assertion) => assertion.id === "prompt_trace",
+    );
+    expect(splitPromptAssertion).toMatchObject({ passed: true });
+    expect(splitPromptAssertion?.evidence).toContain(
+      "16a_validated_turn_outcome",
+    );
+  });
+
   it("rejects a follow-up-only turn even when an empty care segment is marked included", () => {
     const result = fiveTurnCareResult();
     const firstTurn = result.turns[0]!;
@@ -346,8 +643,15 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
     expect(assertion?.evidence).toContain("prompt_injected=true");
   });
 
-  it("accepts shared schedule evidence only with explicit model contracts and an atomic server write", () => {
+  it("accepts shared schedule evidence only with grounded split contracts and an atomic server write", () => {
     const result = validSharedScheduleResult();
+
+    expect(result.turns[2]!.persistedContract).not.toHaveProperty(
+      "scheduleActionAudit",
+    );
+    expect(result.turns[3]!.persistedContract).not.toHaveProperty(
+      "scheduleActionAudit",
+    );
 
     const assertion = evaluateDeepSeekAcceptance(result).find(
       (candidate) => candidate.id === "shared_schedule",
@@ -358,21 +662,55 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
       passed: true,
     });
     expect(assertion?.evidence).toContain(
-      "invitation_action=model_explicit_valid:accept_user_offer",
+      "invitation_contract=split:create_shared_activity:pending_confirmation",
     );
     expect(assertion?.evidence).toContain(
-      "confirmation_action=model_explicit_valid:accept_pending_offer",
+      "confirmation_contract=split:confirm_pending_offer:committed",
     );
     expect(assertion?.evidence).toContain("invitation_zero_write=true");
     expect(assertion?.evidence).toContain("confirmation_exactly_one=true");
   });
 
-  it("rejects prose-only acceptance provenance and any extra persisted schedule write", () => {
-    const proseOnly = validSharedScheduleResult();
-    proseOnly.turns[2]!.persistedContract["scheduleActionAudit"] = {
+  it("keeps the shared-schedule assertion compatible with a legacy rollback run", () => {
+    const result = validSharedScheduleResult();
+    result.config.flags.turnPipelineMode = "legacy";
+    result.turns[2]!.persistedContract["scheduleActionAudit"] = {
       origin: "model_explicit_valid",
-      kind: "none",
+      kind: "accept_user_offer",
     };
+    result.turns[3]!.persistedContract["scheduleActionAudit"] = {
+      origin: "model_explicit_valid",
+      kind: "accept_pending_offer",
+    };
+
+    const assertion = evaluateDeepSeekAcceptance(result).find(
+      (candidate) => candidate.id === "shared_schedule",
+    );
+
+    expect(assertion).toMatchObject({ passed: true });
+    expect(assertion?.evidence).toContain(
+      "invitation_contract=model_explicit_valid:accept_user_offer",
+    );
+    expect(assertion?.evidence).toContain(
+      "confirmation_contract=model_explicit_valid:accept_pending_offer",
+    );
+  });
+
+  it("rejects an ungrounded split schedule intent and any extra persisted schedule write", () => {
+    const proseOnly = validSharedScheduleResult();
+    const invitationUnderstanding = proseOnly.turns[2]!.domainEvents.find(
+      (event) => event.eventType === "conversation.turn_understanding_resolved",
+    );
+    if (
+      invitationUnderstanding === undefined ||
+      typeof invitationUnderstanding.payload !== "object" ||
+      invitationUnderstanding.payload === null
+    ) {
+      throw new Error("Expected a split understanding event fixture");
+    }
+    (invitationUnderstanding.payload as Record<string, unknown>)[
+      "scheduleIntentKind"
+    ] = "none";
     expect(
       evaluateDeepSeekAcceptance(proseOnly).find(
         (candidate) => candidate.id === "shared_schedule",
@@ -520,13 +858,43 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
 
   it("renders a readable failure report and keeps all acceptance checks explicit", () => {
     const secret = "sk-report-secret-value";
+    const unsafePrompt = "UNSAFE_SYSTEM_PROMPT_BODY";
+    const unsafeRawOutput = "UNSAFE_RAW_PROVIDER_OUTPUT";
     const result = emptyResult();
     result.characterRequest = {
       name: "顾澜",
       apiKey: secret,
       localPath: "E:\\private\\workspace\\data\\acceptance.sqlite",
     };
-    result.turns = [acceptanceTurnFixture("模型文本 ~~~\n## 伪造标题")];
+    const reportTurn = acceptanceTurnFixture("模型文本 ~~~\n## 伪造标题");
+    reportTurn.persistedContract = {
+      turnRoute: "conversation",
+      understandingOrigin: "model_valid",
+      scheduleOutcomeKind: "none",
+      replyMutationAuthorization: "disabled",
+    };
+    reportTurn.persistedAssistant = {
+      id: "assistant-report",
+      sessionId: reportTurn.sessionId,
+      agentId: "agent-offline",
+      role: "assistant",
+      content: reportTurn.assistantText,
+      messageKind: "assistant_reply",
+      metadata: {
+        ...reportTurn.persistedContract,
+        systemPrompt: unsafePrompt,
+        rawOutput: unsafeRawOutput,
+      },
+      createdAtUtc: "2026-08-22T00:00:00.000Z",
+    };
+    const retriedCall = {
+      ...llmCallFixture("reply-retried", "reply_generation"),
+      attemptCount: 2,
+      failedAttemptCount: 1,
+    };
+    reportTurn.llmCalls = [retriedCall];
+    result.turns = [reportTurn];
+    result.llmCalls = [retriedCall];
     result.setupExchanges = [
       {
         label: "real compile_character over HTTP",
@@ -579,11 +947,27 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
     expect(markdown).not.toContain("file:///E:/private/workspace");
     expect(markdown).toContain("## 跨新会话证据摘要");
     expect(markdown).toContain("## 运行失败");
+    expect(markdown).toContain("Attempts / failed");
+    expect(markdown).toContain("| 2 / 1 |");
     expect(markdown).toContain(
       "compile_character safe structured-output diagnostics",
     );
     expect(markdown).toContain("INVALID_STRUCTURED_OUTPUT");
     expect(markdown).toContain("req-compile");
+    for (const id of [
+      "non_schedule_isolation",
+      "objective_reply_alignment",
+      "reply_mutation_independence",
+      "split_call_audit",
+      "no_technical_fallback_language",
+    ]) {
+      expect(markdown).toContain(`| FAIL | ${id} |`);
+    }
+    expect(markdown).toContain("| turnPipelineMode | enforced |");
+    expect(markdown).toContain("| personaContextMode | enforced |");
+    expect(markdown).toContain('"turnRoute": "conversation"');
+    expect(markdown).not.toContain(unsafePrompt);
+    expect(markdown).not.toContain(unsafeRawOutput);
     expect(markdown).toContain("[REDACTED]");
     expect(markdown).not.toContain(secret);
     expect(markdown).not.toContain("E:/private/workspace");
@@ -619,6 +1003,8 @@ function deepSeekConfig(baseUrl: string, model: string): ServerConfig {
     seedDemo: false,
     developerRoutes: true,
     chatEffectsMode: "gated",
+    turnPipelineMode: "enforced",
+    personaContextMode: "enforced",
     scheduleNegotiationMode: "enforced",
     selfInitiatedPlanningMode: "enforced",
     liveWorldEffectsMode: "enforced",
@@ -778,10 +1164,12 @@ function validSharedScheduleResult(): DeepSeekAcceptanceResult {
     endAtUtc,
     localLabel: "2026年08月23日 11:30",
   };
-  invitationTurn.persistedContract["scheduleActionAudit"] = {
-    origin: "model_explicit_valid",
-    kind: "accept_user_offer",
-  };
+  Object.assign(invitationTurn.persistedContract, {
+    turnPipelineMode: "enforced",
+    turnRoute: "schedule_mutation",
+    understandingOrigin: "model_valid",
+    scheduleOutcomeKind: "pending_confirmation",
+  });
   invitationTurn.persistence.scheduleNegotiations = [
     {
       id: negotiationId,
@@ -792,6 +1180,15 @@ function validSharedScheduleResult(): DeepSeekAcceptanceResult {
     },
   ];
   invitationTurn.domainEvents = [
+    {
+      eventType: "conversation.turn_understanding_resolved",
+      correlationId: invitationTurn.clientMessageId,
+      causationId: invitationTurn.userMessageId,
+      payload: {
+        route: "schedule_mutation",
+        scheduleIntentKind: "create_shared_activity",
+      },
+    },
     {
       eventType: "schedule.negotiation_offer_presented",
       correlationId: invitationTurn.clientMessageId,
@@ -804,10 +1201,12 @@ function validSharedScheduleResult(): DeepSeekAcceptanceResult {
     },
   ] as AcceptanceTurn["domainEvents"];
 
-  confirmationTurn.persistedContract["scheduleActionAudit"] = {
-    origin: "model_explicit_valid",
-    kind: "accept_pending_offer",
-  };
+  Object.assign(confirmationTurn.persistedContract, {
+    turnPipelineMode: "enforced",
+    turnRoute: "schedule_mutation",
+    understandingOrigin: "deterministic",
+    scheduleOutcomeKind: "committed",
+  });
   confirmationTurn.persistence.scheduleNegotiations = [
     {
       id: negotiationId,
@@ -823,6 +1222,15 @@ function validSharedScheduleResult(): DeepSeekAcceptanceResult {
   confirmationTurn.scheduleChanges = [sharedItem];
   confirmationTurn.domainEvents = [
     {
+      eventType: "conversation.turn_understanding_resolved",
+      correlationId: confirmationTurn.clientMessageId,
+      causationId: confirmationTurn.userMessageId,
+      payload: {
+        route: "schedule_mutation",
+        scheduleIntentKind: "confirm_pending_offer",
+      },
+    },
+    {
       eventType: "schedule.command_committed",
       correlationId: confirmationTurn.clientMessageId,
       payload: {
@@ -833,6 +1241,116 @@ function validSharedScheduleResult(): DeepSeekAcceptanceResult {
     },
   ] as AcceptanceTurn["domainEvents"];
   return result;
+}
+
+function semanticAcceptanceResult(): DeepSeekAcceptanceResult {
+  const result = validSharedScheduleResult();
+  const assistantTexts = [
+    "我记住了：BGW-7419，也听见你想到博士资格面谈时会紧张。",
+    "听起来这场面谈确实让你紧张，我陪你先用十分钟梳理准备步骤。",
+    "我愿意去北岸书店喝茶；先作为待确认的共同安排，等你确认后再落实。",
+    "确认好了，我们约定去北岸书店喝茶，到时候见。",
+    "BGW-7419 是蓝色玻璃鲸，你演讲前会把它放在左口袋；我们约在2026年8月23日11:30去北岸书店喝茶。",
+  ] as const;
+  const routes = [
+    "explicit_memory",
+    "continuity",
+    "schedule_mutation",
+    "schedule_mutation",
+    "schedule_query",
+  ] as const;
+  const origins = [
+    "model_valid",
+    "model_valid",
+    "model_partial",
+    "deterministic",
+    "model_valid",
+  ] as const;
+  const scheduleOutcomeKinds = [
+    "none",
+    "none",
+    "pending_confirmation",
+    "committed",
+    "read_only",
+  ] as const;
+
+  for (const [index, turn] of result.turns.entries()) {
+    turn.assistantText = assistantTexts[index]!;
+    Object.assign(turn.persistedContract, {
+      turnRoute: routes[index],
+      understandingOrigin: origins[index],
+      scheduleOutcomeKind: scheduleOutcomeKinds[index],
+      replyMutationAuthorization: "disabled",
+    });
+    turn.llmCalls = [llmCallFixture(`reply-${index + 1}`, "reply_generation")];
+    if (origins[index] !== "deterministic") {
+      turn.llmCalls.unshift(
+        llmCallFixture(`understanding-${index + 1}`, "turn_understanding"),
+      );
+    }
+  }
+  result.llmCalls = result.turns.flatMap((turn) => turn.llmCalls);
+  return result;
+}
+
+function llmCallFixture(
+  id: string,
+  purpose: string,
+  success = true,
+): AcceptanceTurn["llmCalls"][number] {
+  return {
+    id,
+    agentId: "agent-offline",
+    purpose,
+    provider: "openai-compatible",
+    model: "deepseek-chat",
+    inputTokens: 100,
+    outputTokens: success ? 20 : 0,
+    providerInputTokens: 100,
+    providerOutputTokens: success ? 20 : 0,
+    usageSource: "provider",
+    attemptCount: 1,
+    failedAttemptCount: success ? 0 : 1,
+    providerInputUsageAttemptCount: 1,
+    providerOutputUsageAttemptCount: 1,
+    attemptTelemetrySource: "exact",
+    latencyMs: 10,
+    success,
+    ...(success ? {} : { errorCode: "INVALID_STRUCTURED_OUTPUT" }),
+    createdAtUtc: "2026-08-22T00:00:00.000Z",
+  };
+}
+
+function requiredPromptTraceFixture(
+  split: boolean,
+): AcceptanceTurn["promptSegmentTrace"] {
+  const ids = [
+    "01_app_policy",
+    "02_character_identity",
+    "03_core_persona",
+    "05_boundaries",
+    ...(split ? ["08_runtime_state"] : []),
+    "10_current_time",
+    "15_reply_strategy",
+    "16_user_message",
+    ...(split ? ["16a_validated_turn_outcome"] : []),
+    "17_output_contract",
+  ];
+  return {
+    segments: ids.map((id) => ({
+      id,
+      placement: /^0[1-5]_/u.test(id) ? "system" : "prompt",
+      priority: 100,
+      tokenBudget: 128,
+      estimatedTokens: 8,
+      required: true,
+      included: true,
+      truncated: false,
+      cacheHit: false,
+    })),
+    droppedSegmentIds: [],
+    estimatedInputTokens: ids.length * 8,
+  };
 }
 
 function includedCareTrace(): AcceptanceTurn["promptSegmentTrace"] {
@@ -874,6 +1392,8 @@ function emptyResult(): DeepSeekAcceptanceResult {
       clockMode: "system",
       flags: {
         chatEffectsMode: "gated",
+        turnPipelineMode: "enforced",
+        personaContextMode: "enforced",
         scheduleNegotiationMode: "enforced",
         selfInitiatedPlanningMode: "enforced",
         liveWorldEffectsMode: "enforced",

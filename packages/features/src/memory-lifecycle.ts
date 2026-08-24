@@ -24,6 +24,7 @@ export interface LifecycleMemoryLike {
   content: string;
   importance: number;
   confidence: number;
+  tags?: readonly string[];
   status: MemoryLifecycleStatusLike;
   stability?: "one_off" | "situational" | "stable";
   certainty?: "explicit" | "inferred" | "uncertain";
@@ -172,6 +173,19 @@ function claimIsReliable(memory: LifecycleMemoryLike): boolean {
   );
 }
 
+function isExplicitCorrection(memory: LifecycleMemoryLike): boolean {
+  return (memory.tags ?? []).some((tag) => {
+    const normalized = normalizeText(tag);
+    return (
+      normalized === "correction" ||
+      normalized === "corrected" ||
+      normalized === "更正" ||
+      normalized === "纠正" ||
+      normalized === "修正"
+    );
+  });
+}
+
 function contentFeatures(value: string): Set<string> {
   const normalized = normalizeText(value);
   const features = new Set(
@@ -217,6 +231,24 @@ export function reconcileMemoryClaims(input: {
   }
 
   if (existingClaim.disposition === incomingClaim.disposition) {
+    const incomingTime = Date.parse(incomingClaim.recordedAtUtc);
+    const existingTime = Date.parse(existingClaim.recordedAtUtc);
+    if (
+      isExplicitCorrection(input.incoming) &&
+      claimIsReliable(input.incoming) &&
+      Number.isFinite(incomingTime) &&
+      Number.isFinite(existingTime) &&
+      incomingTime >= existingTime
+    ) {
+      return {
+        kind: "supersede",
+        reasonCode: "later_explicit_claim",
+        subjectKey: incomingClaim.subjectKey,
+        existingStatus: "superseded",
+        incomingStatus: "active",
+        winnerMemoryId: input.incoming.id,
+      };
+    }
     if (
       similarity(input.existing.content, input.incoming.content) >=
       (input.mergeSimilarity ?? 0.55)

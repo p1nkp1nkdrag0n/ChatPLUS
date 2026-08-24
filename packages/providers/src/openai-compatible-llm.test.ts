@@ -10,9 +10,11 @@ import { describe, expect, it } from "vitest";
 import { createFixtureLlmProvider } from "./fixture-llm.js";
 import {
   createOpenAiCompatibleLlmProvider,
+  LlmProviderError,
   redactSensitiveText,
 } from "./openai-compatible-llm.js";
 import { parseJsonText, StructuredOutputError } from "./safe-json.js";
+import type { LlmCallMetric } from "./types.js";
 
 function requestBody(init: RequestInit | undefined): string {
   const body = init?.body;
@@ -348,6 +350,40 @@ describe("OpenAI-compatible provider", () => {
     expect(JSON.stringify(body.response_format)).toContain('"ok"');
   });
 
+  it("does not emit a physical attempt when native-schema preflight fails", async () => {
+    let fetchCalls = 0;
+    const metrics: LlmCallMetric[] = [];
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      capabilities: {
+        structuredOutputMode: "native_schema",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        maxOutputTokens: 8_192,
+      },
+      fetch: () => {
+        fetchCalls += 1;
+        return Promise.resolve(characterResponse({ ok: true }));
+      },
+      onMetric: (metric) => metrics.push(metric),
+      retryDelay: () => Promise.resolve(),
+    });
+
+    await expect(
+      provider.generateObject({
+        purpose: "chat_turn",
+        system: "Return JSON.",
+        prompt: "Test",
+        schema: z.object({
+          ok: z.string().transform((value) => value.length > 0),
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_RESPONSE_SCHEMA" });
+
+    expect(fetchCalls).toBe(0);
+    expect(metrics).toEqual([]);
+  });
+
   it("serializes generateObject prompts exactly once and keeps large request bodies bounded", async () => {
     let requestInit: RequestInit | undefined;
     const fakeFetch: typeof fetch = (_input, init) => {
@@ -472,7 +508,7 @@ describe("OpenAI-compatible provider", () => {
     );
   });
 
-  it("retries once when JSON is schema-invalid, then returns the validated object", async () => {
+  it("retries schema-invalid structured output with the unchanged prompt", async () => {
     let calls = 0;
     const bodies: string[] = [];
     const fakeFetch: typeof fetch = (_input, init) => {
@@ -512,34 +548,44 @@ describe("OpenAI-compatible provider", () => {
       }),
     ).resolves.toEqual({ ok: true });
     expect(calls).toBe(2);
-    expect(bodies[0]).not.toContain("STRUCTURED_OUTPUT_REPAIR");
-    expect(bodies[1]).toContain("STRUCTURED_OUTPUT_REPAIR");
-    expect(bodies[1]).toContain("ok:");
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(bodies[1]).not.toContain("STRUCTURED_OUTPUT_REPAIR");
     expect(bodies[1]).not.toContain("RAW_RESPONSE_SENTINEL");
-    expect(occurrences(bodies[1] ?? "", "STRUCTURED_OUTPUT_REPAIR")).toBe(1);
   });
 
-  it("rebuilds each repair request from only the latest validation issues", async () => {
-    const bodies: string[] = [];
-    const responses = [
-      '{"ok":false,"first_only":true}',
-      '{"ok":false,"second_only":true}',
-      '{"ok":true}',
-    ];
-    const fakeFetch: typeof fetch = (_input, init) => {
-      bodies.push(requestBody(init));
-      return Promise.resolve(
-        characterResponse(
-          JSON.parse(
-            responses[bodies.length - 1] ?? '{"ok":true}',
-          ) as JsonValue,
-        ),
-      );
-    };
+  it("emits schema-invalid output as a failed physical attempt and preserves per-attempt usage", async () => {
+    let calls = 0;
+    const metrics: LlmCallMetric[] = [];
     const provider = createOpenAiCompatibleLlmProvider({
       apiKey: "test-placeholder-token",
-      fetch: fakeFetch,
-      maxRetries: 2,
+      fetch: () => {
+        calls += 1;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content:
+                      calls === 1
+                        ? '{"ok":false,"private":"RAW_RESPONSE_SENTINEL"}'
+                        : '{"ok":true}',
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: {
+                prompt_tokens: calls === 1 ? 11 : 13,
+                completion_tokens: calls === 1 ? 2 : 3,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      },
+      maxRetries: 1,
+      onMetric: (metric) => metrics.push(metric),
       retryDelay: () => Promise.resolve(),
     });
 
@@ -552,14 +598,238 @@ describe("OpenAI-compatible provider", () => {
       }),
     ).resolves.toEqual({ ok: true });
 
-    expect(bodies).toHaveLength(3);
-    expect(bodies[1]).toContain("first_only");
-    expect(bodies[2]).toContain("second_only");
-    expect(bodies[2]).not.toContain("first_only");
-    expect(occurrences(bodies[2] ?? "", "STRUCTURED_OUTPUT_REPAIR")).toBe(1);
+    expect(metrics).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        success: false,
+        status: 200,
+        inputTokens: 11,
+        outputTokens: 2,
+        errorCode: "INVALID_STRUCTURED_OUTPUT",
+      }),
+      expect.objectContaining({
+        attempt: 2,
+        success: true,
+        status: 200,
+        inputTokens: 13,
+        outputTokens: 3,
+      }),
+    ]);
+    expect(metrics[0]).not.toHaveProperty("content");
+    expect(JSON.stringify(metrics)).not.toContain("RAW_RESPONSE_SENTINEL");
   });
 
-  it.each(["network", "rate-limit"] as const)(
+  it("retries output-truncated structured responses unchanged and preserves per-attempt usage", async () => {
+    let calls = 0;
+    const bodies: string[] = [];
+    const metrics: LlmCallMetric[] = [];
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      fetch: (_input, init) => {
+        calls += 1;
+        bodies.push(requestBody(init));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content:
+                      calls === 1
+                        ? '{"ok":true,"private":"TRUNCATED_RESPONSE_SENTINEL"'
+                        : '{"ok":true}',
+                  },
+                  finish_reason: calls === 1 ? "length" : "stop",
+                },
+              ],
+              usage: {
+                prompt_tokens: calls === 1 ? 19 : 23,
+                completion_tokens: calls === 1 ? 2_000 : 4,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      },
+      maxRetries: 1,
+      onMetric: (metric) => metrics.push(metric),
+      retryDelay: () => Promise.resolve(),
+    });
+
+    await expect(
+      provider.generateObject({
+        purpose: "chat_turn",
+        system: "JSON",
+        prompt: "OUTPUT_TRUNCATION_RETRY_PROMPT",
+        schema: z.object({ ok: z.literal(true) }).strict(),
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(calls).toBe(2);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(bodies[1]).not.toContain("STRUCTURED_OUTPUT_REPAIR");
+    expect(bodies[1]).not.toContain("TRUNCATED_RESPONSE_SENTINEL");
+    expect(metrics).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        success: false,
+        status: 200,
+        inputTokens: 19,
+        outputTokens: 2_000,
+        errorCode: "OUTPUT_TRUNCATED",
+      }),
+      expect.objectContaining({
+        attempt: 2,
+        success: true,
+        status: 200,
+        inputTokens: 23,
+        outputTokens: 4,
+      }),
+    ]);
+    expect(metrics[1]).not.toHaveProperty("errorCode");
+    expect(JSON.stringify(metrics)).not.toContain(
+      "TRUNCATED_RESPONSE_SENTINEL",
+    );
+  });
+
+  it("retains valid provider usage when the surrounding response envelope is invalid", async () => {
+    const metrics: LlmCallMetric[] = [];
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      fetch: () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              unexpected: true,
+              usage: { prompt_tokens: 17, completion_tokens: 4 },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      maxRetries: 0,
+      onMetric: (metric) => metrics.push(metric),
+      retryDelay: () => Promise.resolve(),
+    });
+
+    await expect(
+      provider.generateObject({
+        purpose: "chat_turn",
+        system: "JSON",
+        prompt: "Test",
+        schema: z.object({ ok: z.literal(true) }).strict(),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_RESPONSE_ENVELOPE" });
+    expect(metrics).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        success: false,
+        inputTokens: 17,
+        outputTokens: 4,
+        errorCode: "INVALID_RESPONSE_ENVELOPE",
+      }),
+    ]);
+  });
+
+  it("fails after the structured-output retry budget is exhausted", async () => {
+    let calls = 0;
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      fetch: () => {
+        calls += 1;
+        return Promise.resolve(
+          characterResponse({ ok: false, private: "RAW_RESPONSE_SENTINEL" }),
+        );
+      },
+      maxRetries: 1,
+      retryDelay: () => Promise.resolve(),
+    });
+
+    await expect(
+      provider.generateObject({
+        purpose: "chat_turn",
+        system: "JSON",
+        prompt: "Test",
+        schema: z.object({ ok: z.literal(true) }).strict(),
+      }),
+    ).rejects.toBeInstanceOf(StructuredOutputError);
+    expect(calls).toBe(2);
+  });
+
+  it.each([
+    {
+      label: "an invalid response envelope",
+      response: () =>
+        new Response(JSON.stringify({ unexpected: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      code: "INVALID_RESPONSE_ENVELOPE",
+    },
+    {
+      label: "an empty response",
+      response: () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "" }, finish_reason: "stop" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      code: "EMPTY_RESPONSE",
+    },
+  ])("does not retry $label", async ({ response, code }) => {
+    let calls = 0;
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      fetch: () => {
+        calls += 1;
+        return Promise.resolve(response());
+      },
+      maxRetries: 2,
+      retryDelay: () => Promise.resolve(),
+    });
+
+    let thrown: unknown;
+    try {
+      await provider.generateObject({
+        purpose: "chat_turn",
+        system: "JSON",
+        prompt: "Test",
+        schema: z.object({ ok: z.literal(true) }).strict(),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(LlmProviderError);
+    expect(thrown).toMatchObject({ code });
+    expect(calls).toBe(1);
+  });
+
+  it.each([400, 409])("does not retry HTTP %s responses", async (status) => {
+    let calls = 0;
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      fetch: () => {
+        calls += 1;
+        return Promise.resolve(new Response("request rejected", { status }));
+      },
+      maxRetries: 2,
+      retryDelay: () => Promise.resolve(),
+    });
+
+    await expect(
+      provider.generateObject({
+        purpose: "chat_turn",
+        system: "JSON",
+        prompt: "Test",
+        schema: z.object({ ok: z.literal(true) }).strict(),
+      }),
+    ).rejects.toMatchObject({ code: "HTTP_ERROR", status });
+    expect(calls).toBe(1);
+  });
+
+  it.each(["network", "timeout", "rate-limit", "server"] as const)(
     "retries %s failures with the unchanged original prompt",
     async (mode) => {
       let calls = 0;
@@ -568,9 +838,17 @@ describe("OpenAI-compatible provider", () => {
         calls += 1;
         bodies.push(requestBody(init));
         if (calls === 1) {
-          return mode === "network"
-            ? Promise.reject(new TypeError("simulated network failure"))
-            : Promise.resolve(new Response("retry later", { status: 429 }));
+          if (mode === "network") {
+            return Promise.reject(new TypeError("simulated network failure"));
+          }
+          if (mode === "timeout") {
+            return Promise.reject(new DOMException("timed out", "AbortError"));
+          }
+          return Promise.resolve(
+            new Response("retry later", {
+              status: mode === "rate-limit" ? 429 : 503,
+            }),
+          );
         }
         return Promise.resolve(characterResponse({ ok: true }));
       };

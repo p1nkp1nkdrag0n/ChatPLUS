@@ -481,6 +481,147 @@ describe("memory recall runtime integration", () => {
     expect(context.memoryEvidence).toBeUndefined();
   });
 
+  it("uses only authoritative active user memories to promote a bare identifier query", async () => {
+    const created = await createTestApp();
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls);
+    const character = await createAndPublish(app);
+    const seeded = seedRecallMemories(app, character.id);
+    app.personasim.store.database
+      .prepare("UPDATE memories SET content = ? WHERE id = ?")
+      .run("The user's keepsake code is LPM-4827.", seeded.teaMemoryId);
+    app.personasim.store.database
+      .prepare("UPDATE memories SET content = ? WHERE id = ?")
+      .run(
+        "A model inferred that the user once read about GPT-5.",
+        seeded.unverifiedMemoryId,
+      );
+    calls.length = 0;
+
+    await runTurn(app, calls, character.id, "enforced", "LPM-4827 是什么？");
+    await runTurn(app, calls, character.id, "enforced", "GPT-5 是什么？");
+
+    const runs = new RetrievalRunRepository(
+      app.personasim.store.database,
+    ).listByAgent(character.id);
+    const lpmRun = runs.find(
+      (run) => run.inputSnapshot.query.query === "LPM-4827 是什么？",
+    );
+    const gptRun = runs.find(
+      (run) => run.inputSnapshot.query.query === "GPT-5 是什么？",
+    );
+    expect(lpmRun).toBeDefined();
+    expect(gptRun).toBeDefined();
+    expect(lpmRun?.inputSnapshot.query.purpose).toBe("user_fact_query");
+    expect(gptRun?.inputSnapshot.query.purpose ?? "general").toBe("general");
+  });
+
+  it("recalls a verified user-memory person across sessions without promoting unknown or external entities", async () => {
+    const created = await createTestApp();
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls);
+    const character = await createAndPublish(app);
+    const sourceSession = app.personasim.conversations.createSession(
+      character.id,
+      "Xiaolin source",
+    );
+    const sourceMessageId = "message-recall-xiaolin-source";
+    app.personasim.store.insertMessage({
+      id: sourceMessageId,
+      sessionId: sourceSession.id,
+      agentId: character.id,
+      role: "user",
+      content: "我大学同学叫小林，她最近刚搬到苏州。",
+      messageKind: "user",
+      metadata: { epistemicStatus: "asserted_fact" },
+      createdAtUtc: NOW,
+    });
+    const [xiaolinMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: character.id,
+      candidates: [
+        stableUserMemory("用户有一位大学同学叫小林，最近刚搬到苏州。", [
+          "user fact",
+          "friend",
+          "relocation",
+        ]),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: sourceMessageId,
+    });
+    if (xiaolinMemory === undefined) {
+      throw new Error("Expected the Xiaolin memory to be persisted");
+    }
+    calls.length = 0;
+
+    const known = await runTurn(
+      app,
+      calls,
+      character.id,
+      "enforced",
+      "小林是谁？",
+    );
+    expect(known.sessionId).not.toBe(sourceSession.id);
+    expect(known.result.memoryRecall).toMatchObject({
+      rolloutMode: "enforced",
+      abstained: false,
+      selectedMemoryIds: [xiaolinMemory.id],
+    });
+    const knownEvidence = referenceContext(known.call.prompt).memoryEvidence;
+    expect(knownEvidence?.evidence).toHaveLength(1);
+    const knownItem = knownEvidence?.evidence[0];
+    expect(knownItem?.memoryId).toBe(xiaolinMemory.id);
+    expect(knownItem?.memoryContent).toContain("苏州");
+    expect(knownItem?.evidence.sourceType).toBe("message");
+    expect(knownItem?.evidence.sourceId).toBe(sourceMessageId);
+    expect(knownItem?.evidence.quote).toContain("小林");
+    expect(known.result.memoryRecall?.selectedEvidenceIds).toEqual(
+      knownEvidence?.evidence.map((item) => item.evidence.id),
+    );
+
+    const external = await runTurn(
+      app,
+      calls,
+      character.id,
+      "enforced",
+      "你认识的小林是谁？",
+    );
+    const unknown = await runTurn(
+      app,
+      calls,
+      character.id,
+      "enforced",
+      "孔子是谁？",
+    );
+    for (const blocked of [external, unknown]) {
+      expect(blocked.result.memoryRecall).toMatchObject({
+        abstained: true,
+        selectedMemoryIds: [],
+        selectedEvidenceIds: [],
+      });
+      expect(
+        referenceContext(blocked.call.prompt).memoryEvidence,
+      ).toBeUndefined();
+    }
+
+    const runs = new RetrievalRunRepository(
+      app.personasim.store.database,
+    ).listByAgent(character.id);
+    expect(
+      runs.find((run) => run.sessionId === known.sessionId)?.inputSnapshot.query
+        .purpose,
+    ).toBe("user_fact_query");
+    for (const blocked of [external, unknown]) {
+      expect(
+        runs.find((run) => run.sessionId === blocked.sessionId)?.inputSnapshot
+          .query.purpose ?? "general",
+      ).toBe("general");
+    }
+  });
+
   it("uses a bounded query-aware basic-memory tier through composed HTTP chat", async () => {
     const created = await createTestApp(true, "enforced");
     app = created.app;

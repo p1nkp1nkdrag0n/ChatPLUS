@@ -488,6 +488,7 @@ export function selectRelevantCareCues<T extends CareCueLike>(input: {
 }): T[] {
   const now = parseInstant(input.nowUtc);
   const limit = Math.max(0, Math.min(input.limit ?? 2, 2));
+  const explicitAdviceOverride = isExplicitCurrentAdviceRequest(input.userText);
   return input.cues
     .filter((cue) => {
       if (
@@ -503,10 +504,8 @@ export function selectRelevantCareCues<T extends CareCueLike>(input: {
       ) {
         return false;
       }
-      return textsAreRelated(
-        cue.contextSummary + " " + cue.mentionGuidance,
-        input.userText,
-      );
+      if (explicitAdviceOverride && isListenFirstCareCue(cue)) return false;
+      return textsAreRelated(cue.contextSummary, input.userText);
     })
     .sort((left, right) => {
       const expiry = left.expiresAtUtc.localeCompare(right.expiresAtUtc);
@@ -515,6 +514,22 @@ export function selectRelevantCareCues<T extends CareCueLike>(input: {
         : left.createdAtUtc.localeCompare(right.createdAtUtc);
     })
     .slice(0, limit);
+}
+
+const EXPLICIT_CURRENT_ADVICE_REQUEST_PATTERN =
+  /(?:(?:现在|此刻|这一刻|这会儿|眼下)(?:我)?(?:愿意|想|要|需要|可以|准备好).{0,18}(?:建议|方案|办法)|(?:现在|此刻|这一刻|这会儿|眼下)(?:请|可以|能否|麻烦)?(?:直接)?(?:给我|告诉我|提供|提).{0,12}(?:建议|方案|办法)|\b(?:now|right now|at this point)\b.{0,32}\b(?:ready|open to|want|would like|need)\b.{0,24}\b(?:advice|suggestions?)\b)/iu;
+
+const LISTEN_FIRST_CARE_GUIDANCE_PATTERN =
+  /(?:先(?:倾听|听).{0,24}|不要.{0,16}(?:建议|方案|办法)|不急.{0,16}(?:建议|方案|办法)|\blisten first\b|\b(?:do not|don't).{0,20}\badvice\b)/iu;
+
+function isExplicitCurrentAdviceRequest(userText: string): boolean {
+  return EXPLICIT_CURRENT_ADVICE_REQUEST_PATTERN.test(userText);
+}
+
+function isListenFirstCareCue(
+  cue: Pick<CareCueLike, "mentionGuidance">,
+): boolean {
+  return LISTEN_FIRST_CARE_GUIDANCE_PATTERN.test(cue.mentionGuidance);
 }
 
 export function didMentionCareCue(

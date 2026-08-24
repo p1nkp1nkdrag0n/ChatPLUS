@@ -1,3 +1,4 @@
+import type { ContextPlan } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -77,6 +78,31 @@ function baseInput(
   return { ...input, ...overrides };
 }
 
+function promptContextPlan(overrides: Partial<ContextPlan> = {}): ContextPlan {
+  return {
+    schemaVersion: 1,
+    activatedTraitIds: [],
+    activatedValueIds: [],
+    activatedContradictionIds: [],
+    activatedGoalIds: [],
+    activatedPreferenceIds: [],
+    includeAutobiography: false,
+    includeCalendar: false,
+    includeFutureSchedule: false,
+    includeRetrievedEvidence: false,
+    suppressedGoalIds: ["goal-hidden"],
+    topicFatigue: [
+      {
+        topicKey: "goal-hidden",
+        recentAssistantMentions: 3,
+        penalty: 0.6,
+      },
+    ],
+    trace: [],
+    ...overrides,
+  };
+}
+
 describe("assembleChatPrompt registry integration", () => {
   it("assembles through exactly the 17 defaults while retaining legacy contracts", () => {
     const result = assembleChatPrompt(baseInput());
@@ -106,6 +132,85 @@ describe("assembleChatPrompt registry integration", () => {
       { role: "system", content: result.system },
       { role: "user", content: result.prompt },
     ]);
+  });
+
+  it("applies enforced persona selection independently in the legacy turn prompt", () => {
+    const hiddenSelf = "LEGACY_PIPELINE_HIDDEN_SELF";
+    const hiddenGoal = "LEGACY_PIPELINE_HIDDEN_GOAL";
+    const input = baseInput();
+    const character = {
+      ...input.character,
+      identity: {
+        ...input.character.identity,
+        selfDescription: hiddenSelf,
+      },
+      persona: {
+        ...input.character.persona,
+        traits: [
+          {
+            id: "trait-stable",
+            name: "observant",
+            strength: 0.9,
+          },
+        ],
+        values: [],
+        contradictions: [],
+        goals: [
+          {
+            id: "goal-hidden",
+            title: hiddenGoal,
+            description: hiddenGoal,
+          },
+        ],
+        preferences: [],
+      },
+    };
+    const suppressed = promptContextPlan();
+    const legacy = assembleChatPrompt({ ...input, character });
+    const shadow = assembleChatPrompt({
+      ...input,
+      character,
+      personaContextMode: "shadow",
+      contextPlan: suppressed,
+    });
+    const enforced = assembleChatPrompt({
+      ...input,
+      character,
+      personaContextMode: "enforced",
+      contextPlan: suppressed,
+    });
+
+    expect(legacy.system).toContain(hiddenSelf);
+    expect(legacy.system).toContain(hiddenGoal);
+    expect(shadow.system).toBe(legacy.system);
+    expect(shadow.prompt).toBe(legacy.prompt);
+    expect(enforced.system + enforced.prompt).not.toContain(hiddenSelf);
+    expect(enforced.system + enforced.prompt).not.toContain(hiddenGoal);
+    expect(enforced.prompt).toContain("TOPIC_FATIGUE_JSON");
+    expect(enforced.prompt).not.toContain("ACTIVATED_PERSONA_JSON");
+
+    const activated = assembleChatPrompt({
+      ...input,
+      character,
+      personaContextMode: "enforced",
+      contextPlan: promptContextPlan({
+        activatedGoalIds: ["goal-hidden"],
+        suppressedGoalIds: [],
+      }),
+    });
+    expect(activated.prompt).toContain("ACTIVATED_PERSONA_JSON");
+    expect(activated.prompt).toContain(hiddenGoal);
+    expect(activated.system).not.toContain(hiddenSelf);
+  });
+
+  it("fails closed when enforced persona mode has no ContextPlan", () => {
+    expect(() =>
+      assembleChatPrompt(
+        baseInput({
+          personaContextMode: "enforced",
+        }),
+      ),
+    ).toThrow(/requires a server-owned ContextPlan/u);
   });
 
   it.each([

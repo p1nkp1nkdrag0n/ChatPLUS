@@ -51,6 +51,10 @@ describe("PersonaSim server integration", () => {
         "012_followup_care_proactive_generation.sql",
         "013_calendar_retrieval_runs.sql",
         "014_retrieval_run_date_digest.sql",
+        "015_llm_provider_usage.sql",
+        "016_llm_retry_attempt_telemetry.sql",
+        "017_llm_attempt_usage_coverage.sql",
+        "018_schedule_command_event_lookup.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database

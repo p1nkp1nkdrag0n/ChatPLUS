@@ -105,7 +105,7 @@ describe("PersonalLifeService SQLite integration", () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it("atomically commits a night bundle, consumes its intent, and adds capped sleep debt", () => {
+  it("atomically commits a night bundle without realizing sleep debt early", () => {
     const harness = createHarness("enforced", 650);
     seedSleep(harness.store);
     publishNextCharacterSpec(harness.store);
@@ -128,15 +128,14 @@ describe("PersonalLifeService SQLite integration", () => {
       consumedIntentId: harness.intentId,
       revalidatedIntentIds: [harness.intentId],
       rejectedIntentIds: [],
-      stateChanged: true,
+      stateChanged: false,
       planning: {
         status: "committed",
         lostSleepMinutes: 120,
       },
       state: {
-        sleepDebtMinutes: 720,
-        revision: 1,
-        asOfUtc: NOW_UTC,
+        sleepDebtMinutes: 650,
+        revision: 0,
       },
     });
     expect(transactions).toEqual(["caller_owned"]);
@@ -146,6 +145,7 @@ describe("PersonalLifeService SQLite integration", () => {
     expect(harness.store.getScheduleItem(SLEEP_ID)).toMatchObject({
       startAtUtc: "2026-06-02T01:00:00.000Z",
       endAtUtc: "2026-06-02T07:00:00.000Z",
+      plannedSleepReductionMinutes: 120,
       revision: 1,
     });
     const [created] = harness.store
@@ -185,13 +185,12 @@ describe("PersonalLifeService SQLite integration", () => {
       causationId: created?.correlationId,
     });
     expect(harness.store.getRuntimeState(AGENT_ID)).toMatchObject({
-      sleepDebtMinutes: 720,
-      revision: 1,
+      sleepDebtMinutes: 650,
+      revision: 0,
     });
-    expect(sleepDebtColumn(harness.database)).toBe(720);
+    expect(sleepDebtColumn(harness.database)).toBe(650);
     expect(publish.mock.calls.map(([event]) => event.type)).toEqual([
       "schedule.updated",
-      "state.updated",
     ]);
     const scheduleBeforeReplay = harness.store.listSchedule(AGENT_ID);
     const stateBeforeReplay = harness.store.getRuntimeState(AGENT_ID);
@@ -261,46 +260,26 @@ describe("PersonalLifeService SQLite integration", () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it("rolls back claim, schedule, and sleep debt after a post-effect failure", () => {
+  it("does not persist runtime state while a sleep reduction remains planned", () => {
     const harness = createHarness("enforced", 650);
     seedSleep(harness.store);
     installBundlePlanner(harness, validNightBundle(harness.intentId));
-    const stateBefore = harness.store.getRuntimeState(AGENT_ID);
-    const publish = vi.spyOn(harness.sse, "publish");
     const applyBundle = vi.spyOn(harness.schedules, "applySelfPlanBundle");
-    const persistState = harness.store.updateRuntimeState.bind(harness.store);
-    vi.spyOn(harness.store, "updateRuntimeState").mockImplementation((next) => {
-      persistState(next);
-      throw new Error("injected state persistence failure");
-    });
+    const persistState = vi.spyOn(harness.store, "updateRuntimeState");
     const service = coordinator(harness, "enforced");
 
-    expect(() => service.ensureSelfInitiatedPlans(AGENT_ID)).toThrow(
-      "injected state persistence failure",
-    );
-    expect(applyBundle).toHaveBeenCalledTimes(1);
+    const result = service.ensureSelfInitiatedPlans(AGENT_ID);
 
-    expect(harness.intents.read(AGENT_ID, harness.intentId).status).toBe(
-      "pending",
-    );
-    expect(harness.store.listSchedule(AGENT_ID)).toEqual([
-      expect.objectContaining({
-        id: SLEEP_ID,
-        startAtUtc: "2026-06-01T23:00:00.000Z",
-        endAtUtc: "2026-06-02T07:00:00.000Z",
-        revision: 0,
-      }),
-    ]);
-    expect(harness.store.getRuntimeState(AGENT_ID)).toEqual(stateBefore);
+    expect(result).toMatchObject({ status: "committed", stateChanged: false });
+    expect(applyBundle).toHaveBeenCalledTimes(1);
+    expect(persistState).not.toHaveBeenCalled();
+    expect(harness.store.getScheduleItem(SLEEP_ID)).toMatchObject({
+      plannedSleepReductionMinutes: 120,
+    });
     expect(sleepDebtColumn(harness.database)).toBe(650);
-    expect(
-      harness.store
-        .listDomainEvents(AGENT_ID, 100)
-        .filter((event) => event["eventType"] === "personal_intent.consumed"),
-    ).toEqual([]);
-    expect(publish).not.toHaveBeenCalled();
   });
-  it("rolls back claim, schedule, sleep debt, and lineage on audit failure", () => {
+
+  it("rolls back claim, schedule metadata, and lineage on audit failure", () => {
     const harness = createHarness("enforced", 650);
     seedSleep(harness.store);
     installBundlePlanner(harness, validNightBundle(harness.intentId));

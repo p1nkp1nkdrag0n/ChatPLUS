@@ -1,5 +1,10 @@
 import { DateTime } from "luxon";
-import { settleSchedule, settlementIdempotencyKey } from "@personasim/features";
+import {
+  localDayKey,
+  settleSchedule,
+  settlementIdempotencyKey,
+  type RelationshipDailyUsage,
+} from "@personasim/features";
 
 import type { DatabaseStore, StoredActivityEvent } from "../db/store.js";
 import { capabilitiesForTier } from "../domain/capabilities.js";
@@ -7,7 +12,7 @@ import {
   toFeatureScheduleItems,
   toFeatureState,
 } from "../domain/feature-adapters.js";
-import { notFound } from "../domain/errors.js";
+import { ApiError, notFound } from "../domain/errors.js";
 import { createEntityId } from "../domain/id.js";
 import {
   activityEnrichmentSchema,
@@ -24,6 +29,7 @@ import type { ContinuityIndexService } from "./continuity-index-service.js";
 import type { LlmService } from "./llm-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
 import type { ScheduleService } from "./schedule-service.js";
+import { loadDailyRelationshipUsage } from "./relationship-effect-usage.js";
 
 export type SettlementResult = {
   agentId: string;
@@ -41,6 +47,7 @@ type ProjectedOutcome = {
   events: StoredActivityEvent[];
   stateDelta: StateDelta;
   completed: boolean;
+  scheduleChanged: boolean;
 };
 
 export class SettlementService {
@@ -123,6 +130,26 @@ export class SettlementService {
     // Include activities that start exactly on the persisted cursor boundary.
     // Activity event keys make this one-millisecond inclusive window idempotent.
     const inclusiveFromUtc = new Date(Date.parse(fromUtc) - 1).toISOString();
+    const relationshipDailyUsageByDay: Record<string, RelationshipDailyUsage> =
+      {};
+    for (const item of allItems) {
+      if (item.source !== "user_invitation") continue;
+      const effectiveAtUtc =
+        item.status === "cancelled" ? item.updatedAtUtc : item.endAtUtc;
+      if (
+        compareUtc(effectiveAtUtc, inclusiveFromUtc) <= 0 ||
+        compareUtc(effectiveAtUtc, toUtc) > 0
+      ) {
+        continue;
+      }
+      const day = localDayKey(effectiveAtUtc, spec.identity.timezone);
+      relationshipDailyUsageByDay[day] ??= loadDailyRelationshipUsage(
+        this.store,
+        agentId,
+        spec.identity.timezone,
+        effectiveAtUtc,
+      );
+    }
     const engineResult = settleSchedule({
       agentId,
       fromUtc: inclusiveFromUtc,
@@ -131,9 +158,20 @@ export class SettlementService {
       state: toFeatureState(state),
       routineAdherence: spec.schedulePolicy.routineAdherence,
       existingIdempotencyKeys: existingEventKeys,
+      relationshipCapabilityScale: capabilities.relationshipDeltaScale,
+      relationshipTimezone: spec.identity.timezone,
+      relationshipDailyUsageByDay,
     });
-    const projections: ProjectedOutcome[] = engineResult.changedItems.map(
-      (itemLike) => {
+    const changedIds = new Set(
+      engineResult.changedItems.map((item) => item.id),
+    );
+    const projectedItemIds = new Set([
+      ...changedIds,
+      ...engineResult.events.map((event) => event.scheduleItemId),
+    ]);
+    const projections: ProjectedOutcome[] = engineResult.items
+      .filter((item) => projectedItemIds.has(item.id))
+      .map((itemLike) => {
         const item = itemLike as ScheduleItem;
         const events = engineResult.events
           .filter((event) => event.scheduleItemId === item.id)
@@ -147,7 +185,16 @@ export class SettlementService {
             outcomeFacts: event.kind === "started" ? [] : [event.summary],
             stateDelta: event.stateDelta ?? {},
             origin:
-              event.kind === "started" ? "deterministic" : "seeded_probability",
+              event.kind === "started" || event.kind === "cancelled"
+                ? "deterministic"
+                : "seeded_probability",
+            ...(event.effectTrace === undefined
+              ? {}
+              : {
+                  effectTrace: structuredClone(
+                    event.effectTrace,
+                  ) as unknown as Record<string, unknown>,
+                }),
             idempotencyKey: event.idempotencyKey,
           }));
         return {
@@ -157,13 +204,13 @@ export class SettlementService {
             events.find((event) => event.eventType !== "started")?.stateDelta ??
             {},
           completed: events.some((event) => event.eventType === "completed"),
+          scheduleChanged: changedIds.has(item.id),
         };
-      },
-    );
+      });
     await this.enrichImportantEvents(spec, projections);
-    const updatedScheduleItems = projections.map(
-      (projection) => projection.item,
-    );
+    const updatedScheduleItems = projections
+      .filter((projection) => projection.scheduleChanged)
+      .map((projection) => projection.item);
     const activityEvents = projections.flatMap(
       (projection) => projection.events,
     );
@@ -185,9 +232,19 @@ export class SettlementService {
         .prepare("SELECT 1 FROM settlements WHERE idempotency_key = ?")
         .get(idempotencyKey);
       if (duplicate) return;
+      const currentState = this.store.getRuntimeState(agentId);
+      if (currentState?.revision !== state.revision) {
+        throw new ApiError(
+          409,
+          "stale_runtime_state",
+          "Runtime state changed before settlement could be committed.",
+        );
+      }
       const insertedActivityEvents: StoredActivityEvent[] = [];
       for (const projection of projections) {
-        this.store.updateScheduleItem(projection.item);
+        if (projection.scheduleChanged) {
+          this.store.updateScheduleItem(projection.item);
+        }
         for (const event of projection.events) {
           if (!this.store.insertActivityEvent(event)) continue;
           insertedActivityEvents.push(event);
@@ -209,7 +266,13 @@ export class SettlementService {
           insertedActivityEvents,
         );
       }
-      this.store.updateRuntimeState(nextState);
+      if (!this.store.compareAndSetRuntimeState(nextState, state.revision)) {
+        throw new ApiError(
+          409,
+          "stale_runtime_state",
+          "Runtime state changed before settlement could be committed.",
+        );
+      }
       this.store.updateCursor({
         ...cursor,
         lastSettledAtUtc: toUtc,
@@ -230,7 +293,7 @@ export class SettlementService {
           JSON.stringify(result),
           this.clock.nowUtc(),
         );
-      this.store.insertDomainEvent({
+      const settlementEventInserted = this.store.insertDomainEvent({
         agentId,
         streamType: "simulation",
         streamId: agentId,
@@ -239,12 +302,32 @@ export class SettlementService {
         recordedAtUtc: this.clock.nowUtc(),
         effectiveAtUtc: toUtc,
         payload: {
+          source: "activity_settlement",
           fromUtc,
           toUtc,
           activityEventIds: activityEvents.map((event) => event.id),
+          stateRevisionBefore: state.revision,
+          stateRevisionAfter: nextState.revision,
+          aggregateStateDelta: engineResult.aggregateStateDelta,
+          relationshipDailyUsageAppliedByDay:
+            engineResult.relationshipDailyUsageAppliedByDay,
+          changes: activityEvents.map((event) => ({
+            activityEventId: event.id,
+            scheduleItemId: event.scheduleItemId,
+            eventType: event.eventType,
+            source:
+              (event.effectTrace as { sleepDebt?: unknown } | undefined)
+                ?.sleepDebt === undefined
+                ? "activity_settlement"
+                : "sleep_settlement",
+            effectTrace: event.effectTrace ?? null,
+          })),
         },
         idempotencyKey: `domain:${idempotencyKey}`,
       });
+      if (!settlementEventInserted) {
+        throw new Error("Settlement audit event was not inserted");
+      }
     });
 
     for (const event of activityEvents) {

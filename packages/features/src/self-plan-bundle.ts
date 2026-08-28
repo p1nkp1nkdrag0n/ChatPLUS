@@ -692,6 +692,7 @@ export function validateFinalScheduleProjection(
     );
     if (!rangeValid) continue;
 
+    let plannedSleepReductionMinutes = target.plannedSleepReductionMinutes ?? 0;
     if (mutation.fixedSleepAdjustment) {
       if (!normalized.selfPlan || !sleepTarget) {
         errors.push({
@@ -728,6 +729,10 @@ export function validateFinalScheduleProjection(
           });
         } else {
           validatedLostSleepMinutes = actualLost;
+          plannedSleepReductionMinutes = Math.min(
+            720,
+            plannedSleepReductionMinutes + actualLost,
+          );
         }
       }
     }
@@ -749,6 +754,9 @@ export function validateFinalScheduleProjection(
       startAtUtc: mutation.newStartAtUtc,
       endAtUtc: mutation.newEndAtUtc,
       source: mutation.fixedSleepAdjustment ? target.source : "runtime_replan",
+      ...(mutation.fixedSleepAdjustment
+        ? { plannedSleepReductionMinutes }
+        : {}),
       revision: target.revision + 1,
       updatedAtUtc: context.nowUtc,
     };

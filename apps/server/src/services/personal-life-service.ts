@@ -14,7 +14,6 @@ import type { DatabaseStore } from "../db/store.js";
 import { capabilitiesForTier } from "../domain/capabilities.js";
 import { notFound } from "../domain/errors.js";
 import { createEntityId } from "../domain/id.js";
-import { runtimeStateSchema } from "../domain/schemas.js";
 import type { Clock } from "../runtime/clock.js";
 import type { SseHub } from "../sse/hub.js";
 import type {
@@ -57,8 +56,6 @@ type SelfPlanner = Pick<SelfPlanningService, "ensureSelfInitiatedPlans">;
 type ScheduleReader = Pick<ScheduleService, "list">;
 
 const MAX_PLANNING_HOURS = 72;
-const MAX_SLEEP_DEBT_MINUTES = 720;
-
 type RejectedPlanningResult = Extract<
   SelfPlanningServiceResult,
   { status: "rejected" }
@@ -207,11 +204,6 @@ export class PersonalLifeService {
           throw new Error(
             "Committed self plan did not hold a matching intent claim",
           );
-        }
-        if (planning.lostSleepMinutes > 0) {
-          nextState = addSleepDebt(state, planning.lostSleepMinutes, nowUtc);
-          this.store.updateRuntimeState(nextState);
-          stateChanged = true;
         }
         this.recordSelfPlanCommitted(
           agentId,
@@ -563,21 +555,4 @@ function planningHorizonEnd(
   return new Date(
     Math.min(persistedMillis, nowMillis + MAX_PLANNING_HOURS * 60 * 60 * 1_000),
   ).toISOString();
-}
-
-function addSleepDebt(
-  state: RuntimeState,
-  lostSleepMinutes: number,
-  nowUtc: string,
-): RuntimeState {
-  const nextDebt = Math.min(
-    MAX_SLEEP_DEBT_MINUTES,
-    Math.max(0, state.sleepDebtMinutes + Math.trunc(lostSleepMinutes)),
-  );
-  return runtimeStateSchema.parse({
-    ...state,
-    sleepDebtMinutes: nextDebt,
-    asOfUtc: nowUtc,
-    revision: state.revision + 1,
-  });
 }

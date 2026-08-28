@@ -94,6 +94,17 @@ export const ScheduleItemSchema = z
     sourceIntentId: EntityIdSchema.optional(),
     correlationId: EntityIdSchema.optional(),
     causationId: EntityIdSchema.optional(),
+    /**
+     * Server-owned sleep reduction that is realized only when this item is
+     * settled. It deliberately does not exist on ScheduleItemDraftSchema, so
+     * an LLM or API client cannot propose sleep debt directly.
+     */
+    plannedSleepReductionMinutes: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(720)
+      .optional(),
     status: ScheduleStatusSchema,
     revision: RevisionSchema,
     createdAtUtc: UtcDateTimeSchema,

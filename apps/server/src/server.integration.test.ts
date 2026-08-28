@@ -250,7 +250,7 @@ describe("PersonaSim server integration", () => {
     expect(app.personasim.store.listMessages(sessionId)).toHaveLength(2);
   });
 
-  it("keeps lightweight state, relationship, cursor and memory static", async () => {
+  it("keeps lightweight simulation static except for interaction time", async () => {
     const created = await createTestApp();
     app = created.app;
     const character = await createAndPublish(app, "lightweight");
@@ -275,9 +275,16 @@ describe("PersonaSim server integration", () => {
       LONG_MEMORY_TEXT,
     );
     expect(turn.statusCode).toBe(201);
-    expect(app.personasim.store.getRuntimeState(character.id)).toEqual(
-      beforeState,
-    );
+    expect(app.personasim.store.getRuntimeState(character.id)).toMatchObject({
+      ...beforeState,
+      asOfUtc: created.clock.nowUtc(),
+      revision: beforeState.revision + 1,
+      relationship: {
+        ...beforeState.relationship,
+        familiarity: beforeState.relationship.familiarity,
+        lastInteractionAtUtc: created.clock.nowUtc(),
+      },
+    });
     expect(app.personasim.store.listSchedule(character.id)).toHaveLength(0);
     const memories = app.personasim.store.database
       .prepare("SELECT COUNT(*) AS count FROM memories WHERE agent_id = ?")
@@ -286,7 +293,7 @@ describe("PersonaSim server integration", () => {
   });
 
   it("validates, sources and merges daily conversation memories while bounding relationship change", async () => {
-    ({ app } = await createTestApp());
+    ({ app } = await createTestApp("enforced"));
     const character = await createAndPublish(app, "daily");
     const before = app.personasim.store.getRuntimeState(character.id)!;
     const sessionId = await createSession(app, character.id);
@@ -527,6 +534,191 @@ describe("PersonaSim server integration", () => {
             event.eventType === "started",
         ),
     ).toBe(true);
+  });
+
+  it("commits a shared-activity relationship cause with the settlement trace", async () => {
+    const created = await createTestApp();
+    app = created.app;
+    const character = await createAndPublish(app, "high_fidelity");
+    app.personasim.store.database
+      .prepare("DELETE FROM schedule_items WHERE agent_id = ?")
+      .run(character.id);
+    const startAtUtc = "2026-08-16T03:00:00.000Z";
+    let itemId = "shared-settlement-0";
+    for (let index = 0; index < 100; index += 1) {
+      const candidate = `shared-settlement-${index}`;
+      if (seededUnit(`${character.id}${candidate}${startAtUtc}`) < 0.9) {
+        itemId = candidate;
+        break;
+      }
+    }
+    const shared = scheduleItemSchema.parse({
+      id: itemId,
+      agentId: character.id,
+      title: "一起散步",
+      description: "用户直接邀请后确认的共同活动。",
+      category: "social",
+      startAtUtc,
+      endAtUtc: "2026-08-16T04:00:00.000Z",
+      timezone: "Asia/Shanghai",
+      status: "planned",
+      rigidity: "fixed",
+      priority: 0.8,
+      source: "user_invitation",
+      adherenceProbability: 1,
+      narrativeImportance: 0.6,
+      shareable: true,
+      stateEffects: { moodValence: 0.08, energy: -0.04 },
+      revision: 0,
+      createdAtUtc: START_UTC,
+      updatedAtUtc: START_UTC,
+    });
+    app.personasim.store.insertScheduleItem(shared);
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    created.clock.setUtc("2026-08-16T04:30:00.000Z");
+
+    const activation = await app.inject({
+      method: "POST",
+      url: `/api/agents/${character.id}/activate`,
+    });
+
+    expect(activation.statusCode).toBe(200);
+    const after = app.personasim.store.getRuntimeState(character.id)!;
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.relationship).toMatchObject({
+      closeness: before.relationship.closeness + 0.006,
+      trust: before.relationship.trust + 0.003,
+      familiarity: before.relationship.familiarity + 0.002,
+      lastInteractionAtUtc: shared.endAtUtc,
+    });
+    const completed = app.personasim.store
+      .listActivityEvents(character.id, 100)
+      .find(
+        (event) =>
+          event.scheduleItemId === shared.id && event.eventType === "completed",
+      );
+    expect(completed?.effectTrace).toMatchObject({
+      stateRevisionBefore: before.revision,
+      stateRevisionAfter: before.revision + 1,
+      relationshipSource: "shared_activity_outcome",
+      relationship: {
+        baselineDelta: { familiarity: 0 },
+        appliedProposalDelta: {
+          closeness: 0.006,
+          trust: 0.003,
+          familiarity: 0.002,
+        },
+      },
+      relationshipDailyUsageApplied: {
+        closeness: 0.006,
+        trust: 0.003,
+        familiarity: 0.002,
+      },
+    });
+    const audit = app.personasim.store
+      .listDomainEvents(character.id, 100)
+      .find((event) => event.eventType === "simulation.settled");
+    expect(audit?.payload).toMatchObject({
+      source: "activity_settlement",
+      stateRevisionBefore: before.revision,
+      stateRevisionAfter: before.revision + 1,
+    });
+    const auditChanges = (
+      audit?.payload as { changes?: Array<Record<string, unknown>> } | undefined
+    )?.changes;
+    expect(
+      auditChanges?.find(
+        (change) => change["activityEventId"] === completed?.id,
+      ),
+    ).toMatchObject({
+      source: "activity_settlement",
+      effectTrace: expect.objectContaining({
+        relationshipSource: "shared_activity_outcome",
+      }),
+    });
+
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/agents/${character.id}/activate`,
+    });
+    expect(jsonBody<ActivationBody>(replay).settlement.alreadySettled).toBe(
+      true,
+    );
+    expect(app.personasim.store.getRuntimeState(character.id)).toEqual(after);
+  });
+
+  it("rolls back settlement state, events, and cursor when the final audit fails", async () => {
+    const created = await createTestApp();
+    app = created.app;
+    const character = await createAndPublish(app, "daily");
+    app.personasim.store.database
+      .prepare("DELETE FROM schedule_items WHERE agent_id = ?")
+      .run(character.id);
+    const scheduled = scheduleItemSchema.parse({
+      id: "settlement-rollback-item",
+      agentId: character.id,
+      title: "事务结算活动",
+      description: "用于验证最终领域事件失败时整体回滚。",
+      category: "study",
+      startAtUtc: "2026-08-16T03:00:00.000Z",
+      endAtUtc: "2026-08-16T04:00:00.000Z",
+      timezone: "Asia/Shanghai",
+      status: "planned",
+      rigidity: "fixed",
+      priority: 0.8,
+      source: "manual",
+      adherenceProbability: 1,
+      narrativeImportance: 0.4,
+      shareable: false,
+      stateEffects: { energy: -0.05 },
+      revision: 0,
+      createdAtUtc: START_UTC,
+      updatedAtUtc: START_UTC,
+    });
+    app.personasim.store.insertScheduleItem(scheduled);
+    const beforeState = app.personasim.store.getRuntimeState(character.id)!;
+    const beforeCursor = app.personasim.store.getCursor(character.id)!;
+    const insertDomainEvent = app.personasim.store.insertDomainEvent.bind(
+      app.personasim.store,
+    );
+    const auditSpy = vi
+      .spyOn(app.personasim.store, "insertDomainEvent")
+      .mockImplementation((input) =>
+        input.eventType === "simulation.settled"
+          ? false
+          : insertDomainEvent(input),
+      );
+    created.clock.setUtc("2026-08-16T04:30:00.000Z");
+
+    const failed = await app.inject({
+      method: "POST",
+      url: `/api/agents/${character.id}/activate`,
+    });
+
+    expect(failed.statusCode).toBe(500);
+    expect(app.personasim.store.getRuntimeState(character.id)).toEqual(
+      beforeState,
+    );
+    expect(app.personasim.store.getCursor(character.id)).toEqual(beforeCursor);
+    expect(app.personasim.store.getScheduleItem(scheduled.id)?.status).toBe(
+      "planned",
+    );
+    expect(app.personasim.store.listActivityEvents(character.id)).toEqual([]);
+    expect(
+      app.personasim.store.database
+        .prepare("SELECT COUNT(*) AS count FROM settlements WHERE agent_id = ?")
+        .get(character.id),
+    ).toEqual({ count: 0 });
+
+    auditSpy.mockRestore();
+    const retry = await app.inject({
+      method: "POST",
+      url: `/api/agents/${character.id}/activate`,
+    });
+    expect(retry.statusCode).toBe(200);
+    expect(app.personasim.store.getScheduleItem(scheduled.id)?.status).toBe(
+      "completed",
+    );
   });
 
   it("creates and sends at most one due proactive message for a high-fidelity shareable activity", async () => {
@@ -1114,7 +1306,9 @@ describe("PersonaSim server integration", () => {
   });
 });
 
-async function createTestApp(): Promise<{
+async function createTestApp(
+  liveWorldEffectsMode?: "off" | "shadow" | "enforced",
+): Promise<{
   app: PersonaSimApp;
   clock: FakeClock;
 }> {
@@ -1127,6 +1321,7 @@ async function createTestApp(): Promise<{
     seedDemo: false,
     developerRoutes: true,
     scheduleNegotiationMode: "legacy",
+    ...(liveWorldEffectsMode === undefined ? {} : { liveWorldEffectsMode }),
     llm: {
       provider: "fixture",
       baseUrl: "https://example.invalid",

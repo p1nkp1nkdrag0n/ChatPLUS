@@ -45,6 +45,8 @@ export interface ScheduleItemDraftLike {
 export interface ScheduleItemLike extends ScheduleItemDraftLike {
   id: string;
   agentId: string;
+  /** Server-owned sleep reduction, applied as debt only at settlement. */
+  plannedSleepReductionMinutes?: number | undefined;
   status: ScheduleStatusLike;
   revision: number;
   createdAtUtc: string;

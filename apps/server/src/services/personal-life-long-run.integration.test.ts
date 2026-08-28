@@ -127,11 +127,12 @@ describe("P0 personal-life long-run acceptance", () => {
     });
 
     const plannedState = first.personasim.store.getRuntimeState(character.id);
-    expect(plannedState?.sleepDebtMinutes).toBe(120);
+    expect(plannedState?.sleepDebtMinutes).toBe(0);
     const sleep = requireScheduleItem(first.personasim.store, sleepId);
     expect(sleep).toMatchObject({
       startAtUtc: ADJUSTED_SLEEP_START_UTC,
       endAtUtc: "2026-03-08T10:00:00.000Z",
+      plannedSleepReductionMinutes: 120,
       revision: 1,
     });
     expect(minutesBetween(sleep.startAtUtc, sleep.endAtUtc)).toBe(420);
@@ -242,7 +243,22 @@ describe("P0 personal-life long-run acceptance", () => {
     expect(
       restarted.personasim.store.getRuntimeState(character.id)
         ?.sleepDebtMinutes,
-    ).toBeLessThan(120);
+    ).toBe(120);
+    const sleepOutcome = restarted.personasim.store
+      .listActivityEvents(character.id, 100)
+      .find(
+        (event) =>
+          event.scheduleItemId === sleep.id && event.eventType === "completed",
+      );
+    expect(sleepOutcome?.effectTrace).toMatchObject({
+      sleepDebt: {
+        debtBefore: 0,
+        plannedReductionMinutes: 120,
+        missedScheduledMinutes: 0,
+        recoveryMinutes: 0,
+        debtAfter: 120,
+      },
+    });
 
     const memory = readActivityMemory(
       restarted.personasim.store.database,

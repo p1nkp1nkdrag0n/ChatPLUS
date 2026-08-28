@@ -306,9 +306,23 @@ describe("planner and settlement", () => {
     expect(duplicate.skippedAsDuplicate).toBe(true);
     expect(duplicate.events).toHaveLength(0);
     expect(duplicate.items[0]?.status).toBe(first.items[0]?.status);
+
+    const eventReplay = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: NOW,
+      toUtc: "2026-06-01T11:00:00.000Z",
+      items: [scheduled],
+      state,
+      routineAdherence: 0.8,
+      existingIdempotencyKeys: first.events.map(
+        (event) => event.idempotencyKey,
+      ),
+    });
+    expect(eventReplay.events).toEqual([]);
+    expect(eventReplay.state.revision).toBe(state.revision);
   });
 
-  it("characterizes a settlement batch as evaluating later activities from the batch-start state", () => {
+  it("evaluates each terminal activity from the preceding post-state", () => {
     const state = {
       agentId: "agent-1",
       asOfUtc: NOW,
@@ -350,7 +364,7 @@ describe("planner and settlement", () => {
       const candidate = {
         ...item(
           `state-sensitive-later-${index}`,
-          "2026-06-01T09:15:00.000Z",
+          "2026-06-01T09:00:00.000Z",
           "2026-06-01T10:00:00.000Z",
         ),
         adherenceProbability: 0.4,
@@ -369,14 +383,144 @@ describe("planner and settlement", () => {
       agentId: "agent-1",
       fromUtc: NOW,
       toUtc: "2026-06-01T11:00:00.000Z",
-      items: [first, later!],
+      items: [later!, first],
       state,
       routineAdherence: 0.5,
     });
 
-    expect(settled.items[0]?.status).toBe("completed");
-    expect(settled.items[1]?.status).toBe("completed");
+    const settledById = new Map(
+      settled.items.map((entry) => [entry.id, entry]),
+    );
+    expect(settledById.get(first.id)?.status).toBe("completed");
+    expect(settledById.get(later!.id)?.status).not.toBe("completed");
     expect(probabilityAfterFirst).toBeLessThan(probabilityBefore);
+
+    const terminalEvents = settled.events.filter(
+      (event) => event.kind !== "started",
+    );
+    expect(terminalEvents.map((event) => event.scheduleItemId)).toEqual([
+      first.id,
+      later!.id,
+    ]);
+    expect(terminalEvents[0]?.effectTrace).toMatchObject({
+      stateRevisionBefore: 0,
+      stateRevisionAfter: 1,
+    });
+    expect(terminalEvents[1]?.effectTrace).toMatchObject({
+      stateRevisionBefore: 1,
+      stateRevisionAfter: 2,
+      stateBefore: {
+        stress: 0.55,
+        revision: 1,
+      },
+    });
+    expect(terminalEvents[1]?.effectTrace?.stateBefore.energy).toBeCloseTo(
+      0.45,
+    );
+    expect(
+      terminalEvents[0]?.effectTrace?.appliedStateDelta.energy,
+    ).toBeCloseTo(-0.5);
+    expect(settled.state.revision).toBe(2);
+
+    expect(
+      settled.events.map((event) => [
+        event.occurredAtUtc,
+        event.scheduleItemId,
+        event.kind,
+      ]),
+    ).toEqual([
+      ["2026-06-01T08:15:00.000Z", first.id, "started"],
+      ["2026-06-01T09:00:00.000Z", first.id, "completed"],
+      ["2026-06-01T09:00:00.000Z", later!.id, "started"],
+      [
+        "2026-06-01T10:00:00.000Z",
+        later!.id,
+        settledById.get(later!.id)?.status,
+      ],
+    ]);
+
+    const orderedInput = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: NOW,
+      toUtc: "2026-06-01T11:00:00.000Z",
+      items: [first, later!],
+      state,
+      routineAdherence: 0.5,
+    });
+    expect(orderedInput.events).toEqual(settled.events);
+    expect(orderedInput.state).toEqual(settled.state);
+  });
+
+  it("orders simultaneous terminal causes by item id", () => {
+    const state = {
+      agentId: "agent-1",
+      asOfUtc: NOW,
+      moodValence: 0,
+      moodArousal: 0.5,
+      energy: 0.8,
+      stress: 0.2,
+      socialBattery: 0.6,
+      focus: 0.7,
+      revision: 0,
+    };
+    const completedFixedItem = (
+      prefix: string,
+      startAtUtc: string,
+    ): ScheduleItemLike => {
+      for (let index = 0; index < 10_000; index += 1) {
+        const candidate = {
+          ...item(
+            `${prefix}-${index}`,
+            startAtUtc,
+            "2026-06-01T10:00:00.000Z",
+            "fixed",
+            "work",
+          ),
+          adherenceProbability: 1,
+          stateEffects: { energy: -0.1 },
+        };
+        if (
+          seededUnit(computeActivitySeed(candidate.agentId, candidate)) < 0.9
+        ) {
+          return candidate;
+        }
+      }
+      throw new Error("Unable to find a stable completed activity fixture");
+    };
+    const firstById = completedFixedItem(
+      "terminal-a",
+      "2026-06-01T08:30:00.000Z",
+    );
+    const secondById = completedFixedItem(
+      "terminal-b",
+      "2026-06-01T08:45:00.000Z",
+    );
+
+    const settled = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: NOW,
+      toUtc: "2026-06-01T11:00:00.000Z",
+      items: [secondById, firstById],
+      state,
+      routineAdherence: 1,
+    });
+    const terminals = settled.events.filter(
+      (event) => event.kind !== "started",
+    );
+
+    expect(terminals.map((event) => event.scheduleItemId)).toEqual([
+      firstById.id,
+      secondById.id,
+    ]);
+    expect(
+      terminals.map((event) => [
+        event.effectTrace?.stateRevisionBefore,
+        event.effectTrace?.stateRevisionAfter,
+      ]),
+    ).toEqual([
+      [0, 1],
+      [1, 2],
+    ]);
   });
 
   it("gradually repays sleep debt when sleep settles", () => {
@@ -419,7 +563,276 @@ describe("planner and settlement", () => {
     // 480 completed minutes repay 240 at SLEEP_DEBT_RECOVERY_RATE 0.5.
     expect(first.state.sleepDebtMinutes).toBe(360);
     expect(first.state.sleepDebtMinutes).toBeLessThan(600);
+    expect(
+      first.events.find((event) => event.kind === "completed")?.effectTrace,
+    ).toMatchObject({
+      appliedStateDelta: { sleepDebtMinutes: -240 },
+      sleepDebt: {
+        debtBefore: 600,
+        plannedReductionMinutes: 0,
+        missedScheduledMinutes: 0,
+        recoveryMinutes: 240,
+        debtAfter: 360,
+      },
+    });
     expect(replay.state.sleepDebtMinutes).toBe(first.state.sleepDebtMinutes);
+  });
+
+  it.each([
+    ["completed", 120, 0],
+    ["partial", 300, 180],
+    ["skipped", 480, 360],
+  ] as const)(
+    "realizes planned and missed sleep debt only after a %s outcome",
+    (expectedStatus, expectedDebt, expectedMissedMinutes) => {
+      const state = {
+        agentId: "agent-1",
+        asOfUtc: "2026-06-01T22:00:00.000Z",
+        moodValence: 0,
+        moodArousal: 0.4,
+        energy: 0.5,
+        stress: 0.5,
+        socialBattery: 0.6,
+        focus: 0.45,
+        sleepDebtMinutes: 0,
+        revision: 0,
+      };
+      const probability = calculateActivityCompletionProbability({
+        adherenceProbability: 0,
+        routineAdherence: 0,
+        rigidity: "flexible",
+        energy: state.energy,
+        stress: state.stress,
+      });
+      let sleep: ScheduleItemLike | undefined;
+      for (let index = 0; index < 10_000; index += 1) {
+        const candidate = {
+          ...item(
+            `planned-reduction-${expectedStatus}-${index}`,
+            "2026-06-02T01:00:00.000Z",
+            "2026-06-02T07:00:00.000Z",
+            "flexible",
+            "sleep",
+          ),
+          adherenceProbability: 0,
+          plannedSleepReductionMinutes: 120,
+          stateEffects: {},
+        };
+        const roll = seededUnit(
+          computeActivitySeed(candidate.agentId, candidate),
+        );
+        const status =
+          roll < probability
+            ? "completed"
+            : roll < probability + (1 - probability) * 0.45
+              ? "partial"
+              : "skipped";
+        if (status === expectedStatus) {
+          sleep = candidate;
+          break;
+        }
+      }
+      expect(sleep).toBeDefined();
+
+      const settled = settleSchedule({
+        agentId: "agent-1",
+        fromUtc: "2026-06-01T22:00:00.000Z",
+        toUtc: "2026-06-02T08:00:00.000Z",
+        items: [sleep!],
+        state,
+        routineAdherence: 0,
+      });
+      const terminal = settled.events.find((event) => event.kind !== "started");
+
+      expect(terminal?.kind).toBe(expectedStatus);
+      expect(settled.state.sleepDebtMinutes).toBe(expectedDebt);
+      expect(terminal?.effectTrace).toMatchObject({
+        stateRevisionBefore: 0,
+        stateRevisionAfter: 1,
+        appliedStateDelta: { sleepDebtMinutes: expectedDebt },
+        sleepDebt: {
+          debtBefore: 0,
+          plannedReductionMinutes: 120,
+          missedScheduledMinutes: expectedMissedMinutes,
+          recoveryMinutes: 0,
+          debtAfter: expectedDebt,
+        },
+      });
+    },
+  );
+
+  it.each([
+    ["completed", 0.006, 0.003, 0.002, 1],
+    ["partial", 0.003, 0.001, 0.001, 0.5],
+    ["skipped", -0.002, -0.003, 0, 0],
+  ] as const)(
+    "applies a bounded shared-activity relationship outcome after %s",
+    (
+      expectedStatus,
+      closenessDelta,
+      trustDelta,
+      familiarityDelta,
+      completionRatio,
+    ) => {
+      const state = {
+        agentId: "agent-1",
+        asOfUtc: NOW,
+        moodValence: 0,
+        moodArousal: 0.4,
+        energy: 0.5,
+        stress: 0.5,
+        socialBattery: 0.6,
+        focus: 0.45,
+        sleepDebtMinutes: 0,
+        relationship: {
+          userId: "local-user",
+          closeness: 0.2,
+          trust: 0.25,
+          familiarity: 0.1,
+          recentInteractionValence: 0,
+        },
+        revision: 0,
+      };
+      const probability = calculateActivityCompletionProbability({
+        adherenceProbability: 0,
+        routineAdherence: 0,
+        rigidity: "flexible",
+        energy: state.energy,
+        stress: state.stress,
+      });
+      let shared: ScheduleItemLike | undefined;
+      for (let index = 0; index < 10_000; index += 1) {
+        const candidate = {
+          ...item(
+            `shared-${expectedStatus}-${index}`,
+            "2026-06-01T09:00:00.000Z",
+            "2026-06-01T10:00:00.000Z",
+          ),
+          source: "user_invitation" as const,
+          adherenceProbability: 0,
+        };
+        const roll = seededUnit(
+          computeActivitySeed(candidate.agentId, candidate),
+        );
+        const status =
+          roll < probability
+            ? "completed"
+            : roll < probability + (1 - probability) * 0.45
+              ? "partial"
+              : "skipped";
+        if (status === expectedStatus) {
+          shared = candidate;
+          break;
+        }
+      }
+      expect(shared).toBeDefined();
+
+      const settled = settleSchedule({
+        agentId: "agent-1",
+        fromUtc: NOW,
+        toUtc: "2026-06-01T11:00:00.000Z",
+        items: [shared!],
+        state,
+        routineAdherence: 0,
+        relationshipCapabilityScale: 1,
+      });
+      const terminal = settled.events.find((event) => event.kind !== "started");
+
+      expect(terminal).toMatchObject({
+        kind: expectedStatus,
+        completionRatio,
+        effectTrace: {
+          relationshipSource: "shared_activity_outcome",
+          relationship: {
+            baselineDelta: { familiarity: 0 },
+          },
+        },
+      });
+      expect(settled.state.relationship).toMatchObject({
+        closeness: 0.2 + closenessDelta,
+        trust: 0.25 + trustDelta,
+        familiarity: 0.1 + familiarityDelta,
+        lastInteractionAtUtc: "2026-06-01T10:00:00.000Z",
+      });
+      expect(settled.relationshipDailyUsageApplied).toMatchObject({
+        closeness: Math.abs(closenessDelta),
+        trust: Math.abs(trustDelta),
+      });
+      expect(settled.state.revision).toBe(1);
+    },
+  );
+
+  it("settles a cancelled shared activity once with a distinct relationship cause", () => {
+    const cancelled = {
+      ...item(
+        "shared-cancelled",
+        "2026-06-01T12:00:00.000Z",
+        "2026-06-01T13:00:00.000Z",
+      ),
+      source: "user_invitation" as const,
+      status: "cancelled" as const,
+      updatedAtUtc: "2026-06-01T09:30:00.000Z",
+      revision: 1,
+    };
+    const state = {
+      agentId: "agent-1",
+      asOfUtc: NOW,
+      moodValence: 0,
+      moodArousal: 0.4,
+      energy: 0.5,
+      stress: 0.5,
+      socialBattery: 0.6,
+      focus: 0.45,
+      sleepDebtMinutes: 0,
+      relationship: {
+        userId: "local-user",
+        closeness: 0.2,
+        trust: 0.25,
+        familiarity: 0.1,
+        recentInteractionValence: 0,
+      },
+      revision: 0,
+    };
+
+    const settled = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: NOW,
+      toUtc: "2026-06-01T10:00:00.000Z",
+      items: [cancelled],
+      state,
+      routineAdherence: 1,
+      relationshipCapabilityScale: 1,
+    });
+    const cancelledEvent = settled.events.find(
+      (event) => event.kind === "cancelled",
+    );
+
+    expect(cancelledEvent).toMatchObject({
+      occurredAtUtc: cancelled.updatedAtUtc,
+      effectTrace: {
+        relationshipSource: "shared_activity_outcome",
+      },
+    });
+    expect(settled.changedItems).toEqual([]);
+    expect(settled.state.relationship).toMatchObject({
+      closeness: 0.199,
+      trust: 0.248,
+      familiarity: 0.1,
+      lastInteractionAtUtc: cancelled.updatedAtUtc,
+    });
+
+    const replay = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: NOW,
+      toUtc: "2026-06-01T10:00:00.000Z",
+      items: [cancelled],
+      state: settled.state,
+      routineAdherence: 1,
+      relationshipCapabilityScale: 1,
+      existingIdempotencyKeys: [cancelledEvent!.idempotencyKey],
+    });
+    expect(replay.events).toEqual([]);
+    expect(replay.state.revision).toBe(settled.state.revision);
   });
 
   it("clears the 720-minute sleep debt cap within three full nights", () => {

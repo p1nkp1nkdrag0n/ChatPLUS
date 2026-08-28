@@ -180,6 +180,7 @@ export const ApiStoredActivityEventSchema = z
     outcomeFacts: z.array(z.string().trim().min(1).max(1_000)).max(100),
     stateDelta: ScheduleStateEffectsSchema,
     origin: z.enum(["deterministic", "seeded_probability", "llm_enriched"]),
+    effectTrace: z.record(z.string(), z.unknown()).optional(),
     idempotencyKey: z.string().trim().min(1).max(240),
   })
   .strict();

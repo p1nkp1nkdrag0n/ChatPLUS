@@ -244,6 +244,7 @@ describe("night self-plan bundles", () => {
         id: sleep.id,
         startAtUtc: "2026-06-02T01:00:00.000Z",
         endAtUtc: "2026-06-02T07:00:00.000Z",
+        plannedSleepReductionMinutes: 120,
         revision: sleep.revision + 1,
       }),
     ]);

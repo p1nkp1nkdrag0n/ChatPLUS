@@ -738,9 +738,11 @@ describe("server-owned schedule negotiation", () => {
     expect(publish.mock.calls.map(([event]) => event.type)).toEqual([
       "message.created",
       "schedule.updated",
+      "state.updated",
     ]);
     expect(publish.mock.calls[0]?.[0].data).toEqual(body.assistantMessage);
     expect(publish.mock.calls[1]?.[0].data).toEqual(body.scheduleChanges);
+    expect(publish.mock.calls[2]?.[0].data).toEqual(body.state);
 
     const events = app.personasim.store
       .listDomainEvents(character.id, 100)

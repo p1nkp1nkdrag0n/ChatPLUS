@@ -141,11 +141,10 @@ describe("assembleChatPrompt registry integration", () => {
       locationContext: "studio",
       contextOnlyFields: ["locationContext"],
     });
-    expect(state["qualitative"]).toMatchObject({
-      moodValence: expect.stringContaining("低落"),
-      moodArousal: expect.stringContaining("激活"),
-      focus: expect.stringContaining("专注"),
-    });
+    const qualitative = state["qualitative"] as Record<string, unknown>;
+    expect(qualitative["moodValence"]).toContain("低落");
+    expect(qualitative["moodArousal"]).toContain("激活");
+    expect(qualitative["focus"]).toContain("专注");
     expect(result.system).toContain("authoritative present-moment context");
     expect(result.system).toContain("not a permanent personality fact");
     expect(result.prompt).toContain("stateGuidance");

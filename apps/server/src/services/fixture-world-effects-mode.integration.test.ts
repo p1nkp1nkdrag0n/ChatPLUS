@@ -6,7 +6,6 @@ import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import type { ChatTurnResult } from "./conversation-service.js";
-import type { GenerateObjectInput } from "./llm-service.js";
 
 const START_UTC = "2026-08-16T02:00:00.000Z";
 
@@ -60,7 +59,7 @@ describe("fixture world-effects modes", () => {
 
     const chatCall = generate.mock.calls.find(
       ([input]) => input.purpose === "chat_turn",
-    )?.[0] as GenerateObjectInput<unknown> | undefined;
+    )?.[0];
     expect(chatCall?.fixture).toMatchObject({ worldEffects: {} });
     const audit = app.personasim.store
       .listDomainEvents(character.id, 100)
@@ -74,13 +73,20 @@ describe("fixture world-effects modes", () => {
       accepted: { stateDelta: false, relationshipDelta: false },
       applied: {
         stateDelta: {},
-        relationshipDelta: { familiarity: expect.any(Number) },
       },
       source: {
         relationshipBaseline: "server_interaction_baseline",
         semanticProposal: "none",
       },
     });
+    expect(
+      typeof nestedValue(
+        audit?.payload,
+        "applied",
+        "relationshipDelta",
+        "familiarity",
+      ),
+    ).toBe("number");
   });
 
   it("validates fixture effects in shadow mode but leaves authoritative state unchanged", async () => {
@@ -132,23 +138,24 @@ describe("fixture world-effects modes", () => {
       },
       applied: {
         stateDelta: {},
-        relationshipDelta: { familiarity: expect.any(Number) },
-      },
-      wouldApply: {
-        applied: {
-          stateDelta: {
-            moodValence: expect.any(Number),
-            socialBattery: expect.any(Number),
-          },
-          relationshipDelta: {
-            closeness: expect.any(Number),
-            familiarity: expect.any(Number),
-            recentInteractionValence: expect.any(Number),
-          },
-        },
       },
       rejectionCodes: [],
     });
+    for (const path of [
+      ["applied", "relationshipDelta", "familiarity"],
+      ["wouldApply", "applied", "stateDelta", "moodValence"],
+      ["wouldApply", "applied", "stateDelta", "socialBattery"],
+      ["wouldApply", "applied", "relationshipDelta", "closeness"],
+      ["wouldApply", "applied", "relationshipDelta", "familiarity"],
+      [
+        "wouldApply",
+        "applied",
+        "relationshipDelta",
+        "recentInteractionValence",
+      ],
+    ] as const) {
+      expect(typeof nestedValue(audit?.payload, ...path)).toBe("number");
+    }
   });
 
   it("keeps validated fixture effects when reply repair succeeds", async () => {
@@ -375,4 +382,19 @@ function sendMessage(
 
 function jsonBody<T>(response: { body: string }): T {
   return JSON.parse(response.body) as T;
+}
+
+function nestedValue(value: unknown, ...path: readonly string[]): unknown {
+  let current = value;
+  for (const key of path) {
+    if (
+      typeof current !== "object" ||
+      current === null ||
+      Array.isArray(current)
+    ) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
 }

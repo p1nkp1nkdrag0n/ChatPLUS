@@ -626,16 +626,15 @@ describe("PersonaSim server integration", () => {
     const auditChanges = (
       audit?.payload as { changes?: Array<Record<string, unknown>> } | undefined
     )?.changes;
-    expect(
-      auditChanges?.find(
-        (change) => change["activityEventId"] === completed?.id,
-      ),
-    ).toMatchObject({
-      source: "activity_settlement",
-      effectTrace: expect.objectContaining({
-        relationshipSource: "shared_activity_outcome",
-      }),
-    });
+    const completedChange = auditChanges?.find(
+      (change) => change["activityEventId"] === completed?.id,
+    );
+    expect(completedChange?.["source"]).toBe("activity_settlement");
+    const completedEffectTrace = completedChange?.["effectTrace"] as
+      Record<string, unknown> | undefined;
+    expect(completedEffectTrace?.["relationshipSource"]).toBe(
+      "shared_activity_outcome",
+    );
 
     const replay = await app.inject({
       method: "POST",

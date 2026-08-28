@@ -197,8 +197,8 @@ export class PersonalLifeService {
         throw new RejectedPersonalLifePlan(planning);
       }
 
-      let nextState = state;
-      let stateChanged = false;
+      const nextState = state;
+      const stateChanged = false;
       if (planning.status === "committed") {
         if (consumedIntentId !== planning.bundle.intentId) {
           throw new Error(

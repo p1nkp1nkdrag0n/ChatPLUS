@@ -25,6 +25,9 @@ export function buildOriginalDraft(
   input: OriginalCharacterInput,
 ): CharacterDraft {
   const activeSimulation = input.tier !== "lightweight";
+  const initialRelationship = initialRelationshipPreset(
+    input.initialRelationship,
+  );
   return {
     tier: input.tier,
     sourceType: "original",
@@ -148,8 +151,8 @@ export function buildOriginalDraft(
     },
     userRelationship: {
       relationshipType: input.initialRelationship,
-      initialCloseness: 0.55,
-      initialTrust: 0.6,
+      initialCloseness: initialRelationship.closeness,
+      initialTrust: initialRelationship.trust,
       addressTerms: ["你"],
       sharedContext: "这是双方共同开始的一段持续对话。",
     },
@@ -220,6 +223,31 @@ export function buildOriginalDraft(
     ],
     lockedPaths: [],
   };
+}
+
+export function initialRelationshipPreset(description: string): {
+  closeness: number;
+  trust: number;
+} {
+  const normalized = description.trim().toLowerCase();
+  if (
+    /初次|初识|刚认识|陌生|第一次|new\s+(?:contact|acquaintance)|first\s+(?:meeting|contact)|stranger/u.test(
+      normalized,
+    )
+  ) {
+    return { closeness: 0.18, trust: 0.22 };
+  }
+  if (
+    /多年|亲密|挚友|好友|密友|恋人|伴侣|家人|close\s+friend|best\s+friend|trusted|long[-\s]?time/u.test(
+      normalized,
+    )
+  ) {
+    return { closeness: 0.55, trust: 0.6 };
+  }
+  if (/朋友|熟悉|同事|friend|familiar|colleague/u.test(normalized)) {
+    return { closeness: 0.35, trust: 0.4 };
+  }
+  return { closeness: 0.18, trust: 0.22 };
 }
 
 export function buildImportedDraft(

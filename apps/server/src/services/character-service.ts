@@ -495,6 +495,8 @@ function applyOriginalFormAuthority(
     userRelationship: {
       ...draft.userRelationship,
       relationshipType: input.initialRelationship,
+      initialCloseness: fallback.userRelationship.initialCloseness,
+      initialTrust: fallback.userRelationship.initialTrust,
     },
     knowledge: {
       ...draft.knowledge,
@@ -534,6 +536,7 @@ function authoritativeImportedDraft(
           selfDescription: `${input.characterName}来自《${input.workTitle}》，当前处于${input.storyStage}。`,
           timezone: input.timezone,
         },
+        userRelationship: structuredClone(fallback.userRelationship),
         knowledge: {
           ...candidate.knowledge,
           knownFacts: [

@@ -12,7 +12,7 @@
 >
 > 建议实施分支：`codex/llm-state-closed-loop-20260828`
 >
-> 当前执行状态：只确定历史版本并制定计划；尚未切换分支、创建 worktree、回退代码或执行真实 DeepSeek 调用。
+> 当前执行状态：已从选定基线创建独立 worktree/分支，WP0 基线与 characterization 已完成；尚未执行真实 DeepSeek 调用。
 
 ---
 
@@ -86,13 +86,13 @@ test(acceptance): validate semantic cross-session recall
 
 ### 1.3 候选比较
 
-| 候选 | 已有能力 | 不选或选择原因 |
-|---|---|---|
-| `4ede0f0` / `v0.1.0-preview` | 基础角色、状态、关系、记忆和日程 | 太早，缺少 personal-life、personal-intent 和 self-planning |
-| `c059ddc` | PersonaSim 综合升级基本完成 | 可作备用点，但缺少之后 16 个与真实 DeepSeek、模型效果、记忆、规划和结算相关的修复 |
-| `7082ee2` / `v0.1.1-preview` | README 核心完整，真实模型和连续性验证已存在 | **选择；功能足够，复杂度仍可控** |
-| `9bdac63` | 增强长跑、拆分理解/回复/执行管线 | 不选；相对 `7082ee2` 单次新增约 54,702 行，并加入普通对话状态/关系的关键词资格门控 |
-| 当前 `0841c11` | 大量回复策略、盲审和 release 资产 | 不选；距离 README 核心过远，直接删减比从稳定核心向前修更难验证 |
+| 候选                         | 已有能力                                    | 不选或选择原因                                                                     |
+| ---------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `4ede0f0` / `v0.1.0-preview` | 基础角色、状态、关系、记忆和日程            | 太早，缺少 personal-life、personal-intent 和 self-planning                         |
+| `c059ddc`                    | PersonaSim 综合升级基本完成                 | 可作备用点，但缺少之后 16 个与真实 DeepSeek、模型效果、记忆、规划和结算相关的修复  |
+| `7082ee2` / `v0.1.1-preview` | README 核心完整，真实模型和连续性验证已存在 | **选择；功能足够，复杂度仍可控**                                                   |
+| `9bdac63`                    | 增强长跑、拆分理解/回复/执行管线            | 不选；相对 `7082ee2` 单次新增约 54,702 行，并加入普通对话状态/关系的关键词资格门控 |
+| 当前 `0841c11`               | 大量回复策略、盲审和 release 资产           | 不选；距离 README 核心过远，直接删减比从稳定核心向前修更难验证                     |
 
 ### 1.4 为什么不为了“代码更近”选择 `9bdac63`
 
@@ -188,29 +188,29 @@ new worktree:  E:\2026\ChatPLUS-state-closed-loop-20260828
 
 ### 4.1 已有 RuntimeState
 
-| 变量 | 范围 | 现有主要来源 | 现有主要消费者 | 本轮处理 |
-|---|---:|---|---|---|
-| `moodValence` | `[-1,1]` | 对话 proposal、活动结算 | Prompt | 增加定性描述与状态对照验证 |
-| `moodArousal` | `[0,1]` | 对话 proposal、活动结算 | Prompt | 映射到表达节奏和活跃程度，但不强制固定措辞 |
-| `energy` | `[0,1]` | 对话 proposal、睡眠/活动 | Prompt、Reply Strategy、自主计划 | 验证低/高精力下回复和生活选择差异 |
-| `stress` | `[0,1]` | 对话 proposal、活动完成/跳过 | Prompt、Reply Strategy、自主计划 | 验证高压状态对表达、活动完成概率的影响 |
-| `socialBattery` | `[0,1]` | 对话 proposal、社交活动 | Prompt、Reply Strategy、自主计划 | 验证主动程度与回复长度倾向 |
-| `focus` | `[0,1]` | 对话 proposal、工作/学习活动 | Prompt、自主计划 | 验证话题维持与活动选择 |
-| `sleepDebtMinutes` | `[0,720]` | 自主计划、睡眠结算 | Prompt、Reply Strategy、自主计划 | 修正发生时机并验证跨日延续 |
-| `currentActivityId` | 可选 | 活动结算 | Prompt、角色当前生活事实 | 验证当前活动与回复陈述一致 |
-| `locationContext` | 可选文本 | 当前没有可靠生产写入 | Prompt | 本轮先标为 `context-only`；不得由模型无依据写入 |
-| `asOfUtc` | UTC | 对话/结算 | 并发与时序 | 验证时间单调与重启一致性 |
-| `revision` | 非负整数 | 每次状态提交 | 幂等、并发、SSE | 保证每个有效原因最多递增一次 |
+| 变量                |      范围 | 现有主要来源                 | 现有主要消费者                   | 本轮处理                                        |
+| ------------------- | --------: | ---------------------------- | -------------------------------- | ----------------------------------------------- |
+| `moodValence`       |  `[-1,1]` | 对话 proposal、活动结算      | Prompt                           | 增加定性描述与状态对照验证                      |
+| `moodArousal`       |   `[0,1]` | 对话 proposal、活动结算      | Prompt                           | 映射到表达节奏和活跃程度，但不强制固定措辞      |
+| `energy`            |   `[0,1]` | 对话 proposal、睡眠/活动     | Prompt、Reply Strategy、自主计划 | 验证低/高精力下回复和生活选择差异               |
+| `stress`            |   `[0,1]` | 对话 proposal、活动完成/跳过 | Prompt、Reply Strategy、自主计划 | 验证高压状态对表达、活动完成概率的影响          |
+| `socialBattery`     |   `[0,1]` | 对话 proposal、社交活动      | Prompt、Reply Strategy、自主计划 | 验证主动程度与回复长度倾向                      |
+| `focus`             |   `[0,1]` | 对话 proposal、工作/学习活动 | Prompt、自主计划                 | 验证话题维持与活动选择                          |
+| `sleepDebtMinutes`  | `[0,720]` | 自主计划、睡眠结算           | Prompt、Reply Strategy、自主计划 | 修正发生时机并验证跨日延续                      |
+| `currentActivityId` |      可选 | 活动结算                     | Prompt、角色当前生活事实         | 验证当前活动与回复陈述一致                      |
+| `locationContext`   |  可选文本 | 当前没有可靠生产写入         | Prompt                           | 本轮先标为 `context-only`；不得由模型无依据写入 |
+| `asOfUtc`           |       UTC | 对话/结算                    | 并发与时序                       | 验证时间单调与重启一致性                        |
+| `revision`          |  非负整数 | 每次状态提交                 | 幂等、并发、SSE                  | 保证每个有效原因最多递增一次                    |
 
 ### 4.2 已有关系状态
 
-| 变量 | 默认值 | 当前问题 | 本轮目标 |
-|---|---:|---|---|
-| `closeness` | `0.55` | 默认已经像熟人，难验证缓慢建立 | 保留角色可配置；默认新角色改为较低的“初识”预设，确切数值通过离线场景校准 |
-| `trust` | `0.60` | 初始信任偏高 | 不按每轮固定增长，只在有语义依据时小幅变化 |
-| `familiarity` | `0.40` | 普通无 delta 聊天不会积累 | 每次成功、非 replay 的有效互动产生极小基础积累，再叠加有依据的模型 proposal |
-| `recentInteractionValence` | `0` | 只累加、不随时间回落 | 改为短期信号，在后续互动或时间结算中逐步回归 0 |
-| `lastInteractionAtUtc` | 无 | 只有发生数值 delta 时更新 | 每次成功、非 replay 的用户—角色回合都更新 |
+| 变量                       | 默认值 | 当前问题                       | 本轮目标                                                                    |
+| -------------------------- | -----: | ------------------------------ | --------------------------------------------------------------------------- |
+| `closeness`                | `0.55` | 默认已经像熟人，难验证缓慢建立 | 保留角色可配置；默认新角色改为较低的“初识”预设，确切数值通过离线场景校准    |
+| `trust`                    | `0.60` | 初始信任偏高                   | 不按每轮固定增长，只在有语义依据时小幅变化                                  |
+| `familiarity`              | `0.40` | 普通无 delta 聊天不会积累      | 每次成功、非 replay 的有效互动产生极小基础积累，再叠加有依据的模型 proposal |
+| `recentInteractionValence` |    `0` | 只累加、不随时间回落           | 改为短期信号，在后续互动或时间结算中逐步回归 0                              |
+| `lastInteractionAtUtc`     |     无 | 只有发生数值 delta 时更新      | 每次成功、非 replay 的用户—角色回合都更新                                   |
 
 ### 4.3 已有对话闭环
 
@@ -555,32 +555,32 @@ recordedAtUtc
 
 ### 13.1 测试分层
 
-| 层级 | Provider | 目的 | 是否联网 |
-|---|---|---|---|
-| Unit | 无 | schema、clamp、scale、状态公式、关系曲线 | 否 |
-| Integration | stub/fixture envelope | 事务、幂等、重启、下一轮 Prompt | 否 |
-| Simulation | fixture + FakeClock | 活动、离线结算、sleep debt、长期关系 | 否 |
-| Real Provider | DeepSeek | 验证真实模型能读取状态、自然表达并提出合理 delta | 是，显式执行 |
+| 层级          | Provider              | 目的                                             | 是否联网     |
+| ------------- | --------------------- | ------------------------------------------------ | ------------ |
+| Unit          | 无                    | schema、clamp、scale、状态公式、关系曲线         | 否           |
+| Integration   | stub/fixture envelope | 事务、幂等、重启、下一轮 Prompt                  | 否           |
+| Simulation    | fixture + FakeClock   | 活动、离线结算、sleep debt、长期关系             | 否           |
+| Real Provider | DeepSeek              | 验证真实模型能读取状态、自然表达并提出合理 delta | 是，显式执行 |
 
 ### 13.2 离线核心场景
 
-| ID | 场景 | 必须证明 |
-|---|---|---|
-| ST-01 | 相同消息，高精力低压力 vs 低精力高压力 | Prompt 状态不同，回复倾向与状态一致 |
-| ST-02 | 正向低唤醒 vs 负向高唤醒 | mood 两维均有独立影响，不只是复述数字 |
-| ST-03 | 高 focus vs 低 focus；高/低 socialBattery | 话题维持、主动扩展和回复策略有差异 |
-| ST-04 | 合法 `stateDelta` | 限幅后落库，revision 只增一次 |
-| ST-05 | 下一轮与应用重启 | post-state 被下一轮和重启后读取 |
-| ST-06 | 相同 `clientMessageId` 重试 | 不产生第二次状态或关系变化 |
-| ST-07 | 事务中途失败 | 消息、状态、关系和 trace 全部回滚 |
-| RL-01 | 10 个普通自然回合 | familiarity 缓慢增加，时间戳每轮更新 |
-| RL-02 | 30/100 回合 | 关系不爆涨，不越界，增长曲线可解释 |
-| RL-03 | 支持、误解、修复三段互动 | closeness/trust/valence 变化有因果且不过度 |
-| RL-04 | 共同活动 completed / partial / skipped | 只有实际结果产生差异化后果 |
-| TM-01 | 多活动按序结算 | 前一 post-state 影响后一活动概率和结果 |
-| TM-02 | 关闭 24 小时后重开两次 | 第一次追赶，第二次幂等无重复 |
-| TM-03 | 睡眠缩短、部分完成、跳过、补眠 | sleep debt 在事实发生时变化并能恢复 |
-| CP-01 | lightweight / daily / high_fidelity | capability 差异明确且不会绕过服务端限制 |
+| ID    | 场景                                      | 必须证明                                   |
+| ----- | ----------------------------------------- | ------------------------------------------ |
+| ST-01 | 相同消息，高精力低压力 vs 低精力高压力    | Prompt 状态不同，回复倾向与状态一致        |
+| ST-02 | 正向低唤醒 vs 负向高唤醒                  | mood 两维均有独立影响，不只是复述数字      |
+| ST-03 | 高 focus vs 低 focus；高/低 socialBattery | 话题维持、主动扩展和回复策略有差异         |
+| ST-04 | 合法 `stateDelta`                         | 限幅后落库，revision 只增一次              |
+| ST-05 | 下一轮与应用重启                          | post-state 被下一轮和重启后读取            |
+| ST-06 | 相同 `clientMessageId` 重试               | 不产生第二次状态或关系变化                 |
+| ST-07 | 事务中途失败                              | 消息、状态、关系和 trace 全部回滚          |
+| RL-01 | 10 个普通自然回合                         | familiarity 缓慢增加，时间戳每轮更新       |
+| RL-02 | 30/100 回合                               | 关系不爆涨，不越界，增长曲线可解释         |
+| RL-03 | 支持、误解、修复三段互动                  | closeness/trust/valence 变化有因果且不过度 |
+| RL-04 | 共同活动 completed / partial / skipped    | 只有实际结果产生差异化后果                 |
+| TM-01 | 多活动按序结算                            | 前一 post-state 影响后一活动概率和结果     |
+| TM-02 | 关闭 24 小时后重开两次                    | 第一次追赶，第二次幂等无重复               |
+| TM-03 | 睡眠缩短、部分完成、跳过、补眠            | sleep debt 在事实发生时变化并能恢复        |
+| CP-01 | lightweight / daily / high_fidelity       | capability 差异明确且不会绕过服务端限制    |
 
 ### 13.3 测试对话原则
 

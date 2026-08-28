@@ -25,6 +25,25 @@ describe("server configuration", () => {
     }
   });
 
+  it("characterizes the pre-remediation core loop defaults", () => {
+    const previousPlanning = process.env["SELF_INITIATED_PLANNING"];
+    const previousWorldEffects = process.env["LIVE_WORLD_EFFECTS"];
+    delete process.env["SELF_INITIATED_PLANNING"];
+    delete process.env["LIVE_WORLD_EFFECTS"];
+    try {
+      const config = readConfig();
+      expect(config.selfInitiatedPlanningMode).toBe("off");
+      expect(config.liveWorldEffectsMode).toBe("shadow");
+    } finally {
+      if (previousPlanning === undefined)
+        delete process.env["SELF_INITIATED_PLANNING"];
+      else process.env["SELF_INITIATED_PLANNING"] = previousPlanning;
+      if (previousWorldEffects === undefined)
+        delete process.env["LIVE_WORLD_EFFECTS"];
+      else process.env["LIVE_WORLD_EFFECTS"] = previousWorldEffects;
+    }
+  });
+
   it("rejects an invalid conversation retention boundary", () => {
     expect(() =>
       readConfig({

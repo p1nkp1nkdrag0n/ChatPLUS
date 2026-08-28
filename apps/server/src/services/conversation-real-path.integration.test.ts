@@ -660,6 +660,85 @@ describe("openai-compatible reply-first conversation path", () => {
     ]);
   });
 
+  it("characterizes shadow world effects as audited but not persisted", async () => {
+    const created = await createRealProviderTestApp("shadow");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: {
+            text: "I can feel this conversation taking a little energy.",
+          },
+          worldEffects: {
+            stateDelta: { energy: -0.1 },
+            relationshipDelta: { familiarity: 0.02 },
+          },
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "world-effects-shadow-characterization",
+      "Stay with me for a moment.",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.state).toEqual(before);
+    const audit = app.personasim.store
+      .listDomainEvents(character.id, 100)
+      .find(
+        (event) =>
+          event.eventType === "conversation.world_effects_shadow_evaluated",
+      );
+    expect(audit?.payload).toMatchObject({
+      mode: "shadow",
+      accepted: { stateDelta: true, relationshipDelta: true },
+    });
+  });
+
+  it("characterizes an effect-free turn as leaving relationship time untouched", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: { text: "I am glad you stopped by." },
+          worldEffects: {},
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "relationship-time-characterization",
+      "Hi, I just wanted to say hello.",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.state.revision).toBe(before.revision);
+    expect(body.state.relationship).toEqual(before.relationship);
+    expect(body.state.relationship.lastInteractionAtUtc).toBeUndefined();
+  });
+
   it("commits valid world effects while rejecting malformed siblings", async () => {
     const created = await createRealProviderTestApp("enforced");
     app = created.app;
@@ -749,6 +828,9 @@ describe("openai-compatible reply-first conversation path", () => {
       },
       rejectionCodes: ["server_owned_effect_field"],
     });
+    expect(audit?.payload).not.toHaveProperty("proposedDelta");
+    expect(audit?.payload).not.toHaveProperty("beforeChangedFields");
+    expect(audit?.payload).not.toHaveProperty("afterChangedFields");
   });
 
   it("preserves validated effects when reply repair succeeds", async () => {

@@ -6,7 +6,9 @@ import {
   validateScheduleProposal,
   validateScheduleProposals,
 } from "./schedule-validator.js";
-import { settleSchedule } from "./settlement-engine.js";
+import { computeActivitySeed, settleSchedule } from "./settlement-engine.js";
+import { seededUnit } from "./shared.js";
+import { calculateActivityCompletionProbability } from "./state-engine.js";
 
 const NOW = "2026-06-01T08:00:00.000Z";
 
@@ -304,6 +306,77 @@ describe("planner and settlement", () => {
     expect(duplicate.skippedAsDuplicate).toBe(true);
     expect(duplicate.events).toHaveLength(0);
     expect(duplicate.items[0]?.status).toBe(first.items[0]?.status);
+  });
+
+  it("characterizes a settlement batch as evaluating later activities from the batch-start state", () => {
+    const state = {
+      agentId: "agent-1",
+      asOfUtc: NOW,
+      moodValence: 0,
+      moodArousal: 0.5,
+      energy: 0.95,
+      stress: 0.05,
+      socialBattery: 0.6,
+      focus: 0.7,
+      revision: 0,
+    };
+    const first = {
+      ...item(
+        "exhausting-fixed-activity",
+        "2026-06-01T08:15:00.000Z",
+        "2026-06-01T09:00:00.000Z",
+        "fixed",
+        "work",
+      ),
+      adherenceProbability: 1,
+      stateEffects: { energy: -0.5, stress: 0.5 },
+    };
+    const probabilityBefore = calculateActivityCompletionProbability({
+      adherenceProbability: 0.4,
+      routineAdherence: 0.5,
+      rigidity: "flexible",
+      energy: state.energy,
+      stress: state.stress,
+    });
+    const probabilityAfterFirst = calculateActivityCompletionProbability({
+      adherenceProbability: 0.4,
+      routineAdherence: 0.5,
+      rigidity: "flexible",
+      energy: state.energy - 0.5,
+      stress: state.stress + 0.5,
+    });
+    let later: ScheduleItemLike | undefined;
+    for (let index = 0; index < 10_000; index += 1) {
+      const candidate = {
+        ...item(
+          `state-sensitive-later-${index}`,
+          "2026-06-01T09:15:00.000Z",
+          "2026-06-01T10:00:00.000Z",
+        ),
+        adherenceProbability: 0.4,
+      };
+      const roll = seededUnit(
+        computeActivitySeed(candidate.agentId, candidate),
+      );
+      if (roll >= probabilityAfterFirst && roll < probabilityBefore) {
+        later = candidate;
+        break;
+      }
+    }
+    expect(later).toBeDefined();
+
+    const settled = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: NOW,
+      toUtc: "2026-06-01T11:00:00.000Z",
+      items: [first, later!],
+      state,
+      routineAdherence: 0.5,
+    });
+
+    expect(settled.items[0]?.status).toBe("completed");
+    expect(settled.items[1]?.status).toBe("completed");
+    expect(probabilityAfterFirst).toBeLessThan(probabilityBefore);
   });
 
   it("gradually repays sleep debt when sleep settles", () => {

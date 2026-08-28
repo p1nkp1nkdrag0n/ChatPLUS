@@ -237,7 +237,7 @@ type TurnPlan = {
   startedNewSession?: boolean;
 };
 
-class AcceptanceHttpError extends Error {
+export class AcceptanceHttpError extends Error {
   constructor(readonly exchange: HttpExchange) {
     super(`HTTP ${exchange.status} for ${exchange.method} ${exchange.path}`);
     this.name = "AcceptanceHttpError";
@@ -821,7 +821,7 @@ async function createSession(origin: string, agentId: string, title: string) {
   );
 }
 
-function jsonPost(body: unknown): RequestInit {
+export function jsonPost(body: unknown): RequestInit {
   return {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -829,7 +829,7 @@ function jsonPost(body: unknown): RequestInit {
   };
 }
 
-async function requestJson<T>(
+export async function requestJson<T>(
   origin: string,
   path: string,
   schema: ZodType<T>,

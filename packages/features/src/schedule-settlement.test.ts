@@ -8,7 +8,10 @@ import {
 } from "./schedule-validator.js";
 import { computeActivitySeed, settleSchedule } from "./settlement-engine.js";
 import { seededUnit } from "./shared.js";
-import { calculateActivityCompletionProbability } from "./state-engine.js";
+import {
+  calculateActivityCompletionProbability,
+  type RuntimeStateLike,
+} from "./state-engine.js";
 
 const NOW = "2026-06-01T08:00:00.000Z";
 
@@ -262,7 +265,7 @@ describe("planner and settlement", () => {
       "fixed",
       "work",
     );
-    const state = {
+    const state: RuntimeStateLike = {
       agentId: "agent-1",
       asOfUtc: NOW,
       moodValence: 0,
@@ -320,6 +323,61 @@ describe("planner and settlement", () => {
     });
     expect(eventReplay.events).toEqual([]);
     expect(eventReplay.state.revision).toBe(state.revision);
+  });
+
+  it("publishes the active activity id and clears it after the activity ends", () => {
+    const scheduled = item(
+      "current-study-block",
+      "2026-06-01T08:15:00.000Z",
+      "2026-06-01T09:00:00.000Z",
+      "fixed",
+      "study",
+    );
+    const state: RuntimeStateLike = {
+      agentId: "agent-1",
+      asOfUtc: NOW,
+      moodValence: 0,
+      moodArousal: 0.5,
+      energy: 0.6,
+      stress: 0.2,
+      socialBattery: 0.6,
+      focus: 0.7,
+      revision: 0,
+    };
+    const started = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: NOW,
+      toUtc: "2026-06-01T08:30:00.000Z",
+      items: [scheduled],
+      state,
+      routineAdherence: 0.8,
+    });
+
+    expect(started.state.currentActivityId).toBe(scheduled.id);
+    expect(started.items[0]?.status).toBe("in_progress");
+    expect(started.events).toEqual([
+      expect.objectContaining({
+        scheduleItemId: scheduled.id,
+        kind: "started",
+      }),
+    ]);
+
+    const finished = settleSchedule({
+      agentId: "agent-1",
+      fromUtc: "2026-06-01T08:30:00.000Z",
+      toUtc: "2026-06-01T09:05:00.000Z",
+      items: started.items,
+      state: started.state,
+      routineAdherence: 0.8,
+      existingIdempotencyKeys: started.events.map(
+        (event) => event.idempotencyKey,
+      ),
+    });
+
+    expect(finished.state.currentActivityId).toBeUndefined();
+    expect(finished.items[0]?.status).not.toBe("in_progress");
+    expect(finished.events).toHaveLength(1);
+    expect(finished.events[0]?.kind).not.toBe("started");
   });
 
   it("evaluates each terminal activity from the preceding post-state", () => {

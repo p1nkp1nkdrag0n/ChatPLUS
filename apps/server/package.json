@@ -11,7 +11,9 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "test": "vitest run --root ../.. apps/server/src",
     "test:llm:smoke": "tsx src/scripts/llm-smoke.ts",
-    "test:deepseek:acceptance": "tsx src/scripts/deepseek-acceptance.ts"
+    "test:deepseek:acceptance": "tsx src/scripts/deepseek-acceptance.ts",
+    "test:deepseek:state-acceptance": "tsx src/scripts/deepseek-state-acceptance.ts",
+    "test:deepseek:state-continuation": "tsx src/scripts/deepseek-state-continuation.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

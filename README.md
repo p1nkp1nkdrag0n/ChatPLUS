@@ -73,6 +73,32 @@ pnpm test:llm:smoke
 
 Provider 使用 Chat Completions、禁用思考输出、请求 `json_object`，再以 Zod 验证业务结构；模型永远不能直接写数据库。参考 DeepSeek 官方 [Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion) 与 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 文档。
 
+## 状态闭环验证
+
+状态闭环测试按责任拆分，普通命令全部离线运行：
+
+```bash
+pnpm test:state:unit         # 状态描述、Prompt、关系与 proposal 规则
+pnpm test:state:integration  # HTTP 提交、事务、幂等、重启与 capability
+pnpm test:state:simulation   # FakeClock、活动顺序结算与 sleep debt
+```
+
+真实 DeepSeek 状态验收是显式付费命令，不会被 `pnpm test`、CI 或开发启动间接触发。运行前必须同时提供项目现有的 OpenAI-compatible DeepSeek 配置并显式设置 `REAL_DEEPSEEK_STATE_ACCEPTANCE=1`：
+
+```bash
+pnpm test:state:real:deepseek
+```
+
+该命令固定运行六个单一意图场景，保存脱敏后的完整输入、原始 Provider 输出、解析 envelope、状态前后值、提交 trace 与下一轮 Prompt。语义不理想不会自动重采样；自动 `PASS` 只表示证据链结构完整，语言自然度和因果合理性仍需人工复核。
+
+如需对某次通过运行追加一次真实的跨会话/重启延续验证，还需设置 `REAL_DEEPSEEK_STATE_CONTINUATION_DATABASE_PATH`、`REAL_DEEPSEEK_STATE_CONTINUATION_AGENT_ID`，可选设置 `REAL_DEEPSEEK_STATE_CONTINUATION_SOURCE_RUN_ID`，然后运行：
+
+```bash
+pnpm test:state:real:deepseek:continuation
+```
+
+延续 runner 会先复制源 SQLite 到隔离路径，再用同一角色新建会话；源验收数据库不会被改写。
+
 ## 常用命令
 
 ```bash
@@ -82,6 +108,9 @@ pnpm typecheck        # 所有 workspace 严格类型检查
 pnpm lint             # ESLint
 pnpm build            # 类型检查并构建 Web
 pnpm test             # Fixture 单元/集成/模拟测试
+pnpm test:state:unit  # 状态闭环单元测试
+pnpm test:state:integration # 状态闭环 HTTP/持久化测试
+pnpm test:state:simulation  # 状态闭环 FakeClock 模拟
 pnpm exec playwright install chromium  # 首次运行 E2E 前安装测试浏览器
 pnpm test:e2e         # Playwright 桌面与移动端流程
 pnpm test:llm:smoke   # 显式真实 Provider 测试

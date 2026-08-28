@@ -12,9 +12,12 @@ export interface ReplyDialogueStyleLike {
 }
 export interface ReplyStrategyContext {
   state?: {
+    moodValence?: number;
+    moodArousal?: number;
     energy: number;
     stress: number;
     socialBattery: number;
+    focus?: number;
     sleepDebtMinutes?: number;
   };
   relationship?: {
@@ -33,6 +36,7 @@ export interface ReplyStrategy {
   preferredChunkCount: number;
   lengthGuidance: string;
   deliveryGuidance: string;
+  stateGuidance: string;
 }
 
 const BRIEF_REQUEST =
@@ -126,6 +130,8 @@ export function deriveReplyStrategy(
     const energy = clamp(runtime.energy, 0, 1);
     const stress = clamp(runtime.stress, 0, 1);
     const socialBattery = clamp(runtime.socialBattery, 0, 1);
+    const focus = clamp(runtime.focus ?? 0.5, 0, 1);
+    const arousal = clamp(runtime.moodArousal ?? 0.5, 0, 1);
     const sleepDebt = clamp(runtime.sleepDebtMinutes ?? 0, 0, 720) / 720;
     const fatigue = Math.max((1 - energy) * 0.65 + stress * 0.35, sleepDebt);
     if (fatigue >= 0.55) {
@@ -144,6 +150,28 @@ export function deriveReplyStrategy(
       );
       if (socialBattery < 0.25) deliveryPreference = "prefer_single_block";
     }
+    if (socialBattery < 0.25) {
+      preferredChunkCount = 1;
+      deliveryPreference = "prefer_single_block";
+    }
+    if (focus < 0.3) {
+      target = Math.max(24, Math.round(target * 0.88));
+      range = rangeFor(complexity, target);
+      preferredChunkCount = Math.min(preferredChunkCount, 2);
+    } else if (focus > 0.78 && fatigue < 0.55) {
+      target = Math.round(target * 1.05);
+      range = rangeFor(complexity, target);
+    }
+    if (arousal < 0.22) {
+      preferredChunkCount = Math.min(preferredChunkCount, 2);
+    } else if (
+      arousal > 0.78 &&
+      energy > 0.5 &&
+      socialBattery > 0.5 &&
+      deliveryPreference !== "prefer_single_block"
+    ) {
+      preferredChunkCount = Math.min(12, preferredChunkCount + 1);
+    }
   }
 
   return {
@@ -161,7 +189,46 @@ export function deriveReplyStrategy(
       deliveryPreference,
       preferredChunkCount,
     ),
+    stateGuidance: stateGuidanceFor(runtime),
   };
+}
+
+function stateGuidanceFor(state: ReplyStrategyContext["state"]): string {
+  if (state === undefined) {
+    return "No authoritative runtime state was supplied; do not invent a current mood, fatigue level, or activity.";
+  }
+  const valence = clamp(state.moodValence ?? 0, -1, 1);
+  const arousal = clamp(state.moodArousal ?? 0.5, 0, 1);
+  const focus = clamp(state.focus ?? 0.5, 0, 1);
+  const energy = clamp(state.energy, 0, 1);
+  const stress = clamp(state.stress, 0, 1);
+  const socialBattery = clamp(state.socialBattery, 0, 1);
+  const sleepDebt = clamp(state.sleepDebtMinutes ?? 0, 0, 720);
+  const affect =
+    valence < -0.35
+      ? arousal > 0.65
+        ? "negative and activated: allow a tenser, sharper emotional color"
+        : "negative and subdued: allow a quieter, heavier emotional color"
+      : valence > 0.35
+        ? arousal > 0.65
+          ? "positive and activated: allow brighter, more animated energy"
+          : "positive and calm: allow relaxed warmth"
+        : arousal > 0.7
+          ? "emotionally activated but mixed: keep the response vivid without forcing a label"
+          : "emotionally even: keep the response steady";
+  const attention =
+    focus < 0.3
+      ? "Focus is low, so keep the thought simpler and avoid unnecessary branches"
+      : focus > 0.75
+        ? "Focus is high, so the character can sustain the current thread coherently"
+        : "Focus is ordinary, so follow the conversation naturally";
+  const capacity =
+    energy < 0.3 || stress > 0.75 || sleepDebt >= 300
+      ? "Current capacity is strained; prefer a lower-effort rhythm unless the user explicitly needs detail"
+      : socialBattery < 0.25
+        ? "Social capacity is low; be more restrained and avoid stacking questions"
+        : "Current capacity supports an ordinary conversational rhythm";
+  return `${affect}. ${attention}. ${capacity}. Treat these as soft present-moment tendencies: never recite metrics, force stock wording, or turn them into permanent personality facts.`;
 }
 
 function targetFor(

@@ -167,7 +167,64 @@ describe("deriveReplyStrategy", () => {
 
     expect(fatiguedCasual.targetChars).toBeLessThan(restedCasual.targetChars);
     expect(fatiguedCasual.preferredChunkCount).toBe(1);
-    expect(fatiguedDetailed).toEqual(restedDetailed);
+    expect(fatiguedDetailed.targetChars).toBe(restedDetailed.targetChars);
+    expect(fatiguedDetailed.targetMinChars).toBe(restedDetailed.targetMinChars);
+    expect(fatiguedDetailed.targetMaxChars).toBe(restedDetailed.targetMaxChars);
+    expect(fatiguedDetailed.stateGuidance).not.toBe(
+      restedDetailed.stateGuidance,
+    );
     expect(fatiguedDetailed.complexity).toBe("deep");
+  });
+
+  it("keeps affect, focus, and social capacity as distinct soft state signals", () => {
+    const dialogue = {
+      verbosity: 0.6,
+      averageMessageLength: 160,
+      averageChunksPerTurn: 3,
+    };
+    const input = "I was thinking about you today.";
+    const calmFocused = deriveReplyStrategy(input, dialogue, {
+      state: {
+        moodValence: 0.8,
+        moodArousal: 0.1,
+        energy: 0.85,
+        stress: 0.1,
+        socialBattery: 0.9,
+        focus: 0.9,
+        sleepDebtMinutes: 0,
+      },
+    });
+    const activatedDistracted = deriveReplyStrategy(input, dialogue, {
+      state: {
+        moodValence: -0.8,
+        moodArousal: 0.9,
+        energy: 0.85,
+        stress: 0.1,
+        socialBattery: 0.9,
+        focus: 0.1,
+        sleepDebtMinutes: 0,
+      },
+    });
+    const sociallyDrained = deriveReplyStrategy(input, dialogue, {
+      state: {
+        moodValence: 0,
+        moodArousal: 0.5,
+        energy: 0.85,
+        stress: 0.1,
+        socialBattery: 0.05,
+        focus: 0.9,
+        sleepDebtMinutes: 0,
+      },
+    });
+
+    expect(calmFocused.stateGuidance).toContain("positive and calm");
+    expect(activatedDistracted.stateGuidance).toContain(
+      "negative and activated",
+    );
+    expect(activatedDistracted.targetChars).toBeLessThan(
+      calmFocused.targetChars,
+    );
+    expect(sociallyDrained.stateGuidance).toContain("Social capacity is low");
+    expect(sociallyDrained.preferredChunkCount).toBeLessThanOrEqual(2);
   });
 });

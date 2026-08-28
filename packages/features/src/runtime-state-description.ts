@@ -1,6 +1,8 @@
 import type { RuntimeStateLike } from "./state-engine.js";
 
 export interface RuntimeStateDescription {
+  moodValence: string;
+  moodArousal: string;
   energy: string;
   stress: string;
   socialBattery: string;
@@ -12,11 +14,29 @@ export interface RuntimeStateDescription {
 export function describeRuntimeState(
   state: Pick<
     RuntimeStateLike,
-    "energy" | "stress" | "socialBattery" | "focus" | "sleepDebtMinutes"
+    | "moodValence"
+    | "moodArousal"
+    | "energy"
+    | "stress"
+    | "socialBattery"
+    | "focus"
+    | "sleepDebtMinutes"
   >,
 ): RuntimeStateDescription {
   const sleepDebt = Math.max(0, Math.min(720, state.sleepDebtMinutes ?? 0));
   const parts = {
+    moodValence: describeSignedBand(state.moodValence, [
+      [-0.5, "情绪明显低落，表达更偏沉重"],
+      [-0.1, "情绪略偏负向，容易流露出低落或不快"],
+      [0.35, "情绪相对平稳"],
+      [1.01, "情绪明显正向，更容易流露轻松和愉快"],
+    ]),
+    moodArousal: describeBand(state.moodArousal, [
+      [0.25, "情绪唤醒度较低，表达节奏更平静"],
+      [0.55, "情绪活跃度适中"],
+      [0.8, "情绪较活跃，反应更鲜明"],
+      [1.01, "情绪高度激活，表达节奏更紧或更快"],
+    ]),
     energy: describeBand(state.energy, [
       [
         0.25,
@@ -92,12 +112,23 @@ export function describeRuntimeState(
   return {
     ...parts,
     summary: [
+      parts.moodValence,
+      parts.moodArousal,
       parts.energy,
       parts.stress,
       parts.socialBattery,
+      parts.focus,
       parts.sleepDebt,
     ].join("\uff1b"),
   };
+}
+
+function describeSignedBand(
+  value: number,
+  bands: ReadonlyArray<readonly [number, string]>,
+): string {
+  const safe = Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
+  return bands.find(([maximum]) => safe < maximum)?.[1] ?? bands.at(-1)![1];
 }
 
 function describeBand(

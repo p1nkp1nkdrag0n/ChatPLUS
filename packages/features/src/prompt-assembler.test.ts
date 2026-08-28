@@ -108,6 +108,49 @@ describe("assembleChatPrompt registry integration", () => {
     ]);
   });
 
+  it("injects authoritative exact and qualitative runtime state without promoting it to memory", () => {
+    const result = assembleChatPrompt(
+      baseInput({
+        state: {
+          ...baseInput().state,
+          moodValence: -0.75,
+          moodArousal: 0.9,
+          focus: 0.15,
+          sleepDebtMinutes: 240,
+          locationContext: "studio",
+          revision: 7,
+        },
+      }),
+    );
+    const lines = result.prompt.split("\n");
+    const stateIndex = lines.indexOf("RUNTIME_STATE_JSON");
+    const state = JSON.parse(lines[stateIndex + 1] ?? "") as Record<
+      string,
+      unknown
+    >;
+
+    expect(state).toMatchObject({
+      authority: "server_persisted_runtime_state",
+      asOfUtc: NOW,
+      revision: 7,
+      semantics: "present_moment_context_not_personality_or_memory",
+      moodValence: -0.75,
+      moodArousal: 0.9,
+      focus: 0.15,
+      sleepDebtMinutes: 240,
+      locationContext: "studio",
+      contextOnlyFields: ["locationContext"],
+    });
+    expect(state["qualitative"]).toMatchObject({
+      moodValence: expect.stringContaining("低落"),
+      moodArousal: expect.stringContaining("激活"),
+      focus: expect.stringContaining("专注"),
+    });
+    expect(result.system).toContain("authoritative present-moment context");
+    expect(result.system).toContain("not a permanent personality fact");
+    expect(result.prompt).toContain("stateGuidance");
+  });
+
   it.each([
     ["reply_only", false],
     ["legacy_effects", true],

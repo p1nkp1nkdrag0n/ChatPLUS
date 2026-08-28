@@ -1,15 +1,14 @@
-# Feature Flag Rollout Guide
+# Feature Flag Rollout Guide（历史与实验覆盖）
 
-> 原则：**不要一次切掉所有旧路径。** 每个能力独立走
-> `shadow → developer compare → test parity → enforced → 保留一个版本 rollback → 删除 legacy`。
+> 本文保留非核心能力和显式对照实验的历史 rollout 说明。README 定义的本地 PersonaSim 核心闭环不再以 shadow/off 作为默认体验。
 
-## 当前状态总览（2026-08-22）
+## 当前状态总览（2026-08-28）
 
 | Flag                        | 取值                       | 默认     | 阶段                                  | 说明                                                                                     |
 | --------------------------- | -------------------------- | -------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `SCHEDULE_NEGOTIATION_MODE` | legacy / shadow / enforced | `shadow` | 集成测试齐备，待 rollout              | 服务端协商状态机有独立测试；受版本控制的默认值仍是 shadow                                |
-| `SELF_INITIATED_PLANNING`   | off / shadow / enforced    | `off`    | 代码完成，待 rollout                  | shadow 下 planner 只出 bundle 不落库，可在 Developer Page 对比                           |
-| `LIVE_WORLD_EFFECTS`        | off / shadow / enforced    | `shadow` | enforced 集成路径通过，待 shadow 观测 | 30 天测试包含一次非空 state/relationship delta；不等于真实流量验证                       |
+| `SELF_INITIATED_PLANNING`   | off / shadow / enforced    | `enforced` | 本地核心闭环                        | 默认规划并持久化角色生活；shadow/off 仅用于显式对照实验                                  |
+| `LIVE_WORLD_EFFECTS`        | off / shadow / enforced    | `enforced` | 本地核心闭环                        | 默认校验、限幅并事务化提交状态/关系 proposal；shadow/off 仅用于显式对照                  |
 | `MEMORY_RECALL_MODE`        | legacy / shadow / enforced | `legacy` | 默认 retention 长跑通过，待 rollout   | 测试验证选中的 EvidenceBundle 进入最终 Prompt trace；shadow 不改变 legacy 注入           |
 | `AUTOBIOGRAPHY_MODE`        | off / shadow / enforced    | `off`    | 默认 retention 长跑通过，待 rollout   | 控制 checkpoint、autobiography 及 checkpoint-derived event cards，不控制全部 event cards |
 | ~~`PROACTIVE_COMMIT_MODE`~~ | 已移除                     | —        | 已收敛                                | 主动消息统一走 `ProactiveGenerationService` 两阶段提交，legacy 单事务路径已删除          |
@@ -38,7 +37,7 @@
 4. **切换 enforced**：一次只切一个 flag，保留至少一个版本的 rollback 窗口。
 5. **删除 legacy**：rollback 窗口内无回滚需求后，删除旧路径并更新本表。
 
-> 集成测试通过只代表技术门槛；未完成 shadow 真实会话/Developer 对比前，不应把状态写成已放量。
+> 上述晋级清单继续适用于 memory/autobiography 等非核心能力；world effects 与 self planning 的 shadow 现在只承担显式比较和诊断用途。
 
 ## 已知边界（放量前注意）
 

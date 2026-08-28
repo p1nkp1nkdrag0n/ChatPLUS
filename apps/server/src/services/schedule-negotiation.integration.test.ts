@@ -3660,6 +3660,7 @@ async function createNegotiationTestApp(
     developerRoutes: true,
     chatEffectsMode: options.chatEffectsMode ?? "gated",
     scheduleNegotiationMode: options.mode ?? "enforced",
+    selfInitiatedPlanningMode: "off",
     liveWorldEffectsMode: options.liveWorldEffectsMode ?? "shadow",
     llm: {
       provider,

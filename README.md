@@ -41,13 +41,16 @@ pnpm dev
 
 打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)。默认 `fixture` Provider 不需要联网或凭证。
 
+本地 Demo 默认启用两条核心闭环：`LIVE_WORLD_EFFECTS=enforced` 会把通过校验和限幅的模型状态/关系 proposal 事务化落库，`SELF_INITIATED_PLANNING=enforced` 会让角色依据自己的意图规划生活。Fixture 与真实 Provider 共用同一条服务端校验、提交和追溯路径；只有显式对照实验才需要在 `.env` 中改成 `shadow` 或 `off`。
+
 推荐演示顺序：
 
 1. 在“创建”填写八项简短设定，选择“拟真模拟”。
 2. 在编辑器检查人格、来源和日程策略，点击“发布并激活”。
 3. 在聊天中输入“今晚学校有新生晚会，你要一起去吗？”。
 4. 观察回复和未来日程在同一个回合中更新。
-5. 打开“开发者”，将 FakeClock 推进，再返回角色页面观察一次性结算和主动消息。
+5. 打开“开发者”，对照本轮前后 RuntimeState、relationship 与领域事件。
+6. 将 FakeClock 推进，再返回角色页面观察一次性结算、角色状态和主动消息。
 
 默认会提供一个可直接体验的示例角色；设 `SEED_DEMO=false` 可关闭。
 

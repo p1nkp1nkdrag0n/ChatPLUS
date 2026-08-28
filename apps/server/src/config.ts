@@ -101,8 +101,10 @@ const envSchema = z.object({
   SCHEDULE_NEGOTIATION_MODE: z
     .enum(["legacy", "shadow", "enforced"])
     .default("shadow"),
-  SELF_INITIATED_PLANNING: z.enum(["off", "shadow", "enforced"]).default("off"),
-  LIVE_WORLD_EFFECTS: z.enum(["off", "shadow", "enforced"]).default("shadow"),
+  SELF_INITIATED_PLANNING: z
+    .enum(["off", "shadow", "enforced"])
+    .default("enforced"),
+  LIVE_WORLD_EFFECTS: z.enum(["off", "shadow", "enforced"]).default("enforced"),
   MEMORY_RECALL_MODE: z
     .enum(["legacy", "shadow", "enforced"])
     .default("legacy"),

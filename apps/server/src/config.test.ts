@@ -25,15 +25,34 @@ describe("server configuration", () => {
     }
   });
 
-  it("characterizes the pre-remediation core loop defaults", () => {
+  it("enables the local state and personal-life loops by default", () => {
     const previousPlanning = process.env["SELF_INITIATED_PLANNING"];
     const previousWorldEffects = process.env["LIVE_WORLD_EFFECTS"];
     delete process.env["SELF_INITIATED_PLANNING"];
     delete process.env["LIVE_WORLD_EFFECTS"];
     try {
       const config = readConfig();
-      expect(config.selfInitiatedPlanningMode).toBe("off");
-      expect(config.liveWorldEffectsMode).toBe("shadow");
+      expect(config.selfInitiatedPlanningMode).toBe("enforced");
+      expect(config.liveWorldEffectsMode).toBe("enforced");
+    } finally {
+      if (previousPlanning === undefined)
+        delete process.env["SELF_INITIATED_PLANNING"];
+      else process.env["SELF_INITIATED_PLANNING"] = previousPlanning;
+      if (previousWorldEffects === undefined)
+        delete process.env["LIVE_WORLD_EFFECTS"];
+      else process.env["LIVE_WORLD_EFFECTS"] = previousWorldEffects;
+    }
+  });
+
+  it("allows explicit experiment overrides for both core loops", () => {
+    const previousPlanning = process.env["SELF_INITIATED_PLANNING"];
+    const previousWorldEffects = process.env["LIVE_WORLD_EFFECTS"];
+    process.env["SELF_INITIATED_PLANNING"] = "shadow";
+    process.env["LIVE_WORLD_EFFECTS"] = "off";
+    try {
+      const config = readConfig();
+      expect(config.selfInitiatedPlanningMode).toBe("shadow");
+      expect(config.liveWorldEffectsMode).toBe("off");
     } finally {
       if (previousPlanning === undefined)
         delete process.env["SELF_INITIATED_PLANNING"];

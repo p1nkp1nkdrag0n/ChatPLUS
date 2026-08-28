@@ -187,41 +187,45 @@ export class TurnDecisionService {
     fixture: AgentTurnDecision;
   }): Promise<ResolvedTurn> {
     let decision: AgentTurnDecision | undefined;
+    let providerEnvelope: PersonaTurnProviderEnvelope | undefined;
+    let worldValidation: WorldEffectsValidationResult | undefined;
     let initialIssues: unknown[] = [];
-    const continuityEnabled = this.options.liveWorldEffectsMode === "enforced";
+    const worldEffectsEnabled =
+      this.options.liveWorldEffectsMode !== undefined &&
+      this.options.liveWorldEffectsMode !== "off";
+    const effectsEnforced = this.options.liveWorldEffectsMode === "enforced";
+    const deterministicEnvelope = fixtureProviderEnvelope(
+      input.fixture,
+      worldEffectsEnabled,
+    );
     try {
-      const providerEnvelope = StrictPersonaTurnProviderEnvelopeSchema.parse(
+      providerEnvelope = StrictPersonaTurnProviderEnvelopeSchema.parse(
         await this.llm.generateObject({
           purpose: "chat_turn",
           agentId: input.agentId,
           system: input.system,
           prompt: input.prompt,
           schema: StrictPersonaTurnProviderEnvelopeSchema,
-          ...(continuityEnabled
-            ? {}
-            : { fixture: fixtureProviderEnvelope(input.fixture) }),
+          ...(effectsEnforced ? {} : { fixture: deterministicEnvelope }),
         }),
       );
-      const providerDecision = materializeFixtureProviderDecision(
-        providerEnvelope,
-        input.fixture,
+      const decisionEnvelope = effectsEnforced
+        ? deterministicEnvelope
+        : providerEnvelope;
+      worldValidation = worldEffectsEnabled
+        ? validateWorldEffects(decisionEnvelope.worldEffects)
+        : undefined;
+      decision = attachValidatedWorldEffects(
+        materializeFixtureProviderDecision(decisionEnvelope, input.fixture),
+        effectsEnforced ? worldValidation?.effects : undefined,
       );
-      // The server fixture owns deterministic schedule behavior. In enforced
-      // continuity mode the canonical fixture provider still runs so grounded
-      // continuity candidates survive without replacing that schedule fixture.
-      decision = continuityEnabled
-        ? {
-            ...input.fixture,
-            ...(providerDecision.continuityEffects === undefined
-              ? {}
-              : {
-                  continuityEffects: providerDecision.continuityEffects,
-                }),
-          }
-        : providerDecision;
     } catch (error) {
       initialIssues = invalidOutputIssues(error);
     }
+
+    const validatedWorldEffects = effectsEnforced
+      ? worldValidation?.effects
+      : undefined;
 
     let inspection = decision
       ? this.inspect({
@@ -236,13 +240,17 @@ export class TurnDecisionService {
     let usedFallback = false;
     if (!decision || !inspection || inspection.issues.length > 0) {
       repairAttempted = true;
-      decision = await this.repairs.repairFixtureDecision({
+      const repaired = await this.repairs.repairFixtureDecision({
         spec: input.spec,
         userText: input.userText,
         invalidDecision: decision,
         issues: inspection?.issues ?? initialIssues,
         fallback: safeScheduleDecision(input.spec),
       });
+      decision = attachValidatedWorldEffects(
+        withoutWorldEffects(repaired),
+        validatedWorldEffects,
+      );
       inspection = this.inspect({
         agentId: input.agentId,
         spec: input.spec,
@@ -252,7 +260,10 @@ export class TurnDecisionService {
       });
     }
     if (inspection.issues.length > 0) {
-      decision = safeScheduleDecision(input.spec);
+      decision = attachValidatedWorldEffects(
+        withoutWorldEffects(safeScheduleDecision(input.spec)),
+        validatedWorldEffects,
+      );
       usedFallback = true;
       inspection = this.inspect({
         agentId: input.agentId,
@@ -267,12 +278,27 @@ export class TurnDecisionService {
       inspection,
       repairAttempted,
       usedFallback,
-      modelRejections: [],
+      ...(worldValidation === undefined ||
+      this.options.liveWorldEffectsMode === undefined ||
+      this.options.liveWorldEffectsMode === "off"
+        ? {}
+        : {
+            worldEffectsAudit: {
+              mode: this.options.liveWorldEffectsMode,
+              validation: worldValidation,
+            },
+          }),
+      modelRejections: (worldValidation?.rejections ?? []).map((rejection) => ({
+        raw: rejection.raw,
+        reasonCode: rejection.reasonCode,
+        reasonSummary: `${rejection.effect}: ${rejection.reasonSummary}`,
+      })),
       scheduleAction: { kind: "none" },
       modelScheduleActionAudit: { origin: "fixture", kind: "none" },
-      ...(continuityEnabled && decision.continuityEffects !== undefined
+      ...(effectsEnforced &&
+      providerEnvelope?.worldEffects.continuityEffects !== undefined
         ? {
-            continuityEffects: decision.continuityEffects,
+            continuityEffects: providerEnvelope.worldEffects.continuityEffects,
           }
         : {}),
     };
@@ -769,24 +795,29 @@ function sanitizeModelMemoryCandidates(
 
 function fixtureProviderEnvelope(
   decision: AgentTurnDecision,
+  includeWorldEffects = true,
 ): PersonaTurnProviderEnvelope {
   return StrictPersonaTurnProviderEnvelopeSchema.parse({
     replyDecision: decision.reply,
-    worldEffects: {
-      ...(decision.stateDelta === undefined
-        ? {}
-        : { stateDelta: decision.stateDelta }),
-      ...(decision.relationshipDelta === undefined
-        ? {}
-        : { relationshipDelta: decision.relationshipDelta }),
-      memoryCandidates: decision.memoryCandidates,
-      ...(decision.personalIntentCandidates === undefined
-        ? {}
-        : { personalIntentCandidates: decision.personalIntentCandidates }),
-      ...(decision.continuityEffects === undefined
-        ? {}
-        : { continuityEffects: decision.continuityEffects }),
-    },
+    worldEffects: includeWorldEffects
+      ? {
+          ...(decision.stateDelta === undefined
+            ? {}
+            : { stateDelta: decision.stateDelta }),
+          ...(decision.relationshipDelta === undefined
+            ? {}
+            : { relationshipDelta: decision.relationshipDelta }),
+          memoryCandidates: decision.memoryCandidates,
+          ...(decision.personalIntentCandidates === undefined
+            ? {}
+            : {
+                personalIntentCandidates: decision.personalIntentCandidates,
+              }),
+          ...(decision.continuityEffects === undefined
+            ? {}
+            : { continuityEffects: decision.continuityEffects }),
+        }
+      : {},
     scheduleEffects: decision.scheduleEffects,
   });
 }
@@ -797,25 +828,23 @@ function materializeFixtureProviderDecision(
 ): AgentTurnDecision {
   return agentTurnDecisionSchema.parse({
     reply: envelope.replyDecision,
-    scheduleEffects: envelope.scheduleEffects ?? [],
-    ...(envelope.worldEffects.stateDelta === undefined
-      ? {}
-      : { stateDelta: envelope.worldEffects.stateDelta }),
-    ...(envelope.worldEffects.relationshipDelta === undefined
-      ? {}
-      : { relationshipDelta: envelope.worldEffects.relationshipDelta }),
-    memoryCandidates: envelope.worldEffects.memoryCandidates ?? [],
-    ...(envelope.worldEffects.personalIntentCandidates === undefined
-      ? {}
-      : {
-          personalIntentCandidates:
-            envelope.worldEffects.personalIntentCandidates,
-        }),
-    ...(envelope.worldEffects.continuityEffects === undefined
-      ? {}
-      : { continuityEffects: envelope.worldEffects.continuityEffects }),
+    // Fixture schedule behavior is server-owned and deterministic. The
+    // provider envelope supplies only the conversational reply and proposed
+    // world effects, which are validated and attached separately.
+    scheduleEffects: serverDecision.scheduleEffects,
+    memoryCandidates: [],
     reasonCode: serverDecision.reasonCode,
     reasonSummary: serverDecision.reasonSummary,
+  });
+}
+
+function withoutWorldEffects(decision: AgentTurnDecision): AgentTurnDecision {
+  return agentTurnDecisionSchema.parse({
+    reply: decision.reply,
+    scheduleEffects: decision.scheduleEffects,
+    memoryCandidates: [],
+    reasonCode: decision.reasonCode,
+    reasonSummary: decision.reasonSummary,
   });
 }
 

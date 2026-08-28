@@ -26,7 +26,16 @@ import {
 export type ActivityEventTypeLike =
   "started" | "completed" | "partial" | "skipped" | "cancelled";
 
+export type ActivityOutcomeReasonCode =
+  | "seeded_probability_completed"
+  | "seeded_probability_partial"
+  | "seeded_probability_skipped"
+  | "schedule_cancelled";
+
 export interface ActivityEffectTrace {
+  outcomeProbability?: number;
+  outcomeRoll?: number;
+  reasonCode: ActivityOutcomeReasonCode;
   stateRevisionBefore: number;
   stateRevisionAfter: number;
   stateBefore: RuntimeStateLike;
@@ -194,15 +203,19 @@ function applySleepDebtSettlement<TState extends RuntimeStateLike>(
   };
 }
 
+type ActivityOutcome = {
+  status: "completed" | "partial" | "skipped" | "cancelled";
+  delta: StateDeltaLike;
+  outcomeProbability?: number;
+  outcomeRoll?: number;
+  reasonCode: ActivityOutcomeReasonCode;
+};
+
 function resultForItem(
   item: ScheduleItemLike,
   state: RuntimeStateLike,
   routineAdherence: number,
-): {
-  status: "completed" | "partial" | "skipped";
-  delta: StateDeltaLike;
-  roll: number;
-} {
+): ActivityOutcome {
   const probability = calculateActivityCompletionProbability({
     adherenceProbability: item.adherenceProbability,
     routineAdherence,
@@ -215,7 +228,9 @@ function resultForItem(
     return {
       status: "completed",
       delta: scaleStateDelta(item.stateEffects, 1),
-      roll,
+      outcomeProbability: probability,
+      outcomeRoll: roll,
+      reasonCode: "seeded_probability_completed",
     };
   }
   if (roll < probability + (1 - probability) * 0.45) {
@@ -225,13 +240,17 @@ function resultForItem(
         scaleStateDelta(item.stateEffects, 0.5),
         { stress: 0.01 },
       ]),
-      roll,
+      outcomeProbability: probability,
+      outcomeRoll: roll,
+      reasonCode: "seeded_probability_partial",
     };
   }
   return {
     status: "skipped",
     delta: { stress: 0.03, moodValence: -0.02 },
-    roll,
+    outcomeProbability: probability,
+    outcomeRoll: roll,
+    reasonCode: "seeded_probability_skipped",
   };
 }
 
@@ -462,9 +481,13 @@ export function settleSchedule<TState extends RuntimeStateLike>(
       continue;
     }
 
-    const outcome =
+    const outcome: ActivityOutcome =
       status === "cancelled"
-        ? ({ status: "cancelled", delta: {}, roll: 0 } as const)
+        ? {
+            status: "cancelled",
+            delta: {},
+            reasonCode: "schedule_cancelled",
+          }
         : resultForItem(item, workingState, input.routineAdherence);
     statuses.set(item.id, outcome.status);
     const key = eventKey(item, outcome.status);
@@ -519,6 +542,13 @@ export function settleSchedule<TState extends RuntimeStateLike>(
       };
     }
     const effectTrace: ActivityEffectTrace = {
+      ...(outcome.outcomeProbability === undefined
+        ? {}
+        : { outcomeProbability: outcome.outcomeProbability }),
+      ...(outcome.outcomeRoll === undefined
+        ? {}
+        : { outcomeRoll: outcome.outcomeRoll }),
+      reasonCode: outcome.reasonCode,
       stateRevisionBefore: workingState.revision,
       stateRevisionAfter: stateAfterEvent.revision,
       stateBefore: workingState,

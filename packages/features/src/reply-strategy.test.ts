@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveReplyStrategy } from "./reply-strategy.js";
+import {
+  deriveReplyStrategy,
+  type ReplyStrategyContext,
+} from "./reply-strategy.js";
 
 describe("deriveReplyStrategy", () => {
   it("keeps greetings brief while expanding analytical questions", () => {
@@ -227,4 +230,61 @@ describe("deriveReplyStrategy", () => {
     expect(sociallyDrained.stateGuidance).toContain("Social capacity is low");
     expect(sociallyDrained.preferredChunkCount).toBeLessThanOrEqual(2);
   });
+
+  it("consumes each runtime-state dimension independently for the same message", () => {
+    const dialogue = {
+      verbosity: 0.6,
+      averageMessageLength: 160,
+      averageChunksPerTurn: 3,
+    };
+    const input = "I was thinking about you today.";
+    const derive = (overrides: Partial<StateInput> = {}) =>
+      deriveReplyStrategy(input, dialogue, {
+        state: {
+          moodValence: 0,
+          moodArousal: 0.5,
+          energy: 0.9,
+          stress: 0.1,
+          socialBattery: 0.9,
+          focus: 0.5,
+          sleepDebtMinutes: 0,
+          ...overrides,
+        },
+      });
+
+    const highEnergy = derive({ energy: 0.9 });
+    const lowEnergy = derive({ energy: 0.1 });
+    expect(lowEnergy.targetChars).toBeLessThan(highEnergy.targetChars);
+
+    const lowStress = derive({ energy: 0.5, stress: 0.1 });
+    const highStress = derive({ energy: 0.5, stress: 1 });
+    expect(highStress.targetChars).toBeLessThan(lowStress.targetChars);
+
+    const positive = derive({ moodValence: 0.8, moodArousal: 0.5 });
+    const negative = derive({ moodValence: -0.8, moodArousal: 0.5 });
+    expect(positive.stateGuidance).toContain("positive and calm");
+    expect(negative.stateGuidance).toContain("negative and subdued");
+
+    const calm = derive({ moodValence: 0.8, moodArousal: 0.1 });
+    const activated = derive({ moodValence: 0.8, moodArousal: 0.9 });
+    expect(calm.stateGuidance).toContain("positive and calm");
+    expect(activated.stateGuidance).toContain("positive and activated");
+    expect(activated.preferredChunkCount).toBeGreaterThan(
+      calm.preferredChunkCount,
+    );
+
+    const lowFocus = derive({ focus: 0.1 });
+    const highFocus = derive({ focus: 0.9 });
+    expect(lowFocus.targetChars).toBeLessThan(highFocus.targetChars);
+    expect(lowFocus.stateGuidance).toContain("Focus is low");
+    expect(highFocus.stateGuidance).toContain("Focus is high");
+
+    const lowSocial = derive({ socialBattery: 0.05 });
+    const highSocial = derive({ socialBattery: 0.9 });
+    expect(lowSocial.preferredChunkCount).toBe(1);
+    expect(lowSocial.deliveryPreference).toBe("prefer_single_block");
+    expect(highSocial.preferredChunkCount).toBeGreaterThan(1);
+  });
 });
+
+type StateInput = NonNullable<ReplyStrategyContext["state"]>;

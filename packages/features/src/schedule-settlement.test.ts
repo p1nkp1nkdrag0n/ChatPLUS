@@ -403,10 +403,12 @@ describe("planner and settlement", () => {
       later!.id,
     ]);
     expect(terminalEvents[0]?.effectTrace).toMatchObject({
+      reasonCode: "seeded_probability_completed",
       stateRevisionBefore: 0,
       stateRevisionAfter: 1,
     });
     expect(terminalEvents[1]?.effectTrace).toMatchObject({
+      reasonCode: `seeded_probability_${settledById.get(later!.id)?.status}`,
       stateRevisionBefore: 1,
       stateRevisionAfter: 2,
       stateBefore: {
@@ -420,6 +422,14 @@ describe("planner and settlement", () => {
     expect(
       terminalEvents[0]?.effectTrace?.appliedStateDelta.energy,
     ).toBeCloseTo(-0.5);
+    expect(terminalEvents[1]?.effectTrace?.outcomeProbability).toBeCloseTo(
+      probabilityAfterFirst,
+      12,
+    );
+    expect(terminalEvents[1]?.effectTrace?.outcomeRoll).toBeCloseTo(
+      seededUnit(computeActivitySeed(later!.agentId, later!)),
+      12,
+    );
     expect(settled.state.revision).toBe(2);
 
     expect(
@@ -810,9 +820,14 @@ describe("planner and settlement", () => {
     expect(cancelledEvent).toMatchObject({
       occurredAtUtc: cancelled.updatedAtUtc,
       effectTrace: {
+        reasonCode: "schedule_cancelled",
         relationshipSource: "shared_activity_outcome",
       },
     });
+    expect(cancelledEvent?.effectTrace).not.toHaveProperty(
+      "outcomeProbability",
+    );
+    expect(cancelledEvent?.effectTrace).not.toHaveProperty("outcomeRoll");
     expect(settled.changedItems).toEqual([]);
     expect(settled.state.relationship).toMatchObject({
       closeness: 0.199,

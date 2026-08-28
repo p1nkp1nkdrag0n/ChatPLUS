@@ -419,6 +419,16 @@ export class TurnCommitService {
           source: input.world.effectTrace.sources,
           expectedStateRevision: input.world.effectTrace.expectedStateRevision,
           proposed: input.world.effectTrace.proposed,
+          acceptedDelta: {
+            ...(accepted.stateDelta === undefined
+              ? {}
+              : { stateDelta: accepted.stateDelta }),
+            ...(accepted.relationshipDelta === undefined
+              ? {}
+              : { relationshipDelta: accepted.relationshipDelta }),
+          },
+          // Preserve the compact rollout-era summary for existing timeline
+          // consumers while retaining the numeric accepted deltas above.
           accepted: {
             stateDelta: accepted.stateDelta !== undefined,
             relationshipDelta: accepted.relationshipDelta !== undefined,
@@ -450,6 +460,21 @@ export class TurnCommitService {
           ...(input.world.effectTrace.wouldApply === undefined
             ? {}
             : { wouldApply: input.world.effectTrace.wouldApply }),
+          rejections:
+            input.turn.worldEffectsAudit?.validation.rejections.map(
+              (rejection) => ({
+                effect: rejection.effect,
+                ...(rejection.index === undefined
+                  ? {}
+                  : { index: rejection.index }),
+                ...(rejection.field === undefined
+                  ? {}
+                  : { field: rejection.field }),
+                reasonCode: rejection.reasonCode,
+                reasonSummary: rejection.reasonSummary,
+                raw: rejection.raw,
+              }),
+            ) ?? [],
           rejectionCodes: input.world.effectTrace.rejectionCodes,
           limitsApplied: input.world.effectTrace.validationLimitsApplied,
         },

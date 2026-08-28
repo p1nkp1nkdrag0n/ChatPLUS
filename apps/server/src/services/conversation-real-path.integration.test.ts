@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
@@ -875,16 +879,249 @@ describe("openai-compatible reply-first conversation path", () => {
       );
     expect(audit?.payload).toMatchObject({
       mode: "enforced",
+      proposed: {
+        stateDelta: { energy: -1, stress: 0.1 },
+        relationshipDelta: { closeness: 1, trust: 0.2 },
+      },
+      acceptedDelta: {
+        stateDelta: { energy: -0.2, stress: 0.1 },
+        relationshipDelta: { closeness: 0.08, trust: 0.08 },
+      },
       accepted: {
         stateDelta: true,
         relationshipDelta: true,
         personalIntentCandidateCount: 1,
       },
+      before: {
+        revision: before.revision,
+        energy: before.energy,
+        stress: before.stress,
+      },
+      after: {
+        revision: before.revision + 1,
+        energy: before.energy - 0.2,
+        stress: before.stress + 0.1,
+      },
+      limitsApplied: ["state_delta", "relationship_delta"],
+      rejections: [
+        {
+          effect: "personal_intent_candidate",
+          reasonCode: "server_owned_effect_field",
+          reasonSummary: "Personal-intent field earliestAtUtc is server-owned.",
+        },
+      ],
       rejectionCodes: ["server_owned_effect_field"],
     });
+    const applied = (
+      audit?.payload as
+        | {
+            applied?: {
+              stateDelta?: Record<string, number>;
+              relationshipDelta?: Record<string, number>;
+            };
+          }
+        | undefined
+    )?.applied;
+    expect(applied?.stateDelta?.["energy"]).toBeCloseTo(-0.2, 8);
+    expect(applied?.stateDelta?.["stress"]).toBeCloseTo(0.1, 8);
+    const appliedRelationshipDelta = applied?.relationshipDelta;
+    expect(appliedRelationshipDelta?.["closeness"]).toBeCloseTo(0.04, 8);
+    expect(appliedRelationshipDelta?.["trust"]).toBeCloseTo(0.03, 8);
+    expect(appliedRelationshipDelta?.["familiarity"]).toBeCloseTo(0.001, 8);
     expect(audit?.payload).not.toHaveProperty("proposedDelta");
     expect(audit?.payload).not.toHaveProperty("beforeChangedFields");
     expect(audit?.payload).not.toHaveProperty("afterChangedFields");
+  });
+
+  it("reads the exact committed post-state into the next prompt after a file-database restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "personasim-state-restart-"));
+    const databasePath = join(directory, "post-state.sqlite");
+    const clock = new FakeClock(START_UTC);
+
+    try {
+      const created = await createRealProviderTestApp("enforced", {
+        databasePath,
+        clock,
+      });
+      app = created.app;
+      const firstCalls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, firstCalls, (input) => {
+        if (input.purpose === "chat_turn") {
+          return {
+            replyDecision: { text: "I need a little quieter time now." },
+            worldEffects: {
+              stateDelta: { energy: -0.12, stress: 0.06, focus: -0.04 },
+            },
+          };
+        }
+        return fixtureFor(input);
+      });
+      const character = await createAndPublish(app, "high_fidelity");
+      const sessionId = await createSession(app, character.id);
+      firstCalls.length = 0;
+      clock.advance({ minutes: 17 });
+      const before = app.personasim.store.getRuntimeState(character.id)!;
+
+      const committed = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "post-state-before-restart",
+        "How are you feeling right now?",
+      );
+
+      expect(committed.statusCode).toBe(201);
+      const committedState = app.personasim.store.getRuntimeState(
+        character.id,
+      )!;
+      expect(committedState).toMatchObject({
+        energy: before.energy - 0.12,
+        stress: before.stress + 0.06,
+        focus: before.focus - 0.04,
+        asOfUtc: clock.nowUtc(),
+        revision: before.revision + 1,
+      });
+
+      await app.close();
+      app = undefined;
+
+      const reopened = await createRealProviderTestApp("enforced", {
+        databasePath,
+        clock,
+      });
+      app = reopened.app;
+      expect(app.personasim.store.getRuntimeState(character.id)).toEqual(
+        committedState,
+      );
+      const reopenedCalls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, reopenedCalls, (input) => {
+        if (input.purpose === "chat_turn") {
+          return {
+            replyDecision: { text: "I am carrying that state forward." },
+            worldEffects: {},
+          };
+        }
+        return fixtureFor(input);
+      });
+
+      const nextTurn = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "post-state-after-restart",
+        "And now?",
+      );
+
+      expect(nextTurn.statusCode).toBe(201);
+      const chatCall = reopenedCalls.find(
+        (input) => input.purpose === "chat_turn",
+      );
+      expect(chatCall).toBeDefined();
+      const promptState = promptJsonSegment(
+        chatCall?.prompt ?? "",
+        "RUNTIME_STATE_JSON",
+      );
+      expect(promptState).toMatchObject({
+        asOfUtc: committedState.asOfUtc,
+        revision: committedState.revision,
+        moodValence: committedState.moodValence,
+        moodArousal: committedState.moodArousal,
+        energy: committedState.energy,
+        stress: committedState.stress,
+        socialBattery: committedState.socialBattery,
+        focus: committedState.focus,
+        sleepDebtMinutes: committedState.sleepDebtMinutes,
+      });
+      expect(
+        promptJsonSegment(chatCall?.prompt ?? "", "RELATIONSHIP_JSON"),
+      ).toEqual({
+        closeness: committedState.relationship.closeness,
+        trust: committedState.relationship.trust,
+        familiarity: committedState.relationship.familiarity,
+        recentInteractionValence:
+          committedState.relationship.recentInteractionValence,
+        lastInteractionAtUtc: committedState.relationship.lastInteractionAtUtc,
+      });
+    } finally {
+      if (app !== undefined) {
+        await app.close();
+        app = undefined;
+      }
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not reapply state, relationship, revision, or audit on a client-message replay", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: { text: "That helped me feel more grounded." },
+          worldEffects: {
+            stateDelta: { energy: -0.11, stress: 0.04 },
+            relationshipDelta: {
+              closeness: 0.02,
+              trust: 0.01,
+              recentInteractionValence: 0.2,
+            },
+          },
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    const sessionId = await createSession(app, character.id);
+    calls.length = 0;
+    const clientMessageId = "world-effects-idempotent-replay";
+    const text = "I am glad we talked this through together.";
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+
+    const first = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      clientMessageId,
+      text,
+    );
+
+    expect(first.statusCode).toBe(201);
+    const firstBody = jsonBody<ChatTurnResult>(first);
+    const afterFirst = app.personasim.store.getRuntimeState(character.id)!;
+    expect(afterFirst.revision).toBe(before.revision + 1);
+    expect(afterFirst.energy).toBeCloseTo(before.energy - 0.11, 8);
+    expect(afterFirst.relationship).not.toEqual(before.relationship);
+    const auditCountAfterFirst = worldEffectAuditCount(
+      app,
+      character.id,
+      clientMessageId,
+    );
+    expect(auditCountAfterFirst).toBe(1);
+
+    const replay = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      clientMessageId,
+      text,
+    );
+
+    expect(replay.statusCode).toBe(200);
+    const replayBody = jsonBody<ChatTurnResult>(replay);
+    expect(replayBody.idempotentReplay).toBe(true);
+    expect(replayBody.state).toEqual(firstBody.state);
+    expect(app.personasim.store.getRuntimeState(character.id)).toEqual(
+      afterFirst,
+    );
+    expect(replayBody.state.revision).toBe(afterFirst.revision);
+    expect(replayBody.state.relationship).toEqual(afterFirst.relationship);
+    expect(worldEffectAuditCount(app, character.id, clientMessageId)).toBe(
+      auditCountAfterFirst,
+    );
+    expect(calls.filter((input) => input.purpose === "chat_turn")).toHaveLength(
+      1,
+    );
   });
 
   it("preserves validated effects when reply repair succeeds", async () => {
@@ -1152,14 +1389,16 @@ function fixtureFor(input: GenerateObjectInput<unknown>): unknown {
 
 async function createRealProviderTestApp(
   liveWorldEffectsMode: "off" | "shadow" | "enforced" = "off",
+  options: { databasePath?: string; clock?: FakeClock } = {},
 ): Promise<{
   app: PersonaSimApp;
   clock: FakeClock;
 }> {
-  const clock = new FakeClock(START_UTC);
+  const clock = options.clock ?? new FakeClock(START_UTC);
+  const databasePath = options.databasePath ?? ":memory:";
   const config = readConfig({
     nodeEnv: "test",
-    databasePath: ":memory:",
+    databasePath,
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
@@ -1177,7 +1416,7 @@ async function createRealProviderTestApp(
   });
   const app = await buildApp({
     config,
-    database: openDatabase(":memory:"),
+    database: openDatabase(databasePath),
     clock,
     seedDemo: false,
     startScheduler: false,
@@ -1268,4 +1507,31 @@ function sendMessage(
 
 function jsonBody<T>(response: { body: string }): T {
   return JSON.parse(response.body) as T;
+}
+
+function promptJsonSegment(
+  prompt: string,
+  label: string,
+): Record<string, unknown> {
+  const lines = prompt.split("\n");
+  const index = lines.indexOf(label);
+  expect(index).toBeGreaterThanOrEqual(0);
+  return JSON.parse(lines[index + 1] ?? "{}") as Record<string, unknown>;
+}
+
+function worldEffectAuditCount(
+  currentApp: PersonaSimApp,
+  agentId: string,
+  correlationId: string,
+): number {
+  const row = currentApp.personasim.store.database
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM domain_events
+       WHERE agent_id = ?
+         AND event_type = 'conversation.world_effects_committed'
+         AND correlation_id = ?`,
+    )
+    .get(agentId, correlationId) as { count: number };
+  return Number(row.count);
 }

@@ -598,6 +598,7 @@ describe("PersonaSim server integration", () => {
           event.scheduleItemId === shared.id && event.eventType === "completed",
       );
     expect(completed?.effectTrace).toMatchObject({
+      reasonCode: "seeded_probability_completed",
       stateRevisionBefore: before.revision,
       stateRevisionAfter: before.revision + 1,
       relationshipSource: "shared_activity_outcome",
@@ -615,6 +616,13 @@ describe("PersonaSim server integration", () => {
         familiarity: 0.002,
       },
     });
+    expect(typeof completed?.effectTrace?.["outcomeProbability"]).toBe(
+      "number",
+    );
+    expect(completed?.effectTrace?.["outcomeRoll"]).toBeCloseTo(
+      seededUnit(`${character.id}${shared.id}${shared.startAtUtc}`),
+      12,
+    );
     const audit = app.personasim.store
       .listDomainEvents(character.id, 100)
       .find((event) => event.eventType === "simulation.settled");
@@ -632,9 +640,12 @@ describe("PersonaSim server integration", () => {
     expect(completedChange?.["source"]).toBe("activity_settlement");
     const completedEffectTrace = completedChange?.["effectTrace"] as
       Record<string, unknown> | undefined;
-    expect(completedEffectTrace?.["relationshipSource"]).toBe(
-      "shared_activity_outcome",
-    );
+    expect(completedEffectTrace).toMatchObject({
+      relationshipSource: "shared_activity_outcome",
+      reasonCode: "seeded_probability_completed",
+    });
+    expect(typeof completedEffectTrace?.["outcomeProbability"]).toBe("number");
+    expect(typeof completedEffectTrace?.["outcomeRoll"]).toBe("number");
 
     const replay = await app.inject({
       method: "POST",

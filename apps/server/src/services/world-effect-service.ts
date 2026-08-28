@@ -1,11 +1,15 @@
 import { DateTime } from "luxon";
 
 import {
-  applyRelationshipDelta,
+  applyRelationshipInteraction,
   hasScheduleIntent,
   normalizePersonalIntentCandidate,
   type ModelEffectRejection,
+  type RelationshipDailyUsage,
+  type RelationshipDeltaLike,
+  type RelationshipInteractionResult,
   type ReplyStrategy,
+  type StateDeltaLike,
 } from "@personasim/features";
 
 import type { DatabaseStore, StoredMessage } from "../db/store.js";
@@ -16,6 +20,7 @@ import type {
   RuntimeState,
 } from "../domain/schemas.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
+import { loadDailyRelationshipUsage } from "./relationship-effect-usage.js";
 import type {
   PartialProposalValidation,
   ScheduleService,
@@ -54,9 +59,59 @@ export interface PreparedWorldEffectTurn {
   decisionPath: ChatTurnDecisionPath;
   nextState: RuntimeState;
   stateChanged: boolean;
+  effectTrace: WorldEffectTrace;
   repairAttempted: boolean;
   usedFallback: boolean;
   scheduleActionAudit: ResolvedTurn["modelScheduleActionAudit"];
+}
+
+export type WorldEffectMode = "off" | "shadow" | "enforced";
+
+export interface RuntimeEffectSnapshot {
+  asOfUtc: string;
+  revision: number;
+  moodValence: number;
+  moodArousal: number;
+  energy: number;
+  stress: number;
+  socialBattery: number;
+  focus: number;
+  relationship: RuntimeState["relationship"];
+}
+
+export interface RuntimeEffectApplication {
+  before: RuntimeEffectSnapshot;
+  after: RuntimeEffectSnapshot;
+  applied: {
+    stateDelta: StateDeltaLike;
+    relationshipDelta: RelationshipDeltaLike;
+  };
+  relationship: RelationshipInteractionResult;
+  dailyUsageBefore: RelationshipDailyUsage;
+  dailyUsageApplied: RelationshipDailyUsage;
+  dailyUsageAfter: RelationshipDailyUsage;
+}
+
+export interface WorldEffectTrace {
+  schemaVersion: 1;
+  mode: WorldEffectMode;
+  expectedStateRevision: number;
+  sources: {
+    relationshipBaseline: "server_interaction_baseline";
+    semanticProposal: "none" | "model_validated_envelope";
+  };
+  proposed: {
+    stateDelta?: unknown;
+    relationshipDelta?: unknown;
+  };
+  accepted: {
+    stateDelta?: StateDeltaLike;
+    relationshipDelta?: AgentTurnDecision["relationshipDelta"];
+  };
+  actual: RuntimeEffectApplication;
+  wouldApply?: RuntimeEffectApplication;
+  rejectionCodes: string[];
+  validationLimitsApplied: string[];
 }
 
 /** Prepares validated world effects and next state without durable writes. */
@@ -436,13 +491,68 @@ export class WorldEffectService {
           : acceptedCount > 0
             ? "partial"
             : "effects_rejected";
-    const nextState = applyTurnState(
-      input.state,
-      decision.stateDelta,
-      decision.relationshipDelta,
+    const effectMode: WorldEffectMode =
+      input.turn.worldEffectsAudit?.mode ?? "off";
+    const effectiveInteractionAtUtc = monotonicUtc(
+      input.state.relationship.lastInteractionAtUtc,
       input.nowUtc,
-      input.capabilities,
     );
+    const dailyUsage = loadDailyRelationshipUsage(
+      this.store,
+      input.agentId,
+      input.spec.identity.timezone,
+      effectiveInteractionAtUtc,
+    );
+    const actual = applyTurnState({
+      state: input.state,
+      stateDelta: effectMode === "enforced" ? decision.stateDelta : undefined,
+      relationshipDelta:
+        effectMode === "enforced" ? decision.relationshipDelta : undefined,
+      nowUtc: input.nowUtc,
+      capabilities: input.capabilities,
+      dailyUsage,
+    });
+    const shadowAccepted = input.turn.worldEffectsAudit?.validation.effects;
+    const wouldApply =
+      effectMode === "shadow"
+        ? applyTurnState({
+            state: input.state,
+            stateDelta: shadowAccepted?.stateDelta,
+            relationshipDelta: shadowAccepted?.relationshipDelta,
+            nowUtc: input.nowUtc,
+            capabilities: input.capabilities,
+            dailyUsage,
+          })
+        : undefined;
+    const worldValidation = input.turn.worldEffectsAudit?.validation;
+    const effectTrace: WorldEffectTrace = {
+      schemaVersion: 1,
+      mode: effectMode,
+      expectedStateRevision: input.state.revision,
+      sources: {
+        relationshipBaseline: "server_interaction_baseline",
+        semanticProposal:
+          worldValidation === undefined ? "none" : "model_validated_envelope",
+      },
+      proposed: worldValidation?.proposed ?? {},
+      accepted: {
+        ...(worldValidation?.effects.stateDelta === undefined
+          ? {}
+          : { stateDelta: worldValidation.effects.stateDelta }),
+        ...(worldValidation?.effects.relationshipDelta === undefined
+          ? {}
+          : {
+              relationshipDelta: worldValidation.effects.relationshipDelta,
+            }),
+      },
+      actual: actual.trace,
+      ...(wouldApply === undefined ? {} : { wouldApply: wouldApply.trace }),
+      rejectionCodes:
+        worldValidation?.rejections.map((rejection) => rejection.reasonCode) ??
+        [],
+      validationLimitsApplied: worldValidation?.limitsApplied ?? [],
+    };
+    const nextState = actual.state;
     return {
       decision,
       validation,
@@ -450,6 +560,7 @@ export class WorldEffectService {
       proposalRejections,
       decisionPath,
       nextState,
+      effectTrace,
       scheduleActionAudit: input.turn.modelScheduleActionAudit,
       stateChanged: nextState.revision !== input.state.revision,
       repairAttempted,
@@ -924,78 +1035,124 @@ function appendNegotiationReplyIssues(
   }
 }
 
-function applyTurnState(
-  state: RuntimeState,
-  delta: AgentTurnDecision["stateDelta"],
-  relationshipDelta: AgentTurnDecision["relationshipDelta"],
-  nowUtc: string,
-  capabilities: SimulationCapabilities,
-): RuntimeState {
-  const next = structuredClone(state);
-  if (delta === undefined && relationshipDelta === undefined) return next;
-  if (!capabilities.dynamicState && !capabilities.relationshipDynamics) {
-    return next;
-  }
-  if (capabilities.dynamicState) {
-    if (delta?.moodValence !== undefined) {
-      next.moodValence = clampSigned(next.moodValence + delta.moodValence);
-    }
-    if (delta?.moodArousal !== undefined) {
-      next.moodArousal = clamp01(next.moodArousal + delta.moodArousal);
-    }
-    if (delta?.energy !== undefined) {
-      next.energy = clamp01(next.energy + delta.energy);
-    }
-    if (delta?.stress !== undefined) {
-      next.stress = clamp01(next.stress + delta.stress);
-    }
-    if (delta?.socialBattery !== undefined) {
-      next.socialBattery = clamp01(next.socialBattery + delta.socialBattery);
-    }
-    if (delta?.focus !== undefined) {
-      next.focus = clamp01(next.focus + delta.focus);
+function applyTurnState(input: {
+  state: RuntimeState;
+  stateDelta: AgentTurnDecision["stateDelta"];
+  relationshipDelta: AgentTurnDecision["relationshipDelta"];
+  nowUtc: string;
+  capabilities: SimulationCapabilities;
+  dailyUsage: RelationshipDailyUsage;
+}): { state: RuntimeState; trace: RuntimeEffectApplication } {
+  const next = structuredClone(input.state);
+  const relationship = applyRelationshipInteraction({
+    state: next.relationship,
+    atUtc: input.nowUtc,
+    capabilityScale: input.capabilities.relationshipDeltaScale,
+    ...(input.relationshipDelta === undefined
+      ? {}
+      : { proposal: input.relationshipDelta }),
+    dailyUsage: input.dailyUsage,
+  });
+  const appliedStateDelta: StateDeltaLike = {};
+  if (input.capabilities.dynamicState) {
+    for (const field of STATE_EFFECT_FIELDS) {
+      const requested = input.stateDelta?.[field];
+      if (requested === undefined) continue;
+      const minimum = field === "moodValence" ? -1 : 0;
+      const after = clampRange(next[field] + requested, minimum, 1);
+      const applied = after - next[field];
+      next[field] = after;
+      if (applied !== 0) appliedStateDelta[field] = applied;
     }
   }
-  if (capabilities.relationshipDynamics) {
-    const scale = capabilities.relationshipDeltaScale;
-    next.relationship = applyRelationshipDelta(
-      {
-        userId: next.relationship.userId,
-        closeness: next.relationship.closeness,
-        trust: next.relationship.trust,
-        familiarity: next.relationship.familiarity,
-        recentInteractionValence: next.relationship.recentInteractionValence,
-        ...(next.relationship.lastInteractionAtUtc
-          ? { lastInteractionAtUtc: next.relationship.lastInteractionAtUtc }
-          : {}),
+  next.relationship = {
+    ...relationship.after,
+    userId: next.relationship.userId,
+  };
+  next.asOfUtc = monotonicUtc(input.state.asOfUtc, input.nowUtc);
+  const changed =
+    Object.keys(appliedStateDelta).length > 0 ||
+    !sameRelationship(input.state.relationship, next.relationship) ||
+    next.asOfUtc !== input.state.asOfUtc;
+  next.revision = input.state.revision + (changed ? 1 : 0);
+
+  const dailyUsageApplied: RelationshipDailyUsage = {};
+  for (const field of RELATIONSHIP_EFFECT_FIELDS) {
+    const before = input.dailyUsage[field] ?? 0;
+    const after = relationship.dailyUsageAfter[field];
+    if (after > before) dailyUsageApplied[field] = after - before;
+  }
+  return {
+    state: next,
+    trace: {
+      before: effectSnapshot(input.state),
+      after: effectSnapshot(next),
+      applied: {
+        stateDelta: appliedStateDelta,
+        relationshipDelta: relationship.appliedDelta,
       },
-      {
-        ...(relationshipDelta?.closeness === undefined
-          ? {}
-          : { closeness: relationshipDelta.closeness * scale }),
-        ...(relationshipDelta?.trust === undefined
-          ? {}
-          : { trust: relationshipDelta.trust * scale }),
-        familiarity: (relationshipDelta?.familiarity ?? 0.006) * scale,
-        ...(relationshipDelta?.recentInteractionValence === undefined
-          ? {}
-          : {
-              recentInteractionValence:
-                relationshipDelta.recentInteractionValence * scale,
-            }),
-      },
-      nowUtc,
-    ).state;
-  }
-  next.asOfUtc = nowUtc;
-  next.revision += 1;
-  return next;
+      relationship,
+      dailyUsageBefore: structuredClone(input.dailyUsage),
+      dailyUsageApplied,
+      dailyUsageAfter: structuredClone(relationship.dailyUsageAfter),
+    },
+  };
 }
 
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
+const STATE_EFFECT_FIELDS = [
+  "moodValence",
+  "moodArousal",
+  "energy",
+  "stress",
+  "socialBattery",
+  "focus",
+] as const;
+
+const RELATIONSHIP_EFFECT_FIELDS = [
+  "closeness",
+  "trust",
+  "familiarity",
+  "recentInteractionValence",
+] as const;
+
+function effectSnapshot(state: RuntimeState): RuntimeEffectSnapshot {
+  return {
+    asOfUtc: state.asOfUtc,
+    revision: state.revision,
+    moodValence: state.moodValence,
+    moodArousal: state.moodArousal,
+    energy: state.energy,
+    stress: state.stress,
+    socialBattery: state.socialBattery,
+    focus: state.focus,
+    relationship: structuredClone(state.relationship),
+  };
 }
 
-function clampSigned(value: number): number {
-  return Math.max(-1, Math.min(1, value));
+function sameRelationship(
+  left: RuntimeState["relationship"],
+  right: RuntimeState["relationship"],
+): boolean {
+  return (
+    left.userId === right.userId &&
+    left.closeness === right.closeness &&
+    left.trust === right.trust &&
+    left.familiarity === right.familiarity &&
+    left.recentInteractionValence === right.recentInteractionValence &&
+    left.lastInteractionAtUtc === right.lastInteractionAtUtc
+  );
+}
+
+function monotonicUtc(
+  previousUtc: string | undefined,
+  requestedUtc: string,
+): string {
+  if (previousUtc === undefined) return requestedUtc;
+  return Date.parse(requestedUtc) < Date.parse(previousUtc)
+    ? previousUtc
+    : requestedUtc;
+}
+
+function clampRange(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
 }

@@ -25,11 +25,16 @@ describe("validateWorldEffects", () => {
     expect(result.rejections).toEqual([]);
   });
 
-  it("rejects one invalid effect without discarding valid siblings", () => {
+  it("removes server-owned state fields without discarding valid siblings", () => {
     const envelope = PersonaTurnEnvelopeSchema.parse({
       replyDecision: { text: "The reply remains valid." },
       worldEffects: {
-        stateDelta: { currentActivityId: "model-owned-id" },
+        stateDelta: {
+          energy: -0.1,
+          currentActivityId: "model-owned-id",
+          sleepDebtMinutes: 120,
+          inventedMetric: 0.4,
+        },
         relationshipDelta: { closeness: 0.03 },
         memoryCandidates: [{ content: "missing required fields" }],
         personalIntentCandidates: [
@@ -55,14 +60,44 @@ describe("validateWorldEffects", () => {
     const result = validateWorldEffects(envelope.worldEffects);
 
     expect(envelope.replyDecision.text).toBe("The reply remains valid.");
-    expect(result.effects.stateDelta).toBeUndefined();
+    expect(result.effects.stateDelta).toEqual({ energy: -0.1 });
     expect(result.effects.relationshipDelta).toEqual({ closeness: 0.03 });
     expect(result.effects.memoryCandidates).toEqual([]);
     expect(result.effects.personalIntentCandidates).toHaveLength(1);
     expect(result.rejections.map((item) => item.reasonCode)).toEqual([
       "server_owned_state_field",
+      "server_owned_state_field",
+      "unknown_state_delta_field",
       "invalid_effect_candidate",
       "server_owned_effect_field",
+    ]);
+    expect(result.rejections.slice(0, 3).map((item) => item.field)).toEqual([
+      "currentActivityId",
+      "sleepDebtMinutes",
+      "inventedMetric",
+    ]);
+    expect(result.proposed.stateDelta).toMatchObject({
+      energy: -0.1,
+      currentActivityId: "model-owned-id",
+    });
+  });
+
+  it("keeps valid numeric siblings when another delta field is malformed", () => {
+    const envelope = PersonaTurnEnvelopeSchema.parse({
+      replyDecision: { text: "The valid effects remain usable." },
+      worldEffects: {
+        stateDelta: { stress: 0.1, energy: "low" },
+        relationshipDelta: { trust: 0.02, closeness: Number.NaN },
+      },
+    });
+
+    const result = validateWorldEffects(envelope.worldEffects);
+
+    expect(result.effects.stateDelta).toEqual({ stress: 0.1 });
+    expect(result.effects.relationshipDelta).toEqual({ trust: 0.02 });
+    expect(result.rejections.map((item) => item.reasonCode)).toEqual([
+      "invalid_state_delta_field",
+      "invalid_relationship_delta_field",
     ]);
   });
   it("materializes minimal DeepSeek memory proposals with server-owned persistence fields", () => {

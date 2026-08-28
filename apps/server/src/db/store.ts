@@ -65,6 +65,7 @@ export type StoredActivityEvent = {
   outcomeFacts: string[];
   stateDelta: StateDelta;
   origin: "deterministic" | "seeded_probability" | "llm_enriched";
+  effectTrace?: Record<string, unknown>;
   idempotencyKey: string;
 };
 
@@ -324,6 +325,26 @@ export class DatabaseStore {
         state.sleepDebtMinutes,
         state.agentId,
       );
+  }
+
+  compareAndSetRuntimeState(
+    state: RuntimeState,
+    expectedRevision: number,
+  ): boolean {
+    const result = this.database
+      .prepare(
+        `UPDATE runtime_states SET state_json = ?, revision = ?, updated_at_utc = ?, sleep_debt_minutes = ?
+         WHERE agent_id = ? AND revision = ?`,
+      )
+      .run(
+        JSON.stringify(state),
+        state.revision,
+        state.asOfUtc,
+        state.sleepDebtMinutes,
+        state.agentId,
+        expectedRevision,
+      );
+    return result.changes === 1;
   }
 
   getCursor(agentId: string): SimulationCursor | undefined {

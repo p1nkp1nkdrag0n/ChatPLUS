@@ -63,7 +63,14 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(body.assistantMessage.metadata.repairAttempted).toBe(false);
     expect(body.scheduleChanges).toEqual([]);
     expect(body.decision.reasonCode).toBe("persona_chat_reply");
-    expect(body.state).toEqual(beforeState);
+    expect(body.state).toMatchObject({
+      ...beforeState,
+      revision: (beforeState?.revision ?? 0) + 1,
+      relationship: {
+        ...beforeState?.relationship,
+        lastInteractionAtUtc: START_UTC,
+      },
+    });
     expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
     expect(calls[0]?.maxOutputTokens).toBe(2_000);
     expect(
@@ -552,7 +559,15 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
     expect(body.decision.reasonCode).toBe("persona_chat_fallback");
     expect(body.scheduleChanges).toEqual([]);
-    expect(body.state).toEqual(stateBefore);
+    expect(body.state).toMatchObject({
+      ...stateBefore,
+      revision: (stateBefore?.revision ?? 0) + 1,
+      relationship: {
+        ...stateBefore?.relationship,
+        familiarity: (stateBefore?.relationship.familiarity ?? 0) + 0.001,
+        lastInteractionAtUtc: START_UTC,
+      },
+    });
     expect(calls.map((input) => input.purpose)).toEqual([
       "chat_turn",
       "repair_chat_turn",
@@ -660,7 +675,7 @@ describe("openai-compatible reply-first conversation path", () => {
     ]);
   });
 
-  it("characterizes shadow world effects as audited but not persisted", async () => {
+  it("commits only the interaction baseline while shadowing model effects", async () => {
     const created = await createRealProviderTestApp("shadow");
     app = created.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
@@ -693,7 +708,16 @@ describe("openai-compatible reply-first conversation path", () => {
 
     expect(response.statusCode).toBe(201);
     const body = jsonBody<ChatTurnResult>(response);
-    expect(body.state).toEqual(before);
+    expect(body.state).toMatchObject({
+      ...before,
+      energy: before.energy,
+      revision: before.revision + 1,
+      relationship: {
+        ...before.relationship,
+        familiarity: before.relationship.familiarity + 0.001,
+        lastInteractionAtUtc: START_UTC,
+      },
+    });
     const audit = app.personasim.store
       .listDomainEvents(character.id, 100)
       .find(
@@ -703,10 +727,24 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(audit?.payload).toMatchObject({
       mode: "shadow",
       accepted: { stateDelta: true, relationshipDelta: true },
+      interactionStatus: "committed",
+      llmProposalStatus: "shadow",
+      applied: {
+        stateDelta: {},
+        relationshipDelta: { familiarity: 0.001 },
+      },
+      wouldApply: {
+        after: {
+          energy: before.energy - 0.1,
+          relationship: {
+            familiarity: before.relationship.familiarity + 0.012,
+          },
+        },
+      },
     });
   });
 
-  it("characterizes an effect-free turn as leaving relationship time untouched", async () => {
+  it("advances relationship time and baseline on an effect-free turn", async () => {
     const created = await createRealProviderTestApp("enforced");
     app = created.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
@@ -734,9 +772,25 @@ describe("openai-compatible reply-first conversation path", () => {
 
     expect(response.statusCode).toBe(201);
     const body = jsonBody<ChatTurnResult>(response);
-    expect(body.state.revision).toBe(before.revision);
-    expect(body.state.relationship).toEqual(before.relationship);
-    expect(body.state.relationship.lastInteractionAtUtc).toBeUndefined();
+    expect(body.state.revision).toBe(before.revision + 1);
+    expect(body.state.relationship).toMatchObject({
+      ...before.relationship,
+      familiarity: before.relationship.familiarity + 0.001,
+      lastInteractionAtUtc: START_UTC,
+    });
+    const audit = app.personasim.store
+      .listDomainEvents(character.id, 100)
+      .find(
+        (event) => event.eventType === "conversation.world_effects_committed",
+      );
+    expect(audit?.payload).toMatchObject({
+      mode: "enforced",
+      source: { relationshipBaseline: "server_interaction_baseline" },
+      relationship: {
+        baselineDelta: { familiarity: 0.001 },
+        dailyUsageApplied: { familiarity: 0.001 },
+      },
+    });
   });
 
   it("commits valid world effects while rejecting malformed siblings", async () => {
@@ -1110,6 +1164,7 @@ async function createRealProviderTestApp(
     seedDemo: false,
     developerRoutes: true,
     scheduleNegotiationMode: "legacy",
+    selfInitiatedPlanningMode: "off",
     liveWorldEffectsMode,
     llm: {
       provider: "openai-compatible",

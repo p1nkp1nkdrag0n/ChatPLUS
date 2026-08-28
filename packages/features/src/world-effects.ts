@@ -22,6 +22,7 @@ export type WorldEffectKind =
 export interface WorldEffectRejection {
   effect: WorldEffectKind;
   index?: number;
+  field?: string;
   reasonCode: string;
   reasonSummary: string;
   raw: unknown;
@@ -35,6 +36,10 @@ export interface ValidatedWorldEffects {
 }
 
 export interface WorldEffectsValidationResult {
+  proposed: {
+    stateDelta?: unknown;
+    relationshipDelta?: unknown;
+  };
   effects: ValidatedWorldEffects;
   rejections: WorldEffectRejection[];
   limitsApplied: WorldEffectKind[];
@@ -49,6 +54,21 @@ const STATE_KEYS = [
   "socialBattery",
   "focus",
 ] as const;
+const RELATIONSHIP_KEYS = [
+  "closeness",
+  "trust",
+  "familiarity",
+  "recentInteractionValence",
+] as const;
+const SERVER_OWNED_STATE_KEYS = new Set([
+  "agentId",
+  "asOfUtc",
+  "revision",
+  "sleepDebtMinutes",
+  "currentActivityId",
+  "locationContext",
+  "relationship",
+]);
 type ModelMemoryTypeDescriptor = {
   kind: MemoryCandidate["kind"];
   explicitUser: boolean;
@@ -298,6 +318,68 @@ function clampLiveStateDelta(delta: RuntimeStateDelta): {
   };
 }
 
+function sanitizeNumericDelta(
+  raw: unknown,
+  effect: "state_delta" | "relationship_delta",
+  allowedKeys: readonly string[],
+  rejections: WorldEffectRejection[],
+): Record<string, number> | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    rejections.push({
+      effect,
+      reasonCode:
+        effect === "state_delta"
+          ? "invalid_state_delta"
+          : "invalid_relationship_delta",
+      reasonSummary: "The delta must be a JSON object.",
+      raw,
+    });
+    return undefined;
+  }
+  const allowed = new Set(allowedKeys);
+  const sanitized: Record<string, number> = {};
+  for (const [field, value] of Object.entries(raw)) {
+    if (!allowed.has(field)) {
+      const serverOwned =
+        effect === "state_delta" && SERVER_OWNED_STATE_KEYS.has(field);
+      rejections.push({
+        effect,
+        field,
+        reasonCode: serverOwned
+          ? "server_owned_state_field"
+          : effect === "state_delta"
+            ? "unknown_state_delta_field"
+            : "unknown_relationship_delta_field",
+        reasonSummary: serverOwned
+          ? `State field ${field} is server-owned and was removed.`
+          : `Delta field ${field} is not supported and was removed.`,
+        raw: value,
+      });
+      continue;
+    }
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      value < -1 ||
+      value > 1
+    ) {
+      rejections.push({
+        effect,
+        field,
+        reasonCode:
+          effect === "state_delta"
+            ? "invalid_state_delta_field"
+            : "invalid_relationship_delta_field",
+        reasonSummary: `Delta field ${field} must be a finite number from -1 to 1 and was removed.`,
+        raw: value,
+      });
+      continue;
+    }
+    sanitized[field] = value;
+  }
+  return Object.keys(sanitized).length === 0 ? undefined : sanitized;
+}
+
 function pushCandidateRejections(
   raw: unknown,
   effect: "memory_candidate" | "personal_intent_candidate",
@@ -354,6 +436,12 @@ function pushCandidateRejections(
 export function validateWorldEffects(
   raw: PersonaTurnEnvelope["worldEffects"],
 ): WorldEffectsValidationResult {
+  const proposed = {
+    ...(raw.stateDelta === undefined ? {} : { stateDelta: raw.stateDelta }),
+    ...(raw.relationshipDelta === undefined
+      ? {}
+      : { relationshipDelta: raw.relationshipDelta }),
+  };
   const effects: ValidatedWorldEffects = {
     memoryCandidates: [],
     personalIntentCandidates: [],
@@ -362,42 +450,29 @@ export function validateWorldEffects(
   const limitsApplied: WorldEffectKind[] = [];
 
   if (raw.stateDelta !== undefined) {
-    const parsed = RuntimeStateDeltaSchema.safeParse(raw.stateDelta);
-    if (!parsed.success) {
-      rejections.push({
-        effect: "state_delta",
-        reasonCode: "invalid_state_delta",
-        reasonSummary: "The state delta failed its strict contract.",
-        raw: raw.stateDelta,
-      });
-    } else if (
-      parsed.data.currentActivityId !== undefined ||
-      parsed.data.locationContext !== undefined
-    ) {
-      rejections.push({
-        effect: "state_delta",
-        reasonCode: "server_owned_state_field",
-        reasonSummary:
-          "The live model cannot own activity ids or location context.",
-        raw: raw.stateDelta,
-      });
-    } else {
-      const clamped = clampLiveStateDelta(parsed.data);
+    const sanitized = sanitizeNumericDelta(
+      raw.stateDelta,
+      "state_delta",
+      STATE_KEYS,
+      rejections,
+    );
+    if (sanitized !== undefined) {
+      const parsed = RuntimeStateDeltaSchema.parse(sanitized);
+      const clamped = clampLiveStateDelta(parsed);
       effects.stateDelta = clamped.delta;
       if (clamped.limited) limitsApplied.push("state_delta");
     }
   }
 
   if (raw.relationshipDelta !== undefined) {
-    const parsed = RelationshipDeltaSchema.safeParse(raw.relationshipDelta);
-    if (!parsed.success) {
-      rejections.push({
-        effect: "relationship_delta",
-        reasonCode: "invalid_relationship_delta",
-        reasonSummary: "The relationship delta failed its strict contract.",
-        raw: raw.relationshipDelta,
-      });
-    } else {
+    const sanitized = sanitizeNumericDelta(
+      raw.relationshipDelta,
+      "relationship_delta",
+      RELATIONSHIP_KEYS,
+      rejections,
+    );
+    if (sanitized !== undefined) {
+      const parsed = RelationshipDeltaSchema.parse(sanitized);
       const clamped = applyRelationshipDelta(
         {
           userId: "local-user",
@@ -406,7 +481,7 @@ export function validateWorldEffects(
           familiarity: 0.5,
           recentInteractionValence: 0,
         },
-        parsed.data,
+        parsed,
         "1970-01-01T00:00:00.000Z",
       );
       effects.relationshipDelta = RelationshipDeltaSchema.parse(
@@ -438,5 +513,5 @@ export function validateWorldEffects(
   );
   effects.personalIntentCandidates = intents as PersonalIntentCandidate[];
 
-  return { effects, rejections, limitsApplied };
+  return { proposed, effects, rejections, limitsApplied };
 }

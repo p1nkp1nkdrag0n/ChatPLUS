@@ -157,6 +157,18 @@ export class TurnCommitService {
           input.command.clientMessageId,
         );
         if (duplicate) throw new DuplicateTurnError(duplicate);
+        const currentState = this.store.getRuntimeState(input.command.agentId);
+        if (
+          currentState === undefined ||
+          currentState.revision !==
+            input.world.effectTrace.expectedStateRevision
+        ) {
+          throw new ApiError(
+            409,
+            "stale_runtime_state",
+            "Runtime state changed before this turn could be committed.",
+          );
+        }
         if (
           this.options.scheduleNegotiationMode === "enforced" &&
           input.world.negotiationPlan?.effect !== undefined
@@ -220,7 +232,18 @@ export class TurnCommitService {
           });
         }
         if (input.world.stateChanged) {
-          this.store.updateRuntimeState(input.world.nextState);
+          if (
+            !this.store.compareAndSetRuntimeState(
+              input.world.nextState,
+              input.world.effectTrace.expectedStateRevision,
+            )
+          ) {
+            throw new ApiError(
+              409,
+              "stale_runtime_state",
+              "Runtime state changed before this turn could be committed.",
+            );
+          }
         }
         memoryIds = input.capabilities.longTermMemory
           ? validateMergeAndPersistMemories({
@@ -367,8 +390,9 @@ export class TurnCommitService {
     input: Parameters<TurnCommitService["commit"]>[0],
     userMessage: StoredMessage,
   ): void {
-    if (input.turn.worldEffectsAudit === undefined) return;
-    const accepted = input.turn.worldEffectsAudit.validation.effects;
+    const accepted = input.world.effectTrace.accepted;
+    const acceptedModelEffects =
+      input.turn.worldEffectsAudit?.validation.effects;
     if (
       !this.store.insertDomainEvent({
         agentId: input.command.agentId,
@@ -376,24 +400,58 @@ export class TurnCommitService {
         streamId: input.sessionId,
         streamVersion: input.world.nextState.revision,
         eventType:
-          input.turn.worldEffectsAudit.mode === "enforced"
-            ? "conversation.world_effects_committed"
-            : "conversation.world_effects_shadow_evaluated",
+          input.world.effectTrace.mode === "shadow"
+            ? "conversation.world_effects_shadow_evaluated"
+            : "conversation.world_effects_committed",
         recordedAtUtc: input.nowUtc,
+        effectiveAtUtc:
+          input.world.effectTrace.actual.after.relationship
+            .lastInteractionAtUtc ??
+          input.world.effectTrace.actual.after.asOfUtc,
         payload: {
-          mode: input.turn.worldEffectsAudit.mode,
+          schemaVersion: input.world.effectTrace.schemaVersion,
+          mode: input.world.effectTrace.mode,
+          interactionStatus: "committed",
+          llmProposalStatus:
+            input.world.effectTrace.mode === "enforced"
+              ? "committed"
+              : input.world.effectTrace.mode,
+          source: input.world.effectTrace.sources,
+          expectedStateRevision: input.world.effectTrace.expectedStateRevision,
+          proposed: input.world.effectTrace.proposed,
           accepted: {
             stateDelta: accepted.stateDelta !== undefined,
             relationshipDelta: accepted.relationshipDelta !== undefined,
-            memoryCandidateCount: accepted.memoryCandidates.length,
+            memoryCandidateCount:
+              acceptedModelEffects?.memoryCandidates.length ?? 0,
             personalIntentCandidateCount:
               input.world.decision.personalIntentCandidates?.length ?? 0,
           },
-          rejectionCodes:
-            input.turn.worldEffectsAudit.validation.rejections.map(
-              (rejection) => rejection.reasonCode,
-            ),
-          limitsApplied: input.turn.worldEffectsAudit.validation.limitsApplied,
+          applied: input.world.effectTrace.actual.applied,
+          before: input.world.effectTrace.actual.before,
+          after: input.world.effectTrace.actual.after,
+          relationship: {
+            baselineDelta:
+              input.world.effectTrace.actual.relationship.baselineDelta,
+            proposedDelta:
+              input.world.effectTrace.actual.relationship.proposedDelta,
+            acceptedProposalDelta:
+              input.world.effectTrace.actual.relationship.acceptedProposalDelta,
+            appliedProposalDelta:
+              input.world.effectTrace.actual.relationship.appliedProposalDelta,
+            dailyUsageApplied: input.world.effectTrace.actual.dailyUsageApplied,
+            dailyUsageBefore: input.world.effectTrace.actual.dailyUsageBefore,
+            dailyUsageAfter: input.world.effectTrace.actual.dailyUsageAfter,
+            capabilityScale: input.capabilities.relationshipDeltaScale,
+            limitsApplied:
+              input.world.effectTrace.actual.relationship.limitsApplied,
+            valence: input.world.effectTrace.actual.relationship.valence,
+          },
+          ...(input.world.effectTrace.wouldApply === undefined
+            ? {}
+            : { wouldApply: input.world.effectTrace.wouldApply }),
+          rejectionCodes: input.world.effectTrace.rejectionCodes,
+          limitsApplied: input.world.effectTrace.validationLimitsApplied,
         },
         correlationId: input.command.clientMessageId,
         causationId: userMessage.id,

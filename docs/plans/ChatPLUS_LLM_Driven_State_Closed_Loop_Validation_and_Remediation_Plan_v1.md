@@ -12,7 +12,9 @@
 >
 > 建议实施分支：`codex/llm-state-closed-loop-20260828`
 >
-> 当前执行状态：已从选定基线创建独立 worktree/分支，WP0 基线与 characterization 已完成；尚未执行真实 DeepSeek 调用。
+> 当前执行状态（2026-08-28）：已在独立 worktree/分支完成 WP0–WP7、离线门禁、两轮六场景真实 DeepSeek 证据采集，以及一次真实跨会话/应用重启延续验证。六场景结构验收 6/6，人工语言/因果复核为混合结果，不作为发布质量门禁。
+>
+> 最终报告：[ChatPLUS LLM 状态闭环验证与整改完成报告](ChatPLUS_LLM_State_Closed_Loop_Validation_Report.md)
 
 ---
 

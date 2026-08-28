@@ -147,7 +147,60 @@ describe("assembleChatPrompt registry integration", () => {
     expect(qualitative["focus"]).toContain("专注");
     expect(result.system).toContain("authoritative present-moment context");
     expect(result.system).toContain("not a permanent personality fact");
+    expect(result.system).toContain("must not claim an opposite present mood");
+    expect(result.system).toContain("pace, brevity, initiative, or boundaries");
     expect(result.prompt).toContain("stateGuidance");
+    expect(result.prompt).toContain(
+      "do not claim the opposite current condition",
+    );
+  });
+
+  it("injects the server-selected current activity as present context", () => {
+    const currentActivity = {
+      id: "activity-current-study",
+      agentId: "agent-private-id",
+      title: "整理剪辑素材",
+      description: "给刚完成的短片整理素材",
+      category: "study",
+      startAtUtc: "2026-08-21T11:30:00.000Z",
+      endAtUtc: "2026-08-21T12:30:00.000Z",
+      timezone: "Asia/Shanghai",
+      status: "in_progress" as const,
+      rigidity: "flexible" as const,
+      priority: 0.7,
+      source: "runtime_replan" as const,
+      adherenceProbability: 0.9,
+      narrativeImportance: 0.6,
+      shareable: true,
+      stateEffects: { energy: -0.05, focus: -0.03 },
+      revision: 1,
+      createdAtUtc: "2026-08-21T11:00:00.000Z",
+      updatedAtUtc: "2026-08-21T11:30:00.000Z",
+    };
+    const input = baseInput();
+    const result = assembleChatPrompt({
+      ...input,
+      state: {
+        ...input.state,
+        currentActivityId: currentActivity.id,
+      },
+      schedule: [currentActivity],
+    });
+    const lines = result.prompt.split("\n");
+    const activityIndex = lines.indexOf("CURRENT_ACTIVITY_JSON");
+
+    expect(activityIndex).toBeGreaterThan(-1);
+    expect(JSON.parse(lines[activityIndex + 1] ?? "")).toEqual({
+      title: "整理剪辑素材",
+      description: "给刚完成的短片整理素材",
+      category: "study",
+      startAtUtc: "2026-08-21T11:30:00.000Z",
+      endAtUtc: "2026-08-21T12:30:00.000Z",
+      timezone: "Asia/Shanghai",
+      status: "in_progress",
+      rigidity: "flexible",
+      source: "runtime_replan",
+    });
   });
 
   it.each([
@@ -329,6 +382,20 @@ describe("assembleChatPrompt registry integration", () => {
       "exact JSON keys activity (a fuzzy natural-language description)",
     );
     expect(instructions).toContain("self_care, errand, or other");
+    expect(instructions).toContain(
+      "moodValence, moodArousal, energy, stress, socialBattery, and focus",
+    );
+    expect(instructions).toContain(
+      "closeness, trust, familiarity, and recentInteractionValence",
+    );
+    expect(instructions).toContain("never closenessDelta");
+    expect(instructions).toContain("Direct support, hurt, repair");
+    expect(instructions).toContain(
+      "recentInteractionValence for the immediate positive or negative tone",
+    );
+    expect(instructions).toContain(
+      "server already applies routine familiarity",
+    );
 
     const promptLines = result.prompt.split("\n");
     const contractIndex = promptLines.indexOf("OUTPUT_CONTRACT_JSON");

@@ -228,7 +228,7 @@ function stateGuidanceFor(state: ReplyStrategyContext["state"]): string {
       : socialBattery < 0.25
         ? "Social capacity is low; be more restrained and avoid stacking questions"
         : "Current capacity supports an ordinary conversational rhythm";
-  return `${affect}. ${attention}. ${capacity}. Treat these as soft present-moment tendencies: never recite metrics, force stock wording, or turn them into permanent personality facts.`;
+  return `${affect}. ${attention}. ${capacity}. Express these authoritative present-moment conditions softly and naturally, but do not claim the opposite current condition. If this turn itself plausibly changes the condition, make that transition natural and propose the causal stateDelta. Never recite metrics, force stock wording, or turn runtime state into permanent personality facts.`;
 }
 
 function targetFor(

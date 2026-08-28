@@ -284,6 +284,9 @@ describe("deriveReplyStrategy", () => {
     expect(lowSocial.preferredChunkCount).toBe(1);
     expect(lowSocial.deliveryPreference).toBe("prefer_single_block");
     expect(highSocial.preferredChunkCount).toBeGreaterThan(1);
+    expect(highSocial.stateGuidance).toContain(
+      "do not claim the opposite current condition",
+    );
   });
 });
 

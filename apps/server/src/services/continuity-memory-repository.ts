@@ -25,8 +25,8 @@ export interface LifecycleMemoryPatch {
   status: Memory["status"];
   updatedAtUtc: string;
   lifecycleUpdatedAtUtc: string;
-  supersededById?: string;
-  mergedIntoId?: string;
+  supersededById?: string | null;
+  mergedIntoId?: string | null;
   lastReinforcedAtUtc?: string;
 }
 
@@ -192,21 +192,26 @@ export class ContinuityMemoryRepository {
     ) {
       return false;
     }
-    const next = MemorySchema.parse({
+    const nextInput: Record<string, unknown> = {
       ...current.memory,
       status: input.patch.status,
       updatedAtUtc: input.patch.updatedAtUtc,
       lifecycleUpdatedAtUtc: input.patch.lifecycleUpdatedAtUtc,
-      ...(input.patch.supersededById === undefined
-        ? {}
-        : { supersededById: input.patch.supersededById }),
-      ...(input.patch.mergedIntoId === undefined
-        ? {}
-        : { mergedIntoId: input.patch.mergedIntoId }),
       ...(input.patch.lastReinforcedAtUtc === undefined
         ? {}
         : { lastReinforcedAtUtc: input.patch.lastReinforcedAtUtc }),
-    });
+    };
+    if (input.patch.supersededById === null) {
+      delete nextInput["supersededById"];
+    } else if (input.patch.supersededById !== undefined) {
+      nextInput["supersededById"] = input.patch.supersededById;
+    }
+    if (input.patch.mergedIntoId === null) {
+      delete nextInput["mergedIntoId"];
+    } else if (input.patch.mergedIntoId !== undefined) {
+      nextInput["mergedIntoId"] = input.patch.mergedIntoId;
+    }
+    const next = MemorySchema.parse(nextInput);
     const placeholders = input.expectedStatuses.map(() => "?").join(", ");
     const result = this.store.database
       .prepare(
@@ -301,6 +306,7 @@ function mapLifecycleMemory(row: SqlRow): LifecycleMemoryRecord {
   const claimSubjectKey = optionalString(row["claim_subject_key"]);
   const claimDisposition = optionalString(row["claim_disposition"]);
   const rawClaim = parseObject(raw["claim"]);
+  const claimRevisionIntent = optionalString(rawClaim["revisionIntent"]);
   const claimRecordedAtUtc =
     optionalString(rawClaim["recordedAtUtc"]) ??
     optionalString(row["recorded_at_utc"]) ??
@@ -342,6 +348,9 @@ function mapLifecycleMemory(row: SqlRow): LifecycleMemoryRecord {
             subjectKey: claimSubjectKey,
             disposition: claimDisposition,
             recordedAtUtc: claimRecordedAtUtc,
+            ...(claimRevisionIntent === undefined
+              ? {}
+              : { revisionIntent: claimRevisionIntent }),
           },
         }),
     ...(optionalString(row["valid_until_utc"]) === undefined

@@ -1379,6 +1379,76 @@ describe("server-owned schedule negotiation", () => {
     expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
   });
 
+  it("commits a yearless Chinese month-day offer to its authoritative future calendar slot", async () => {
+    const clock = new FakeClock("2026-09-27T08:30:00.000Z"); // 16:30 Shanghai
+    app = (await createNegotiationTestApp({ clock })).app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const invitation = "我想在9月30日下午3点和你一起去北岸书店喝茶，可以吗？";
+    let turn = 0;
+    mockLlm(app.personasim.llm, calls, () => {
+      turn += 1;
+      return turn === 1
+        ? {
+            text: "可以，先作为待确认安排。",
+            scheduleAction: {
+              kind: "accept_user_offer",
+              offer: {
+                activity: "北岸书店喝茶",
+                category: "social",
+                startAt: "9月30日下午3点",
+                evidenceQuotes: [invitation],
+              },
+            },
+          }
+        : {
+            text: "好。",
+            scheduleAction: {
+              kind: "accept_pending_offer",
+              evidenceQuotes: ["确认"],
+            },
+          };
+    });
+    const character = await createAndPublishHighFidelity(app);
+    const sessionId = await createSession(app, character.id);
+    calls.length = 0;
+
+    const offered = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "yearless-month-day-offer",
+      invitation,
+    );
+    expect(offered.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(offered).scheduleChanges).toEqual([]);
+    expect(
+      readNegotiationState(
+        app.personasim.store.getActiveScheduleNegotiation(sessionId)!,
+      ).offer,
+    ).toMatchObject({
+      startAtUtc: "2026-09-30T07:00:00.000Z",
+      durationMinutes: 90,
+    });
+
+    const confirmed = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "yearless-month-day-confirm",
+      "确认",
+    );
+    expect(confirmed.statusCode).toBe(201);
+    expect(jsonBody<ChatTurnResult>(confirmed).scheduleChanges).toEqual([
+      expect.objectContaining({
+        startAtUtc: "2026-09-30T07:00:00.000Z",
+        endAtUtc: "2026-09-30T08:30:00.000Z",
+        timezone: "Asia/Shanghai",
+        category: "social",
+        source: "user_invitation",
+      }),
+    ]);
+  });
+
   it("does not infer an enforced schedule acceptance from prose when the structured action is none", async () => {
     app = (await createNegotiationTestApp()).app;
     const calls: Array<GenerateObjectInput<unknown>> = [];

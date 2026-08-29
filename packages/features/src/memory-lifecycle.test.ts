@@ -136,4 +136,100 @@ describe("memory claim reconciliation", () => {
       "memory-z",
     ]);
   });
+
+  it("supersedes a same-disposition fact only when correction is explicit", () => {
+    const corrected = reconcileMemoryClaims({
+      existing: memory({
+        content: "小林是我大学同学",
+        claim: {
+          subjectKey: "user_fact:relationship:小林",
+          disposition: "affirmed",
+          recordedAtUtc: NOW,
+        },
+      }),
+      incoming: memory({
+        id: "memory-new",
+        content: "小林是我高中同学",
+        claim: {
+          subjectKey: "user_fact:relationship:小林",
+          disposition: "affirmed",
+          recordedAtUtc: NOW,
+          revisionIntent: "explicit_correction",
+        },
+      }),
+    });
+    expect(corrected).toMatchObject({
+      kind: "supersede",
+      reasonCode: "explicit_user_correction",
+      winnerMemoryId: "memory-new",
+    });
+
+    const ambiguous = reconcileMemoryClaims({
+      existing: memory({
+        content: "小林是我大学同学",
+        claim: {
+          subjectKey: "user_fact:relationship:小林",
+          disposition: "affirmed",
+          recordedAtUtc: OLD,
+        },
+      }),
+      incoming: memory({
+        id: "memory-new",
+        content: "小林是我高中同学",
+        claim: {
+          subjectKey: "user_fact:relationship:小林",
+          disposition: "affirmed",
+          recordedAtUtc: NOW,
+        },
+      }),
+    });
+    expect(ambiguous.kind).toBe("needs_review");
+  });
+
+  it("does not trust a correction carried by inferred model evidence", () => {
+    const result = reconcileMemoryClaims({
+      existing: memory({ content: "小林是我大学同学" }),
+      incoming: memory({
+        id: "memory-new",
+        content: "小林是我高中同学",
+        certainty: "inferred",
+        attribution: "model_inference",
+        claim: {
+          subjectKey: "user_goal:postgraduate_exam",
+          disposition: "affirmed",
+          recordedAtUtc: NOW,
+          revisionIntent: "explicit_correction",
+        },
+      }),
+    });
+    expect(result.kind).toBe("needs_review");
+  });
+
+  it("accepts an explicit same-timestamp completion update", () => {
+    const result = reconcileMemoryClaims({
+      existing: memory({
+        content: "用户计划明天完成汇报，目前尚未完成。",
+        claim: {
+          subjectKey: "user_task:report",
+          disposition: "affirmed",
+          recordedAtUtc: NOW,
+        },
+      }),
+      incoming: memory({
+        id: "memory-completed",
+        content: "用户的汇报已经完成。",
+        claim: {
+          subjectKey: "user_task:report",
+          disposition: "completed",
+          recordedAtUtc: NOW,
+          revisionIntent: "explicit_correction",
+        },
+      }),
+    });
+    expect(result).toMatchObject({
+      kind: "supersede",
+      reasonCode: "explicit_user_correction",
+      winnerMemoryId: "memory-completed",
+    });
+  });
 });

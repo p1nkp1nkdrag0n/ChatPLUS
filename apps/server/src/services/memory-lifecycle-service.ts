@@ -126,6 +126,12 @@ export class MemoryLifecycleService {
       ) {
         continue;
       }
+      if (incoming.claim?.revisionIntent === "explicit_correction") {
+        results.push(
+          ...this.reconcileExplicitCorrectionBatch(agentId, incomingMemoryId),
+        );
+        continue;
+      }
       const existing = this.repository
         .listLifecycleMemories(agentId)
         .filter(
@@ -135,17 +141,256 @@ export class MemoryLifecycleService {
               record.memory.status === "aging" ||
               record.memory.status === "needs_review") &&
             record.memory.claim?.subjectKey === subjectKey,
-        )
-        .at(-1);
-      if (existing === undefined) continue;
+        );
+      if (existing.length === 0) continue;
       results.push(
         this.reconcile({
-          existingMemoryId: existing.memory.id,
+          existingMemoryId: existing.at(-1)!.memory.id,
           incomingMemoryId,
         }),
       );
     }
     return results;
+  }
+
+  private reconcileExplicitCorrectionBatch(
+    agentId: string,
+    incomingMemoryId: string,
+  ): MemoryReconciliationResult[] {
+    const nowUtc = this.clock.nowUtc();
+    return this.repository.transaction(() => {
+      let incoming = requiredMemory(
+        this.repository.getLifecycleMemory(incomingMemoryId),
+      );
+      const subjectKey = incoming.memory.claim?.subjectKey;
+      if (
+        incoming.memory.agentId !== agentId ||
+        subjectKey === undefined ||
+        incoming.memory.claim?.revisionIntent !== "explicit_correction"
+      ) {
+        return [];
+      }
+
+      const existing = this.repository
+        .listLifecycleMemories(agentId)
+        .filter(
+          (record) =>
+            record.memory.id !== incomingMemoryId &&
+            record.memory.claim?.subjectKey === subjectKey &&
+            !memoryWasRecordedAfter(record.memory, incoming.memory) &&
+            (record.memory.status === "active" ||
+              record.memory.status === "aging" ||
+              record.memory.status === "needs_review" ||
+              record.memory.supersededById === incomingMemoryId ||
+              record.memory.mergedIntoId === incomingMemoryId),
+        );
+      if (existing.length === 0) return [];
+
+      const plans = existing.map((target) => {
+        const equivalent = correctionTargetIsEquivalent(
+          target.memory,
+          incoming.memory,
+        );
+        const reconciliation: ActionableMemoryReconciliation = equivalent
+          ? {
+              kind: "merge",
+              reasonCode: "claim_reinforced",
+              subjectKey,
+              existingStatus: "merged",
+              incomingStatus: "active",
+              winnerMemoryId: incomingMemoryId,
+            }
+          : {
+              kind: "supersede",
+              reasonCode: "explicit_user_correction",
+              subjectKey,
+              existingStatus: "superseded",
+              incomingStatus: "active",
+              winnerMemoryId: incomingMemoryId,
+            };
+        const [leftMemoryId, rightMemoryId] = canonicalMemoryConflictPair(
+          target.memory.id,
+          incomingMemoryId,
+        );
+        const idempotencyKey = reconciliationIdempotencyKey({
+          agentId,
+          subjectKey,
+          leftMemoryId,
+          rightMemoryId,
+        });
+        const prior = this.repository.store.database
+          .prepare("SELECT id FROM memory_conflicts WHERE idempotency_key = ?")
+          .get(idempotencyKey) as { id: string } | undefined;
+        return {
+          target,
+          equivalent,
+          reconciliation,
+          leftMemoryId,
+          rightMemoryId,
+          idempotencyKey,
+          prior,
+        };
+      });
+      if (plans.every((plan) => plan.prior !== undefined)) {
+        return plans.map((plan) => ({
+          reconciliation: plan.reconciliation,
+          replayed: true,
+          changedMemoryIds: [],
+          conflictId: plan.prior!.id,
+        }));
+      }
+
+      const canonicalChanged =
+        incoming.memory.status !== "active" ||
+        incoming.memory.supersededById !== undefined ||
+        incoming.memory.mergedIntoId !== undefined;
+      if (canonicalChanged) {
+        requirePatch(
+          this.repository.patchLifecycleMemory({
+            memoryId: incomingMemoryId,
+            expectedStatuses: [incoming.memory.status],
+            patch: {
+              status: "active",
+              supersededById: null,
+              mergedIntoId: null,
+              updatedAtUtc: nowUtc,
+              lifecycleUpdatedAtUtc: nowUtc,
+            },
+          }),
+        );
+        incoming = requiredMemory(
+          this.repository.getLifecycleMemory(incomingMemoryId),
+        );
+      }
+
+      const results: MemoryReconciliationResult[] = [];
+      let canonicalChangeReported = false;
+      for (const plan of plans) {
+        const {
+          target,
+          equivalent,
+          reconciliation,
+          leftMemoryId,
+          rightMemoryId,
+          idempotencyKey,
+          prior,
+        } = plan;
+        if (prior !== undefined) {
+          results.push({
+            reconciliation,
+            replayed: true,
+            changedMemoryIds: [],
+            conflictId: prior.id,
+          });
+          continue;
+        }
+
+        const conflictId = stableId("memory_conflict", idempotencyKey);
+        const changedMemoryIds =
+          canonicalChanged && !canonicalChangeReported
+            ? [incomingMemoryId]
+            : [];
+        canonicalChangeReported = canonicalChangeReported || canonicalChanged;
+        if (equivalent) {
+          requirePatch(
+            this.repository.patchLifecycleMemory({
+              memoryId: target.memory.id,
+              expectedStatuses: [target.memory.status],
+              patch: {
+                status: "merged",
+                supersededById: null,
+                mergedIntoId: incomingMemoryId,
+                updatedAtUtc: nowUtc,
+                lifecycleUpdatedAtUtc: nowUtc,
+              },
+            }),
+          );
+          const targetAfter = requiredMemory(
+            this.repository.getLifecycleMemory(incomingMemoryId),
+          );
+          requireInsert(
+            this.repository.insertMemoryMergeHistory({
+              id: stableId("memory_merge", idempotencyKey),
+              agentId,
+              targetMemoryId: incomingMemoryId,
+              sourceMemoryId: target.memory.id,
+              subjectKey,
+              reasonCode: reconciliation.reasonCode,
+              reasonSummary:
+                "Equivalent earlier claims were merged into the explicit correction.",
+              sourceSnapshot: target.memory,
+              targetBefore: incoming.memory,
+              targetAfter: targetAfter.memory,
+              evidence: evidenceSnapshot(target.memory, incoming.memory),
+              idempotencyKey: `merge:${idempotencyKey}`,
+              mergedAtUtc: nowUtc,
+            }),
+            "Memory merge history already exists without its conflict.",
+          );
+        } else {
+          requirePatch(
+            this.repository.patchLifecycleMemory({
+              memoryId: target.memory.id,
+              expectedStatuses: [target.memory.status],
+              patch: {
+                status: "superseded",
+                supersededById: incomingMemoryId,
+                mergedIntoId: null,
+                updatedAtUtc: nowUtc,
+                lifecycleUpdatedAtUtc: nowUtc,
+              },
+            }),
+          );
+        }
+        changedMemoryIds.push(target.memory.id);
+
+        requireInsert(
+          this.repository.insertMemoryConflict({
+            id: conflictId,
+            agentId,
+            subjectKey,
+            leftMemoryId,
+            rightMemoryId,
+            status: "resolved",
+            resolution: equivalent ? "merged" : "superseded",
+            winnerMemoryId: incomingMemoryId,
+            reasonCode: reconciliation.reasonCode,
+            reasonSummary: reasonSummary(reconciliation.kind),
+            evidence: evidenceSnapshot(target.memory, incoming.memory),
+            idempotencyKey,
+            createdAtUtc: nowUtc,
+            resolvedAtUtc: nowUtc,
+          }),
+          "Memory conflict already exists for an incomplete reconciliation.",
+        );
+        requireInsert(
+          this.repository.insertDomainEvent({
+            agentId,
+            streamType: "memory_conflict",
+            streamId: conflictId,
+            streamVersion: 1,
+            eventType: `memory.claim.${reconciliation.kind}`,
+            recordedAtUtc: nowUtc,
+            payload: {
+              existingMemoryId: target.memory.id,
+              incomingMemoryId,
+              subjectKey,
+              reasonCode: reconciliation.reasonCode,
+              changedMemoryIds,
+            },
+            idempotencyKey: `domain:${idempotencyKey}`,
+          }),
+          "Memory reconciliation event already exists without its conflict.",
+        );
+        results.push({
+          reconciliation,
+          replayed: false,
+          changedMemoryIds,
+          conflictId,
+        });
+      }
+      return results;
+    });
   }
 
   reconcile(input: {
@@ -185,10 +430,12 @@ export class MemoryLifecycleService {
         existing.memory.id,
         incoming.memory.id,
       );
-      const idempotencyKey = `memory-reconcile:${stableId(
-        "pair",
-        `${existing.memory.agentId}:${actionable.subjectKey}:${leftMemoryId}:${rightMemoryId}`,
-      )}`;
+      const idempotencyKey = reconciliationIdempotencyKey({
+        agentId: existing.memory.agentId,
+        subjectKey: actionable.subjectKey,
+        leftMemoryId,
+        rightMemoryId,
+      });
       const prior = this.repository.store.database
         .prepare("SELECT id FROM memory_conflicts WHERE idempotency_key = ?")
         .get(idempotencyKey) as { id: string } | undefined;
@@ -372,6 +619,56 @@ function requirePatch(changed: boolean): void {
     throw new Error("Memory changed during lifecycle reconciliation.");
 }
 
+function requireInsert(inserted: boolean, message: string): void {
+  if (!inserted) throw new Error(message);
+}
+
+function reconciliationIdempotencyKey(input: {
+  agentId: string;
+  subjectKey: string;
+  leftMemoryId: string;
+  rightMemoryId: string;
+}): string {
+  return `memory-reconcile:${stableId(
+    "pair",
+    `${input.agentId}:${input.subjectKey}:${input.leftMemoryId}:${input.rightMemoryId}`,
+  )}`;
+}
+
+function correctionTargetIsEquivalent(
+  existing: Memory,
+  incoming: Memory,
+): boolean {
+  const incomingClaim = incoming.claim;
+  if (incomingClaim === undefined) return false;
+  const comparison = reconcileMemoryClaims({
+    existing: toLifecycleMemory(existing),
+    incoming: {
+      ...toLifecycleMemory(incoming),
+      claim: {
+        subjectKey: incomingClaim.subjectKey,
+        disposition: incomingClaim.disposition,
+        recordedAtUtc: incomingClaim.recordedAtUtc,
+      },
+    },
+  });
+  return comparison.kind === "merge";
+}
+
+function memoryWasRecordedAfter(candidate: Memory, incoming: Memory): boolean {
+  const candidateTime = Date.parse(
+    candidate.claim?.recordedAtUtc ?? candidate.createdAtUtc,
+  );
+  const incomingTime = Date.parse(
+    incoming.claim?.recordedAtUtc ?? incoming.createdAtUtc,
+  );
+  return (
+    Number.isFinite(candidateTime) &&
+    Number.isFinite(incomingTime) &&
+    candidateTime > incomingTime
+  );
+}
+
 function nextStreamVersion(
   repository: ContinuityMemoryRepository,
   streamId: string,
@@ -409,7 +706,7 @@ function evidenceSnapshot(
 
 function reasonSummary(kind: MemoryClaimReconciliation["kind"]): string {
   if (kind === "supersede") {
-    return "A later reliable explicit claim superseded the earlier claim.";
+    return "A later reliable explicit claim or correction superseded the earlier claim.";
   }
   if (kind === "merge") {
     return "Equivalent claims were merged as reinforcement.";

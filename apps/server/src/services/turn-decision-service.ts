@@ -14,7 +14,10 @@ import {
 } from "@personasim/contracts";
 import {
   createSafeFallbackReply,
+  deriveExplicitUserMemoryClaim,
   guardPersonaReply,
+  hasExplicitMemoryCorrection,
+  isExplicitUserMemoryStatement,
   normalizeModelEffects,
   validateWorldEffects,
   type ModelEffectRejection,
@@ -32,6 +35,10 @@ import {
   type ScheduleEffectProposal,
   type ScheduleItem,
 } from "../domain/schemas.js";
+import {
+  CHAT_TURN_OUTPUT_TOKEN_TARGET,
+  resolveChatOutputTokenBudget,
+} from "./chat-output-budget.js";
 import type { LlmService } from "./llm-service.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
 import type {
@@ -185,6 +192,7 @@ export class TurnDecisionService {
     system: string;
     prompt: string;
     fixture: AgentTurnDecision;
+    effects: TurnDecisionEffectContext;
   }): Promise<ResolvedTurn> {
     let decision: AgentTurnDecision | undefined;
     let providerEnvelope: PersonaTurnProviderEnvelope | undefined;
@@ -217,14 +225,22 @@ export class TurnDecisionService {
         : undefined;
       decision = attachValidatedWorldEffects(
         materializeFixtureProviderDecision(decisionEnvelope, input.fixture),
-        effectsEnforced ? worldValidation?.effects : undefined,
+        effectsEnforced
+          ? preserveTrustedFixtureMemories(
+              worldValidation?.effects,
+              input.fixture.memoryCandidates,
+            )
+          : undefined,
       );
     } catch (error) {
       initialIssues = invalidOutputIssues(error);
     }
 
     const validatedWorldEffects = effectsEnforced
-      ? worldValidation?.effects
+      ? preserveTrustedFixtureMemories(
+          worldValidation?.effects,
+          input.fixture.memoryCandidates,
+        )
       : undefined;
 
     let inspection = decision
@@ -273,6 +289,7 @@ export class TurnDecisionService {
         capabilities: input.capabilities,
       });
     }
+    const scheduleAction = fixtureScheduleNegotiationAction(input);
     return {
       decision,
       inspection,
@@ -293,8 +310,11 @@ export class TurnDecisionService {
         reasonCode: rejection.reasonCode,
         reasonSummary: `${rejection.effect}: ${rejection.reasonSummary}`,
       })),
-      scheduleAction: { kind: "none" },
-      modelScheduleActionAudit: { origin: "fixture", kind: "none" },
+      scheduleAction,
+      modelScheduleActionAudit: {
+        origin: "fixture",
+        kind: scheduleAction.kind,
+      },
       ...(effectsEnforced &&
       providerEnvelope?.worldEffects.continuityEffects !== undefined
         ? {
@@ -364,13 +384,16 @@ export class TurnDecisionService {
               ? input.prompt
               : `${input.prompt}\n${effectsContract}`,
           schema: providerSchema,
-          maxOutputTokens:
+          maxOutputTokens: resolveChatOutputTokenBudget(
+            this.llm.capabilities,
+            CHAT_TURN_OUTPUT_TOKEN_TARGET,
             input.replyStrategy.maxOutputTokens +
-            (worldEffectsEnabled ||
-            input.effects.effectsEligible ||
-            input.effects.scheduleNegotiationEligible
-              ? 800
-              : 0),
+              (worldEffectsEnabled ||
+              input.effects.effectsEligible ||
+              input.effects.scheduleNegotiationEligible
+                ? 800
+                : 0),
+          ),
         }),
       );
       modelScheduleActionAudit = inspectModelScheduleAction(
@@ -621,6 +644,22 @@ function attachValidatedWorldEffects(
     memoryCandidates: effects.memoryCandidates,
     personalIntentCandidates: effects.personalIntentCandidates,
   };
+}
+
+/**
+ * Fixture decisions are assembled and parsed as the strict server-owned turn
+ * contract before they are wrapped in the deliberately fuzzy provider
+ * envelope. Keep their already-validated memory semantics: passing them back
+ * through the model-facing normalizer would otherwise discard claim,
+ * attribution and stability metadata that the fixture is specifically meant
+ * to exercise. Other world effects continue to use the ordinary validator.
+ */
+function preserveTrustedFixtureMemories(
+  effects: ValidatedWorldEffects | undefined,
+  memories: AgentTurnDecision["memoryCandidates"],
+): ValidatedWorldEffects | undefined {
+  if (effects === undefined) return undefined;
+  return { ...effects, memoryCandidates: memories };
 }
 
 function inspectModelScheduleAction(value: unknown): ModelScheduleActionAudit {
@@ -947,7 +986,8 @@ function fixtureDecision(
     }
   }
 
-  const name = spec.identity.name;
+  const explicitFacts = deriveServerOwnedUserMemoryCandidates(text, nowUtc);
+  const personalIntentCandidates = fixturePersonalIntentCandidates(text);
   return {
     reply: {
       text: `${text.length < 20 ? "\u55ef\uff0c\u6211\u5728\u542c\u3002" : "\u6211\u660e\u767d\u4f60\u7684\u610f\u601d\u4e86\u3002"}\u6211\u73b0\u5728\u4f1a\u6309\u81ea\u5df1\u7684\u8282\u594f\u8ba4\u771f\u56de\u5e94\uff0c\u4e5f\u4f1a\u8bb0\u4f4f\u771f\u6b63\u91cd\u8981\u7684\u90e8\u5206\u3002`,
@@ -962,29 +1002,471 @@ function fixtureDecision(
     scheduleEffects: [],
     stateDelta: { socialBattery: -0.015, moodValence: 0.015 },
     relationshipDelta: { closeness: 0.008, recentInteractionValence: 0.03 },
-    memoryCandidates:
-      text.length >= 30
-        ? [
-            {
-              kind: "episodic",
-              content: `\u7528\u6237\u5411${name}\u63d0\u5230\uff1a${text.slice(0, 180)}`,
-              tags: ["\u5bf9\u8bdd"],
-              importance: 0.45,
-              confidence: 0.75,
-              occurredAtUtc: nowUtc,
-              sourceMessageIds: [],
-              sourceActivityEventIds: [],
-              origin: "runtime_simulation",
-              reasonCode: "conversation_memory",
-              reasonSummary:
-                "\u4fdd\u7559\u8fd9\u6b21\u5bf9\u8bdd\u4e2d\u8f83\u91cd\u8981\u7684\u7528\u6237\u4fe1\u606f\u3002",
-            },
-          ]
-        : [],
+    memoryCandidates: explicitFacts,
+    ...(personalIntentCandidates.length === 0
+      ? {}
+      : { personalIntentCandidates }),
     reasonCode: "ordinary_conversation",
     reasonSummary:
       "\u6ca1\u6709\u9700\u8981\u4fee\u6539\u65e5\u7a0b\u7684\u660e\u786e\u8bf7\u6c42\u3002",
   };
+}
+
+/**
+ * The fixture provider is used to prove that the server-owned negotiation
+ * pipeline works without relying on a paid model. Keep the fixture action
+ * intentionally small: it may accept a complete, grounded shared invitation,
+ * ask for missing details, or act on one persisted pending offer. The
+ * ScheduleNegotiationService still owns canonicalization and every write.
+ */
+function fixtureScheduleNegotiationAction(input: {
+  userText: string;
+  effects: TurnDecisionEffectContext;
+}): ScheduleNegotiationAction {
+  if (!input.effects.scheduleNegotiationEligible) return { kind: "none" };
+
+  const text = input.userText.normalize("NFKC").trim();
+  const active = input.effects.activeNegotiation;
+  if (active?.state.offer !== undefined) {
+    if (/^(?:确认|确定|同意|没问题|可以|好|就按这个来)[。.!！]?$/u.test(text)) {
+      return { kind: "accept_pending_offer", evidenceQuotes: [text] };
+    }
+    if (/^(?:算了|取消|不要了|不用了|先不定了)[\s\S]*$/u.test(text)) {
+      return { kind: "withdraw_offer" };
+    }
+    return { kind: "none" };
+  }
+
+  if (
+    /(?:假设|也许|还没决定|先别|不要|不用现在承诺|没确认过|不存在)/u.test(
+      text,
+    ) ||
+    /(?:已经进日程|还在日程|有哪些|为什么会出现在日程|说一遍|几条)/u.test(text)
+  ) {
+    return { kind: "none" };
+  }
+  if (/^(?:算了|取消|不要了|不用了|先不定了)[\s\S]*$/u.test(text)) {
+    return { kind: "withdraw_offer" };
+  }
+
+  const activity = fixtureScheduleActivity(text);
+  const sharedInvitation =
+    /一起|见面|约会|陪我|来参加|愿意.{0,20}(?:见面|约会)/u.test(text);
+  if (!sharedInvitation || activity === undefined) return { kind: "none" };
+
+  const startAt = fixtureScheduleStartEvidence(text);
+  if (startAt === undefined) {
+    return {
+      kind: "request_details",
+      offer: {
+        activity: activity.activity,
+        category: activity.category,
+        evidenceQuotes: [text],
+      },
+    };
+  }
+  return {
+    kind: "accept_user_offer",
+    offer: {
+      activity: activity.activity,
+      category: activity.category,
+      startAt,
+      evidenceQuotes: [text],
+    },
+  };
+}
+
+function fixtureScheduleActivity(
+  text: string,
+): { activity: string; category: "exercise" | "meal" | "social" } | undefined {
+  if (/喝茶|下午茶|茶馆/u.test(text)) {
+    return { activity: "喝茶", category: "social" };
+  }
+  if (/见面|约会/u.test(text)) {
+    return { activity: "见面", category: "social" };
+  }
+  if (/吃饭|晚餐|午餐|早餐/u.test(text)) {
+    return { activity: "吃饭", category: "meal" };
+  }
+  if (/散步|走走|公园.{0,12}走|走.{0,12}公园/u.test(text)) {
+    return { activity: "散步", category: "exercise" };
+  }
+  if (/跑步|晨跑|夜跑/u.test(text)) {
+    return { activity: "跑步", category: "exercise" };
+  }
+  return undefined;
+}
+
+function fixtureScheduleStartEvidence(text: string): string | undefined {
+  return /今天|今晚|明天|明早|后天|周[一二三四五六日天]|星期[一二三四五六日天]|\d{1,2}\s*月\s*\d{1,2}\s*日|\d{1,2}\s*[:：点]\s*\d{0,2}/u.test(
+    text,
+  )
+    ? text
+    : undefined;
+}
+
+function fixturePersonalIntentCandidates(
+  text: string,
+): NonNullable<AgentTurnDecision["personalIntentCandidates"]> {
+  const normalized = text.normalize("NFKC").trim();
+  if (
+    !/(?:河边|江边).{0,20}(?:夜景|灯光).{0,30}(?:片子|纪录片)/u.test(normalized)
+  ) {
+    return [];
+  }
+  return [
+    {
+      activity: "河边夜景拍摄",
+      category: "travel",
+      durationHint: "60 分钟",
+      timingHint: "明天晚上",
+      basisKind: "chat",
+      evidenceQuotes: [normalized],
+      reasonCode: "fixture_chat_grounded_night_shoot",
+      reasonSummary: "用户提到的河边夜景为纪录片拍摄提供了可追溯的灵感。",
+    },
+  ];
+}
+
+export function deriveServerOwnedUserMemoryCandidates(
+  text: string,
+  nowUtc: string,
+): MemoryCandidate[] {
+  const normalized = text.normalize("NFKC").trim();
+  if (fixtureMemoryStatementIsUnsafe(normalized)) return [];
+
+  const candidates: MemoryCandidate[] = [];
+  const correction = hasExplicitMemoryCorrection(normalized);
+
+  const sharedRoutine = normalized.match(
+    /^我希望你记住[，,:：]\s*(.+(?:每周|每月|每天).*(?:一起|共同).+)$/u,
+  )?.[1];
+  if (sharedRoutine !== undefined) {
+    candidates.push(
+      MemoryCandidateSchema.parse({
+        kind: "semantic",
+        content: `用户明确希望记住：${sharedRoutine}`,
+        tags: ["user_fact", "shared_routine"],
+        importance: 0.76,
+        confidence: 1,
+        sourceMessageIds: [],
+        sourceActivityEventIds: [],
+        origin: "runtime_simulation",
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "stable",
+        shouldWrite: true,
+        forbiddenOverclaims: [],
+        reasonCode: "explicit_shared_routine",
+        reasonSummary:
+          "The user explicitly asked to retain a recurring shared routine.",
+      }),
+    );
+  }
+
+  const anchor = normalized.match(
+    /^记住[:：]\s*(.+?代号\s*([A-Z][A-Z0-9-]{2,}))[。.!！]?$/iu,
+  );
+  const anchorContent = anchor?.[1]?.trim();
+  const anchorCode = anchor?.[2]?.trim().toLocaleLowerCase();
+  if (anchorContent !== undefined && anchorCode !== undefined) {
+    candidates.push(
+      MemoryCandidateSchema.parse({
+        kind: "semantic",
+        content: `用户明确要求记住：${anchorContent}。`,
+        tags: ["user_fact", "explicit_anchor", anchorCode],
+        importance: 0.88,
+        confidence: 1,
+        sourceMessageIds: [],
+        sourceActivityEventIds: [],
+        origin: "runtime_simulation",
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "stable",
+        claim: {
+          subjectKey: `user_fact:anchor:${anchorCode}`,
+          disposition: "affirmed",
+          recordedAtUtc: nowUtc,
+        },
+        shouldWrite: true,
+        forbiddenOverclaims: [],
+        reasonCode: "explicit_user_anchor",
+        reasonSummary: "The user explicitly asked to retain a unique anchor.",
+      }),
+    );
+  }
+
+  const relationship = normalized.match(
+    /(?:^|[，,；;。:：]\s*)([\p{Script=Han}A-Za-z0-9·]{1,24}?)(?:其实)?是(?:我|用户)?(?:的)?(大学同学|高中同学|初中同学|小学同学|研究生同学|夜校同学|工作同学|公司同学|表姐|表妹|表哥|表弟|堂姐|堂妹|堂哥|堂弟)(?:[，,；;。]|$)/u,
+  );
+  if (relationship !== null) {
+    const person = relationship[1]?.trim();
+    const relation = relationship[2]?.trim();
+    if (person !== undefined && person !== "" && relation !== undefined) {
+      const content = `${person}是用户的${relation}。`;
+      const claim = deriveExplicitUserMemoryClaim({
+        category: "user_fact",
+        evidenceText: normalized,
+        candidateContent: content,
+      });
+      if (claim !== undefined) {
+        candidates.push(
+          MemoryCandidateSchema.parse({
+            kind: "semantic",
+            content,
+            tags: [
+              "user_fact",
+              "person_relationship",
+              ...(correction ? ["explicit_correction"] : []),
+            ],
+            importance: 0.72,
+            confidence: 1,
+            sourceMessageIds: [],
+            sourceActivityEventIds: [],
+            origin: "runtime_simulation",
+            namespace: "user_model",
+            certainty: "explicit",
+            attribution: "user_explicit",
+            stability: "stable",
+            claim: {
+              ...claim,
+              recordedAtUtc: nowUtc,
+              ...(correction
+                ? { revisionIntent: "explicit_correction" as const }
+                : {}),
+            },
+            shouldWrite: true,
+            forbiddenOverclaims: [],
+            reasonCode: correction
+              ? "explicit_user_correction"
+              : "explicit_user_fact",
+            reasonSummary: correction
+              ? "The user explicitly corrected a previously stated relationship fact."
+              : "The user explicitly stated a stable relationship fact.",
+          }),
+        );
+      }
+
+      const location = normalized.match(
+        /(?:现在|目前|确实)?住在([\p{Script=Han}A-Za-z0-9·]{1,24})(?:[，,；;。]|$)/u,
+      )?.[1];
+      if (!correction && location !== undefined) {
+        const locationContent = `${person}的居住地是${location}。`;
+        const locationClaim = deriveExplicitUserMemoryClaim({
+          category: "user_fact",
+          evidenceText: normalized,
+          candidateContent: locationContent,
+        });
+        if (locationClaim !== undefined) {
+          candidates.push(
+            MemoryCandidateSchema.parse({
+              kind: "semantic",
+              content: locationContent,
+              tags: ["user_fact", "person_location"],
+              importance: 0.68,
+              confidence: 1,
+              sourceMessageIds: [],
+              sourceActivityEventIds: [],
+              origin: "runtime_simulation",
+              namespace: "user_model",
+              certainty: "explicit",
+              attribution: "user_explicit",
+              stability: "stable",
+              claim: { ...locationClaim, recordedAtUtc: nowUtc },
+              shouldWrite: true,
+              forbiddenOverclaims: [],
+              reasonCode: "explicit_user_fact",
+              reasonSummary:
+                "The user explicitly stated a person's current location.",
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  const drink = (
+    normalized.match(/更常喝([^，,。.!！]+)(?:[，,。.!！]|$)/u)?.[1] ??
+    normalized.match(/更喜欢([^，,。.!！]+)(?:[，,。.!！]|$)/u)?.[1] ??
+    normalized.match(
+      /^我(?:最近|平时|通常)?(?:经常|常|通常)?喝([^，,。.!！]+)(?:[，,。.!！]|$)/u,
+    )?.[1]
+  )?.trim();
+  if (drink !== undefined && drink !== "") {
+    const content = `用户最近常喝${drink}。`;
+    const claim = deriveExplicitUserMemoryClaim({
+      category: "user_preference",
+      evidenceText: normalized,
+      candidateContent: content,
+    });
+    if (claim !== undefined) {
+      candidates.push(
+        MemoryCandidateSchema.parse({
+          kind: "semantic",
+          content,
+          tags: [
+            "user_preference",
+            "usual_drink",
+            ...(correction ? ["explicit_correction"] : []),
+          ],
+          importance: 0.65,
+          confidence: 1,
+          sourceMessageIds: [],
+          sourceActivityEventIds: [],
+          origin: "runtime_simulation",
+          namespace: "user_model",
+          certainty: "explicit",
+          attribution: "user_explicit",
+          stability: "stable",
+          claim: {
+            ...claim,
+            recordedAtUtc: nowUtc,
+            ...(correction
+              ? { revisionIntent: "explicit_correction" as const }
+              : {}),
+          },
+          shouldWrite: true,
+          forbiddenOverclaims: [],
+          reasonCode: correction
+            ? "explicit_user_correction"
+            : "explicit_user_preference",
+          reasonSummary: correction
+            ? "The user explicitly corrected a stable personal preference."
+            : "The user explicitly stated a stable personal preference.",
+        }),
+      );
+    }
+  }
+
+  const plannedTask = /我打算明天/u.test(normalized)
+    ? normalized.includes("答辩稿")
+      ? { subjectKey: "user_task:defense_draft", label: "答辩稿最后一遍" }
+      : normalized.includes("汇报")
+        ? { subjectKey: "user_task:report", label: "汇报" }
+        : undefined
+    : undefined;
+  if (
+    plannedTask !== undefined &&
+    /(?:还没|尚未)(?:开始|做|完成)/u.test(normalized)
+  ) {
+    candidates.push(
+      MemoryCandidateSchema.parse({
+        kind: "commitment",
+        content: `用户计划明天完成${plannedTask.label}，目前尚未完成。`,
+        tags: ["user_fact", "user_plan"],
+        importance: 0.72,
+        confidence: 1,
+        sourceMessageIds: [],
+        sourceActivityEventIds: [],
+        origin: "runtime_simulation",
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "situational",
+        claim: {
+          subjectKey: plannedTask.subjectKey,
+          disposition: "affirmed",
+          recordedAtUtc: nowUtc,
+        },
+        temporalMetadata: {
+          recordedAtUtc: nowUtc,
+          temporalCertainty: "date_only",
+          temporalStatus: "planned",
+        },
+        shouldWrite: true,
+        forbiddenOverclaims: [],
+        reasonCode: "explicit_user_plan",
+        reasonSummary:
+          "The user explicitly described an unfinished future plan.",
+      }),
+    );
+  }
+
+  const completedTask =
+    /^(?:更新(?:一下)?[:：]?\s*)?(?:我|答辩稿|汇报)/u.test(normalized) &&
+    /(?:已经完成|已经顺完)/u.test(normalized)
+      ? normalized.includes("答辩稿")
+        ? { subjectKey: "user_task:defense_draft", label: "答辩稿最后一遍" }
+        : normalized.includes("汇报")
+          ? { subjectKey: "user_task:report", label: "汇报" }
+          : undefined
+      : undefined;
+  if (completedTask !== undefined) {
+    candidates.push(
+      MemoryCandidateSchema.parse({
+        kind: "commitment",
+        content: `用户的${completedTask.label}已经完成。`,
+        tags: ["user_fact", "user_plan", "status_update"],
+        importance: 0.76,
+        confidence: 1,
+        occurredAtUtc: nowUtc,
+        sourceMessageIds: [],
+        sourceActivityEventIds: [],
+        origin: "runtime_simulation",
+        namespace: "user_model",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "situational",
+        claim: {
+          subjectKey: completedTask.subjectKey,
+          disposition: "completed",
+          recordedAtUtc: nowUtc,
+          revisionIntent: "explicit_correction",
+        },
+        temporalMetadata: {
+          occurredStartAtUtc: nowUtc,
+          recordedAtUtc: nowUtc,
+          temporalCertainty: "approximate",
+          temporalStatus: "occurred",
+        },
+        shouldWrite: true,
+        forbiddenOverclaims: [],
+        reasonCode: "explicit_user_status_update",
+        reasonSummary:
+          "The user explicitly reported that the planned task is complete.",
+      }),
+    );
+  }
+
+  if (/河边夜景.*(?:适合|可以用在).*片子/u.test(normalized)) {
+    candidates.push(
+      MemoryCandidateSchema.parse({
+        kind: "semantic",
+        content: "用户建议河边夜景的灯光可能适合顾澜的纪录片。",
+        tags: ["character_inspiration", "river_night_scene"],
+        importance: 0.64,
+        confidence: 0.9,
+        sourceMessageIds: [],
+        sourceActivityEventIds: [],
+        origin: "runtime_simulation",
+        namespace: "character_self",
+        certainty: "explicit",
+        attribution: "user_explicit",
+        stability: "situational",
+        shouldWrite: true,
+        forbiddenOverclaims: [],
+        reasonCode: "explicit_user_inspiration",
+        reasonSummary:
+          "The user explicitly offered an idea without claiming it was scheduled.",
+      }),
+    );
+  }
+  return candidates;
+}
+
+function fixtureMemoryStatementIsUnsafe(text: string): boolean {
+  return (
+    !isExplicitUserMemoryStatement(text) ||
+    /^(?:假设|假如|如果|比如|例如|听说|据说|有人说|同事说)/u.test(text) ||
+    /(?:可能|也许|或许|大概|似乎|好像|不确定|未确认|没有确认).{0,30}(?:是我|是用户|已经完成|已经顺完)/u.test(
+      text,
+    ) ||
+    /(?:只是举例|别当成(?:我的)?事实|没有确认|别据此改(?:记忆|记录)|不要记住|别记住)/u.test(
+      text,
+    )
+  );
 }
 
 function safeScheduleDecision(spec: CharacterSpec): AgentTurnDecision {

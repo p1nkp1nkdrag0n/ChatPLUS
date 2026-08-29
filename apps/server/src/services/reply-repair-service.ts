@@ -9,6 +9,10 @@ import {
   type AgentTurnDecision,
   type CharacterSpec,
 } from "../domain/schemas.js";
+import {
+  REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
+  resolveChatOutputTokenBudget,
+} from "./chat-output-budget.js";
 import type { LlmService } from "./llm-service.js";
 
 /**
@@ -60,7 +64,11 @@ export class ReplyRepairService {
         purpose: "repair_chat_turn",
         agentId: input.spec.id,
         maxRetries: 0,
-        maxOutputTokens: input.replyStrategy.maxOutputTokens,
+        maxOutputTokens: resolveChatOutputTokenBudget(
+          this.llm.capabilities,
+          REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
+          input.replyStrategy.maxOutputTokens,
+        ),
         system:
           "Repair only the in-character conversational reply. Return one JSON object containing the complete required text plus optional toneTags and deliveryMode. chunks is optional and intended only for sequential delivery; omit chunks for single_block so the complete reply is not duplicated. Do not propose actions, schedules, memories, state changes, relationship changes, or hidden reasoning. Length guidance is soft: preserve useful substance and never pad merely to hit a number.",
         prompt:

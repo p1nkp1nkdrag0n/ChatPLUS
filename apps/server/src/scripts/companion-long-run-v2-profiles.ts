@@ -64,7 +64,6 @@ const PROFILE_API_KEY_ENVIRONMENTS: Record<LongRunV2Profile, string> = {
   deepseek: "OPENAI_COMPATIBLE_API_KEY",
   claude: "LLM_PROFILE_CLAUDE_API_KEY",
   grok: "LLM_PROFILE_GROK_API_KEY",
-  gemini: "LLM_PROFILE_GEMINI_API_KEY",
   "gpt56-sol": "LLM_PROFILE_GPT56_SOL_API_KEY",
   bigmodel: "LLM_PROFILE_BIGMODEL_API_KEY",
 };
@@ -132,9 +131,8 @@ export function rotateLongRunV2Profiles(
   assertRunCount(runs);
 
   return Array.from({ length: runs }, (_, runIndex) => {
-    // floor(i*n/r) spreads the starting positions across the whole list. For
-    // six profiles and three repetitions the starts are 0, 2, and 4, so every
-    // profile receives one early, one middle, and one late slot.
+    // floor(i*n/r) spreads the starting positions across the whole list so
+    // profiles rotate through early, middle, and late slots over repetitions.
     const offset = Math.floor((runIndex * ordered.length) / runs);
     return {
       repetition: (runIndex + 1) as LongRunV2RunCount,
@@ -219,6 +217,18 @@ export function preparePaidLongRunProfiles(
     rotations: rotateLongRunV2Profiles(selection.profiles, selection.runs),
     profileConfigs,
   };
+}
+
+export function assertLongRunV2ProfileConfigsReady(
+  profileConfigs: readonly LongRunV2ProfileConfigSnapshot[],
+): void {
+  const missing = profileConfigs.filter((profile) => !profile.apiKeyPresent);
+  if (missing.length === 0) return;
+  throw new Error(
+    `API key is missing for selected long-run profile(s): ${missing
+      .map((profile) => `${profile.profile} (${profile.apiKeyEnvironment})`)
+      .join(", ")}.`,
+  );
 }
 
 function snapshotProfileConfig(

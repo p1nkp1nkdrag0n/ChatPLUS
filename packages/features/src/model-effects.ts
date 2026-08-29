@@ -507,6 +507,43 @@ export function parseModelTime(
   }
 
   const now = DateTime.fromISO(context.nowUtc).setZone(context.timezone);
+  if (!now.isValid) return undefined;
+
+  // A month/day without a year is an explicit calendar date, not merely a
+  // clock embedded in prose. Resolve it in the character's local year and,
+  // when that instant has already passed, advance to the next valid year.
+  // This keeps "9月30日下午3点" from silently degrading to "today at 15:00".
+  const chineseMonthDay =
+    /(?:^|[^\d])(\d{1,2})\s*月\s*(\d{1,2})\s*(?:日|号)(?!\d)/u.exec(text);
+  if (chineseMonthDay !== null) {
+    const clockText = text
+      .slice(chineseMonthDay.index + chineseMonthDay[0].length)
+      .trimStart()
+      .replace(/^[，,]\s*/u, "");
+    const clock = parseExplicitChineseClock(clockText);
+    if (clock === undefined) return undefined;
+
+    const month = Number(chineseMonthDay[1]);
+    const day = Number(chineseMonthDay[2]);
+    // Twelve years safely spans the largest Gregorian leap-year gap while
+    // keeping malformed dates bounded and deterministic.
+    for (let yearOffset = 0; yearOffset <= 12; yearOffset += 1) {
+      const candidate = DateTime.fromObject(
+        {
+          year: now.year + yearOffset,
+          month,
+          day,
+          hour: clock.hour,
+          minute: clock.minute,
+        },
+        { zone: context.timezone },
+      ).plus({ days: clock.dayOffset });
+      if (candidate.isValid && candidate > now) {
+        return candidate.toUTC().toISO()!;
+      }
+    }
+    return undefined;
+  }
 
   const relativeHours =
     /(\d+(?:\.\d+)?)\s*个?小时后/u.exec(text) ??

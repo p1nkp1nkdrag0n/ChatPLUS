@@ -135,7 +135,7 @@ describe("companion long-run v2 paid judge", () => {
       expect(publicJson).not.toContain(`"${profile}"`);
     }
     expect(plan.mappingKey.candidates[0]?.profile).toBeDefined();
-    expect(plan.mappingKey.reviewers).toHaveLength(6);
+    expect(plan.mappingKey.reviewers).toHaveLength(5);
   });
 
   it("rejects missing or duplicated candidate results from a judge", async () => {

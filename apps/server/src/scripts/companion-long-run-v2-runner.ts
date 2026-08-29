@@ -20,11 +20,15 @@ import {
   validateLongRunScenarioManifestV2,
 } from "../scenarios/companion-long-run-v2-manifest.js";
 import {
+  appendLongRunModelIoEvidence,
   appendTurnEvidence,
   assertResumeCompatible,
+  assertRunManifestCompatible,
   atomicWriteMutableJson,
+  atomicWriteMutableText,
   readGitFingerprint,
   readTurnEvidence,
+  rewriteLongRunModelIoEvidence,
   sha256Text,
   snapshotDatabase,
   writeAtomicCheckpoint,
@@ -32,6 +36,7 @@ import {
   writeRunManifest,
   writeTextExclusive,
 } from "./companion-long-run-v2-artifacts.js";
+import { renderLongRunV2Conversation } from "./companion-long-run-v2-conversation.js";
 import {
   LONG_RUN_V2_AGENT_ID,
   LONG_RUN_V2_SESSION_ID,
@@ -64,6 +69,8 @@ import {
 } from "./companion-long-run-v2-run-types.js";
 
 const CHECKPOINT_EVERY = 10;
+const PAIRED_BASELINE_SCHEMA_VERSION =
+  "companion-long-run-paired-baseline-v4" as const;
 export const LONG_RUN_V2_EVIDENCE_TAIL_LIMIT = 12;
 const LONG_RUN_V2_FEATURE_FLAGS: RunManifest["featureFlags"] = {
   chatEffectsMode: "gated",
@@ -106,6 +113,7 @@ interface RunContext {
   databaseDirectory: string;
   checkpointDirectory: string;
   evidencePath: string;
+  modelIoPath: string;
   baseline: LongRunBaselineDescriptor;
   manifest: RunManifest;
   evidence: TurnEvidence[];
@@ -143,7 +151,7 @@ export async function runCompanionLongRunV2Single(
     const persisted = JSON.parse(
       await readFile(resolve(runDirectory, "run-manifest.json"), "utf8"),
     ) as RunManifest;
-    assertSameRunManifest(runManifest, persisted);
+    assertRunManifestCompatible(runManifest, persisted);
     evidence = await resumeEvidenceAtLatestCheckpoint(runDirectory, persisted);
   } else {
     await mkdir(runDirectory, { recursive: true });
@@ -157,6 +165,7 @@ export async function runCompanionLongRunV2Single(
     databaseDirectory: resolve(runDirectory, "databases"),
     checkpointDirectory: resolve(runDirectory, "checkpoints"),
     evidencePath,
+    modelIoPath: resolve(runDirectory, "model-io.jsonl"),
     baseline,
     manifest: runManifest,
     evidence,
@@ -165,6 +174,7 @@ export async function runCompanionLongRunV2Single(
       ? [input.serverConfig.llm.apiKey]
       : [],
   };
+  await refreshRunDeliveryArtifacts(context);
 
   let pilotGate: ReturnType<typeof evaluateLongRunV2PilotGate> | undefined;
   if (input.tracks.includes("paired")) {
@@ -290,26 +300,42 @@ async function ensurePairedProbeBaseline(
   probe: LongRunPairedProbeSpec,
   ordinal: number,
 ): Promise<{ databasePath: string; sha256: string; atUtc: string }> {
-  const directory = resolve(context.input.matrixDirectory, "paired-baselines");
+  const directory = resolve(
+    context.input.matrixDirectory,
+    "paired-baselines-v4",
+  );
   const stem = `${String(ordinal).padStart(2, "0")}-${safeFileName(probe.id)}`;
   const databasePath = resolve(directory, `${stem}.sqlite`);
   const descriptorPath = resolve(directory, `${stem}.json`);
   if (await pathExists(descriptorPath)) {
     const descriptor = JSON.parse(await readFile(descriptorPath, "utf8")) as {
+      schemaVersion: string;
       probeId: string;
       sourceBaselineSha256: string;
       scenarioSha256: string;
+      gitRevision: string;
+      dirtyPatchSha256: string | null;
       databaseSha256: string;
       atUtc: string;
     };
     if (
+      descriptor.schemaVersion !== PAIRED_BASELINE_SCHEMA_VERSION ||
       descriptor.probeId !== probe.id ||
       descriptor.sourceBaselineSha256 !== context.baseline.databaseSha256 ||
       descriptor.scenarioSha256 !== context.manifest.scenario.manifestSha256 ||
+      descriptor.gitRevision !== context.manifest.git.revision ||
+      descriptor.dirtyPatchSha256 !==
+        (context.manifest.git.dirtyPatchSha256 ?? null) ||
       descriptor.databaseSha256 !== (await sha256File(databasePath))
     ) {
       throw new Error(`Prepared paired baseline is incompatible: ${probe.id}`);
     }
+    await assertCachedPairedSetupBaseline(
+      context,
+      probe,
+      databasePath,
+      descriptor.atUtc,
+    );
     return {
       databasePath,
       sha256: descriptor.databaseSha256,
@@ -332,12 +358,28 @@ async function ensurePairedProbeBaseline(
     });
     await setupRuntime.open();
     try {
+      let previousSetupAtUtc: string | undefined;
       for (const [setupIndex, setup] of (probe.setupMessages ?? []).entries()) {
         await setupRuntime.applyActions(
           setup.actionsBefore,
           LONG_RUN_V2_AGENT_ID,
         );
-        await setupRuntime.sendMessage({
+        if (
+          previousSetupAtUtc !== undefined &&
+          Date.parse(setupRuntime.nowUtc) <= Date.parse(previousSetupAtUtc)
+        ) {
+          const durationMinutes =
+            Math.floor(
+              (Date.parse(previousSetupAtUtc) -
+                Date.parse(setupRuntime.nowUtc)) /
+                60_000,
+            ) + 1;
+          await setupRuntime.applyActions(
+            [{ kind: "advance_clock", durationMinutes }],
+            LONG_RUN_V2_AGENT_ID,
+          );
+        }
+        const setupResult = await setupRuntime.sendMessage({
           agentId: LONG_RUN_V2_AGENT_ID,
           sessionKey: "S1",
           text: setup.userText,
@@ -346,7 +388,21 @@ async function ensurePairedProbeBaseline(
             `${probe.id}-setup-${String(setupIndex + 1)}`,
           ),
         });
+        if (
+          setupResult.http.status < 200 ||
+          setupResult.http.status >= 300 ||
+          setupResult.parsed === undefined
+        ) {
+          throw new Error(
+            `Paired setup failed before provider execution: ${probe.id} setup ${String(setupIndex + 1)} returned HTTP ${String(setupResult.http.status)}.`,
+          );
+        }
+        previousSetupAtUtc = setupRuntime.nowUtc;
       }
+      assertPairedSetupBaseline(
+        probe,
+        setupRuntime.snapshot(LONG_RUN_V2_AGENT_ID),
+      );
       atUtc = setupRuntime.nowUtc;
       setupRuntime.checkpointWal();
     } finally {
@@ -355,14 +411,248 @@ async function ensurePairedProbeBaseline(
   }
   const sha256 = await sha256File(databasePath);
   await writeJsonExclusive(descriptorPath, {
-    schemaVersion: "companion-long-run-paired-baseline-v2",
+    schemaVersion: PAIRED_BASELINE_SCHEMA_VERSION,
     probeId: probe.id,
     sourceBaselineSha256: context.baseline.databaseSha256,
     scenarioSha256: context.manifest.scenario.manifestSha256,
+    gitRevision: context.manifest.git.revision,
+    dirtyPatchSha256: context.manifest.git.dirtyPatchSha256 ?? null,
     databaseSha256: sha256,
     atUtc,
   });
   return { databasePath, sha256, atUtc };
+}
+
+async function assertCachedPairedSetupBaseline(
+  context: RunContext,
+  probe: LongRunPairedProbeSpec,
+  databasePath: string,
+  atUtc: string,
+): Promise<void> {
+  if ((probe.setupMessages?.length ?? 0) === 0) return;
+  const runtime = new LongRunV2Runtime({
+    databasePath,
+    config: buildLongRunV2ServerConfig(
+      context.input.serverConfig,
+      databasePath,
+      true,
+    ),
+    startAtUtc: atUtc,
+    initialSessionId: LONG_RUN_V2_SESSION_ID,
+  });
+  await runtime.open();
+  try {
+    assertPairedSetupBaseline(probe, runtime.snapshot(LONG_RUN_V2_AGENT_ID));
+  } finally {
+    await runtime.close();
+  }
+}
+
+function assertPairedSetupBaseline(
+  probe: LongRunPairedProbeSpec,
+  snapshot: LongRunStateSnapshot,
+): void {
+  const setup = probe.setupMessages ?? [];
+  if (setup.length === 0) return;
+  const setupTexts = new Set(setup.map((message) => message.userText));
+  const setupMessages = snapshot.messages
+    .map(asRecord)
+    .filter(
+      (message) =>
+        message["role"] === "user" &&
+        setupTexts.has(recordString(message, "content")),
+    );
+  if (setupMessages.length !== setup.length) {
+    throw pairedBaselineError(
+      probe,
+      `expected ${String(setup.length)} persisted setup messages, found ${String(setupMessages.length)}`,
+    );
+  }
+  for (let index = 1; index < setupMessages.length; index += 1) {
+    const previous = Date.parse(
+      recordString(setupMessages[index - 1] ?? {}, "created_at_utc"),
+    );
+    const current = Date.parse(
+      recordString(setupMessages[index] ?? {}, "created_at_utc"),
+    );
+    if (
+      !Number.isFinite(previous) ||
+      !Number.isFinite(current) ||
+      current <= previous
+    ) {
+      throw pairedBaselineError(
+        probe,
+        "setup message timestamps must be valid and strictly increasing",
+      );
+    }
+  }
+  if (probe.category !== "memory_time") return;
+
+  const setupMessageIds = new Set(
+    setupMessages.map((message) => recordString(message, "id")),
+  );
+  const evidence = snapshot.memoryEvidence.map(asRecord);
+  const groundedSetupMessageIds = new Set(
+    evidence
+      .filter(
+        (row) =>
+          row["source_type"] === "message" &&
+          setupMessageIds.has(recordString(row, "source_id")),
+      )
+      .map((row) => recordString(row, "source_id")),
+  );
+  if (groundedSetupMessageIds.size !== setupMessageIds.size) {
+    throw pairedBaselineError(
+      probe,
+      `every memory setup message must ground durable evidence (${String(groundedSetupMessageIds.size)}/${String(setupMessageIds.size)})`,
+    );
+  }
+
+  const memories = snapshot.memories.map(asRecord);
+  const setupEvidence = evidence.filter(
+    (row) =>
+      row["source_type"] === "message" &&
+      setupMessageIds.has(recordString(row, "source_id")),
+  );
+  const groundedMemoryIds = new Set(
+    setupEvidence.map((row) => recordString(row, "memory_id")),
+  );
+  const setupMemories = memories.filter((memory) =>
+    groundedMemoryIds.has(recordString(memory, "id")),
+  );
+  if (
+    setupMemories.length < setup.length ||
+    setupMemories.some(
+      (memory) =>
+        memory["namespace"] !== "user_model" ||
+        memory["certainty"] !== "explicit" ||
+        memory["attribution"] !== "user_explicit" ||
+        recordString(memory, "claim_subject_key") === "",
+    )
+  ) {
+    throw pairedBaselineError(
+      probe,
+      "memory setup must produce grounded, explicit user-model claims",
+    );
+  }
+
+  const requiresSupersession =
+    probe.hardAssertions.includes("memory_correction_supersedes") ||
+    (probe.pairId === "memory-03" && probe.arm === "comparison");
+  if (!requiresSupersession) return;
+  const byId = new Map(
+    setupMemories.map((memory) => [recordString(memory, "id"), memory]),
+  );
+  const expected = pairedSupersessionExpectation(probe);
+  const superseded = setupMemories.find((memory) => {
+    if (memory["status"] !== "superseded") return false;
+    if (
+      expected !== undefined &&
+      (memory["claim_subject_key"] !== expected.subjectKey ||
+        memory["claim_disposition"] !== expected.oldDisposition ||
+        (expected.oldTemporalStatus !== undefined &&
+          memory["temporal_status"] !== expected.oldTemporalStatus))
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const replacement =
+    superseded === undefined
+      ? undefined
+      : byId.get(recordString(superseded, "superseded_by_id"));
+  const oldEvidenceSourceIds = new Set(
+    setupEvidence
+      .filter(
+        (row) =>
+          recordString(row, "memory_id") ===
+          recordString(superseded ?? {}, "id"),
+      )
+      .map((row) => recordString(row, "source_id")),
+  );
+  const replacementEvidenceSourceIds = new Set(
+    setupEvidence
+      .filter(
+        (row) =>
+          recordString(row, "memory_id") ===
+          recordString(replacement ?? {}, "id"),
+      )
+      .map((row) => recordString(row, "source_id")),
+  );
+  const validSupersession =
+    superseded !== undefined &&
+    replacement?.["status"] === "active" &&
+    recordString(superseded, "claim_subject_key") !== "" &&
+    superseded["claim_subject_key"] === replacement["claim_subject_key"] &&
+    (expected === undefined ||
+      (replacement["claim_subject_key"] === expected.subjectKey &&
+        replacement["claim_disposition"] === expected.newDisposition &&
+        (expected.newTemporalStatus === undefined ||
+          replacement["temporal_status"] === expected.newTemporalStatus))) &&
+    oldEvidenceSourceIds.has(recordString(setupMessages[0] ?? {}, "id")) &&
+    replacementEvidenceSourceIds.has(
+      recordString(setupMessages.at(-1) ?? {}, "id"),
+    );
+  const hasSupersedeEvent = snapshot.domainEvents
+    .map(asRecord)
+    .some((event) => {
+      if (event["eventType"] !== "memory.claim.supersede") return false;
+      const payload = asRecord(event["payload"]);
+      return (
+        recordString(payload, "existingMemoryId") ===
+          recordString(superseded ?? {}, "id") &&
+        recordString(payload, "incomingMemoryId") ===
+          recordString(replacement ?? {}, "id")
+      );
+    });
+  if (!validSupersession || !hasSupersedeEvent) {
+    throw pairedBaselineError(
+      probe,
+      "explicit correction must form a grounded supersession chain before a paid candidate call",
+    );
+  }
+}
+
+function pairedSupersessionExpectation(probe: LongRunPairedProbeSpec):
+  | {
+      subjectKey: string;
+      oldDisposition: string;
+      newDisposition: string;
+      oldTemporalStatus?: string;
+      newTemporalStatus?: string;
+    }
+  | undefined {
+  if (probe.pairId === "memory-02") {
+    return {
+      subjectKey: "user_fact:relationship:小林",
+      oldDisposition: "affirmed",
+      newDisposition: "affirmed",
+    };
+  }
+  if (probe.pairId === "memory-03") {
+    return {
+      subjectKey: "user_task:report",
+      oldDisposition: "affirmed",
+      newDisposition: "completed",
+      oldTemporalStatus: "planned",
+      newTemporalStatus: "occurred",
+    };
+  }
+  return undefined;
+}
+
+function pairedBaselineError(
+  probe: LongRunPairedProbeSpec,
+  detail: string,
+): Error {
+  return new Error(
+    `Invalid paired baseline (FAIL_HARNESS): ${probe.id}: ${detail}.`,
+  );
+}
+
+function recordString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
 }
 
 async function runPairedTrack(context: RunContext): Promise<void> {
@@ -566,9 +856,13 @@ async function executeCandidate(input: {
 }): Promise<TurnEvidence> {
   const fakeTimeBeforeUtc = input.runtime.nowUtc;
   const before = input.runtime.snapshot(LONG_RUN_V2_AGENT_ID);
+  const actionObservationCursor = input.runtime.observer.cursor();
   const actions = await input.runtime.applyActions(
     input.turn.actionsBefore,
     LONG_RUN_V2_AGENT_ID,
+  );
+  const actionObservations = input.runtime.observer.slice(
+    actionObservationCursor,
   );
   if (!input.runtime.isOpen) {
     await input.runtime.open();
@@ -587,6 +881,26 @@ async function executeCandidate(input: {
     text: input.turn.userText,
     clientMessageId,
   });
+  const turnLogicalCalls = [
+    ...actionObservations.logicalCalls.map((call) => ({
+      ...call,
+      phase: "pre_message_action" as const,
+    })),
+    ...sent.observations.logicalCalls.map((call) => ({
+      ...call,
+      phase: "message" as const,
+    })),
+  ];
+  const turnProviderAttempts = [
+    ...actionObservations.providerAttempts.map((attempt) => ({
+      ...attempt,
+      phase: "pre_message_action" as const,
+    })),
+    ...sent.observations.providerAttempts.map((attempt) => ({
+      ...attempt,
+      phase: "message" as const,
+    })),
+  ];
   const after = input.runtime.snapshot(LONG_RUN_V2_AGENT_ID);
   const persistedAssistant = findPersistedAssistant(after, sent.parsed);
   const retrievalRuns =
@@ -661,8 +975,8 @@ async function executeCandidate(input: {
       status: sent.http.status,
       latencyMs: sent.http.latencyMs,
     },
-    logicalCalls: sent.observations.logicalCalls,
-    providerAttempts: sent.observations.providerAttempts,
+    logicalCalls: turnLogicalCalls,
+    providerAttempts: turnProviderAttempts,
     ...(primary === undefined
       ? {}
       : { primaryPromptSha256: primary.promptSha256 }),
@@ -715,7 +1029,14 @@ async function commitEvidence(
     evidence,
     context.secretValues,
   );
+  await appendLongRunModelIoEvidence(
+    context.modelIoPath,
+    evidence,
+    context.manifest,
+    context.secretValues,
+  );
   context.evidence.push(evidence);
+  await refreshRunConversation(context);
   if (
     context.evidence.length % CHECKPOINT_EVERY === 0 ||
     context.evidence.length === 30 ||
@@ -850,7 +1171,14 @@ async function reusePilotEvidence(context: RunContext): Promise<void> {
       reused,
       context.secretValues,
     );
+    await appendLongRunModelIoEvidence(
+      context.modelIoPath,
+      reused,
+      context.manifest,
+      context.secretValues,
+    );
     context.evidence.push(reused);
+    await refreshRunConversation(context);
   }
   await writeJsonExclusive(resolve(context.runDirectory, "pilot-reuse.json"), {
     sourceDirectory: directory,
@@ -910,6 +1238,7 @@ async function finishRun(
       warnings: [...summary.warnings, ...pilotGate.reasons],
     };
   }
+  await refreshRunDeliveryArtifacts(context);
   if (shouldStop(context)) {
     await atomicWriteMutableJson(
       resolve(context.runDirectory, "progress-summary.json"),
@@ -936,7 +1265,24 @@ async function finishRun(
   };
 }
 
-async function buildRunManifest(
+async function refreshRunConversation(context: RunContext): Promise<void> {
+  await atomicWriteMutableText(
+    resolve(context.runDirectory, "conversation.md"),
+    renderLongRunV2Conversation(context.evidence),
+  );
+}
+
+async function refreshRunDeliveryArtifacts(context: RunContext): Promise<void> {
+  await refreshRunConversation(context);
+  await rewriteLongRunModelIoEvidence(
+    context.modelIoPath,
+    context.evidence,
+    context.manifest,
+    context.secretValues,
+  );
+}
+
+export async function buildRunManifest(
   input: LongRunV2SingleRunInput,
   baseline: LongRunBaselineDescriptor,
   scenario: LongRunScenarioManifestV2,
@@ -982,7 +1328,7 @@ async function buildRunManifest(
   };
 }
 
-async function ensureFrozenBaseline(
+export async function ensureFrozenBaseline(
   matrixDirectory: string,
 ): Promise<LongRunBaselineDescriptor> {
   const directory = resolve(matrixDirectory, "baseline");
@@ -1096,24 +1442,6 @@ async function atomicWriteText(path: string, value: string): Promise<void> {
   const { writeFile, rename } = await import("node:fs/promises");
   await writeFile(temporary, value, "utf8");
   await rename(temporary, path);
-}
-
-function assertSameRunManifest(
-  current: RunManifest,
-  persisted: RunManifest,
-): void {
-  const comparable = (manifest: RunManifest) => ({
-    ...manifest,
-    createdAtUtc: "<ignored-on-resume>",
-  });
-  if (
-    sha256Canonical(comparable(current)) !==
-    sha256Canonical(comparable(persisted))
-  ) {
-    throw new Error(
-      "Existing run manifest is incompatible with this resume request.",
-    );
-  }
 }
 
 function compatibilityFromManifest(

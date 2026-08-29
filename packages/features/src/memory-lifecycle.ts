@@ -16,6 +16,7 @@ export interface MemoryClaimSemanticsLike {
   subjectKey: string;
   disposition: MemoryClaimDispositionLike;
   recordedAtUtc: string;
+  revisionIntent?: "explicit_correction" | undefined;
 }
 
 export interface LifecycleMemoryLike {
@@ -156,6 +157,7 @@ export interface MemoryClaimReconciliation {
     | "different_subject"
     | "claim_reinforced"
     | "later_explicit_claim"
+    | "explicit_user_correction"
     | "ambiguous_claim_conflict";
   subjectKey?: string;
   existingStatus?: "active" | "superseded" | "merged" | "needs_review";
@@ -216,6 +218,26 @@ export function reconcileMemoryClaims(input: {
     return { kind: "unrelated", reasonCode: "different_subject" };
   }
 
+  const claimChanged =
+    existingClaim.disposition !== incomingClaim.disposition ||
+    normalizeText(input.existing.content) !==
+      normalizeText(input.incoming.content);
+  if (
+    claimChanged &&
+    incomingClaim.revisionIntent === "explicit_correction" &&
+    incomingIsNotEarlier(input.existing, input.incoming) &&
+    claimIsReliable(input.incoming)
+  ) {
+    return {
+      kind: "supersede",
+      reasonCode: "explicit_user_correction",
+      subjectKey: incomingClaim.subjectKey,
+      existingStatus: "superseded",
+      incomingStatus: "active",
+      winnerMemoryId: input.incoming.id,
+    };
+  }
+
   if (existingClaim.disposition === incomingClaim.disposition) {
     if (
       similarity(input.existing.content, input.incoming.content) >=
@@ -263,6 +285,19 @@ export function reconcileMemoryClaims(input: {
     existingStatus: "needs_review",
     incomingStatus: "needs_review",
   };
+}
+
+function incomingIsNotEarlier(
+  existing: LifecycleMemoryLike,
+  incoming: LifecycleMemoryLike,
+): boolean {
+  const incomingTime = Date.parse(incoming.claim?.recordedAtUtc ?? "");
+  const existingTime = Date.parse(existing.claim?.recordedAtUtc ?? "");
+  return (
+    Number.isFinite(incomingTime) &&
+    Number.isFinite(existingTime) &&
+    incomingTime >= existingTime
+  );
 }
 
 export function canonicalMemoryConflictPair(

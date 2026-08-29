@@ -9,7 +9,6 @@ export const COMPANION_LONG_RUN_V2_PROFILE_ORDER = [
   "deepseek",
   "claude",
   "grok",
-  "gemini",
   "gpt56-sol",
   "bigmodel",
 ] as const;
@@ -18,14 +17,14 @@ export type CompanionLongRunV2Profile =
   (typeof COMPANION_LONG_RUN_V2_PROFILE_ORDER)[number];
 
 /**
- * Each run has two reviewers.  Across the three runs every non-subject
- * profile reviews the subject at least once; offset +2 is repeated to make the
- * six assignments balance exactly.
+ * Each run has two reviewers. Across the three runs every non-subject profile
+ * reviews the subject at least once; the six assignments use symmetric repeat
+ * counts across the four available reviewer offsets.
  */
 export const COMPANION_LONG_RUN_V2_REVIEWER_OFFSET_PAIRS = [
   [1, 2],
-  [2, 4],
-  [3, 5],
+  [2, 3],
+  [3, 4],
 ] as const;
 
 export const COMPANION_LONG_RUN_V2_REVIEWER_OFFSETS_BY_REPETITION =

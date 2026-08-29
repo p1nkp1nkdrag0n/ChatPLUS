@@ -47,6 +47,8 @@ export type LlmLogicalCallEvent =
       agentId?: string;
       system: string;
       prompt: string;
+      maxRetries?: number;
+      maxOutputTokens?: number;
       createdAtUtc: string;
     }
   | {
@@ -57,6 +59,7 @@ export type LlmLogicalCallEvent =
       success: boolean;
       parsedOutput?: unknown;
       errorCode?: string;
+      latencyMs: number;
       completedAtUtc: string;
     };
 
@@ -131,6 +134,12 @@ export class LlmService {
       ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
       system: input.system,
       prompt: input.prompt,
+      ...(input.maxRetries === undefined
+        ? {}
+        : { maxRetries: input.maxRetries }),
+      ...(input.maxOutputTokens === undefined
+        ? {}
+        : { maxOutputTokens: input.maxOutputTokens }),
       createdAtUtc: this.clock.nowUtc(),
     });
     const startedAt = performance.now();
@@ -174,6 +183,7 @@ export class LlmService {
         success,
         ...(parsedOutput === undefined ? {} : { parsedOutput }),
         ...(errorCode === undefined ? {} : { errorCode }),
+        latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
         completedAtUtc: this.clock.nowUtc(),
       });
       this.store.recordLlmCall({

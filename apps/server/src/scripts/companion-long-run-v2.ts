@@ -3,30 +3,44 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import { readConfig } from "../config.js";
-import { COMPANION_LONG_RUN_V2_SHA256 } from "../scenarios/companion-long-run-v2-manifest.js";
 import {
+  COMPANION_LONG_RUN_V2_SHA256,
+  companionLongRunV2Manifest,
+} from "../scenarios/companion-long-run-v2-manifest.js";
+import {
+  aggregateLongRunProfileModelIo,
+  assertRunManifestCompatible,
   readGitFingerprint,
   readTurnEvidence,
   writeJsonExclusive,
   writeTextExclusive,
 } from "./companion-long-run-v2-artifacts.js";
 import {
+  assertLongRunV2ProfileConfigsReady,
   buildLongRunV2ChildEnvironment,
   evaluatePaidLongRunGuard,
   parseLongRunV2ProfileArgs,
   readLongRunV2ProfileConfig,
   rotateLongRunV2Profiles,
+  type LongRunV2ProfileConfigSnapshot,
 } from "./companion-long-run-v2-profiles.js";
+import {
+  writeLongRunV2ProfileConversations,
+  type LongRunV2ApprovedProfileRun,
+} from "./companion-long-run-v2-profile-conversation.js";
 import {
   findPairedPromptHashMismatches,
   renderLongRunV2RunMarkdown,
 } from "./companion-long-run-v2-report.js";
 import {
   artifactRoot,
+  buildRunManifest,
   buildLongRunV2ServerConfig,
   computeLongRunV2ConfigSha256,
+  ensureFrozenBaseline,
   fixtureProfileSnapshot,
   liveProfileSnapshot,
   runCompanionLongRunV2Single,
@@ -51,6 +65,17 @@ interface CommonOptions {
   resume: boolean;
   profiles: LongRunV2Profile[];
   runs: 1 | 2 | 3;
+}
+
+export interface LongRunV2MatrixPlanInput {
+  matrixId: string;
+  mode: LongRunV2Mode;
+  profiles: readonly (LongRunV2Profile | "fixture")[];
+  runs: number;
+  rotations: readonly {
+    repetition: number;
+    profiles: readonly (LongRunV2Profile | "fixture")[];
+  }[];
 }
 
 interface WorkerOptions {
@@ -141,6 +166,13 @@ async function runPaidParent(
       "Formal long-run matrix requires a clean Git worktree. Commit or otherwise clean the intended revision first.",
     );
   }
+  const profileConfigs = options.profiles.map((profile) =>
+    readLongRunV2ProfileConfig(profile),
+  );
+  assertLongRunV2ProfileConfigsReady(profileConfigs);
+  const profileConfigsByName = new Map(
+    profileConfigs.map((profile) => [profile.profile, profile] as const),
+  );
   const matrixId = options.matrixId ?? suggestedMatrixId(mode);
   const matrixDirectory = resolve(artifactRoot(workspaceRoot), matrixId);
   await ensureFreshOrResume(matrixDirectory, options.resume);
@@ -155,8 +187,15 @@ async function runPaidParent(
     runs: mode === "pilot" ? 1 : options.runs,
     rotations,
   });
+  const baseline = await ensureFrozenBaseline(matrixDirectory);
+  const manifestServerConfig = buildLongRunV2ServerConfig(
+    readFixtureConfig(),
+    resolve(matrixDirectory, "worker-placeholder.sqlite"),
+    false,
+  );
 
   const summaries: RunSummary[] = [];
+  const approvedRuns: LongRunV2ApprovedProfileRun[] = [];
   const blocked = new Set<LongRunV2Profile>();
   let workerFailed = false;
   for (const rotation of rotations) {
@@ -169,11 +208,51 @@ async function runPaidParent(
       }
       const runId = suggestedRunId(profile, rotation.repetition);
       const runDirectory = resolve(matrixDirectory, "runs", runId);
+      const profileConfig = requiredProfileConfig(
+        profileConfigsByName,
+        profile,
+      );
+      const tracks =
+        mode === "pilot"
+          ? (["paired"] as const)
+          : (["paired", "closed_loop"] as const);
+      const expectedManifest = await buildRunManifest(
+        {
+          workspaceRoot,
+          matrixDirectory,
+          matrixId,
+          runId,
+          mode,
+          profile,
+          repetition: rotation.repetition,
+          serverConfig: manifestServerConfig,
+          profileConfig: liveProfileSnapshot(profileConfig),
+          profileConfigSha256: profileConfig.configSha256,
+          tracks,
+        },
+        baseline,
+        companionLongRunV2Manifest,
+      );
       if (
         options.resume &&
         (await pathExists(resolve(runDirectory, "run-summary.json")))
       ) {
-        summaries.push(await readRunSummary(runDirectory));
+        const persistedManifest = await readRunManifest(runDirectory);
+        const summary = await readRunSummary(runDirectory);
+        assertRunManifestCompatible(expectedManifest, persistedManifest);
+        assertRunManifestCompatible(persistedManifest, summary.manifest);
+        summaries.push(summary);
+        approvedRuns.push({
+          profile,
+          repetition: rotation.repetition,
+          runDirectory,
+        });
+        if (rotation.repetition === 1) {
+          const gate = await readPilotGate(runDirectory);
+          if (completedPilotGateBlocksProfile(rotation.repetition, gate)) {
+            blocked.add(profile);
+          }
+        }
         continue;
       }
       let reusedPilotDirectory: string | undefined;
@@ -199,18 +278,49 @@ async function runPaidParent(
         console.error(
           `Worker failed for ${profile} r${String(rotation.repetition)} (exit ${String(child.exitCode)}).`,
         );
+        if (
+          await isCompatibleLongRunV2ArtifactRun(runDirectory, expectedManifest)
+        ) {
+          approvedRuns.push({
+            profile,
+            repetition: rotation.repetition,
+            runDirectory,
+          });
+        }
         if (rotation.repetition === 1) blocked.add(profile);
         continue;
       }
+      const persistedManifest = await readRunManifest(runDirectory);
       const summary = await readRunSummary(runDirectory);
+      assertRunManifestCompatible(expectedManifest, persistedManifest);
+      assertRunManifestCompatible(persistedManifest, summary.manifest);
       summaries.push(summary);
+      approvedRuns.push({
+        profile,
+        repetition: rotation.repetition,
+        runDirectory,
+      });
       if (rotation.repetition === 1) {
-        const gate = JSON.parse(
-          await readFile(resolve(runDirectory, "pilot-gate.json"), "utf8"),
-        ) as { eligibleForClosedLoop: boolean };
-        if (!gate.eligibleForClosedLoop) blocked.add(profile);
+        const gate = await readPilotGate(runDirectory);
+        if (completedPilotGateBlocksProfile(rotation.repetition, gate)) {
+          blocked.add(profile);
+        }
       }
     }
+  }
+  await writeLongRunV2ProfileConversations({
+    matrixDirectory,
+    profiles: options.profiles,
+    repetitions: rotations.map((rotation) => rotation.repetition),
+    approvedRuns,
+    blockedProfiles: blocked,
+  });
+  for (const profile of options.profiles) {
+    await aggregateLongRunProfileModelIo({
+      matrixDirectory,
+      profile,
+      runDirectories: approvedRunDirectoriesForProfile(approvedRuns, profile),
+    });
   }
   await writeMatrixScorecard(
     matrixDirectory,
@@ -367,25 +477,58 @@ async function findReusablePilot(
 
 async function writeMatrixPlan(
   matrixDirectory: string,
-  input: {
-    matrixId: string;
-    mode: LongRunV2Mode;
-    profiles: readonly (LongRunV2Profile | "fixture")[];
-    runs: number;
-    rotations: readonly {
-      repetition: number;
-      profiles: readonly (LongRunV2Profile | "fixture")[];
-    }[];
-  },
+  input: LongRunV2MatrixPlanInput,
 ): Promise<void> {
   const path = resolve(matrixDirectory, "matrix-plan.json");
-  if (await pathExists(path)) return;
+  if (await pathExists(path)) {
+    assertLongRunV2MatrixPlanCompatible(
+      input,
+      JSON.parse(await readFile(path, "utf8")) as unknown,
+    );
+    return;
+  }
   await writeJsonExclusive(path, {
     schemaVersion: "companion-long-run-matrix-plan-v2",
     ...input,
     scenarioSha256: COMPANION_LONG_RUN_V2_SHA256,
     createdAtUtc: new Date().toISOString(),
   });
+}
+
+export function assertLongRunV2MatrixPlanCompatible(
+  input: LongRunV2MatrixPlanInput,
+  persisted: unknown,
+): void {
+  if (
+    typeof persisted !== "object" ||
+    persisted === null ||
+    Array.isArray(persisted) ||
+    typeof (persisted as Record<string, unknown>)["createdAtUtc"] !== "string"
+  ) {
+    throw new Error("Existing matrix plan is malformed or incompatible.");
+  }
+  const expected = {
+    schemaVersion: "companion-long-run-matrix-plan-v2",
+    ...input,
+    scenarioSha256: COMPANION_LONG_RUN_V2_SHA256,
+    createdAtUtc: "<ignored-on-resume>",
+  };
+  const actual = {
+    ...(persisted as Record<string, unknown>),
+    createdAtUtc: "<ignored-on-resume>",
+  };
+  if (!isDeepStrictEqual(actual, expected)) {
+    throw new Error(
+      "Existing matrix plan is incompatible with the requested matrix id, mode, profiles, runs, rotations, or scenario.",
+    );
+  }
+}
+
+export function completedPilotGateBlocksProfile(
+  repetition: number,
+  gate: { eligibleForClosedLoop: boolean },
+): boolean {
+  return repetition === 1 && !gate.eligibleForClosedLoop;
 }
 
 async function writeMatrixScorecard(
@@ -611,6 +754,61 @@ async function readRunSummary(runDirectory: string): Promise<RunSummary> {
   return JSON.parse(
     await readFile(resolve(runDirectory, "run-summary.json"), "utf8"),
   ) as RunSummary;
+}
+
+async function readRunManifest(runDirectory: string): Promise<RunManifest> {
+  return JSON.parse(
+    await readFile(resolve(runDirectory, "run-manifest.json"), "utf8"),
+  ) as RunManifest;
+}
+
+export async function isCompatibleLongRunV2ArtifactRun(
+  runDirectory: string,
+  expectedManifest: RunManifest,
+): Promise<boolean> {
+  try {
+    const persistedManifest = await readRunManifest(runDirectory);
+    assertRunManifestCompatible(expectedManifest, persistedManifest);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function approvedRunDirectoriesForProfile(
+  approvedRuns: readonly LongRunV2ApprovedProfileRun[],
+  profile: LongRunV2Profile,
+): string[] {
+  return approvedRuns
+    .filter((run) => run.profile === profile)
+    .sort((left, right) => left.repetition - right.repetition)
+    .map((run) => run.runDirectory);
+}
+
+async function readPilotGate(
+  runDirectory: string,
+): Promise<{ eligibleForClosedLoop: boolean }> {
+  const value = JSON.parse(
+    await readFile(resolve(runDirectory, "pilot-gate.json"), "utf8"),
+  ) as unknown;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("eligibleForClosedLoop" in value) ||
+    typeof value.eligibleForClosedLoop !== "boolean"
+  ) {
+    throw new Error(`Pilot gate is missing or malformed: ${runDirectory}`);
+  }
+  return { eligibleForClosedLoop: value.eligibleForClosedLoop };
+}
+
+function requiredProfileConfig(
+  configs: ReadonlyMap<LongRunV2Profile, LongRunV2ProfileConfigSnapshot>,
+  profile: LongRunV2Profile,
+): LongRunV2ProfileConfigSnapshot {
+  const config = configs.get(profile);
+  if (!config) throw new Error(`Profile was not preflighted: ${profile}`);
+  return config;
 }
 
 async function pathExists(path: string): Promise<boolean> {

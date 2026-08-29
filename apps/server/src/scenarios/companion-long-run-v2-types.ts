@@ -1,3 +1,5 @@
+import type { ScheduleCategory } from "@personasim/contracts";
+
 export type LongRunBranchId = "A" | "B";
 export type LongRunTurnScope = "shared" | "branch_a" | "branch_b";
 export type LongRunSessionKey = "S1" | "S2" | "S3" | "S4";
@@ -117,6 +119,20 @@ export interface PairedProbeSetupMessage {
   actionsBefore?: readonly ScenarioAction[];
 }
 
+/**
+ * A deterministic schedule slot that a confirmation turn must commit. Both
+ * UTC and local expectations are stored so a count-only assertion cannot hide
+ * date parsing or timezone regressions.
+ */
+export interface ExpectedScheduleCommit {
+  startAtUtc: string;
+  endAtUtc: string;
+  timezone: string;
+  localStart: string;
+  category: ScheduleCategory;
+  titleIncludes: string;
+}
+
 export interface LongRunPairedProbeSpec {
   /** Unique executable candidate id. One spec always means one model call. */
   id: string;
@@ -150,6 +166,7 @@ export interface LongRunTurnSpec {
   actionsBefore?: readonly ScenarioAction[];
   hardAssertions: readonly HardAssertion[];
   semanticRubricTags: readonly SemanticRubricTag[];
+  expectedScheduleCommit?: ExpectedScheduleCommit;
   /** The shared turn whose unresolved fact or choice this branch resolves. */
   branchAnchorTurnId?: string;
 }

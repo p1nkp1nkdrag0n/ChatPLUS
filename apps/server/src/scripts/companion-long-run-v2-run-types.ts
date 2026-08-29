@@ -4,7 +4,6 @@ export const LONG_RUN_V2_PROFILE_ORDER = [
   "deepseek",
   "claude",
   "grok",
-  "gemini",
   "gpt56-sol",
   "bigmodel",
 ] as const;
@@ -79,7 +78,10 @@ export interface RunManifest {
 
 export interface ProviderAttemptEvidence extends LlmCallMetric {
   attemptId: string;
+  logicalCallId?: string;
   logicalCallIndex?: number;
+  phase?: "pre_message_action" | "message";
+  requestUrl?: string;
   requestModel?: string;
   requestBody?: unknown;
   rawResponse?: unknown;
@@ -89,14 +91,111 @@ export interface ProviderAttemptEvidence extends LlmCallMetric {
 }
 
 export interface LogicalCallTrace {
+  logicalCallId?: string;
   index: number;
   purpose: string;
+  phase?: "pre_message_action" | "message";
   system: string;
   prompt: string;
   promptSha256: string;
+  maxRetries?: number;
+  maxOutputTokens?: number;
+  startedAtUtc?: string;
+  completedAtUtc?: string;
+  latencyMs?: number;
+  success?: boolean;
   parsedOutput?: unknown;
   errorCode?: string;
 }
+
+interface LongRunModelIoRecordIdentity {
+  schemaVersion: "companion-long-run-model-io-v1";
+  matrixId: string;
+  runId: string;
+  reusedFromRunId?: string;
+  profile: LongRunV2Profile | "fixture";
+  repetition: 1 | 2 | 3;
+  track: LongRunV2Track;
+  branch: LongRunV2Branch;
+  turnId: string;
+  logicalOrdinal: number;
+  candidateOrdinal: number;
+}
+
+export interface LongRunLogicalModelIoRecord extends LongRunModelIoRecordIdentity {
+  recordType: "logical_call";
+  logicalCallId: string;
+  logicalCallIndex: number;
+  phase?: "pre_message_action" | "message";
+  request: {
+    purpose: string;
+    system: string;
+    prompt: string;
+    messages: Array<{
+      role: "system" | "user";
+      content: string;
+    }>;
+    promptSha256: string;
+    provider: RunManifest["profileConfig"]["provider"];
+    requestedModel: string;
+    parameters: {
+      timeoutMs: number;
+      maxRetries: number;
+      maxOutputTokens?: number;
+      maxContextTokens?: number;
+      reasoningEffort?: string;
+      reasoningRequestFormat?: string;
+      structuredOutputMode?: string;
+    };
+  };
+  response: {
+    success?: boolean;
+    parsedOutput?: unknown;
+    errorCode?: string;
+    startedAtUtc?: string;
+    completedAtUtc?: string;
+    latencyMs?: number;
+  };
+  physicalAttemptIds: string[];
+}
+
+export interface LongRunPhysicalModelIoRecord extends LongRunModelIoRecordIdentity {
+  recordType: "physical_attempt";
+  attemptId: string;
+  attemptNumber: number;
+  logicalCallId?: string;
+  logicalCallIndex?: number;
+  phase?: "pre_message_action" | "message";
+  request: {
+    method: "POST";
+    url?: string;
+    purpose: string;
+    provider: string;
+    configuredModel: string;
+    requestModel?: string;
+    body?: unknown;
+  };
+  response: {
+    success: boolean;
+    status?: number;
+    responseModel?: string;
+    finishReason?: string | null;
+    errorCode?: string;
+    raw?: unknown;
+    text?: string;
+    usage: {
+      source?: "provider" | "estimated" | "unavailable";
+      inputTokens?: number;
+      outputTokens?: number;
+    };
+    latencyMs: number;
+    startedAtUtc: string;
+    completedAtUtc: string;
+  };
+}
+
+export type LongRunModelIoRecord =
+  LongRunLogicalModelIoRecord | LongRunPhysicalModelIoRecord;
 
 export interface HardAssertionResult {
   code: string;

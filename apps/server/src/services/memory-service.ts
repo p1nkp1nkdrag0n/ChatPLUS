@@ -1,5 +1,8 @@
 import {
   boundedRecallQueryTokens,
+  deriveExplicitUserMemoryClaim,
+  hasExplicitMemoryCorrection,
+  isExplicitUserMemoryStatement,
   recallExactIdentifierAnchors,
   judgeMemoryCandidate,
   mergeMemoryProposal,
@@ -22,6 +25,7 @@ import {
 } from "@personasim/contracts";
 
 import type { DatabaseStore } from "../db/store.js";
+import { deriveServerOwnedUserMemoryCandidates } from "./turn-decision-service.js";
 
 export type PersistMemoryInput = {
   store: DatabaseStore;
@@ -276,8 +280,21 @@ export function readMemoryEvidence(
 export function validateMergeAndPersistMemories(
   input: PersistMemoryInput,
 ): Memory[] {
-  if (input.maxCandidates <= 0 || input.candidates.length === 0) return [];
+  if (input.maxCandidates <= 0) return [];
   const catalog = loadEvidenceCatalog(input.store, input.agentId);
+  const authoritativeMessage =
+    input.authoritativeMessageId === undefined
+      ? undefined
+      : catalog.messages.get(input.authoritativeMessageId);
+  const serverOwnedCandidates =
+    authoritativeMessage?.role === "user"
+      ? deriveServerOwnedUserMemoryCandidates(
+          authoritativeMessage.content,
+          input.nowUtc,
+        )
+      : [];
+  const candidates = [...serverOwnedCandidates, ...input.candidates];
+  if (candidates.length === 0) return [];
   const existingRecords = readActiveMemoryRecords(
     input.store,
     input.agentId,
@@ -286,8 +303,11 @@ export function validateMergeAndPersistMemories(
   );
   const existing = existingRecords.map(toFeatureMemory);
   const persisted: Memory[] = [];
+  const acceptedClaimSubjects = new Set<string>();
+  const acceptedContents = new Set<string>();
 
-  for (const rawCandidate of input.candidates.slice(0, input.maxCandidates)) {
+  for (const rawCandidate of candidates) {
+    if (persisted.length >= input.maxCandidates) break;
     const parsedCandidate = MemoryCandidateSchema.safeParse(rawCandidate);
     if (!parsedCandidate.success) continue;
     const candidate = normalizeCandidateForJudge(
@@ -298,6 +318,18 @@ export function validateMergeAndPersistMemories(
       input.authoritativeActivityEventId,
     );
     if (candidate === undefined) continue;
+    const normalizedContent = candidate.content
+      .normalize("NFKC")
+      .replace(/\s+/gu, " ")
+      .trim()
+      .toLocaleLowerCase();
+    if (
+      acceptedContents.has(normalizedContent) ||
+      (candidate.claim !== undefined &&
+        acceptedClaimSubjects.has(candidate.claim.subjectKey))
+    ) {
+      continue;
+    }
     const judgement = judgeMemoryCandidate(candidate);
     if (!judgement.accepted) continue;
 
@@ -346,6 +378,10 @@ export function validateMergeAndPersistMemories(
     if (recordIndex >= 0) existingRecords[recordIndex] = memory;
     else existingRecords.push(memory);
     persisted.push(memory);
+    acceptedContents.add(normalizedContent);
+    if (candidate.claim !== undefined) {
+      acceptedClaimSubjects.add(candidate.claim.subjectKey);
+    }
   }
   return persisted;
 }
@@ -446,6 +482,29 @@ function normalizeCandidateForJudge(
   const stability =
     candidate.stability ??
     (hasActivity || candidate.kind === "episodic" ? "one_off" : "situational");
+  if (
+    candidate.kind === "semantic" &&
+    namespace === "user_model" &&
+    attribution === "user_explicit" &&
+    !evidence.some((item) => {
+      if (item.sourceType !== "message") return false;
+      const message = catalog.messages.get(item.sourceId);
+      return (
+        message?.role === "user" &&
+        isExplicitUserMemoryStatement(message.content)
+      );
+    })
+  ) {
+    return undefined;
+  }
+  const claim = materializeVerifiedClaim({
+    candidate,
+    evidence,
+    catalog,
+    nowUtc,
+    namespace,
+    attribution,
+  });
   const suppliedTemporal = candidate.temporalMetadata ?? candidate.temporal;
   const temporalMetadata = TemporalMetadataSchema.parse({
     ...(suppliedTemporal ??
@@ -460,6 +519,7 @@ function normalizeCandidateForJudge(
     certainty,
     attribution,
     stability,
+    ...(claim === undefined ? {} : { claim }),
     temporalMetadata,
     evidence,
     shouldWrite: candidate.shouldWrite ?? true,
@@ -468,6 +528,109 @@ function normalizeCandidateForJudge(
   delete normalizedInput["temporal"];
   const normalized = MemoryCandidateSchema.safeParse(normalizedInput);
   return normalized.success ? normalized.data : undefined;
+}
+
+function materializeVerifiedClaim(input: {
+  candidate: MemoryCandidate;
+  evidence: readonly MemoryEvidenceInput[];
+  catalog: EvidenceCatalog;
+  nowUtc: string;
+  namespace: NonNullable<Memory["namespace"]>;
+  attribution: NonNullable<Memory["attribution"]>;
+}): MemoryCandidate["claim"] {
+  const { candidate, evidence, catalog, nowUtc, namespace, attribution } =
+    input;
+  if (
+    candidate.kind !== "semantic" ||
+    namespace !== "user_model" ||
+    attribution !== "user_explicit"
+  ) {
+    return candidate.claim;
+  }
+  const userEvidenceTexts = evidence.flatMap((item) => {
+    if (item.sourceType !== "message") return [];
+    const message = catalog.messages.get(item.sourceId);
+    return message?.role === "user" ? [message.content] : [];
+  });
+  const assertiveEvidenceTexts = userEvidenceTexts.filter(
+    isExplicitUserMemoryStatement,
+  );
+  if (assertiveEvidenceTexts.length === 0) return undefined;
+
+  const categories = memoryClaimCategories(candidate);
+  if (candidate.claim !== undefined) {
+    const correctionApplies = verifiedCorrectionAppliesToClaim(
+      assertiveEvidenceTexts,
+      categories,
+      candidate.claim.subjectKey,
+    );
+    return {
+      subjectKey: candidate.claim.subjectKey,
+      disposition: candidate.claim.disposition,
+      recordedAtUtc: nowUtc,
+      ...(correctionApplies ? { revisionIntent: "explicit_correction" } : {}),
+    };
+  }
+
+  for (const evidenceText of assertiveEvidenceTexts) {
+    for (const category of categories) {
+      const derived = deriveExplicitUserMemoryClaim({
+        category,
+        evidenceText,
+        candidateContent: candidate.content,
+      });
+      if (derived === undefined) continue;
+      const correctionApplies = verifiedCorrectionAppliesToClaim(
+        assertiveEvidenceTexts,
+        categories,
+        derived.subjectKey,
+      );
+      return {
+        ...derived,
+        recordedAtUtc: nowUtc,
+        ...(correctionApplies ? { revisionIntent: "explicit_correction" } : {}),
+      };
+    }
+  }
+  return undefined;
+}
+
+function verifiedCorrectionAppliesToClaim(
+  evidenceTexts: readonly string[],
+  categories: readonly ("user_fact" | "user_preference")[],
+  subjectKey: string,
+): boolean {
+  return evidenceTexts.some((evidenceText) => {
+    if (!hasExplicitMemoryCorrection(evidenceText)) return false;
+    return categories.some(
+      (category) =>
+        deriveExplicitUserMemoryClaim({ category, evidenceText })
+          ?.subjectKey === subjectKey,
+    );
+  });
+}
+
+function memoryClaimCategories(
+  candidate: MemoryCandidate,
+): readonly ("user_fact" | "user_preference")[] {
+  const tags = new Set(
+    candidate.tags.map((tag) =>
+      tag.normalize("NFKC").trim().toLocaleLowerCase(),
+    ),
+  );
+  const preference = [
+    "user_preference",
+    "preference",
+    "care_preference",
+    "personal_preference",
+  ].some((tag) => tags.has(tag));
+  const fact = ["user_fact", "fact"].some((tag) => tags.has(tag));
+  if (preference && fact) return ["user_preference", "user_fact"];
+  if (preference) return ["user_preference"];
+  if (fact) return ["user_fact"];
+  // A trusted semantic user-memory may still use an application-authored tag.
+  // Both parsers are conservative and return nothing for unsupported language.
+  return ["user_preference", "user_fact"];
 }
 
 function collectVerifiedEvidence(

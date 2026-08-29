@@ -4,6 +4,7 @@ import { readConfig } from "../config.js";
 import { LONG_RUN_V2_PROFILE_ORDER } from "./companion-long-run-v2-run-types.js";
 import {
   apiKeyEnvironmentForProfile,
+  assertLongRunV2ProfileConfigsReady,
   buildLongRunV2ChildEnvironment,
   evaluatePaidLongRunGuard,
   parseLongRunV2ProfileArgs,
@@ -16,7 +17,6 @@ const SECRET_VALUES = [
   "deepseek-secret-value",
   "claude-secret-value",
   "grok-secret-value",
-  "gemini-secret-value",
   "gpt-secret-value",
   "bigmodel-secret-value",
 ] as const;
@@ -26,7 +26,7 @@ describe("companion long-run v2 profile orchestration", () => {
     vi.restoreAllMocks();
   });
 
-  it("maps all six profiles through readConfig in the fixed order without exposing credentials", () => {
+  it("maps all five evaluation profiles through readConfig without exposing credentials", () => {
     const environment = completeProfileEnvironment();
     const snapshots = LONG_RUN_V2_PROFILE_ORDER.map((profile) =>
       readLongRunV2ProfileConfig(profile, environment),
@@ -36,15 +36,13 @@ describe("companion long-run v2 profile orchestration", () => {
       "deepseek",
       "claude",
       "grok",
-      "gemini",
       "gpt56-sol",
       "bigmodel",
     ]);
     expect(snapshots.map((item) => item.requestedModel)).toEqual([
       "deepseek-v4-flash",
-      "claude-sonnet-5",
+      "claude-opus-4-6",
       "grok-4.6",
-      "gemini-3.7-flash",
       "gpt-5.6-sol",
       "glm-5.3-flash",
     ]);
@@ -53,12 +51,10 @@ describe("companion long-run v2 profile orchestration", () => {
       "https://wanzhao.test",
       "https://wanzhao.test",
       "https://wanzhao.test",
-      "https://wanzhao.test",
       "https://bigmodel.test",
     ]);
     expect(snapshots.map((item) => item.reasoningEffort)).toEqual([
       "max",
-      "medium",
       "medium",
       "medium",
       "medium",
@@ -70,13 +66,11 @@ describe("companion long-run v2 profile orchestration", () => {
       "named",
       "named",
       "named",
-      "named",
     ]);
     expect(snapshots.map((item) => item.configuredProfileName)).toEqual([
       null,
       "claude",
       "grok",
-      "gemini",
       "gpt56-sol",
       "bigmodel",
     ]);
@@ -84,7 +78,6 @@ describe("companion long-run v2 profile orchestration", () => {
       "OPENAI_COMPATIBLE_API_KEY",
       "LLM_PROFILE_CLAUDE_API_KEY",
       "LLM_PROFILE_GROK_API_KEY",
-      "LLM_PROFILE_GEMINI_API_KEY",
       "LLM_PROFILE_GPT56_SOL_API_KEY",
       "LLM_PROFILE_BIGMODEL_API_KEY",
     ]);
@@ -92,17 +85,20 @@ describe("companion long-run v2 profile orchestration", () => {
     expect(
       snapshots.every((item) => /^[a-f0-9]{64}$/u.test(item.configSha256)),
     ).toBe(true);
-    expect(new Set(snapshots.map((item) => item.configSha256))).toHaveLength(6);
+    expect(new Set(snapshots.map((item) => item.configSha256))).toHaveLength(5);
     expect(snapshots[1]?.capabilities).toMatchObject({
       structuredOutputMode: "prompt_json",
       reasoningEffort: "medium",
       reasoningRequestFormat: "anthropic_output_config",
     });
-    expect(snapshots[5]?.capabilities).toMatchObject({
+    expect(snapshots[4]?.capabilities).toMatchObject({
       structuredOutputMode: "json_object",
       reasoningEffort: "max",
       reasoningRequestFormat: "openai_reasoning_effort_with_thinking",
     });
+    expect(
+      snapshots.every((item) => item.capabilities.maxOutputTokens === 32_768),
+    ).toBe(true);
 
     const serialized = JSON.stringify(snapshots);
     for (const secret of SECRET_VALUES)
@@ -145,14 +141,15 @@ describe("companion long-run v2 profile orchestration", () => {
       runs: 2,
     });
     expect(
-      parseLongRunV2ProfileArgs(["--profiles=claude,gemini", "--runs", "1"]),
-    ).toEqual({ profiles: ["claude", "gemini"], runs: 1 });
+      parseLongRunV2ProfileArgs(["--profiles=claude,gpt56-sol", "--runs", "1"]),
+    ).toEqual({ profiles: ["claude", "gpt56-sol"], runs: 1 });
   });
 
   it.each([
     [["--profiles", "unknown"], /Unknown long-run profile/u],
+    [["--profiles", "gemini"], /Unknown long-run profile/u],
     [["--profiles", "all,grok"], /cannot be combined/u],
-    [["--profiles", "grok,,gemini"], /non-empty CSV/u],
+    [["--profiles", "grok,,bigmodel"], /non-empty CSV/u],
     [["--profiles"], /requires a value/u],
     [["--runs", "0"], /integer from 1 through 3/u],
     [["--runs", "4"], /integer from 1 through 3/u],
@@ -170,43 +167,22 @@ describe("companion long-run v2 profile orchestration", () => {
     expect(rotations).toEqual([
       {
         repetition: 1,
-        profiles: [
-          "deepseek",
-          "claude",
-          "grok",
-          "gemini",
-          "gpt56-sol",
-          "bigmodel",
-        ],
+        profiles: ["deepseek", "claude", "grok", "gpt56-sol", "bigmodel"],
       },
       {
         repetition: 2,
-        profiles: [
-          "grok",
-          "gemini",
-          "gpt56-sol",
-          "bigmodel",
-          "deepseek",
-          "claude",
-        ],
+        profiles: ["claude", "grok", "gpt56-sol", "bigmodel", "deepseek"],
       },
       {
         repetition: 3,
-        profiles: [
-          "gpt56-sol",
-          "bigmodel",
-          "deepseek",
-          "claude",
-          "grok",
-          "gemini",
-        ],
+        profiles: ["gpt56-sol", "bigmodel", "deepseek", "claude", "grok"],
       },
     ]);
     for (const profile of LONG_RUN_V2_PROFILE_ORDER) {
-      const positionBands = rotations.map((rotation) =>
-        Math.floor(rotation.profiles.indexOf(profile) / 2),
+      const positions = rotations.map((rotation) =>
+        rotation.profiles.indexOf(profile),
       );
-      expect(new Set(positionBands).size).toBe(3);
+      expect(new Set(positions).size).toBe(3);
     }
     expect(original).toEqual(LONG_RUN_V2_PROFILE_ORDER);
   });
@@ -290,12 +266,11 @@ describe("companion long-run v2 profile orchestration", () => {
 
     expect(result.status).toBe("READY");
     if (result.status !== "READY") throw new Error("Expected ready plan");
-    expect(reader).toHaveBeenCalledTimes(6);
+    expect(reader).toHaveBeenCalledTimes(5);
     expect(observedProfiles).toEqual([
       undefined,
       "claude",
       "grok",
-      "gemini",
       "gpt56-sol",
       "bigmodel",
     ]);
@@ -304,6 +279,26 @@ describe("companion long-run v2 profile orchestration", () => {
     );
     expect(result.rotations).toHaveLength(3);
     const serialized = JSON.stringify(result);
+    for (const secret of SECRET_VALUES)
+      expect(serialized).not.toContain(secret);
+  });
+
+  it("rejects all selected profiles before paid work when any API key is missing", () => {
+    const environment = completeProfileEnvironment();
+    delete environment.LLM_PROFILE_GROK_API_KEY;
+    const snapshots = LONG_RUN_V2_PROFILE_ORDER.map((profile) =>
+      readLongRunV2ProfileConfig(profile, environment),
+    );
+
+    expect(() => assertLongRunV2ProfileConfigsReady(snapshots)).toThrow(
+      /grok \(LLM_PROFILE_GROK_API_KEY\)/u,
+    );
+    expect(() =>
+      assertLongRunV2ProfileConfigsReady(
+        snapshots.filter((profile) => profile.profile !== "grok"),
+      ),
+    ).not.toThrow();
+    const serialized = JSON.stringify(snapshots);
     for (const secret of SECRET_VALUES)
       expect(serialized).not.toContain(secret);
   });
@@ -318,46 +313,40 @@ function completeProfileEnvironment(): NodeJS.ProcessEnv {
     OPENAI_COMPATIBLE_REASONING_EFFORT: "max",
     OPENAI_COMPATIBLE_REASONING_FORMAT: "openai_reasoning_effort_with_thinking",
     OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL: "false",
-    OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS: "8192",
+    OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS: "131072",
+    OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS: "32768",
     LLM_PROFILE_CLAUDE_BASE_URL: "https://wanzhao.test/v1",
     LLM_PROFILE_CLAUDE_API_KEY: SECRET_VALUES[1],
-    LLM_PROFILE_CLAUDE_MODEL: "claude-sonnet-5",
+    LLM_PROFILE_CLAUDE_MODEL: "claude-opus-4-6",
     LLM_PROFILE_CLAUDE_STRUCTURED_OUTPUT_MODE: "prompt_json",
     LLM_PROFILE_CLAUDE_REASONING_EFFORT: "medium",
     LLM_PROFILE_CLAUDE_REASONING_FORMAT: "anthropic_output_config",
     LLM_PROFILE_CLAUDE_SUPPORTS_THINKING_CONTROL: "false",
     LLM_PROFILE_CLAUDE_MAX_CONTEXT_TOKENS: "1000000",
-    LLM_PROFILE_CLAUDE_MAX_OUTPUT_TOKENS: "8192",
+    LLM_PROFILE_CLAUDE_MAX_OUTPUT_TOKENS: "32768",
     LLM_PROFILE_GROK_BASE_URL: "https://wanzhao.test/v1",
     LLM_PROFILE_GROK_API_KEY: SECRET_VALUES[2],
     LLM_PROFILE_GROK_MODEL: "grok-4.6",
     LLM_PROFILE_GROK_REASONING_EFFORT: "medium",
     LLM_PROFILE_GROK_REASONING_FORMAT: "openai_reasoning_effort",
     LLM_PROFILE_GROK_MAX_CONTEXT_TOKENS: "500000",
-    LLM_PROFILE_GROK_MAX_OUTPUT_TOKENS: "8192",
-    LLM_PROFILE_GEMINI_BASE_URL: "https://wanzhao.test/v1",
-    LLM_PROFILE_GEMINI_API_KEY: SECRET_VALUES[3],
-    LLM_PROFILE_GEMINI_MODEL: "gemini-3.7-flash",
-    LLM_PROFILE_GEMINI_REASONING_EFFORT: "medium",
-    LLM_PROFILE_GEMINI_REASONING_FORMAT: "openai_reasoning_effort",
-    LLM_PROFILE_GEMINI_MAX_CONTEXT_TOKENS: "1048576",
-    LLM_PROFILE_GEMINI_MAX_OUTPUT_TOKENS: "8192",
+    LLM_PROFILE_GROK_MAX_OUTPUT_TOKENS: "32768",
     LLM_PROFILE_GPT56_SOL_BASE_URL: "https://wanzhao.test/v1",
-    LLM_PROFILE_GPT56_SOL_API_KEY: SECRET_VALUES[4],
+    LLM_PROFILE_GPT56_SOL_API_KEY: SECRET_VALUES[3],
     LLM_PROFILE_GPT56_SOL_MODEL: "gpt-5.6-sol",
     LLM_PROFILE_GPT56_SOL_REASONING_EFFORT: "medium",
     LLM_PROFILE_GPT56_SOL_REASONING_FORMAT: "openai_reasoning_effort",
     LLM_PROFILE_GPT56_SOL_MAX_CONTEXT_TOKENS: "1050000",
-    LLM_PROFILE_GPT56_SOL_MAX_OUTPUT_TOKENS: "8192",
+    LLM_PROFILE_GPT56_SOL_MAX_OUTPUT_TOKENS: "32768",
     LLM_PROFILE_BIGMODEL_BASE_URL: "https://bigmodel.test/api/paas/v4",
-    LLM_PROFILE_BIGMODEL_API_KEY: SECRET_VALUES[5],
+    LLM_PROFILE_BIGMODEL_API_KEY: SECRET_VALUES[4],
     LLM_PROFILE_BIGMODEL_MODEL: "glm-5.3-flash",
     LLM_PROFILE_BIGMODEL_REASONING_EFFORT: "max",
     LLM_PROFILE_BIGMODEL_REASONING_FORMAT:
       "openai_reasoning_effort_with_thinking",
     LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL: "false",
     LLM_PROFILE_BIGMODEL_MAX_CONTEXT_TOKENS: "1000000",
-    LLM_PROFILE_BIGMODEL_MAX_OUTPUT_TOKENS: "8192",
+    LLM_PROFILE_BIGMODEL_MAX_OUTPUT_TOKENS: "32768",
   };
 }
 

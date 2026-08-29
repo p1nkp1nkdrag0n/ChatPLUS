@@ -8,6 +8,7 @@ export * from "./follow-up.js";
 export * from "./free-slot.js";
 export * from "./routine-hard-intervals.js";
 export * from "./memory-engine.js";
+export * from "./memory-claim.js";
 export * from "./memory-judge.js";
 export * from "./memory-lifecycle.js";
 export * from "./memory-recall.js";

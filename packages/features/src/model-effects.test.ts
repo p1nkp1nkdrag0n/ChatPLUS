@@ -150,6 +150,41 @@ describe("parseModelTime", () => {
     );
   });
 
+  it("parses yearless Chinese month-day clocks in the current local year", () => {
+    const septemberContext = {
+      timezone: TIMEZONE,
+      nowUtc: "2026-09-27T01:00:00.000Z", // 09:00 Asia/Shanghai
+    };
+    expect(parseModelTime("9月30日下午3点见面", septemberContext)).toBe(
+      "2026-09-30T07:00:00.000Z",
+    );
+    expect(parseModelTime("10月2日上午9点喝茶", septemberContext)).toBe(
+      "2026-10-02T01:00:00.000Z",
+    );
+    expect(parseModelTime("10月2号早上九点喝茶", septemberContext)).toBe(
+      "2026-10-02T01:00:00.000Z",
+    );
+    expect(parseModelTime("9月30日晚上8点半见面", septemberContext)).toBe(
+      "2026-09-30T12:30:00.000Z",
+    );
+  });
+
+  it("rolls a past yearless month-day clock to the next valid year", () => {
+    const yearEndContext = {
+      timezone: TIMEZONE,
+      nowUtc: "2026-12-31T08:00:00.000Z", // 16:00 Asia/Shanghai
+    };
+    expect(parseModelTime("1月2日上午9点", yearEndContext)).toBe(
+      "2027-01-02T01:00:00.000Z",
+    );
+    expect(parseModelTime("12月31日下午3点", yearEndContext)).toBe(
+      "2027-12-31T07:00:00.000Z",
+    );
+    expect(parseModelTime("2月29日上午9点", yearEndContext)).toBe(
+      "2028-02-29T01:00:00.000Z",
+    );
+  });
+
   it("parses ISO timestamps and relative offsets", () => {
     expect(parseModelTime("2026-08-16T19:00:00Z", context)).toBe(
       "2026-08-16T19:00:00.000Z",

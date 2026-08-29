@@ -24,7 +24,7 @@ import {
 } from "./companion-long-run-v2-manifest.js";
 
 const EXPECTED_SHA256 =
-  "f66399106fb3d4394359c6f45908ab6a643ed51c838969c924da0bc4c916a62d";
+  "84a6bc05a08a570e3206255d44d8623559506b770279081e761f6dbafbe30171";
 
 const EXPECTED_BLOCKS = [
   ["daily-conversation", "shared", 1, 12],
@@ -230,12 +230,34 @@ describe("companion long-run v2 manifest", () => {
       expectedOutcome: "date_confirmed",
     });
     expect(branchA.turns[0]!.userText).toContain("约会");
+    expect(branchA.turns[0]!.actionsBefore).toEqual([
+      { kind: "advance_clock", durationMinutes: 450 },
+    ]);
     expect(branchA.turns[1]!.userText).toContain("确认");
+    expect(branchA.turns[1]!.expectedScheduleCommit).toEqual({
+      startAtUtc: "2026-09-30T07:00:00.000Z",
+      endAtUtc: "2026-09-30T08:30:00.000Z",
+      timezone: "Asia/Shanghai",
+      localStart: "2026-09-30 15:00",
+      category: "social",
+      titleIncludes: "见面",
+    });
+    expect(getLongRunV2Turn(47).expectedScheduleCommit).toEqual({
+      startAtUtc: "2026-09-12T07:00:00.000Z",
+      endAtUtc: "2026-09-12T08:30:00.000Z",
+      timezone: "Asia/Shanghai",
+      localStart: "2026-09-12 15:00",
+      category: "social",
+      titleIncludes: "喝茶",
+    });
     expect(branchB).toMatchObject({
       id: "B",
       expectedOutcome: "friends_only_respected",
     });
     expect(branchB.turns[0]!.userText).toContain("保持朋友");
+    expect(branchB.turns[0]!.actionsBefore).toEqual([
+      { kind: "advance_clock", durationMinutes: 450 },
+    ]);
     expect(branchB.turns[1]!.userText).toContain("不用再劝");
   });
 
@@ -293,6 +315,16 @@ describe("companion long-run v2 manifest", () => {
     expect(getLongRunV2Turn(104).hardAssertions).not.toContain(
       "restart_preserves_state",
     );
+  });
+
+  it("activates proactive delivery outside quiet hours after autonomous activity settlement", () => {
+    const proactiveTurn = companionLongRunV2Manifest.sharedTurns.find(
+      (turn) => turn.id === "shared-095-proactive-share",
+    );
+    expect(proactiveTurn?.actionsBefore).toEqual([
+      { kind: "advance_clock", durationMinutes: 300 },
+      { kind: "activate_agent" },
+    ]);
   });
 
   it("requires memory supersession only on the corrected paired arm", () => {
@@ -446,6 +478,13 @@ describe("companion long-run v2 manifest", () => {
     }
     expect(validateLongRunScenarioManifestV2(shortClock)).toContain(
       `branch A clock must end at ${COMPANION_LONG_RUN_V2_END_AT_UTC}`,
+    );
+
+    const wrongExpectedSlot = cloneManifest();
+    wrongExpectedSlot.branches[0].turns[1]!.expectedScheduleCommit!.localStart =
+      "2026-09-27 15:00";
+    expect(validateLongRunScenarioManifestV2(wrongExpectedSlot)).toContain(
+      `turn ${wrongExpectedSlot.branches[0].turns[1]!.id} expected schedule localStart must match startAtUtc`,
     );
   });
 });

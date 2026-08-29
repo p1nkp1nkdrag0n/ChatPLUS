@@ -76,7 +76,9 @@ describe("openai-compatible reply-first conversation path", () => {
       },
     });
     expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
-    expect(calls[0]?.maxOutputTokens).toBe(2_000);
+    // The default test Profile advertises an 8K model limit, so the generous
+    // chat target is capability-clamped before the logical request is issued.
+    expect(calls[0]?.maxOutputTokens).toBe(8_192);
     expect(
       calls[0]?.schema.safeParse({
         text: "有效回复",
@@ -482,7 +484,9 @@ describe("openai-compatible reply-first conversation path", () => {
   });
 
   it("repairs a persona-guard violation using the role, user text, and concrete issues", async () => {
-    const created = await createRealProviderTestApp();
+    const created = await createRealProviderTestApp("off", {
+      maxOutputTokens: 32_768,
+    });
     app = created.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
     mockLlm(app.personasim.llm, calls, (input) => {
@@ -522,9 +526,10 @@ describe("openai-compatible reply-first conversation path", () => {
       "chat_turn",
       "repair_chat_turn",
     ]);
+    expect(calls[0]?.maxOutputTokens).toBe(24_576);
     const repairCall = calls[1];
     expect(repairCall?.maxRetries).toBe(0);
-    expect(repairCall?.maxOutputTokens).toBe(2_000);
+    expect(repairCall?.maxOutputTokens).toBe(16_384);
     expect(repairCall?.prompt).toContain("林夏");
     expect(repairCall?.prompt).toContain("请以你自己的身份介绍一下自己。");
     expect(repairCall?.prompt).toContain("AI_META_DISCLOSURE");
@@ -1329,6 +1334,106 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(messageCount.count).toBe(0);
     expect(intentCount.count).toBe(0);
   });
+
+  it("persists and reconciles server-owned explicit memories when the real provider returns no memory candidates", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: { text: "我记下了。" },
+          worldEffects: {},
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const sessionId = await createSession(app, character.id);
+
+    for (const [clientMessageId, text] of [
+      ["server-memory-person", "小林是我大学同学，现在住在苏州。"],
+      [
+        "server-memory-person-correction",
+        "我刚才说错了，小林其实是高中同学；他确实住在苏州。",
+      ],
+      [
+        "server-memory-plan",
+        "我打算明天下午把答辩稿最后一遍顺完，现在还没开始。",
+      ],
+      ["server-memory-completed", "更新一下：答辩稿最后一遍已经顺完了。"],
+    ] as const) {
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        clientMessageId,
+        text,
+      );
+      expect(response.statusCode, response.body).toBe(201);
+    }
+
+    const rows = app.personasim.store.database
+      .prepare(
+        `SELECT id, content, status, superseded_by_id, merged_into_id,
+          claim_subject_key, claim_disposition, temporal_status
+         FROM memories WHERE agent_id = ?
+           AND claim_subject_key IN (
+             'user_fact:relationship:小林',
+             'user_fact:小林:居住地',
+             'user_task:defense_draft'
+           )
+         ORDER BY rowid`,
+      )
+      .all(character.id) as Array<Record<string, unknown>>;
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          content: "小林是用户的大学同学。",
+          claim_subject_key: "user_fact:relationship:小林",
+          claim_disposition: "affirmed",
+          status: "superseded",
+        }),
+        expect.objectContaining({
+          content: "小林是用户的高中同学。",
+          claim_subject_key: "user_fact:relationship:小林",
+          claim_disposition: "affirmed",
+          status: "active",
+        }),
+        expect.objectContaining({
+          content: "小林的居住地是苏州。",
+          claim_subject_key: "user_fact:小林:居住地",
+          status: "active",
+        }),
+        expect.objectContaining({
+          claim_subject_key: "user_task:defense_draft",
+          claim_disposition: "affirmed",
+          temporal_status: "planned",
+          status: "superseded",
+        }),
+        expect.objectContaining({
+          claim_subject_key: "user_task:defense_draft",
+          claim_disposition: "completed",
+          temporal_status: "occurred",
+          status: "active",
+        }),
+      ]),
+    );
+    const superseded = rows.filter((row) => row["status"] === "superseded");
+    for (const row of superseded) {
+      expect(
+        rows.find((candidate) => candidate["id"] === row["superseded_by_id"]),
+      ).toMatchObject({ status: "active" });
+    }
+    const audit = app.personasim.store.database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM domain_events
+         WHERE agent_id = ? AND event_type = 'memory.claim.supersede'`,
+      )
+      .get(character.id) as { count: number };
+    expect(audit.count).toBe(2);
+  });
 });
 
 function mockLlm(
@@ -1389,13 +1494,18 @@ function fixtureFor(input: GenerateObjectInput<unknown>): unknown {
 
 async function createRealProviderTestApp(
   liveWorldEffectsMode: "off" | "shadow" | "enforced" = "off",
-  options: { databasePath?: string; clock?: FakeClock } = {},
+  options: {
+    databasePath?: string;
+    clock?: FakeClock;
+    maxOutputTokens?: number;
+  } = {},
 ): Promise<{
   app: PersonaSimApp;
   clock: FakeClock;
 }> {
   const clock = options.clock ?? new FakeClock(START_UTC);
   const databasePath = options.databasePath ?? ":memory:";
+  const testMaxOutputTokens = options.maxOutputTokens ?? 8_192;
   const config = readConfig({
     nodeEnv: "test",
     databasePath,
@@ -1412,6 +1522,14 @@ async function createRealProviderTestApp(
       model: "test-live-model",
       timeoutMs: 1_000,
       maxRetries: 0,
+      maxOutputTokens: testMaxOutputTokens,
+      capabilities: {
+        structuredOutputMode: "json_object",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        maxContextTokens: 131_072,
+        maxOutputTokens: testMaxOutputTokens,
+      },
     },
   });
   const app = await buildApp({

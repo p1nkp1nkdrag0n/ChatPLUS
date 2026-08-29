@@ -145,8 +145,7 @@ export class WorldEffectService {
       this.options.chatEffectsMode !== "off" &&
       input.capabilities.schedule &&
       input.spec.tier === "high_fidelity" &&
-      input.spec.schedulePolicy.enabled &&
-      input.providerName !== "fixture";
+      input.spec.schedulePolicy.enabled;
     const negotiationEnforced =
       this.options.scheduleNegotiationMode === "enforced" &&
       this.options.chatEffectsMode !== "off" &&

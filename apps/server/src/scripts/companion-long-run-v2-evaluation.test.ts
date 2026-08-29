@@ -126,19 +126,18 @@ const CALIBRATED: CompanionLongRunV2HumanCalibrationResult =
   );
 
 describe("companion long-run v2 reviewer planning", () => {
-  it("freezes the six-profile order and three balanced offset pairs", () => {
+  it("freezes the five-profile order and three balanced offset pairs", () => {
     expect(COMPANION_LONG_RUN_V2_PROFILE_ORDER).toEqual([
       "deepseek",
       "claude",
       "grok",
-      "gemini",
       "gpt56-sol",
       "bigmodel",
     ]);
     expect(COMPANION_LONG_RUN_V2_REVIEWER_OFFSET_PAIRS).toEqual([
       [1, 2],
-      [2, 4],
-      [3, 5],
+      [2, 3],
+      [3, 4],
     ]);
     expect(COMPANION_LONG_RUN_V2_REVIEWER_OFFSETS_BY_REPETITION).toBe(
       COMPANION_LONG_RUN_V2_REVIEWER_OFFSET_PAIRS,
@@ -358,7 +357,7 @@ describe("companion long-run v2 aggregation", () => {
       aggregateCompanionLongRunV2ItemReviews(itemRef("item"), [
         review({ itemId: "item", reviewerProfile: "claude" }),
         review({ itemId: "item", reviewerProfile: "grok" }),
-        review({ itemId: "item", reviewerProfile: "gemini" }),
+        review({ itemId: "item", reviewerProfile: "gpt56-sol" }),
       ]),
     ).toThrow(/exactly two/u);
   });
@@ -523,7 +522,7 @@ describe("companion long-run v2 aggregation", () => {
         }),
         completedItem({
           itemId: "strong-profile",
-          profile: "gemini",
+          profile: "bigmodel",
           runId: "shared-run",
           firstScores: scores(4),
           secondScores: scores(4),
@@ -534,7 +533,7 @@ describe("companion long-run v2 aggregation", () => {
     expect(result.semanticWeightedScore).toBeGreaterThan(3);
     expect(result.runScores["shared-run"]).toBeGreaterThan(3);
     expect(result.profileScores.deepseek).toBe(2.95);
-    expect(result.profileScores.gemini).toBe(4);
+    expect(result.profileScores.bigmodel).toBe(4);
     expect(result.classification).toBe("FAIL_SEMANTIC");
   });
 
@@ -724,9 +723,9 @@ describe("companion long-run v2 blind audit selection", () => {
     const anotherSeed = selectCompanionLongRunV2BlindAuditSample(items, {
       seed: "another-seed",
     });
-    expect(first).toHaveLength(6);
+    expect(first).toHaveLength(5);
     expect(new Set(first.map(({ itemId }) => itemId.split("-")[0])).size).toBe(
-      6,
+      5,
     );
     expect(repeated).toEqual(first);
     expect(anotherSeed.map(({ itemId }) => itemId)).not.toEqual(

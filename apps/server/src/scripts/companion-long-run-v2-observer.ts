@@ -22,6 +22,9 @@ export interface ObservationSlice {
 }
 
 interface RawAttemptCapture {
+  logicalCallId?: string;
+  logicalCallIndex?: number;
+  requestUrl: string;
   requestModel?: string;
   requestBody?: unknown;
   rawResponse?: unknown;
@@ -30,22 +33,64 @@ interface RawAttemptCapture {
   completedAtUtc: string;
 }
 
+interface ObservedLogicalEvent {
+  logicalCallId: string;
+  event: LlmLogicalCallEvent;
+}
+
+interface ActiveLogicalCall {
+  logicalCallId: string;
+  index: number;
+  purpose: string;
+}
+
 /**
  * Captures the two intentionally separate evidence layers: application-level
  * logical calls and Provider-level physical attempts. Headers are never
  * retained, so an Authorization value cannot enter an artifact.
  */
 export class LongRunV2Observer {
-  private readonly logicalEvents: LlmLogicalCallEvent[] = [];
+  private readonly logicalEvents: ObservedLogicalEvent[] = [];
+  private readonly activeLogicalCalls: ActiveLogicalCall[] = [];
   private readonly metrics: LlmCallMetric[] = [];
   private readonly rawAttempts: RawAttemptCapture[] = [];
+  private logicalCallSequence = 0;
 
   constructor(
     private readonly nowUtc: () => string = () => new Date().toISOString(),
   ) {}
 
   readonly onLogicalCall = (event: LlmLogicalCallEvent): void => {
-    this.logicalEvents.push(structuredClone(event));
+    if (event.stage === "started") {
+      const logicalCallId = `logical-call-${String(
+        ++this.logicalCallSequence,
+      ).padStart(6, "0")}`;
+      this.activeLogicalCalls.push({
+        logicalCallId,
+        index: event.index,
+        purpose: event.purpose,
+      });
+      this.logicalEvents.push({
+        logicalCallId,
+        event: structuredClone(event),
+      });
+      return;
+    }
+    const activeIndex = this.activeLogicalCalls.findLastIndex(
+      (active) =>
+        active.index === event.index && active.purpose === event.purpose,
+    );
+    const active =
+      activeIndex < 0
+        ? undefined
+        : this.activeLogicalCalls.splice(activeIndex, 1)[0];
+    const logicalCallId =
+      active?.logicalCallId ??
+      `logical-call-${String(++this.logicalCallSequence).padStart(6, "0")}`;
+    this.logicalEvents.push({
+      logicalCallId,
+      event: structuredClone(event),
+    });
   };
 
   readonly onMetric = (metric: LlmCallMetric): void => {
@@ -67,12 +112,21 @@ export class LongRunV2Observer {
         return delegate(input, init);
       }
       const startedAtUtc = this.nowUtc();
+      const safeRequestUrl = sanitizedRequestUrl(url);
       const requestBody = parseBody(init?.body);
       const model = requestModel(requestBody);
+      const activeLogicalCall = this.activeLogicalCalls.at(-1);
       try {
         const response = await delegate(input, init);
         const responseText = await response.clone().text();
         this.rawAttempts.push({
+          requestUrl: safeRequestUrl,
+          ...(activeLogicalCall === undefined
+            ? {}
+            : {
+                logicalCallId: activeLogicalCall.logicalCallId,
+                logicalCallIndex: activeLogicalCall.index,
+              }),
           ...(model === undefined ? {} : { requestModel: model }),
           ...(requestBody === undefined ? {} : { requestBody }),
           ...parseProviderResponse(responseText),
@@ -82,6 +136,13 @@ export class LongRunV2Observer {
         return response;
       } catch (error) {
         this.rawAttempts.push({
+          requestUrl: safeRequestUrl,
+          ...(activeLogicalCall === undefined
+            ? {}
+            : {
+                logicalCallId: activeLogicalCall.logicalCallId,
+                logicalCallIndex: activeLogicalCall.index,
+              }),
           ...(model === undefined ? {} : { requestModel: model }),
           ...(requestBody === undefined ? {} : { requestBody }),
           responseText:
@@ -99,27 +160,47 @@ export class LongRunV2Observer {
   slice(cursor: ObservationCursor): ObservationSlice {
     const events = this.logicalEvents.slice(cursor.logicalEventIndex);
     const starts = events.filter(
-      (event): event is Extract<LlmLogicalCallEvent, { stage: "started" }> =>
-        event.stage === "started",
+      (
+        observed,
+      ): observed is ObservedLogicalEvent & {
+        event: Extract<LlmLogicalCallEvent, { stage: "started" }>;
+      } => observed.event.stage === "started",
     );
     const completions = new Map(
       events
         .filter(
           (
-            event,
-          ): event is Extract<LlmLogicalCallEvent, { stage: "completed" }> =>
-            event.stage === "completed",
+            observed,
+          ): observed is ObservedLogicalEvent & {
+            event: Extract<LlmLogicalCallEvent, { stage: "completed" }>;
+          } => observed.event.stage === "completed",
         )
-        .map((event) => [event.index, event]),
+        .map((observed) => [observed.logicalCallId, observed.event]),
     );
-    const logicalCalls = starts.map((start) => {
-      const completed = completions.get(start.index);
+    const logicalCalls = starts.map((observed) => {
+      const start = observed.event;
+      const completed = completions.get(observed.logicalCallId);
       return {
+        logicalCallId: observed.logicalCallId,
         index: start.index,
         purpose: start.purpose,
         system: start.system,
         prompt: start.prompt,
         promptSha256: sha256Text(`${start.system}\n${start.prompt}`),
+        ...(start.maxRetries === undefined
+          ? {}
+          : { maxRetries: start.maxRetries }),
+        ...(start.maxOutputTokens === undefined
+          ? {}
+          : { maxOutputTokens: start.maxOutputTokens }),
+        startedAtUtc: start.createdAtUtc,
+        ...(completed === undefined
+          ? {}
+          : {
+              completedAtUtc: completed.completedAtUtc,
+              latencyMs: completed.latencyMs,
+              success: completed.success,
+            }),
         ...(completed?.parsedOutput === undefined
           ? {}
           : { parsedOutput: completed.parsedOutput }),
@@ -133,9 +214,12 @@ export class LongRunV2Observer {
     const raw = this.rawAttempts.slice(cursor.rawAttemptIndex);
     const providerAttempts = metrics.map((metric, index) => {
       const captured = raw[index];
-      const logicalCall = logicalCalls.find(
-        (call) => call.purpose === metric.purpose,
-      );
+      const logicalCall =
+        captured?.logicalCallId === undefined
+          ? logicalCalls.find((call) => call.purpose === metric.purpose)
+          : logicalCalls.find(
+              (call) => call.logicalCallId === captured.logicalCallId,
+            );
       const estimatedInputTokens =
         metric.inputTokens === undefined && logicalCall !== undefined
           ? estimateConversationTokens(
@@ -159,9 +243,21 @@ export class LongRunV2Observer {
           ? {}
           : { outputTokens: estimatedOutputTokens }),
         attemptId: `attempt-${randomUUID()}`,
-        ...(logicalCall === undefined
+        ...(captured?.requestUrl === undefined
           ? {}
-          : { logicalCallIndex: logicalCall.index }),
+          : { requestUrl: captured.requestUrl }),
+        ...(captured?.logicalCallId === undefined
+          ? logicalCall === undefined
+            ? {}
+            : {
+                logicalCallId: logicalCall.logicalCallId,
+                logicalCallIndex: logicalCall.index,
+              }
+          : {
+              logicalCallId: captured.logicalCallId,
+              logicalCallIndex:
+                captured.logicalCallIndex ?? logicalCall?.index ?? 0,
+            }),
         ...(captured?.requestModel === undefined
           ? {}
           : { requestModel: captured.requestModel }),
@@ -187,6 +283,15 @@ function requestUrl(input: RequestInfo | URL): URL {
   if (input instanceof URL) return input;
   if (typeof input === "string") return new URL(input);
   return new URL(input.url);
+}
+
+function sanitizedRequestUrl(input: URL): string {
+  const safe = new URL(input);
+  safe.username = "";
+  safe.password = "";
+  safe.search = "";
+  safe.hash = "";
+  return safe.toString();
 }
 
 function parseBody(body: BodyInit | null | undefined): unknown {

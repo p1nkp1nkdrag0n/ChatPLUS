@@ -44,8 +44,8 @@ describe("DeepSeek state acceptance flow", () => {
   it("keeps the real run behind DeepSeek and complete-envelope config gates", () => {
     expect(() => assertDeepSeekStateAcceptanceConfig(config())).not.toThrow();
     expect(() =>
-      assertDeepSeekStateAcceptanceConfig(config({ maxOutputTokens: 2_799 })),
-    ).toThrow(/at least 2800 configured output tokens/u);
+      assertDeepSeekStateAcceptanceConfig(config({ maxOutputTokens: 24_575 })),
+    ).toThrow(/at least 24576 configured output tokens/u);
     expect(() =>
       assertDeepSeekStateAcceptanceConfig(
         config(undefined, { baseUrl: "https://example.com/v1" }),
@@ -214,7 +214,7 @@ describe("DeepSeek state acceptance flow", () => {
 
 function config(
   capabilities: { maxOutputTokens: number } | undefined = {
-    maxOutputTokens: 8_192,
+    maxOutputTokens: 32_768,
   },
   llmPatch: Partial<ServerConfig["llm"]> = {},
 ): ServerConfig {
@@ -234,7 +234,7 @@ function config(
       model: "deepseek-chat",
       timeoutMs: 1_000,
       maxRetries: 0,
-      maxOutputTokens: capabilities?.maxOutputTokens ?? 8_192,
+      maxOutputTokens: capabilities?.maxOutputTokens ?? 32_768,
       capabilities: {
         structuredOutputMode: "json_object",
         supportsThinkingControl: true,
@@ -281,8 +281,8 @@ function completeResult(): DeepSeekStateAcceptanceResult {
       providerUrl: "https://api.deepseek.com",
       environmentVariable: "OPENAI_COMPATIBLE_API_KEY",
       hasApiKey: true,
-      promptTokenBudget: 8_192,
-      configuredMaxOutputTokens: 8_192,
+      promptTokenBudget: 24_000,
+      configuredMaxOutputTokens: 32_768,
       providerMaxRetries: 1,
       retryPolicy: "one retry; no semantic resampling",
       liveWorldEffectsMode: "enforced",
@@ -342,7 +342,7 @@ function completeScene(id: string, index: number): DeepSeekStateSceneResult {
     modelInput: {
       system: "Runtime state is present-moment context.",
       prompt: "RUNTIME_STATE_JSON\n{}",
-      maxOutputTokens: 2_800,
+      maxOutputTokens: 24_576,
     },
     promptStateSummary,
     rawProviderAttempts: [
@@ -473,8 +473,8 @@ function completeContinuationResult(): DeepSeekStateContinuationResult {
       providerUrl: "https://api.deepseek.com",
       environmentVariable: "OPENAI_COMPATIBLE_API_KEY",
       hasApiKey: true,
-      promptTokenBudget: 8_192,
-      configuredMaxOutputTokens: 8_192,
+      promptTokenBudget: 24_000,
+      configuredMaxOutputTokens: 32_768,
       providerMaxRetries: 1,
       retryPolicy: "one retry; no semantic resampling",
       liveWorldEffectsMode: "enforced",
@@ -491,7 +491,7 @@ function completeContinuationResult(): DeepSeekStateContinuationResult {
     modelInput: {
       system: "Runtime state is present-moment context.",
       prompt: "RUNTIME_STATE_JSON\n{}",
-      maxOutputTokens: 2_800,
+      maxOutputTokens: 24_576,
     },
     promptStateSummary,
     rawProviderAttempts: [

@@ -72,11 +72,17 @@ export type MemoryClaimDisposition = z.infer<
   typeof MemoryClaimDispositionSchema
 >;
 
+export const MemoryClaimRevisionIntentSchema = z.enum(["explicit_correction"]);
+export type MemoryClaimRevisionIntent = z.infer<
+  typeof MemoryClaimRevisionIntentSchema
+>;
+
 export const MemoryClaimSchema = z
   .object({
     subjectKey: z.string().trim().min(1).max(240),
     disposition: MemoryClaimDispositionSchema,
     recordedAtUtc: UtcDateTimeSchema,
+    revisionIntent: MemoryClaimRevisionIntentSchema.optional(),
   })
   .strict();
 export type MemoryClaim = z.infer<typeof MemoryClaimSchema>;

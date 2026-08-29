@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerConfig } from "../config.js";
+import { companionLongRunV2Manifest } from "../scenarios/companion-long-run-v2-manifest.js";
 import { readTurnEvidence } from "./companion-long-run-v2-artifacts.js";
 import {
   LONG_RUN_V2_EVIDENCE_TAIL_LIMIT,
@@ -293,7 +294,220 @@ describe("companion long-run v2 runner", () => {
     expect(first.map((item) => item.pairedProbe?.baselineSha256)).toEqual(
       second.map((item) => item.pairedProbe?.baselineSha256),
     );
+    const conversation = await readFile(
+      join(matrixDirectory, "runs", "fixture-r1", "conversation.md"),
+      "utf8",
+    );
+    expect(conversation).toContain("配对探针——独立对话");
+    expect(conversation).toContain("`memory-02-comparison`");
+    expect(conversation).toContain("**用户**");
+    expect(conversation).toContain("**顾澜**");
+    expect(conversation).not.toContain("EXPECTED_JSON_SCHEMA");
+    expect(conversation).not.toContain("Hard assertion");
+    const modelIoText = await readFile(
+      join(matrixDirectory, "runs", "fixture-r1", "model-io.jsonl"),
+      "utf8",
+    );
+    const modelIo = modelIoText
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(modelIo.length).toBeGreaterThanOrEqual(18);
+    const logicalModelIo = modelIo.find(
+      (record) =>
+        record["recordType"] === "logical_call" &&
+        record["runId"] === "fixture-r1" &&
+        record["phase"] === "message",
+    );
+    expect(logicalModelIo).toBeDefined();
+    const logicalRequest = logicalModelIo?.["request"] as Record<
+      string,
+      unknown
+    >;
+    const logicalResponse = logicalModelIo?.["response"] as Record<
+      string,
+      unknown
+    >;
+    const requestMessages = logicalRequest["messages"] as Array<
+      Record<string, unknown>
+    >;
+    const requestParameters = logicalRequest["parameters"] as Record<
+      string,
+      unknown
+    >;
+    expect(logicalModelIo?.["repetition"]).toBe(1);
+    expect(logicalRequest["purpose"]).toBe("chat_turn");
+    expect(requestMessages.map((message) => message["role"])).toEqual([
+      "system",
+      "user",
+    ]);
+    expect(requestParameters["maxRetries"]).toBe(0);
+    expect(logicalResponse["success"]).toBe(true);
+    expect(modelIoText.toLowerCase()).not.toContain("authorization");
+    expect(modelIoText.toLowerCase()).not.toContain("api_key");
+
+    const preference = first.find(
+      (item) => item.turnId === "memory-01-control",
+    );
+    expect(preference?.before.memories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "semantic",
+          namespace: "user_model",
+          certainty: "explicit",
+          attribution: "user_explicit",
+          claim_subject_key: "user_preference:drink:usual",
+          status: "active",
+        }),
+      ]),
+    );
+    expect(preference?.before.memoryEvidence).toHaveLength(1);
+
+    const correction = first.find(
+      (item) => item.turnId === "memory-02-comparison",
+    );
+    expect(
+      correction?.assertions.find(
+        (assertion) => assertion.code === "memory_correction_supersedes",
+      )?.status,
+    ).toBe("PASS");
+    const correctionMemories = correction?.before.memories as Array<
+      Record<string, unknown>
+    >;
+    const replaced = correctionMemories.find(
+      (memory) => memory["status"] === "superseded",
+    );
+    const replacement = correctionMemories.find(
+      (memory) => memory["id"] === replaced?.["superseded_by_id"],
+    );
+    expect(replaced).toMatchObject({
+      claim_subject_key: "user_fact:relationship:小林",
+      claim_disposition: "affirmed",
+    });
+    expect(replacement).toMatchObject({
+      claim_subject_key: "user_fact:relationship:小林",
+      claim_disposition: "affirmed",
+      status: "active",
+    });
+    const correctionUserMessages = correction?.before.messages
+      .filter(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as Record<string, unknown>)["role"] === "user",
+      )
+      .map(
+        (message) =>
+          (message as Record<string, unknown>)["created_at_utc"] as string,
+      );
+    expect(Date.parse(correctionUserMessages?.[1] ?? "")).toBeGreaterThan(
+      Date.parse(correctionUserMessages?.[0] ?? ""),
+    );
+
+    const completedPlan = first.find(
+      (item) => item.turnId === "memory-03-comparison",
+    );
+    const planMemories = completedPlan?.before.memories as Array<
+      Record<string, unknown>
+    >;
+    expect(planMemories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          claim_subject_key: "user_task:report",
+          claim_disposition: "affirmed",
+          temporal_status: "planned",
+          status: "superseded",
+        }),
+        expect.objectContaining({
+          claim_subject_key: "user_task:report",
+          claim_disposition: "completed",
+          temporal_status: "occurred",
+          status: "active",
+        }),
+      ]),
+    );
   }, 30_000);
+
+  it("keeps both run delivery files current across an interrupted commit and resume truncation", async () => {
+    const matrixDirectory = await mkdtemp(
+      join(tmpdir(), "chatplus-long-run-v2-interrupted-"),
+    );
+    cleanup.push(matrixDirectory);
+    const fixture = fixtureProfileSnapshot();
+    const config = fixtureConfig(join(matrixDirectory, "placeholder.sqlite"));
+    const manifest = {
+      ...companionLongRunV2Manifest,
+      pairedProbes: companionLongRunV2Manifest.pairedProbes.map(
+        (probe, index) =>
+          index === 1
+            ? {
+                ...probe,
+                setupMessages: [
+                  {
+                    userText: "这条设置会在首轮提交后模拟进程中断。",
+                    actionsBefore: [{ kind: "close_app" as const }],
+                  },
+                ],
+              }
+            : probe,
+      ),
+    };
+    const input = {
+      workspaceRoot,
+      matrixDirectory,
+      matrixId: "fixture-interrupted-delivery",
+      runId: "fixture-r1",
+      mode: "fixture" as const,
+      profile: "fixture" as const,
+      repetition: 1 as const,
+      serverConfig: config,
+      profileConfig: fixture.profileConfig,
+      profileConfigSha256: fixture.configSha256,
+      tracks: ["paired"] as const,
+      manifest,
+    };
+
+    await expect(runCompanionLongRunV2Single(input)).rejects.toThrow(
+      /application is closed/u,
+    );
+    const runDirectory = join(matrixDirectory, "runs", "fixture-r1");
+    expect(
+      (await readTurnEvidence(join(runDirectory, "turn-evidence.jsonl"))).map(
+        (item) => item.turnId,
+      ),
+    ).toEqual(["persona-01-control"]);
+    expect(
+      await readFile(join(runDirectory, "conversation.md"), "utf8"),
+    ).toContain("`persona-01-control`");
+    expect(
+      await readFile(join(runDirectory, "model-io.jsonl"), "utf8"),
+    ).toContain('"turnId":"persona-01-control"');
+
+    await writeFile(
+      join(
+        matrixDirectory,
+        "paired-baselines-v4",
+        "01-persona-01-control.json",
+      ),
+      "{}\n",
+      "utf8",
+    );
+    await expect(
+      runCompanionLongRunV2Single({ ...input, resume: true }),
+    ).rejects.toThrow(/Prepared paired baseline is incompatible/u);
+    const resumedConversation = await readFile(
+      join(runDirectory, "conversation.md"),
+      "utf8",
+    );
+    expect(resumedConversation).toContain("没有已完成的候选轮次");
+    expect(resumedConversation).not.toContain("`persona-01-control`");
+    expect(
+      await readTurnEvidence(join(runDirectory, "turn-evidence.jsonl")),
+    ).toEqual([]);
+    expect(await readFile(join(runDirectory, "model-io.jsonl"), "utf8")).toBe(
+      "",
+    );
+  });
 
   it("generates filesystem-safe stable ids", () => {
     expect(suggestedRunId("gpt56-sol", 3)).toBe("gpt56-sol-r3");

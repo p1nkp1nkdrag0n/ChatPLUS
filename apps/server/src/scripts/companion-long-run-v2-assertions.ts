@@ -6,6 +6,7 @@ import {
   RELATIONSHIP_SINGLE_TURN_LIMITS,
   estimateConversationTokens,
 } from "@personasim/features";
+import { DateTime } from "luxon";
 
 import type {
   HardAssertion,
@@ -306,18 +307,45 @@ function evaluate(
       const responseAligned = newInvitationSchedule.every((item) =>
         responseIds.has(rowId(item)),
       );
+      const expectedCommit = input.turn.expectedScheduleCommit;
+      const actualCommit =
+        expectedCommit === undefined
+          ? undefined
+          : scheduleCommitProjection(
+              newInvitationSchedule[0],
+              expectedCommit.timezone,
+            );
+      const expectedCommitMatched =
+        expectedCommit === undefined ||
+        (newInvitationSchedule.length === 1 &&
+          actualCommit !== undefined &&
+          actualCommit.startAtUtc === expectedCommit.startAtUtc &&
+          actualCommit.endAtUtc === expectedCommit.endAtUtc &&
+          actualCommit.timezone === expectedCommit.timezone &&
+          actualCommit.localStart === expectedCommit.localStart &&
+          actualCommit.category === expectedCommit.category &&
+          actualCommit.title.includes(expectedCommit.titleIncludes));
       return result(
         code,
         new Set(keys).size === keys.length &&
           newInvitationSchedule.length === expectedNewInvitations &&
-          responseAligned,
+          responseAligned &&
+          expectedCommitMatched,
         {
-          expected: { newUserInvitationItems: expectedNewInvitations },
+          expected: {
+            newUserInvitationItems: expectedNewInvitations,
+            ...(expectedCommit === undefined
+              ? {}
+              : { scheduleCommit: expectedCommit }),
+          },
           actual: {
             newUserInvitationIds: newInvitationSchedule.map(rowId),
             newSelfInitiatedIds: newSelfInitiatedSchedule.map(rowId),
             invitationKeys: keys,
             responseIds: [...responseIds],
+            ...(actualCommit === undefined
+              ? {}
+              : { scheduleCommit: actualCommit }),
           },
         },
       );
@@ -667,6 +695,37 @@ function scheduleIdentity(value: unknown): string {
     field(row, "startAtUtc", "start_at_utc"),
     field(row, "endAtUtc", "end_at_utc"),
   ].join("|");
+}
+
+function scheduleCommitProjection(
+  value: unknown,
+  timezone: string,
+):
+  | {
+      id: string;
+      title: string;
+      category: string;
+      startAtUtc: string;
+      endAtUtc: string;
+      timezone: string;
+      localStart: string;
+    }
+  | undefined {
+  if (value === undefined) return undefined;
+  const row = asRecord(value);
+  const startAtUtc = text(field(row, "startAtUtc", "start_at_utc"));
+  const start = DateTime.fromISO(startAtUtc, { setZone: true });
+  return {
+    id: rowId(row),
+    title: text(row["title"]),
+    category: text(row["category"]),
+    startAtUtc,
+    endAtUtc: text(field(row, "endAtUtc", "end_at_utc")),
+    timezone: text(row["timezone"]),
+    localStart: start.isValid
+      ? start.setZone(timezone).toFormat("yyyy-LL-dd HH:mm")
+      : "",
+  };
 }
 
 function rowId(value: unknown): string {

@@ -25,11 +25,14 @@ describe("LongRunV2Observer", () => {
       ),
     );
     const wrapped = observer.wrapFetch(delegate);
-    await wrapped("https://provider.example/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: "Bearer never-record-this" },
-      body: JSON.stringify({ model: "requested-model", messages: [] }),
-    });
+    await wrapped(
+      "https://embedded-user:embedded-password@provider.example/v1/chat/completions?api_key=never-record-query",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer never-record-this" },
+        body: JSON.stringify({ model: "requested-model", messages: [] }),
+      },
+    );
     observer.onMetric({
       provider: "openai-compatible",
       model: "requested-model",
@@ -49,6 +52,7 @@ describe("LongRunV2Observer", () => {
       purpose: "chat_turn",
       success: true,
       parsedOutput: { reply: "ok" },
+      latencyMs: 42,
       completedAtUtc: "2026-09-01T01:00:00.000Z",
     });
 
@@ -56,12 +60,15 @@ describe("LongRunV2Observer", () => {
     expect(result.logicalCalls).toHaveLength(1);
     expect(result.logicalCalls[0]?.promptSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(result.providerAttempts[0]).toMatchObject({
+      requestUrl: "https://provider.example/v1/chat/completions",
       requestModel: "requested-model",
       responseModel: "provider-model",
       inputTokens: 12,
       rawResponse: { model: "provider-model" },
     });
     expect(JSON.stringify(result)).not.toContain("never-record-this");
+    expect(JSON.stringify(result)).not.toContain("embedded-password");
+    expect(JSON.stringify(result)).not.toContain("never-record-query");
   });
 
   it("uses the existing character estimate only when Provider usage is absent", async () => {
@@ -111,6 +118,7 @@ describe("LongRunV2Observer", () => {
       purpose: "chat_turn",
       success: true,
       parsedOutput: { reply: "你好" },
+      latencyMs: 10,
       completedAtUtc: "2026-09-01T01:00:00.000Z",
     });
 
@@ -118,5 +126,111 @@ describe("LongRunV2Observer", () => {
     expect(attempt?.usageSource).toBe("estimated");
     expect(typeof attempt?.inputTokens).toBe("number");
     expect(typeof attempt?.outputTokens).toBe("number");
+  });
+
+  it("binds physical attempts to distinct same-purpose logical calls", async () => {
+    const observer = new LongRunV2Observer(() => "2026-09-01T01:00:00.000Z");
+    const cursor = observer.cursor();
+    const delegate = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ model: "action-model", choices: [] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ model: "message-model", choices: [] }), {
+          status: 200,
+        }),
+      );
+    const wrapped = observer.wrapFetch(delegate);
+
+    observer.onLogicalCall({
+      stage: "started",
+      index: 1,
+      purpose: "chat_turn",
+      system: "action system",
+      prompt: "action prompt",
+      maxRetries: 2,
+      maxOutputTokens: 20_000,
+      createdAtUtc: "2026-09-01T01:00:00.000Z",
+    });
+    await wrapped("https://provider.example/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "action-request" }),
+    });
+    observer.onMetric({
+      provider: "openai-compatible",
+      model: "action-request",
+      purpose: "chat_turn",
+      attempt: 1,
+      latencyMs: 11,
+      success: true,
+    });
+    observer.onLogicalCall({
+      stage: "completed",
+      index: 1,
+      purpose: "chat_turn",
+      success: true,
+      parsedOutput: { phase: "action" },
+      latencyMs: 12,
+      completedAtUtc: "2026-09-01T01:00:00.000Z",
+    });
+
+    observer.onLogicalCall({
+      stage: "started",
+      index: 1,
+      purpose: "chat_turn",
+      system: "message system",
+      prompt: "message prompt",
+      createdAtUtc: "2026-09-01T01:00:00.000Z",
+    });
+    await wrapped("https://provider.example/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "message-request" }),
+    });
+    observer.onMetric({
+      provider: "openai-compatible",
+      model: "message-request",
+      purpose: "chat_turn",
+      attempt: 1,
+      latencyMs: 21,
+      success: true,
+    });
+    observer.onLogicalCall({
+      stage: "completed",
+      index: 1,
+      purpose: "chat_turn",
+      success: true,
+      parsedOutput: { phase: "message" },
+      latencyMs: 22,
+      completedAtUtc: "2026-09-01T01:00:00.000Z",
+    });
+
+    const slice = observer.slice(cursor);
+    expect(slice.logicalCalls.map((call) => call.logicalCallId)).toEqual([
+      "logical-call-000001",
+      "logical-call-000002",
+    ]);
+    expect(slice.logicalCalls[0]).toMatchObject({
+      maxRetries: 2,
+      maxOutputTokens: 20_000,
+      latencyMs: 12,
+    });
+    expect(
+      slice.providerAttempts.map((attempt) => ({
+        requestModel: attempt.requestModel,
+        logicalCallId: attempt.logicalCallId,
+      })),
+    ).toEqual([
+      {
+        requestModel: "action-request",
+        logicalCallId: "logical-call-000001",
+      },
+      {
+        requestModel: "message-request",
+        logicalCallId: "logical-call-000002",
+      },
+    ]);
   });
 });

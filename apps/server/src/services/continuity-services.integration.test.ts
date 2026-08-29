@@ -6,7 +6,7 @@ import {
   type Memory,
 } from "@personasim/contracts";
 import { boundedRecallHanBigrams } from "@personasim/features";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
@@ -603,6 +603,240 @@ describe("continuity services", () => {
         .prepare("SELECT COUNT(*) AS count FROM memory_merge_history")
         .get(),
     ).toEqual({ count: 1 });
+  });
+
+  it("keeps an explicit correction canonical across conflicting and equivalent old claims", () => {
+    const subjectKey = "user_preference:usual_drink";
+    insertLifecycleMemory(database, {
+      id: "memory_drink_conflict",
+      content: "I usually drink jasmine tea.",
+      createdAtUtc: "2026-08-19T00:00:00.000Z",
+      claim: {
+        subjectKey,
+        disposition: "affirmed",
+        recordedAtUtc: "2026-08-19T00:00:00.000Z",
+      },
+    });
+    insertLifecycleMemory(database, {
+      id: "memory_drink_equivalent",
+      content: "I usually drink warm water.",
+      createdAtUtc: "2026-08-20T00:00:00.000Z",
+      claim: {
+        subjectKey,
+        disposition: "affirmed",
+        recordedAtUtc: "2026-08-20T00:00:00.000Z",
+      },
+    });
+    insertLifecycleMemory(database, {
+      id: "memory_drink_correction",
+      content: "I usually drink warm water.",
+      createdAtUtc: "2026-08-21T00:00:00.000Z",
+      claim: {
+        subjectKey,
+        disposition: "affirmed",
+        recordedAtUtc: "2026-08-21T00:00:00.000Z",
+        revisionIntent: "explicit_correction",
+      },
+    });
+
+    const repository = new ContinuityMemoryRepository(store);
+    const lifecycle = new MemoryLifecycleService(repository, clock);
+    const results = lifecycle.reconcileNewMemories(AGENT_ID, [
+      "memory_drink_correction",
+    ]);
+
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.reconciliation.kind).sort()).toEqual([
+      "merge",
+      "supersede",
+    ]);
+    expect(
+      database
+        .prepare(
+          `SELECT id, status, superseded_by_id, merged_into_id
+           FROM memories WHERE id LIKE 'memory_drink_%' ORDER BY id`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: "memory_drink_conflict",
+        status: "superseded",
+        superseded_by_id: "memory_drink_correction",
+        merged_into_id: null,
+      },
+      {
+        id: "memory_drink_correction",
+        status: "active",
+        superseded_by_id: null,
+        merged_into_id: null,
+      },
+      {
+        id: "memory_drink_equivalent",
+        status: "merged",
+        superseded_by_id: null,
+        merged_into_id: "memory_drink_correction",
+      },
+    ]);
+    expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM memories AS source
+           JOIN memories AS target ON target.id = source.superseded_by_id
+           WHERE target.status = 'merged'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database
+        .prepare(
+          `SELECT resolution, winner_memory_id
+           FROM memory_conflicts ORDER BY left_memory_id, right_memory_id`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        resolution: "superseded",
+        winner_memory_id: "memory_drink_correction",
+      },
+      {
+        resolution: "merged",
+        winner_memory_id: "memory_drink_correction",
+      },
+    ]);
+    expect(
+      database
+        .prepare(
+          `SELECT target_memory_id, source_memory_id
+           FROM memory_merge_history`,
+        )
+        .get(),
+    ).toEqual({
+      target_memory_id: "memory_drink_correction",
+      source_memory_id: "memory_drink_equivalent",
+    });
+    expect(
+      database
+        .prepare(
+          `SELECT event_type FROM domain_events
+           WHERE event_type LIKE 'memory.claim.%' ORDER BY event_type`,
+        )
+        .all(),
+    ).toEqual([
+      { event_type: "memory.claim.merge" },
+      { event_type: "memory.claim.supersede" },
+    ]);
+
+    const replay = lifecycle.reconcileNewMemories(AGENT_ID, [
+      "memory_drink_correction",
+    ]);
+    expect(replay).toHaveLength(2);
+    expect(replay.every((result) => result.replayed)).toBe(true);
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM memory_conflicts").get(),
+    ).toEqual({ count: 2 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM memory_merge_history")
+        .get(),
+    ).toEqual({ count: 1 });
+  });
+
+  it("rolls back the full explicit-correction batch when an audit write fails", () => {
+    const subjectKey = "user_fact:relationship:friend";
+    for (const memory of [
+      {
+        id: "memory_relation_old_a",
+        content: "Lin was my university classmate.",
+        createdAtUtc: "2026-08-19T00:00:00.000Z",
+      },
+      {
+        id: "memory_relation_old_b",
+        content: "Lin was my coworker.",
+        createdAtUtc: "2026-08-20T00:00:00.000Z",
+      },
+    ]) {
+      insertLifecycleMemory(database, {
+        ...memory,
+        claim: {
+          subjectKey,
+          disposition: "affirmed",
+          recordedAtUtc: memory.createdAtUtc,
+        },
+      });
+    }
+    insertLifecycleMemory(database, {
+      id: "memory_relation_correction",
+      content: "Lin was my high-school classmate.",
+      createdAtUtc: "2026-08-21T00:00:00.000Z",
+      claim: {
+        subjectKey,
+        disposition: "affirmed",
+        recordedAtUtc: "2026-08-21T00:00:00.000Z",
+        revisionIntent: "explicit_correction",
+      },
+    });
+
+    const repository = new ContinuityMemoryRepository(store);
+    const originalInsert = repository.insertMemoryConflict.bind(repository);
+    let conflictWrites = 0;
+    const insertSpy = vi
+      .spyOn(repository, "insertMemoryConflict")
+      .mockImplementation((conflict) => {
+        conflictWrites += 1;
+        if (conflictWrites === 2) throw new Error("simulated audit failure");
+        return originalInsert(conflict);
+      });
+    const lifecycle = new MemoryLifecycleService(repository, clock);
+
+    expect(() =>
+      lifecycle.reconcileNewMemories(AGENT_ID, ["memory_relation_correction"]),
+    ).toThrow("simulated audit failure");
+    insertSpy.mockRestore();
+
+    expect(
+      database
+        .prepare(
+          `SELECT id, status, superseded_by_id, merged_into_id
+           FROM memories WHERE id LIKE 'memory_relation_%' ORDER BY id`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: "memory_relation_correction",
+        status: "active",
+        superseded_by_id: null,
+        merged_into_id: null,
+      },
+      {
+        id: "memory_relation_old_a",
+        status: "active",
+        superseded_by_id: null,
+        merged_into_id: null,
+      },
+      {
+        id: "memory_relation_old_b",
+        status: "active",
+        superseded_by_id: null,
+        merged_into_id: null,
+      },
+    ]);
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM memory_conflicts").get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM memory_merge_history")
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM domain_events
+           WHERE event_type LIKE 'memory.claim.%'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
   });
 });
 

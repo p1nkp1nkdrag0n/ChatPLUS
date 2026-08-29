@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 
+import { DateTime } from "luxon";
+
 import type {
+  ExpectedScheduleCommit,
   HardAssertion,
   LongRunBranchId,
   LongRunBranchSpec,
@@ -51,6 +54,24 @@ const SHARED_CLOCK_MILESTONES = new Map<number, string>([
   [108, COMPANION_LONG_RUN_V2_SHARED_END_AT_UTC],
 ]);
 
+const NORTHSHORE_TEA_SCHEDULE = {
+  startAtUtc: "2026-09-12T07:00:00.000Z",
+  endAtUtc: "2026-09-12T08:30:00.000Z",
+  timezone: COMPANION_LONG_RUN_V2_TIMEZONE,
+  localStart: "2026-09-12 15:00",
+  category: "social",
+  titleIncludes: "喝茶",
+} as const satisfies ExpectedScheduleCommit;
+
+const FIRST_DATE_SCHEDULE = {
+  startAtUtc: "2026-09-30T07:00:00.000Z",
+  endAtUtc: "2026-09-30T08:30:00.000Z",
+  timezone: COMPANION_LONG_RUN_V2_TIMEZONE,
+  localStart: "2026-09-30 15:00",
+  category: "social",
+  titleIncludes: "见面",
+} as const satisfies ExpectedScheduleCommit;
+
 const BLOCKS = [
   block("daily-conversation", "日常对话", "shared", 1, 12),
   block("memory-evidence-time", "记忆、证据与时间", "shared", 13, 28),
@@ -97,6 +118,7 @@ interface TurnEntry {
   hardAssertions?: readonly HardAssertion[];
   actionsBefore?: readonly ScenarioAction[];
   sessionKey?: LongRunSessionKey;
+  expectedScheduleCommit?: ExpectedScheduleCommit;
 }
 
 interface PairedProbeArmInput {
@@ -489,9 +511,12 @@ const SCHEDULE_ENTRIES = [
     "confirm-a",
     "明确确认",
     "明确确认后由服务器恰好提交一次。",
-    "确认，就按后天下午三点的北岸书店方案定。",
+    "确认",
     ["causal_grounding", "autonomy_preservation"],
     ["schedule_requires_server_commit", "schedule_exactly_once"],
+    [],
+    undefined,
+    NORTHSHORE_TEA_SCHEDULE,
   ),
   entry(
     "read-a",
@@ -929,6 +954,10 @@ const GOAL_ENTRIES = [
     "如果你主动提到河边拍摄，那条消息为什么会出现？",
     ["proactive_relevance", "causal_grounding", "non_repetition"],
     ["proactive_policy_respected", "proactive_source_linked"],
+    [
+      { kind: "advance_clock", durationMinutes: 300 },
+      { kind: "activate_agent" },
+    ],
   ),
   entry(
     "goal-return",
@@ -1308,6 +1337,7 @@ const BRANCH_A_TURNS = [
     "我想清楚了，我愿意把9月30日下午3点见面当作约会。",
     ["relationship_date_fit", "emotional_attunement", "autonomy_preservation"],
     ["schedule_requires_server_commit", "schedule_unchanged"],
+    [{ kind: "advance_clock", durationMinutes: 450 }],
   ),
   branchEntry(
     "A",
@@ -1316,9 +1346,12 @@ const BRANCH_A_TURNS = [
     "confirm-date",
     "确认约会",
     "第二轮明确确认后恰好提交一个约会日程。",
-    "确认，就按9月30日下午3点的约会方案。",
+    "确认",
     ["relationship_date_fit", "causal_grounding"],
     ["schedule_requires_server_commit", "schedule_exactly_once"],
+    [],
+    "S3",
+    FIRST_DATE_SCHEDULE,
   ),
   branchEntry(
     "A",
@@ -1347,7 +1380,7 @@ const BRANCH_A_TURNS = [
       "relationship_delta_bounded",
     ],
     [
-      { kind: "advance_clock", durationMinutes: 5_760 },
+      { kind: "advance_clock", durationMinutes: 5_310 },
       { kind: "settle_agent" },
     ],
   ),
@@ -1388,6 +1421,7 @@ const BRANCH_B_TURNS = [
     "我想清楚了，我更希望我们保持朋友，不把9月30日下午3点见面当约会。",
     ["relationship_date_fit", "emotional_attunement", "autonomy_preservation"],
     ["user_boundary_respected", "schedule_unchanged"],
+    [{ kind: "advance_clock", durationMinutes: 450 }],
   ),
   branchEntry(
     "B",
@@ -1437,7 +1471,7 @@ const BRANCH_B_TURNS = [
     ["memory_temporal_accuracy", "memory_precision", "relationship_date_fit"],
     ["schedule_unchanged", "memory_abstains_without_evidence"],
     [
-      { kind: "advance_clock", durationMinutes: 5_760 },
+      { kind: "advance_clock", durationMinutes: 5_310 },
       { kind: "settle_agent" },
     ],
   ),
@@ -1706,6 +1740,7 @@ function validateClosedLoop(
     if (turn.semanticRubricTags.length === 0)
       issues.push(`turn ${turn.id} must declare semantic rubric tags`);
     validateActions(turn.actionsBefore ?? [], `turn ${turn.id}`, issues);
+    validateExpectedScheduleCommit(turn, issues);
   }
   const expectedNumbers = Array.from({ length: 120 }, (_, index) => index + 1);
   if (
@@ -1751,6 +1786,52 @@ function validateClosedLoop(
       `branch ${branchSpec.id}`,
       issues,
     );
+  }
+}
+
+function validateExpectedScheduleCommit(
+  turn: LongRunTurnSpec,
+  issues: string[],
+): void {
+  const expected = turn.expectedScheduleCommit;
+  if (expected === undefined) return;
+  if (
+    !turn.hardAssertions.includes("schedule_requires_server_commit") ||
+    !turn.hardAssertions.includes("schedule_exactly_once")
+  ) {
+    issues.push(
+      `turn ${turn.id} expectedScheduleCommit requires server-commit and exactly-once assertions`,
+    );
+  }
+  const start = DateTime.fromISO(expected.startAtUtc, { setZone: true });
+  const end = DateTime.fromISO(expected.endAtUtc, { setZone: true });
+  if (!start.isValid || start.toUTC().toISO() !== expected.startAtUtc) {
+    issues.push(
+      `turn ${turn.id} expected schedule start must be canonical UTC`,
+    );
+  }
+  if (!end.isValid || end.toUTC().toISO() !== expected.endAtUtc) {
+    issues.push(`turn ${turn.id} expected schedule end must be canonical UTC`);
+  }
+  if (start.isValid && end.isValid && end <= start) {
+    issues.push(`turn ${turn.id} expected schedule end must follow start`);
+  }
+  if (expected.timezone !== COMPANION_LONG_RUN_V2_TIMEZONE) {
+    issues.push(
+      `turn ${turn.id} expected schedule timezone must match manifest`,
+    );
+  }
+  if (
+    start.isValid &&
+    start.setZone(expected.timezone).toFormat("yyyy-LL-dd HH:mm") !==
+      expected.localStart
+  ) {
+    issues.push(
+      `turn ${turn.id} expected schedule localStart must match startAtUtc`,
+    );
+  }
+  if (expected.titleIncludes.trim() === "") {
+    issues.push(`turn ${turn.id} expected schedule titleIncludes is empty`);
   }
 }
 
@@ -1883,6 +1964,7 @@ function entry(
   hardAssertions: readonly HardAssertion[] = [],
   actionsBefore: readonly ScenarioAction[] = [],
   sessionKey?: LongRunSessionKey,
+  expectedScheduleCommit?: ExpectedScheduleCommit,
 ): TurnEntry {
   return {
     slug,
@@ -1893,6 +1975,7 @@ function entry(
     hardAssertions,
     ...(actionsBefore.length === 0 ? {} : { actionsBefore }),
     ...(sessionKey === undefined ? {} : { sessionKey }),
+    ...(expectedScheduleCommit === undefined ? {} : { expectedScheduleCommit }),
   };
 }
 
@@ -1926,6 +2009,9 @@ function makeSharedBlock(
         ...(turnEntry.hardAssertions ?? []),
       ]),
       semanticRubricTags: unique(turnEntry.semanticRubricTags),
+      ...(turnEntry.expectedScheduleCommit === undefined
+        ? {}
+        : { expectedScheduleCommit: turnEntry.expectedScheduleCommit }),
     };
   });
 }
@@ -1996,6 +2082,7 @@ function branchEntry(
   hardAssertions: readonly HardAssertion[] = [],
   actionsBefore: readonly ScenarioAction[] = [],
   sessionKey: LongRunSessionKey = "S3",
+  expectedScheduleCommit?: ExpectedScheduleCommit,
 ): LongRunTurnSpec {
   return {
     id: `branch-${branchId.toLowerCase()}-${pad(candidateNumber)}-${slug}`,
@@ -2015,6 +2102,7 @@ function branchEntry(
       ...hardAssertions,
     ]),
     semanticRubricTags: unique(semanticRubricTags),
+    ...(expectedScheduleCommit === undefined ? {} : { expectedScheduleCommit }),
     branchAnchorTurnId: COMPANION_LONG_RUN_V2_BRANCH_ANCHOR_ID,
   };
 }

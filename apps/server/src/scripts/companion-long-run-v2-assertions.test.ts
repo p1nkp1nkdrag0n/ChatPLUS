@@ -321,6 +321,52 @@ describe("companion long-run v2 hard assertions", () => {
         ),
       ).toBe("FAIL");
     });
+
+    it("fails a count-correct confirmation when its authoritative slot is wrong", () => {
+      const expectedScheduleCommit = {
+        startAtUtc: T1,
+        endAtUtc: T2,
+        timezone: "Asia/Shanghai",
+        localStart: "2026-09-02 09:00",
+        category: "social" as const,
+        titleIncludes: "North Shore",
+      };
+      const assertions = [
+        "schedule_requires_server_commit",
+        "schedule_exactly_once",
+      ] as const;
+      const correct = invitationItem("schedule-correct-slot", {
+        category: "social",
+        timezone: "Asia/Shanghai",
+      });
+      expect(
+        status(
+          evaluate(assertions, {
+            turn: { ...turn(assertions), expectedScheduleCommit },
+            response: response({ scheduleChanges: [correct] }),
+            after: snapshot({ schedule: [correct] }),
+          }),
+          "schedule_exactly_once",
+        ),
+      ).toBe("PASS");
+
+      const wrongDate = invitationItem("schedule-wrong-slot", {
+        category: "social",
+        timezone: "Asia/Shanghai",
+        startAtUtc: "2026-09-03T01:00:00.000Z",
+        endAtUtc: "2026-09-04T01:00:00.000Z",
+      });
+      expect(
+        status(
+          evaluate(assertions, {
+            turn: { ...turn(assertions), expectedScheduleCommit },
+            response: response({ scheduleChanges: [wrongDate] }),
+            after: snapshot({ schedule: [wrongDate] }),
+          }),
+          "schedule_exactly_once",
+        ),
+      ).toBe("FAIL");
+    });
   });
 
   describe("offline settlement, restart and idempotency", () => {

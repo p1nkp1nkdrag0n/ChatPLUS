@@ -25,6 +25,7 @@ import {
   toFeatureScheduleItems,
   toFeatureState,
 } from "../domain/feature-adapters.js";
+import { CHAT_TURN_OUTPUT_TOKEN_TARGET } from "../services/chat-output-budget.js";
 import type { GenerateObjectInput } from "../services/llm-service.js";
 import { calculateLlmPromptTokenBudget } from "../services/llm-prompt-headroom.js";
 import {
@@ -43,7 +44,7 @@ const workspaceRoot = resolve(
   "../../../..",
 );
 const ACCEPTANCE_TIMEZONE = "Asia/Shanghai";
-const MIN_CHAT_OUTPUT_TOKENS = 2_800;
+const MIN_CHAT_OUTPUT_TOKENS = CHAT_TURN_OUTPUT_TOKEN_TARGET;
 const RUNTIME_FIELDS = [
   "moodValence",
   "moodArousal",

@@ -14,6 +14,7 @@ export interface MemoryClaimLike {
   subjectKey: string;
   disposition: "affirmed" | "negated" | "cancelled" | "completed";
   recordedAtUtc: string;
+  revisionIntent?: "explicit_correction" | undefined;
 }
 
 export interface MemoryLike {
@@ -174,7 +175,10 @@ export function mergeMemoryProposal(
     }))
     .sort((left, right) => right.score - left.score)[0];
   const base =
-    duplicate !== undefined && duplicate.score >= 0.72
+    duplicate !== undefined &&
+    duplicate.score >= 0.72 &&
+    (safe.claim?.revisionIntent !== "explicit_correction" ||
+      normalizeText(duplicate.memory.content) === normalizeText(safe.content))
       ? duplicate.memory
       : undefined;
   const source =

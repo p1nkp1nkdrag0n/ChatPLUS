@@ -9,6 +9,9 @@ import {
 import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore } from "../db/store.js";
+import { FakeClock } from "../runtime/clock.js";
+import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
+import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
 import {
   previewAgentMemoryRecall,
   recallAgentMemories,
@@ -140,6 +143,98 @@ describe("memory service evidence integration", () => {
         quote: "I am vegetarian and prefer simple meals.",
       }),
     ]);
+  });
+
+  it("structures and supersedes an explicit correction to a short user fact", () => {
+    const firstMessageId = "message-memory-xiaolin-old";
+    insertMessage(database, firstMessageId, "user", "小林是我大学同学");
+    const [first] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "小林是我大学同学",
+          tags: ["user_fact", "小林"],
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: firstMessageId,
+    });
+    expect(first?.claim).toMatchObject({
+      subjectKey: "user_fact:relationship:小林",
+      disposition: "affirmed",
+    });
+
+    const correctedAt = "2026-08-21T12:01:00.000Z";
+    const correctedMessageId = "message-memory-xiaolin-corrected";
+    insertMessage(
+      database,
+      correctedMessageId,
+      "user",
+      "更正：小林是我高中同学",
+    );
+    const [corrected] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "小林是我高中同学",
+          tags: ["user_fact", "小林"],
+        }),
+      ],
+      nowUtc: correctedAt,
+      maxCandidates: 1,
+      authoritativeMessageId: correctedMessageId,
+    });
+    expect(corrected?.id).not.toBe(first?.id);
+    expect(corrected?.claim).toEqual({
+      subjectKey: "user_fact:relationship:小林",
+      disposition: "affirmed",
+      recordedAtUtc: correctedAt,
+      revisionIntent: "explicit_correction",
+    });
+
+    const lifecycle = new MemoryLifecycleService(
+      new ContinuityMemoryRepository(store),
+      new FakeClock(correctedAt),
+    );
+    const results = lifecycle.reconcileNewMemories(AGENT_ID, [
+      corrected?.id ?? "missing",
+    ]);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.reconciliation).toMatchObject({
+      kind: "supersede",
+      reasonCode: "explicit_user_correction",
+    });
+
+    const rows = database
+      .prepare(
+        `SELECT id, status, superseded_by_id AS supersededById
+         FROM memories WHERE id IN (?, ?) ORDER BY id`,
+      )
+      .all(first?.id, corrected?.id) as Array<Record<string, unknown>>;
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first?.id,
+          status: "superseded",
+          supersededById: corrected?.id,
+        }),
+        expect.objectContaining({
+          id: corrected?.id,
+          status: "active",
+        }),
+      ]),
+    );
+    expect(
+      readMemoryEvidence(store, [first?.id ?? "", corrected?.id ?? ""]),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceId: firstMessageId }),
+        expect.objectContaining({ sourceId: correctedMessageId }),
+      ]),
+    );
   });
 
   it("rejects runtime and system context that lacks content-grounded formal evidence", () => {

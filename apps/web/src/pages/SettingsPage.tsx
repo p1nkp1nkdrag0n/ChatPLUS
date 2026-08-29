@@ -60,8 +60,20 @@ export default function SettingsPage() {
                 </select>
               </label>
               <label className="field">
+                <span>配置档案</span>
+                <input value={form.llmProfile} readOnly />
+              </label>
+              <label className="field">
                 <span>模型</span>
                 <input value={form.model} readOnly />
+              </label>
+              <label className="field">
+                <span>思考深度</span>
+                <input value={form.reasoningEffort} readOnly />
+              </label>
+              <label className="field">
+                <span>思考参数格式</span>
+                <input value={form.reasoningRequestFormat} readOnly />
               </label>
             </div>
             <label className="field">

@@ -325,7 +325,7 @@ export default function DeveloperPage() {
             <TerminalSquare size={19} />
             <div>
               <h2>最近 LLM 调用</h2>
-              <p>只保留 purpose、耗时、token、Provider 与错误码。</p>
+              <p>只保留 purpose、耗时、token、Provider 档案与错误码。</p>
             </div>
           </div>
           {callsQuery.isPending ? <LoadingBlock label="读取调用日志…" /> : null}
@@ -334,7 +334,12 @@ export default function DeveloperPage() {
             {(callsQuery.data?.calls ?? []).slice(0, 20).map((call, index) => (
               <div key={displayValue(call.id, String(index))}>
                 <strong>{displayValue(call.purpose, "unknown")}</strong>
-                <span>{displayValue(call.provider, "fixture")}</span>
+                <span>
+                  {displayValue(call.provider, "fixture")} /{" "}
+                  {displayValue(call.providerProfile, "unrecorded")} /{" "}
+                  {displayValue(call.model, "unknown")} / effort={""}
+                  {displayValue(call.reasoningEffort, "not-configured")}
+                </span>
                 <span>{displayValue(call.latencyMs, "—")} ms</span>
                 <code>{displayValue(call.status, "ok")}</code>
               </div>

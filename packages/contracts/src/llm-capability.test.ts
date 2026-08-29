@@ -9,6 +9,8 @@ describe("LlmCapabilityProfileSchema", () => {
         structuredOutputMode: "json_object",
         supportsThinkingControl: true,
         supportsStreaming: false,
+        reasoningEffort: "medium",
+        reasoningRequestFormat: "openai_reasoning_effort",
         maxContextTokens: 128_000,
         maxOutputTokens: 8_192,
       }),
@@ -16,6 +18,8 @@ describe("LlmCapabilityProfileSchema", () => {
       structuredOutputMode: "json_object",
       supportsThinkingControl: true,
       supportsStreaming: false,
+      reasoningEffort: "medium",
+      reasoningRequestFormat: "openai_reasoning_effort",
       maxContextTokens: 128_000,
       maxOutputTokens: 8_192,
     });
@@ -40,6 +44,17 @@ describe("LlmCapabilityProfileSchema", () => {
         supportsThinkingControl: false,
         supportsStreaming: true,
         vendorExtension: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires reasoning effort and request format to be configured together", () => {
+    expect(
+      LlmCapabilityProfileSchema.safeParse({
+        structuredOutputMode: "json_object",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        reasoningEffort: "medium",
       }).success,
     ).toBe(false);
   });

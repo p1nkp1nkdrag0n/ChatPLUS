@@ -23,6 +23,56 @@ const FILLER_COUNT = 250;
 const TARGET_MEMORY_IMPORTANCE = 0.3;
 
 describe("recall candidate keyword prefilter", () => {
+  it("bounds repeated evidence for one memory to the preview contract", () => {
+    const database = openDatabase(":memory:");
+    try {
+      runMigrations(database);
+      const store = new DatabaseStore(database);
+      seedPoolFixture(store);
+      const target = readRecallCandidateRecords(store, AGENT_ID, NOW_UTC, {
+        candidateLimit: 500,
+        query: QUERY,
+        keywordLimit: 50,
+      }).find((memory) => memory.content.includes("jasmine"));
+      if (!target) throw new Error("Target memory missing");
+      const insert = database.prepare(
+        `INSERT INTO memory_evidence(
+          id, memory_id, source_type, source_id, recorded_at_utc, evidence_json
+        ) VALUES (?, ?, 'manual', ?, ?, ?)`,
+      );
+      for (let index = 0; index < 25; index += 1) {
+        const id = `evidence-repeat-${String(index).padStart(2, "0")}`;
+        const sourceId = `manual-repeat-${String(index).padStart(2, "0")}`;
+        insert.run(
+          id,
+          target.id,
+          sourceId,
+          NOW_UTC,
+          JSON.stringify({
+            id,
+            memoryId: target.id,
+            sourceType: "manual",
+            sourceId,
+            recordedAtUtc: NOW_UTC,
+          }),
+        );
+      }
+
+      const preview = previewAgentMemoryRecall(store, {
+        agentId: AGENT_ID,
+        query: QUERY,
+        nowUtc: NOW_UTC,
+      });
+      const candidate = preview.candidates.find(
+        (item) => item.memoryId === target.id,
+      );
+      expect(candidate?.evidenceIds).toHaveLength(20);
+      expect(new Set(candidate?.evidenceIds).size).toBe(20);
+    } finally {
+      database.close();
+    }
+  });
+
   it("recalls a keyword-matched memory ranked below the importance pool cutoff", () => {
     const database = openDatabase(":memory:");
     try {

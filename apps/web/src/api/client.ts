@@ -297,8 +297,11 @@ export const api = {
       delete editable.hasApiKey;
       delete editable.clockMode;
       delete editable.llmProvider;
+      delete editable.llmProfile;
       delete editable.model;
       delete editable.baseUrl;
+      delete editable.reasoningEffort;
+      delete editable.reasoningRequestFormat;
       await request<unknown>("/api/settings", {
         method: "PUT",
         body: body(editable),
@@ -427,10 +430,22 @@ function normalizeSettings(value: unknown): AppSettings {
   return {
     llmProvider:
       provider === "openai-compatible" ? "openai-compatible" : "fixture",
+    llmProfile: stringValue(
+      runtime.llmProfile ?? settings.llmProfile,
+      provider === "openai-compatible" ? "legacy" : "fixture",
+    ),
     model: stringValue(runtime.llmModel ?? settings.model, "deepseek-v4-flash"),
     baseUrl: stringValue(
       runtime.llmBaseUrl ?? settings.baseUrl,
       "https://api.deepseek.com",
+    ),
+    reasoningEffort: stringValue(
+      runtime.llmReasoningEffort ?? settings.reasoningEffort,
+      "未配置",
+    ),
+    reasoningRequestFormat: stringValue(
+      runtime.llmReasoningRequestFormat ?? settings.reasoningRequestFormat,
+      "未配置",
     ),
     hasApiKey: runtime.hasApiKey === true || settings.hasApiKey === true,
     clockMode:

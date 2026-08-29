@@ -2,10 +2,13 @@ import type {
   JsonValue,
   LlmCapabilityProfile,
   LlmPurpose,
+  ReasoningEffort,
+  ReasoningRequestFormat,
 } from "@personasim/contracts";
 import {
   createFixtureLlmProvider,
   createOpenAiCompatibleLlmProvider,
+  type LlmMetricSink,
   type LlmProvider,
 } from "@personasim/providers";
 import type { ZodType } from "zod";
@@ -36,22 +39,59 @@ export type GenerateObjectInput<T> = {
   fixture?: T;
 };
 
+export type LlmLogicalCallEvent =
+  | {
+      stage: "started";
+      index: number;
+      purpose: LlmPurpose;
+      agentId?: string;
+      system: string;
+      prompt: string;
+      createdAtUtc: string;
+    }
+  | {
+      stage: "completed";
+      index: number;
+      purpose: LlmPurpose;
+      agentId?: string;
+      success: boolean;
+      parsedOutput?: unknown;
+      errorCode?: string;
+      completedAtUtc: string;
+    };
+
+export interface LlmServiceObservationOptions {
+  onMetric?: LlmMetricSink;
+  onLogicalCall?: (event: LlmLogicalCallEvent) => void;
+}
+
 export class LlmService {
   readonly providerName: "fixture" | "openai-compatible";
+  readonly profileName: string;
   readonly modelName: string;
   readonly capabilities: LlmCapabilityProfile;
+  readonly reasoningEffort: ReasoningEffort | undefined;
+  readonly reasoningRequestFormat: ReasoningRequestFormat | undefined;
   private readonly provider: LlmProvider;
+  private logicalCallSequence = 0;
 
   constructor(
     config: ServerConfig["llm"],
     private readonly store: DatabaseStore,
     private readonly clock: Clock,
+    private readonly observation: LlmServiceObservationOptions = {},
   ) {
     this.providerName = config.provider;
+    this.profileName =
+      config.profileName ??
+      (config.provider === "openai-compatible" ? "legacy" : "fixture");
     if (config.provider === "openai-compatible") {
       if (!config.apiKey) {
+        const credentialEnvironment = config.profileName
+          ? `LLM_PROFILE_${config.profileName.replaceAll("-", "_").toUpperCase()}_API_KEY`
+          : "OPENAI_COMPATIBLE_API_KEY";
         throw new LlmServiceError(
-          "OPENAI_COMPATIBLE_API_KEY is required for the configured provider.",
+          `${credentialEnvironment} is required for the configured provider profile.`,
           "missing_api_key",
         );
       }
@@ -69,19 +109,35 @@ export class LlmService {
           : {
               capabilities: config.capabilities,
             }),
+        ...(observation.onMetric === undefined
+          ? {}
+          : { onMetric: observation.onMetric }),
       });
     } else {
       this.provider = createFixtureLlmProvider();
     }
     this.modelName = this.provider.model;
     this.capabilities = this.provider.capabilities;
+    this.reasoningEffort = this.capabilities.reasoningEffort;
+    this.reasoningRequestFormat = this.capabilities.reasoningRequestFormat;
   }
 
   async generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+    const logicalCallIndex = ++this.logicalCallSequence;
+    this.emitLogicalCall({
+      stage: "started",
+      index: logicalCallIndex,
+      purpose: input.purpose,
+      ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
+      system: input.system,
+      prompt: input.prompt,
+      createdAtUtc: this.clock.nowUtc(),
+    });
     const startedAt = performance.now();
     let success = false;
     let errorCode: string | undefined;
     let outputTokens = 0;
+    let parsedOutput: unknown;
     try {
       const provider = this.fixtureProvider(input);
       const result = await provider.generateObject({
@@ -97,6 +153,7 @@ export class LlmService {
           : { maxOutputTokens: input.maxOutputTokens }),
       });
       success = true;
+      parsedOutput = result;
       outputTokens = approximateTokens(JSON.stringify(result) ?? "");
       return result;
     } catch (error) {
@@ -109,11 +166,28 @@ export class LlmService {
             error,
           );
     } finally {
+      this.emitLogicalCall({
+        stage: "completed",
+        index: logicalCallIndex,
+        purpose: input.purpose,
+        ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
+        success,
+        ...(parsedOutput === undefined ? {} : { parsedOutput }),
+        ...(errorCode === undefined ? {} : { errorCode }),
+        completedAtUtc: this.clock.nowUtc(),
+      });
       this.store.recordLlmCall({
         ...(input.agentId ? { agentId: input.agentId } : {}),
         purpose: input.purpose,
         provider: this.providerName,
+        providerProfile: this.profileName,
         model: this.modelName,
+        ...(this.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: this.reasoningEffort }),
+        ...(this.reasoningRequestFormat === undefined
+          ? {}
+          : { reasoningRequestFormat: this.reasoningRequestFormat }),
         inputTokens: approximateTokens(input.system + input.prompt),
         outputTokens,
         latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
@@ -121,6 +195,14 @@ export class LlmService {
         ...(errorCode ? { errorCode } : {}),
         createdAtUtc: this.clock.nowUtc(),
       });
+    }
+  }
+
+  private emitLogicalCall(event: LlmLogicalCallEvent): void {
+    try {
+      this.observation.onLogicalCall?.(event);
+    } catch {
+      // Evaluation telemetry must never alter an application turn.
     }
   }
 

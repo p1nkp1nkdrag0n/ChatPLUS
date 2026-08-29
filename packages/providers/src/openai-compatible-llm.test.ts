@@ -13,6 +13,7 @@ import {
   redactSensitiveText,
 } from "./openai-compatible-llm.js";
 import { parseJsonText, StructuredOutputError } from "./safe-json.js";
+import type { LlmCallMetric } from "./types.js";
 
 function requestBody(init: RequestInit | undefined): string {
   const body = init?.body;
@@ -208,6 +209,140 @@ describe("OpenAI-compatible provider", () => {
     expect(body).toHaveProperty("max_tokens");
     expect(JSON.stringify(value)).not.toContain("reasoning");
   });
+
+  it("reports provider response identity, finish reason, and reported usage for a successful physical attempt", async () => {
+    const metrics: LlmCallMetric[] = [];
+    const apiKey = "private-provider-api-key";
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey,
+      model: "configured-model-alias",
+      fetch: () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              model: "provider-routed-model",
+              choices: [
+                {
+                  message: { content: '{"ok":true}' },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: {
+                prompt_tokens: 17,
+                completion_tokens: 5,
+                total_tokens: 22,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      maxRetries: 0,
+      onMetric: (metric) => metrics.push(metric),
+    });
+
+    await expect(
+      provider.generateObject({
+        purpose: "chat_turn",
+        system: "Return JSON.",
+        prompt: "Test",
+        schema: z.object({ ok: z.literal(true) }).strict(),
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]).toMatchObject({
+      provider: "openai-compatible",
+      model: "configured-model-alias",
+      responseModel: "provider-routed-model",
+      purpose: "chat_turn",
+      attempt: 1,
+      success: true,
+      status: 200,
+      finishReason: "stop",
+      usageSource: "provider",
+      inputTokens: 17,
+      outputTokens: 5,
+    });
+    expect(metrics[0]?.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(metrics)).not.toContain(apiKey);
+  });
+
+  it.each([
+    {
+      name: "OpenAI reasoning effort",
+      effort: "medium" as const,
+      format: "openai_reasoning_effort" as const,
+      expected: { reasoning_effort: "medium" },
+      absent: ["thinking", "output_config"],
+    },
+    {
+      name: "Anthropic adaptive thinking",
+      effort: "medium" as const,
+      format: "anthropic_output_config" as const,
+      expected: {
+        thinking: { type: "adaptive" },
+        output_config: { effort: "medium" },
+      },
+      absent: ["reasoning_effort"],
+    },
+    {
+      name: "OpenAI effort with explicitly enabled thinking",
+      effort: "low" as const,
+      format: "openai_reasoning_effort_with_thinking" as const,
+      expected: {
+        thinking: { type: "enabled" },
+        reasoning_effort: "low",
+      },
+      absent: ["output_config"],
+    },
+  ])(
+    "serializes $name controls",
+    async ({ effort, format, expected, absent }) => {
+      let requestInit: RequestInit | undefined;
+      const provider = createOpenAiCompatibleLlmProvider({
+        apiKey: "test-placeholder-token",
+        capabilities: {
+          structuredOutputMode: "json_object",
+          supportsThinkingControl: true,
+          supportsStreaming: false,
+          reasoningEffort: effort,
+          reasoningRequestFormat: format,
+          maxOutputTokens: 8_192,
+        },
+        fetch: (_input, init) => {
+          requestInit = init;
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: { content: '{"ok":true}' },
+                    finish_reason: "stop",
+                  },
+                ],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        },
+        maxRetries: 0,
+      });
+
+      await provider.generateObject({
+        purpose: "chat_turn",
+        system: "Return JSON.",
+        prompt: "Test",
+        schema: z.object({ ok: z.boolean() }).strict(),
+      });
+
+      const body = JSON.parse(requestBody(requestInit)) as Record<
+        string,
+        unknown
+      >;
+      expect(body).toMatchObject(expected);
+      for (const field of absent) expect(body).not.toHaveProperty(field);
+    },
+  );
 
   it("rejects legacy flat chat output at the strict generateObject boundary", async () => {
     const legacyFlat = {
@@ -475,12 +610,14 @@ describe("OpenAI-compatible provider", () => {
   it("retries once when JSON is schema-invalid, then returns the validated object", async () => {
     let calls = 0;
     const bodies: string[] = [];
+    const metrics: LlmCallMetric[] = [];
     const fakeFetch: typeof fetch = (_input, init) => {
       calls += 1;
       bodies.push(requestBody(init));
       return Promise.resolve(
         new Response(
           JSON.stringify({
+            model: `provider-repair-attempt-${calls}`,
             choices: [
               {
                 message: {
@@ -492,6 +629,11 @@ describe("OpenAI-compatible provider", () => {
                 finish_reason: "stop",
               },
             ],
+            usage: {
+              prompt_tokens: 20 + calls,
+              completion_tokens: 4 + calls,
+              total_tokens: 24 + calls * 2,
+            },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -501,6 +643,7 @@ describe("OpenAI-compatible provider", () => {
       apiKey: "test-placeholder-token",
       fetch: fakeFetch,
       maxRetries: 1,
+      onMetric: (metric) => metrics.push(metric),
       retryDelay: () => Promise.resolve(),
     });
     await expect(
@@ -517,6 +660,33 @@ describe("OpenAI-compatible provider", () => {
     expect(bodies[1]).toContain("ok:");
     expect(bodies[1]).not.toContain("RAW_RESPONSE_SENTINEL");
     expect(occurrences(bodies[1] ?? "", "STRUCTURED_OUTPUT_REPAIR")).toBe(1);
+    expect(metrics).toHaveLength(2);
+    expect(metrics[0]).toMatchObject({
+      purpose: "chat_turn",
+      attempt: 1,
+      success: false,
+      status: 200,
+      responseModel: "provider-repair-attempt-1",
+      finishReason: "stop",
+      usageSource: "provider",
+      inputTokens: 21,
+      outputTokens: 5,
+      errorCode: "INVALID_STRUCTURED_OUTPUT",
+    });
+    expect(metrics[1]).toMatchObject({
+      purpose: "chat_turn",
+      attempt: 2,
+      success: true,
+      status: 200,
+      responseModel: "provider-repair-attempt-2",
+      finishReason: "stop",
+      usageSource: "provider",
+      inputTokens: 22,
+      outputTokens: 6,
+    });
+    expect(metrics[1]).not.toHaveProperty("errorCode");
+    expect(JSON.stringify(metrics)).not.toContain("RAW_RESPONSE_SENTINEL");
+    expect(JSON.stringify(metrics)).not.toContain("test-placeholder-token");
   });
 
   it("rebuilds each repair request from only the latest validation issues", async () => {
@@ -564,20 +734,44 @@ describe("OpenAI-compatible provider", () => {
     async (mode) => {
       let calls = 0;
       const bodies: string[] = [];
+      const metrics: LlmCallMetric[] = [];
       const fakeFetch: typeof fetch = (_input, init) => {
         calls += 1;
         bodies.push(requestBody(init));
         if (calls === 1) {
           return mode === "network"
             ? Promise.reject(new TypeError("simulated network failure"))
-            : Promise.resolve(new Response("retry later", { status: 429 }));
+            : Promise.resolve(
+                new Response("retry later HTTP_BODY_SENTINEL", {
+                  status: 429,
+                }),
+              );
         }
-        return Promise.resolve(characterResponse({ ok: true }));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              model: "provider-retry-model",
+              choices: [
+                {
+                  message: { content: '{"ok":true}' },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: {
+                prompt_tokens: 31,
+                completion_tokens: 7,
+                total_tokens: 38,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
       };
       const provider = createOpenAiCompatibleLlmProvider({
         apiKey: "test-placeholder-token",
         fetch: fakeFetch,
         maxRetries: 1,
+        onMetric: (metric) => metrics.push(metric),
         retryDelay: () => Promise.resolve(),
       });
 
@@ -593,6 +787,36 @@ describe("OpenAI-compatible provider", () => {
       expect(bodies).toHaveLength(2);
       expect(bodies[1]).toBe(bodies[0]);
       expect(bodies[1]).not.toContain("STRUCTURED_OUTPUT_REPAIR");
+      expect(metrics).toHaveLength(2);
+      expect(metrics[0]).toMatchObject({
+        purpose: "chat_turn",
+        attempt: 1,
+        success: false,
+        usageSource: "unavailable",
+        errorCode: mode === "network" ? "NETWORK_ERROR" : "HTTP_ERROR",
+      });
+      if (mode === "network") {
+        expect(metrics[0]).not.toHaveProperty("status");
+      } else {
+        expect(metrics[0]).toHaveProperty("status", 429);
+      }
+      expect(metrics[0]).not.toHaveProperty("responseModel");
+      expect(metrics[0]).not.toHaveProperty("finishReason");
+      expect(metrics[0]?.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(metrics[1]).toMatchObject({
+        purpose: "chat_turn",
+        attempt: 2,
+        success: true,
+        status: 200,
+        responseModel: "provider-retry-model",
+        finishReason: "stop",
+        usageSource: "provider",
+        inputTokens: 31,
+        outputTokens: 7,
+      });
+      expect(metrics[1]?.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(JSON.stringify(metrics)).not.toContain("HTTP_BODY_SENTINEL");
+      expect(JSON.stringify(metrics)).not.toContain("test-placeholder-token");
     },
   );
 

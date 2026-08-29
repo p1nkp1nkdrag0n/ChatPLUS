@@ -7,7 +7,11 @@ const app = await buildApp({ config, startScheduler: true });
 app.log.info(
   {
     profile: config.profile,
-    llmProvider: config.llm.provider,
+    llmProvider: app.personasim.llm.providerName,
+    llmProfile: app.personasim.llm.profileName,
+    reasoningEffort: app.personasim.llm.reasoningEffort ?? "not-configured",
+    reasoningRequestFormat:
+      app.personasim.llm.reasoningRequestFormat ?? "not-configured",
     liveWorldEffects: config.liveWorldEffectsMode,
     selfInitiatedPlanning: config.selfInitiatedPlanningMode,
   },

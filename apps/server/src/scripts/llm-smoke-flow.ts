@@ -32,7 +32,10 @@ const PersistedDecisionMetadataSchema = z
 
 export type LlmHttpSmokeResult = {
   provider: "openai-compatible";
+  profile: string;
   model: string;
+  reasoningEffort?: string;
+  reasoningRequestFormat?: string;
   assistantText: string;
   chunks: string[];
   sessionId: string;
@@ -162,6 +165,15 @@ export async function runLlmHttpSmoke(
     const applicationLlmPurposes = calls
       .map((call) => z.string().parse(call["purpose"]))
       .reverse();
+    const recordedProfiles = calls.map((call) =>
+      z.string().parse(call["providerProfile"]),
+    );
+    const recordedReasoningEfforts = calls.map(
+      (call) => call["reasoningEffort"] ?? undefined,
+    );
+    const recordedReasoningRequestFormats = calls.map(
+      (call) => call["reasoningRequestFormat"] ?? undefined,
+    );
     if (
       applicationLlmPurposes.length === 0 ||
       applicationLlmPurposes[0] !== "chat_turn" ||
@@ -173,10 +185,44 @@ export async function runLlmHttpSmoke(
         "The HTTP smoke setup invoked an unexpected application LLM purpose.",
       );
     }
+    if (
+      recordedProfiles.some(
+        (profile) => profile !== app?.personasim.llm.profileName,
+      )
+    ) {
+      throw new Error("The HTTP smoke calls did not preserve the LLM profile.");
+    }
+    if (
+      recordedReasoningEfforts.some(
+        (effort) => effort !== app?.personasim.llm.reasoningEffort,
+      )
+    ) {
+      throw new Error(
+        "The HTTP smoke calls did not preserve the LLM reasoning effort.",
+      );
+    }
+    if (
+      recordedReasoningRequestFormats.some(
+        (format) => format !== app?.personasim.llm.reasoningRequestFormat,
+      )
+    ) {
+      throw new Error(
+        "The HTTP smoke calls did not preserve the LLM reasoning request format.",
+      );
+    }
 
     return {
       provider: "openai-compatible",
+      profile: app.personasim.llm.profileName,
       model: app.personasim.llm.modelName,
+      ...(app.personasim.llm.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: app.personasim.llm.reasoningEffort }),
+      ...(app.personasim.llm.reasoningRequestFormat === undefined
+        ? {}
+        : {
+            reasoningRequestFormat: app.personasim.llm.reasoningRequestFormat,
+          }),
       assistantText: stored.content,
       chunks: metadata.chunks,
       sessionId: stored.sessionId,

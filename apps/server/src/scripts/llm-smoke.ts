@@ -3,7 +3,10 @@ import { runLlmHttpSmoke } from "./llm-smoke-flow.js";
 
 const config = readConfig();
 if (!config.llm.apiKey) {
-  process.stdout.write("SKIP: OPENAI_COMPATIBLE_API_KEY is not configured.\n");
+  const credentialEnvironment = config.llm.profileName
+    ? `LLM_PROFILE_${config.llm.profileName.replaceAll("-", "_").toUpperCase()}_API_KEY`
+    : "OPENAI_COMPATIBLE_API_KEY";
+  process.stdout.write(`SKIP: ${credentialEnvironment} is not configured.\n`);
   process.exit(0);
 }
 
@@ -13,8 +16,12 @@ const result = await runLlmHttpSmoke({
 });
 
 process.stdout.write(
-  "LLM HTTP smoke test passed (" +
+  "LLM HTTP smoke test passed (profile=" +
+    result.profile +
+    ", model=" +
     result.model +
+    ", effort=" +
+    (result.reasoningEffort ?? "not-configured") +
     "): " +
     result.assistantText +
     "\n",

@@ -9,6 +9,10 @@ import {
   OriginalCharacterInputSchema,
 } from "./character.js";
 import { PersonaChatDeliveryModeSchema } from "./llm.js";
+import {
+  ReasoningEffortSchema,
+  ReasoningRequestFormatSchema,
+} from "./llm-capability.js";
 import { MemoryRecallRuntimeDiagnosticSchema } from "./memory-recall-preview.js";
 import {
   EntityIdSchema,
@@ -386,8 +390,11 @@ export const GetSettingsResponseSchema = z
     runtime: z
       .object({
         llmProvider: z.enum(["fixture", "openai-compatible"]),
+        llmProfile: z.string().trim().min(1).max(120),
         llmModel: z.string().trim().min(1).max(160),
         llmBaseUrl: z.url(),
+        llmReasoningEffort: ReasoningEffortSchema.optional(),
+        llmReasoningRequestFormat: ReasoningRequestFormatSchema.optional(),
         hasApiKey: z.boolean(),
         clockMode: z.enum(["system", "fake"]),
         profile: z.string().trim().min(1).max(120),
@@ -411,6 +418,9 @@ export const HealthResponseSchema = z
     serverTimeUtc: UtcDateTimeSchema,
     profile: z.string().trim().min(1).max(120),
     llmProvider: z.enum(["fixture", "openai-compatible"]),
+    llmProfile: z.string().trim().min(1).max(120),
+    llmReasoningEffort: ReasoningEffortSchema.optional(),
+    llmReasoningRequestFormat: ReasoningRequestFormatSchema.optional(),
     clockMode: z.enum(["system", "fake"]),
   })
   .strict();

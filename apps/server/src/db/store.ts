@@ -793,7 +793,10 @@ export class DatabaseStore {
     agentId?: string;
     purpose: string;
     provider: string;
+    providerProfile: string;
     model: string;
+    reasoningEffort?: string;
+    reasoningRequestFormat?: string;
     inputTokens: number;
     outputTokens: number;
     latencyMs: number;
@@ -804,16 +807,21 @@ export class DatabaseStore {
     this.database
       .prepare(
         `INSERT INTO llm_calls(
-          id, agent_id, purpose, provider, model, input_tokens, output_tokens,
-          latency_ms, success, error_code, created_at_utc
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, agent_id, purpose, provider, provider_profile, model,
+          reasoning_effort, reasoning_request_format,
+          input_tokens, output_tokens, latency_ms, success, error_code,
+          created_at_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         createEntityId("llmcall"),
         input.agentId ?? null,
         input.purpose,
         input.provider,
+        input.providerProfile,
         input.model,
+        input.reasoningEffort ?? null,
+        input.reasoningRequestFormat ?? null,
         input.inputTokens,
         input.outputTokens,
         input.latencyMs,
@@ -827,6 +835,9 @@ export class DatabaseStore {
     return this.database
       .prepare(
         `SELECT id, agent_id AS agentId, purpose, provider, model,
+          provider_profile AS providerProfile,
+          reasoning_effort AS reasoningEffort,
+          reasoning_request_format AS reasoningRequestFormat,
           input_tokens AS inputTokens, output_tokens AS outputTokens,
           latency_ms AS latencyMs, success, error_code AS errorCode,
           created_at_utc AS createdAtUtc

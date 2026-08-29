@@ -36,11 +36,14 @@ export interface LlmProvider {
 export interface LlmCallMetric {
   provider: string;
   model: string;
+  responseModel?: string;
   purpose: string;
   attempt: number;
   latencyMs: number;
   success: boolean;
   status?: number;
+  finishReason?: string | null;
+  usageSource?: "provider" | "estimated" | "unavailable";
   inputTokens?: number;
   outputTokens?: number;
   errorCode?: string;

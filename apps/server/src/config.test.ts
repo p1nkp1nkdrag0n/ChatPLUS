@@ -1,8 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { readConfig } from "./config.js";
 
+const llmProfileEnvironmentFields = [
+  "BASE_URL",
+  "API_KEY",
+  "MODEL",
+  "TIMEOUT_MS",
+  "MAX_RETRIES",
+  "STRUCTURED_OUTPUT_MODE",
+  "REASONING_EFFORT",
+  "REASONING_FORMAT",
+  "SUPPORTS_THINKING_CONTROL",
+  "SUPPORTS_STREAMING",
+  "MAX_CONTEXT_TOKENS",
+  "MAX_OUTPUT_TOKENS",
+] as const;
+
+function clearLlmProfileEnvironment(profilePrefix: string): void {
+  for (const field of llmProfileEnvironmentFields) {
+    vi.stubEnv(`LLM_PROFILE_${profilePrefix}_${field}`, undefined);
+  }
+}
+
 describe("server configuration", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("uses the canonical conversation retention defaults", () => {
     expect(readConfig().conversationRetention).toEqual({
       fullVerbatimHours: 24,
@@ -75,5 +100,194 @@ describe("server configuration", () => {
         },
       }),
     ).toThrowError(/softTokenLimit/u);
+  });
+
+  it("selects and normalizes a named LLM profile", () => {
+    clearLlmProfileEnvironment("CLAUDE_SONNET");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", " Claude-Sonnet ");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv(
+      "LLM_PROFILE_CLAUDE_SONNET_BASE_URL",
+      "https://sub.wanzhao.top/v1/",
+    );
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_API_KEY", "test-profile-key");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_MODEL", "claude-sonnet-5");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_TIMEOUT_MS", "150000");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_MAX_RETRIES", "2");
+    vi.stubEnv(
+      "LLM_PROFILE_CLAUDE_SONNET_STRUCTURED_OUTPUT_MODE",
+      "prompt_json",
+    );
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_REASONING_EFFORT", "medium");
+    vi.stubEnv(
+      "LLM_PROFILE_CLAUDE_SONNET_REASONING_FORMAT",
+      "anthropic_output_config",
+    );
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_SUPPORTS_THINKING_CONTROL", "false");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_SUPPORTS_STREAMING", "true");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_MAX_CONTEXT_TOKENS", "200000");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_SONNET_MAX_OUTPUT_TOKENS", "16000");
+
+    expect(readConfig().llm).toEqual({
+      provider: "openai-compatible",
+      profileName: "claude-sonnet",
+      baseUrl: "https://sub.wanzhao.top/v1",
+      apiKey: "test-profile-key",
+      model: "claude-sonnet-5",
+      timeoutMs: 150_000,
+      maxRetries: 2,
+      maxOutputTokens: 16_000,
+      capabilities: {
+        structuredOutputMode: "prompt_json",
+        supportsThinkingControl: false,
+        supportsStreaming: true,
+        reasoningEffort: "medium",
+        reasoningRequestFormat: "anthropic_output_config",
+        maxContextTokens: 200_000,
+        maxOutputTokens: 16_000,
+      },
+    });
+  });
+
+  it("uses independent defaults for an active profile", () => {
+    clearLlmProfileEnvironment("BIGMODEL");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "bigmodel");
+    vi.stubEnv(
+      "LLM_PROFILE_BIGMODEL_BASE_URL",
+      "https://open.bigmodel.cn/api/paas/v4",
+    );
+    vi.stubEnv("LLM_PROFILE_BIGMODEL_MODEL", "glm-5.3-flash");
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "must-not-leak");
+    vi.stubEnv("OPENAI_COMPATIBLE_MODEL", "must-not-leak");
+    vi.stubEnv("OPENAI_COMPATIBLE_TIMEOUT_MS", "999");
+
+    const config = readConfig();
+
+    expect(config.llm.profileName).toBe("bigmodel");
+    expect(config.llm.apiKey).toBeUndefined();
+    expect(config.llm.model).toBe("glm-5.3-flash");
+    expect(config.llm.timeoutMs).toBe(120_000);
+    expect(config.llm.maxRetries).toBe(1);
+    expect(config.llm.capabilities).toEqual({
+      structuredOutputMode: "json_object",
+      supportsThinkingControl: false,
+      supportsStreaming: false,
+      maxOutputTokens: 8_192,
+    });
+  });
+
+  it("rejects a reasoning effort without a matching request format", () => {
+    clearLlmProfileEnvironment("GROK");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "grok");
+    vi.stubEnv("LLM_PROFILE_GROK_BASE_URL", "https://sub.wanzhao.top/v1");
+    vi.stubEnv("LLM_PROFILE_GROK_MODEL", "grok-4.6");
+    vi.stubEnv("LLM_PROFILE_GROK_REASONING_EFFORT", "medium");
+
+    expect(() => readConfig()).toThrowError(/reasoningRequestFormat/u);
+  });
+
+  it("keeps the legacy OpenAI-compatible environment when no profile is selected", () => {
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "");
+    vi.stubEnv("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:4321/v1/");
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "test-legacy-key");
+    vi.stubEnv("OPENAI_COMPATIBLE_MODEL", "legacy-model");
+    vi.stubEnv("OPENAI_COMPATIBLE_TIMEOUT_MS", "4567");
+    vi.stubEnv("OPENAI_COMPATIBLE_MAX_RETRIES", "0");
+    vi.stubEnv("OPENAI_COMPATIBLE_REASONING_EFFORT", "low");
+    vi.stubEnv(
+      "OPENAI_COMPATIBLE_REASONING_FORMAT",
+      "openai_reasoning_effort_with_thinking",
+    );
+    vi.stubEnv("OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL", "false");
+
+    const config = readConfig();
+
+    expect(config.llm.profileName).toBeUndefined();
+    expect(config.llm.baseUrl).toBe("http://localhost:4321/v1");
+    expect(config.llm.apiKey).toBe("test-legacy-key");
+    expect(config.llm.model).toBe("legacy-model");
+    expect(config.llm.timeoutMs).toBe(4_567);
+    expect(config.llm.maxRetries).toBe(0);
+    expect(config.llm.capabilities).toMatchObject({
+      reasoningEffort: "low",
+      reasoningRequestFormat: "openai_reasoning_effort_with_thinking",
+      supportsThinkingControl: false,
+    });
+  });
+
+  it("retains the legacy LLM_* aliases", () => {
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "");
+    vi.stubEnv("OPENAI_COMPATIBLE_BASE_URL", undefined);
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", undefined);
+    vi.stubEnv("OPENAI_COMPATIBLE_MODEL", undefined);
+    vi.stubEnv("OPENAI_COMPATIBLE_TIMEOUT_MS", undefined);
+    vi.stubEnv("OPENAI_COMPATIBLE_MAX_RETRIES", undefined);
+    vi.stubEnv("LLM_BASE_URL", "http://localhost:9876/v1");
+    vi.stubEnv("LLM_API_KEY", "test-alias-key");
+    vi.stubEnv("LLM_MODEL", "alias-model");
+    vi.stubEnv("LLM_TIMEOUT_MS", "7654");
+    vi.stubEnv("LLM_MAX_RETRIES", "3");
+
+    const config = readConfig();
+
+    expect(config.llm.baseUrl).toBe("http://localhost:9876/v1");
+    expect(config.llm.apiKey).toBe("test-alias-key");
+    expect(config.llm.model).toBe("alias-model");
+    expect(config.llm.timeoutMs).toBe(7_654);
+    expect(config.llm.maxRetries).toBe(3);
+  });
+
+  it("rejects invalid active profile names", () => {
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "claude sonnet");
+
+    expect(() => readConfig()).toThrowError(/LLM_ACTIVE_PROFILE/u);
+  });
+
+  it("rejects an active live profile while the fixture provider is selected", () => {
+    vi.stubEnv("LLM_PROVIDER", "fixture");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "claude");
+
+    expect(() => readConfig()).toThrowError(
+      /LLM_ACTIVE_PROFILE requires LLM_PROVIDER=openai-compatible/u,
+    );
+  });
+
+  it.each([
+    "not-a-url",
+    "http://api.example.com/v1",
+    "https://user:password@api.example.com/v1",
+    "https://api.example.com/v1?tenant=test",
+    "https://api.example.com/v1#models",
+  ])("rejects an unsafe profile URL: %s", (baseUrl) => {
+    clearLlmProfileEnvironment("UNSAFE");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "unsafe");
+    vi.stubEnv("LLM_PROFILE_UNSAFE_BASE_URL", baseUrl);
+    vi.stubEnv("LLM_PROFILE_UNSAFE_MODEL", "test-model");
+
+    expect(() => readConfig()).toThrowError(/LLM profile BASE_URL/u);
+  });
+
+  it("allows an HTTP localhost URL supplied as a test override", () => {
+    clearLlmProfileEnvironment("SAFE");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "safe");
+    vi.stubEnv("LLM_PROFILE_SAFE_BASE_URL", "https://api.example.com/v1");
+    vi.stubEnv("LLM_PROFILE_SAFE_MODEL", "live-model");
+
+    const config = readConfig({
+      llm: {
+        provider: "openai-compatible",
+        baseUrl: "http://127.0.0.1:4567/v1",
+        model: "test-model",
+        timeoutMs: 1_000,
+        maxRetries: 0,
+      },
+    });
+
+    expect(config.llm.baseUrl).toBe("http://127.0.0.1:4567/v1");
   });
 });

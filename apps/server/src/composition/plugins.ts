@@ -31,7 +31,10 @@ import { ConversationActivityTracker } from "../services/conversation-activity-t
 import { DateDigestService } from "../services/date-digest-service.js";
 import { FollowUpRepository } from "../services/follow-up-repository.js";
 import { FollowUpService } from "../services/follow-up-service.js";
-import { LlmService } from "../services/llm-service.js";
+import {
+  LlmService,
+  type LlmServiceObservationOptions,
+} from "../services/llm-service.js";
 import { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import { MemoryRecallService } from "../services/memory-recall-service.js";
 import { PersonalIntentService } from "../services/personal-intent-service.js";
@@ -104,6 +107,7 @@ export interface ServerPluginOptions {
   readonly logger: FastifyBaseLogger;
   readonly database?: Database;
   readonly clock?: Clock;
+  readonly llmObservation?: LlmServiceObservationOptions;
 }
 
 export function createServerPlugins(
@@ -193,7 +197,12 @@ function createInfrastructurePlugin(
           ? new FakeClock(options.config.fakeClockStart)
           : new SystemClock());
       const actors = new ActorQueue();
-      const llm = new LlmService(options.config.llm, store, clock);
+      const llm = new LlmService(
+        options.config.llm,
+        store,
+        clock,
+        options.llmObservation,
+      );
       const logger = createKernelLogger(options.logger);
 
       context.services.provide(SERVER_CONFIG_TOKEN, options.config);
@@ -206,6 +215,7 @@ function createInfrastructurePlugin(
       context.logger.info("Infrastructure services ready", {
         bundle: bundle.id,
         llmProvider: llm.providerName,
+        llmProfile: llm.profileName,
       });
     },
   };

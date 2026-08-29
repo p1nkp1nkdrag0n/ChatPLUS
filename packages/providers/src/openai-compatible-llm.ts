@@ -62,6 +62,7 @@ const ChatCompletionResponseSchema = z
   .passthrough();
 
 type FetchLike = typeof fetch;
+type ChatCompletionResponse = z.infer<typeof ChatCompletionResponseSchema>;
 
 export interface OpenAiCompatibleLlmOptions {
   apiKey: string;
@@ -206,6 +207,33 @@ function responseFormat(
   };
 }
 
+function reasoningParameters(
+  capabilities: LlmCapabilityProfile,
+): Record<string, unknown> {
+  const effort = capabilities.reasoningEffort;
+  const format = capabilities.reasoningRequestFormat;
+  if (effort === undefined || format === undefined) {
+    return capabilities.supportsThinkingControl
+      ? { thinking: { type: "disabled" } }
+      : {};
+  }
+
+  switch (format) {
+    case "openai_reasoning_effort":
+      return { reasoning_effort: effort };
+    case "anthropic_output_config":
+      return {
+        thinking: { type: "adaptive" },
+        output_config: { effort },
+      };
+    case "openai_reasoning_effort_with_thinking":
+      return {
+        thinking: { type: "enabled" },
+        reasoning_effort: effort,
+      };
+  }
+}
+
 function isRetryable(error: unknown): boolean {
   if (error instanceof StructuredOutputError) return true;
   if (error instanceof LlmProviderError) {
@@ -291,9 +319,34 @@ function asMessages(
 interface RawCallResult {
   content: string;
   data: JsonValue;
-  response: z.infer<typeof ChatCompletionResponseSchema>;
+  response: ChatCompletionResponse;
   latencyMs: number;
   status: number;
+}
+
+type ResponseMetricFields = {
+  usageSource: NonNullable<LlmCallMetric["usageSource"]>;
+} & Pick<
+  LlmCallMetric,
+  "responseModel" | "finishReason" | "inputTokens" | "outputTokens"
+>;
+
+function responseMetricFields(
+  response: ChatCompletionResponse | undefined,
+): ResponseMetricFields {
+  const usage = response?.usage;
+  const rawFinishReason = response?.choices[0]?.finish_reason;
+  return {
+    usageSource: usage === undefined ? "unavailable" : "provider",
+    ...(response?.model === undefined ? {} : { responseModel: response.model }),
+    ...(rawFinishReason === undefined ? {} : { finishReason: rawFinishReason }),
+    ...(usage?.prompt_tokens === undefined
+      ? {}
+      : { inputTokens: usage.prompt_tokens }),
+    ...(usage?.completion_tokens === undefined
+      ? {}
+      : { outputTokens: usage.completion_tokens }),
+  };
 }
 
 export class OpenAiCompatibleLlmProvider implements LlmProvider {
@@ -338,6 +391,26 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     }
   }
 
+  #emitResponseMetric(
+    request: LLMRequest,
+    attempt: number,
+    raw: RawCallResult,
+    success: boolean,
+    errorCode?: string,
+  ): void {
+    this.#emitMetric({
+      provider: this.name,
+      model: this.model,
+      purpose: request.purpose,
+      attempt,
+      latencyMs: raw.latencyMs,
+      success,
+      status: raw.status,
+      ...responseMetricFields(raw.response),
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  }
+
   async #callOnce(
     request: LLMRequest,
     attempt: number,
@@ -351,6 +424,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     );
     const startedAt = Date.now();
     let status: number | undefined;
+    let observedResponse: ChatCompletionResponse | undefined;
     try {
       const structuredFormat = responseFormat(
         this.capabilities,
@@ -366,9 +440,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         body: JSON.stringify({
           model: this.model,
           messages: asMessages(request, repairIssues),
-          ...(this.capabilities.supportsThinkingControl
-            ? { thinking: { type: "disabled" } }
-            : {}),
+          ...reasoningParameters(this.capabilities),
           ...(structuredFormat === undefined
             ? {}
             : { response_format: structuredFormat }),
@@ -414,7 +486,8 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
           status,
         );
       }
-      const choice = envelope.data.choices[0];
+      observedResponse = envelope.data;
+      const choice = observedResponse.choices[0];
       if (choice === undefined) {
         throw new LlmProviderError(
           "LLM response contained no choice",
@@ -439,23 +512,13 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       }
       const data = parseJsonText(content) as JsonValue;
       const latencyMs = Date.now() - startedAt;
-      const usage = envelope.data.usage;
-      this.#emitMetric({
-        provider: this.name,
-        model: this.model,
-        purpose: request.purpose,
-        attempt,
+      return {
+        content,
+        data,
+        response: observedResponse,
         latencyMs,
-        success: true,
         status,
-        ...(usage?.prompt_tokens === undefined
-          ? {}
-          : { inputTokens: usage.prompt_tokens }),
-        ...(usage?.completion_tokens === undefined
-          ? {}
-          : { outputTokens: usage.completion_tokens }),
-      });
-      return { content, data, response: envelope.data, latencyMs, status };
+      };
     } catch (error) {
       const safeError =
         error instanceof LlmProviderError ||
@@ -481,6 +544,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         latencyMs: Date.now() - startedAt,
         success: false,
         ...(status === undefined ? {} : { status }),
+        ...responseMetricFields(observedResponse),
         errorCode: safeCode(safeError),
       });
       throw safeError;
@@ -498,14 +562,18 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     let lastError: unknown;
     let latestStructuredIssues: readonly string[] | undefined;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
+      let raw: RawCallResult | undefined;
       try {
-        const raw = await this.#callOnce(
+        raw = await this.#callOnce(
           request,
           attempt + 1,
           schema,
           latestStructuredIssues,
         );
-        if (schema === undefined) return { value: raw.data, raw };
+        if (schema === undefined) {
+          this.#emitResponseMetric(request, attempt + 1, raw, true);
+          return { value: raw.data, raw };
+        }
         const parsed = schema.safeParse(
           normalizePurposeOutput(request.purpose, raw.data),
         );
@@ -520,9 +588,19 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
             issues,
           );
         }
+        this.#emitResponseMetric(request, attempt + 1, raw, true);
         return { value: parsed.data, raw };
       } catch (error) {
         lastError = error;
+        if (raw !== undefined) {
+          this.#emitResponseMetric(
+            request,
+            attempt + 1,
+            raw,
+            false,
+            safeCode(error),
+          );
+        }
         if (error instanceof StructuredOutputError) {
           latestStructuredIssues = error.issues
             .slice(0, 12)

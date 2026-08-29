@@ -194,8 +194,11 @@ export interface TimelineEvent {
 
 export interface AppSettings {
   llmProvider: "fixture" | "openai-compatible";
+  llmProfile: string;
   model: string;
   baseUrl: string;
+  reasoningEffort: string;
+  reasoningRequestFormat: string;
   hasApiKey: boolean;
   clockMode: "system" | "fake";
   locale: string;

@@ -10,6 +10,7 @@ import type { Database } from "../db/connection.js";
 import type { RouteServices } from "../http/routes.js";
 import type { Clock } from "../runtime/clock.js";
 import type { HourlyScheduler } from "../runtime/hourly-scheduler.js";
+import type { LlmServiceObservationOptions } from "../services/llm-service.js";
 import { resolveServerBundle, type ServerSimulationBundle } from "./bundles.js";
 import {
   createKernelLogger,
@@ -48,6 +49,7 @@ export interface ComposeServerOptions {
   readonly logger: FastifyBaseLogger;
   readonly database?: Database;
   readonly clock?: Clock;
+  readonly llmObservation?: LlmServiceObservationOptions;
 }
 
 export interface ServerKernelHandle {
@@ -82,6 +84,9 @@ export async function composeServer(
     logger: options.logger,
     ...(options.database === undefined ? {} : { database: options.database }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
+    ...(options.llmObservation === undefined
+      ? {}
+      : { llmObservation: options.llmObservation }),
   });
   await runtime.activatePlugins(plugins);
 

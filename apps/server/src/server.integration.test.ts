@@ -51,6 +51,8 @@ describe("PersonaSim server integration", () => {
         "012_followup_care_proactive_generation.sql",
         "013_calendar_retrieval_runs.sql",
         "014_retrieval_run_date_digest.sql",
+        "015_llm_provider_profiles.sql",
+        "016_llm_reasoning_config.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -87,6 +89,12 @@ describe("PersonaSim server integration", () => {
       );
       expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
       expect(database.pragma("busy_timeout", { simple: true })).toBe(5_000);
+      expect(
+        database
+          .prepare("PRAGMA table_info(llm_calls)")
+          .all()
+          .map((row) => String((row as { name: string }).name)),
+      ).toContain("provider_profile");
     } finally {
       database.close();
     }

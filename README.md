@@ -19,7 +19,7 @@ PersonaSim 是一个本地运行、事件驱动的 AI 虚拟角色对话 Demo。
 - 发布后生成 72 小时滚动日程
 - 轻量、日常和拟真三种 capability profile
 - Fixture LLM：不需要 API Key 的确定性完整演示
-- OpenAI-compatible Chat Completions Provider（默认适配 DeepSeek V4 Flash）
+- 支持命名配置档案的 OpenAI-compatible Chat Completions Provider
 - 普通聊天、人格约束、状态/关系/记忆提案
 - “晚会邀请替换可调整自习”事务化演示场景
 - 打开应用时对最近活跃角色执行离线批结算，并使用幂等游标防止重复
@@ -54,24 +54,91 @@ pnpm dev
 
 默认会提供一个可直接体验的示例角色；设 `SEED_DEMO=false` 可关闭。
 
-## 配置真实 DeepSeek
+## 配置多供应商模型
 
-复制 `.env.example` 为本地 `.env`。`.env` 已被 Git 忽略，API Key 只由 Fastify 后端读取，不会进入浏览器、SQLite、日志或测试快照。
+复制 `.env.example` 为本地 `.env`。`.env` 已被 Git 忽略，API Key 只由 Fastify 后端读取，不会进入浏览器、SQLite、日志或测试快照。项目可以同时保存多套命名档案，并通过 `LLM_ACTIVE_PROFILE` 选择当前档案；切换后需要重启服务。
 
 ```dotenv
 LLM_PROVIDER=openai-compatible
-OPENAI_COMPATIBLE_BASE_URL=https://api.deepseek.com
-OPENAI_COMPATIBLE_MODEL=deepseek-v4-flash
-OPENAI_COMPATIBLE_API_KEY=在本机填写新密钥
+LLM_ACTIVE_PROFILE=claude
+
+LLM_PROFILE_CLAUDE_BASE_URL=https://sub.wanzhao.top/v1
+LLM_PROFILE_CLAUDE_MODEL=claude-sonnet-5
+LLM_PROFILE_CLAUDE_API_KEY=在本机填写晚照云签发的密钥
+LLM_PROFILE_CLAUDE_STRUCTURED_OUTPUT_MODE=prompt_json
+LLM_PROFILE_CLAUDE_REASONING_EFFORT=medium
+LLM_PROFILE_CLAUDE_REASONING_FORMAT=anthropic_output_config
+LLM_PROFILE_CLAUDE_SUPPORTS_THINKING_CONTROL=false
+
+LLM_PROFILE_GROK_BASE_URL=https://sub.wanzhao.top/v1
+LLM_PROFILE_GROK_MODEL=grok-4.6
+LLM_PROFILE_GROK_API_KEY=在本机填写独立的晚照云 Grok 密钥
+LLM_PROFILE_GROK_REASONING_EFFORT=medium
+LLM_PROFILE_GROK_REASONING_FORMAT=openai_reasoning_effort
+
+LLM_PROFILE_GEMINI_BASE_URL=https://sub.wanzhao.top/v1
+LLM_PROFILE_GEMINI_MODEL=gemini-3.7-flash
+LLM_PROFILE_GEMINI_API_KEY=在本机填写独立的晚照云 Gemini 密钥
+LLM_PROFILE_GEMINI_REASONING_EFFORT=medium
+LLM_PROFILE_GEMINI_REASONING_FORMAT=openai_reasoning_effort
+
+LLM_PROFILE_GPT56_SOL_BASE_URL=https://sub.wanzhao.top/v1
+LLM_PROFILE_GPT56_SOL_MODEL=gpt-5.6-sol
+LLM_PROFILE_GPT56_SOL_API_KEY=在本机填写独立的晚照云 GPT 密钥
+LLM_PROFILE_GPT56_SOL_REASONING_EFFORT=medium
+LLM_PROFILE_GPT56_SOL_REASONING_FORMAT=openai_reasoning_effort
+
+LLM_PROFILE_BIGMODEL_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+LLM_PROFILE_BIGMODEL_MODEL=glm-5.3-flash
+LLM_PROFILE_BIGMODEL_API_KEY=在本机填写智谱密钥
+LLM_PROFILE_BIGMODEL_STRUCTURED_OUTPUT_MODE=json_object
+LLM_PROFILE_BIGMODEL_REASONING_EFFORT=max
+LLM_PROFILE_BIGMODEL_REASONING_FORMAT=openai_reasoning_effort_with_thinking
+LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL=false
 ```
 
-然后重启 `pnpm dev`。真实连通性测试是显式付费命令，会验证一次结构化连通响应和一次中文角色对话回合；普通测试不会调用网络：
+将 `LLM_ACTIVE_PROFILE` 设为 `claude`、`grok`、`gemini`、`gpt56-sol` 或 `bigmodel` 即可切换；档案名会规范化为小写，连字符映射为环境变量中的下划线。例如 `gpt56-sol` 会读取 `LLM_PROFILE_GPT56_SOL_*`。未设置 `LLM_ACTIVE_PROFILE` 时，原有 `OPENAI_COMPATIBLE_*` 配置仍然有效。
+
+真实连通性测试是显式付费命令，会验证一次中文角色对话回合及结构化落库；普通测试不会调用网络：
 
 ```bash
-pnpm test:llm:smoke
+pnpm test:llm:smoke:claude
+pnpm test:llm:smoke:grok
+pnpm test:llm:smoke:gemini
+pnpm test:llm:smoke:gpt56-sol
+pnpm test:llm:smoke:bigmodel
 ```
 
-Provider 使用 Chat Completions、禁用思考输出、请求 `json_object`，再以 Zod 验证业务结构；模型永远不能直接写数据库。参考 DeepSeek 官方 [Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion) 与 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 文档。
+每次 LLM 调用会同时记录通用 Provider、当前档案、模型、思考深度和请求格式，方便按档案隔离长程结果。Claude 档案使用 Prompt JSON，因为 [Anthropic 的 OpenAI SDK 兼容层](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk)会忽略 `response_format`；智谱档案按其 [OpenAI SDK 兼容接口](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)使用 `json_object`。模型输出仍需通过 Zod 与领域规则，不能直接写数据库。晚照云是第三方网关，请只填写它签发的密钥，不要复用官方 Anthropic 密钥；首次测试后还应依据[晚照云文档](https://sub.wanzhao.top/docs/?v=20260714-new)在控制台核对实际路由的上游模型。
+
+另外三套晚照云档案固定使用 [`grok-4.6`](https://docs.x.ai/developers/models/grok-4.6)、[`gemini-3.7-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash) 和 [`gpt-5.6-sol`](https://developers.openai.com/api/docs/models/gpt-5.6-sol)。网关会按密钥分组开放模型，因此最终可用 ID 仍以每个密钥调用 `/v1/models` 的结果为准。
+
+每套档案都通过 `LLM_PROFILE_<NAME>_REASONING_EFFORT` 独立调节思考深度。Claude Sonnet 5、Grok 4.6、Gemini 3.7 Flash 与 GPT-5.6 Sol 均设为 `medium`；[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash) 和兼容旧配置的 [DeepSeek V4 Flash](https://api-docs.deepseek.com/guides/thinking_mode/) 均设为各自最高档 `max`。`REASONING_FORMAT` 是请求适配方式：Claude 使用 `output_config.effort`，Grok/Gemini/GPT 使用 `reasoning_effort`，GLM/DeepSeek 还会显式发送 `thinking: { type: "enabled" }`；GLM-5.3-Flash 不支持关闭思考。通常只需修改 `REASONING_EFFORT`，不要改动格式字段。
+
+`SUPPORTS_THINKING_CONTROL` 仅保留给没有配置新字段的旧档案：值为 `true` 时会强制发送 `thinking: { type: "disabled" }`。一旦配置了 `REASONING_EFFORT` 和 `REASONING_FORMAT`，新的思考深度设置优先。晚照云是否完整透传 Claude 的 `output_config` 属于第三方网关行为，填入密钥后应先运行 Claude smoke test 验证。
+
+长程对比时，不要在同一个 SQLite 数据库中途切换档案。先冻结一份已发布角色的基线数据库，再为每个档案各复制一份并设置不同的 `DATABASE_PATH`；这样所有轨迹拥有相同 `CharacterSpec` 和起点，又不会互相污染历史、记忆与关系状态。
+
+## 六模型长程验证 v2
+
+仓库内置“顾澜”固定场景，用来验证 README 的四条核心承诺并比较 `deepseek`、`claude`、`grok`、`gemini`、`gpt56-sol`、`bigmodel`。每次运行包含 30 个从冻结快照启动的配对探针，以及从同一基线连续推进的 108 个共享轮次、6 个接受约会分支轮次和 6 个保持朋友分支轮次；六模型各重复三次，共 2700 个主要候选轮次。Fixture 命令会离线执行完整 150 轮，不访问真实 Provider：
+
+```bash
+pnpm test:companion:long-run:fixture
+```
+
+真实 Pilot、矩阵和模型评审均为显式付费操作，缺少 `RUN_PAID_LONGRUN=1` 时会在读取档案或构建应用前返回 `SKIPPED`。Pilot 的 30 个候选只有在 Git、场景、基线和完整 Profile 配置都与正式矩阵一致时，才会直接复用为第一次正式结果；dirty Pilot 会保留补丁哈希用于本地审计，但正式三次矩阵始终要求同一个干净 Git revision。
+
+```bash
+RUN_PAID_LONGRUN=1 pnpm test:companion:long-run:pilot -- --profiles all
+RUN_PAID_LONGRUN=1 pnpm test:companion:long-run:matrix -- --profiles all --runs 3
+RUN_PAID_LONGRUN=1 pnpm test:companion:long-run:judge -- --evidence tmp/companion-long-run-v2/<matrix-id>/runs --output-dir tmp/companion-long-run-v2/<matrix-id>/judge --seed <matrix-id>
+pnpm test:companion:long-run:report -- --summaries tmp/companion-long-run-v2/<matrix-id>/runs --judge tmp/companion-long-run-v2/<matrix-id>/judge/judge-results.json --mapping-key tmp/companion-long-run-v2/<matrix-id>/judge/model-mapping-key.private.json --human-review review.json --output-dir tmp/companion-long-run-v2/<matrix-id>/final
+```
+
+PowerShell 可先执行 `$env:RUN_PAID_LONGRUN="1"`，再运行相同的 `pnpm` 命令。`--human-review` 可省略；省略或人工抽检不足时，语义排行榜会明确标为 provisional。盲评页面、公开评审结果和私有模型映射分别写入 `blind-review.html`、`judge-results.json` 与 `model-mapping-key.private.json`。
+
+所有 SQLite、逐轮脱敏 JSONL、真实 usage/延迟/重试、Prompt 哈希、每 10 轮检查点和最终报告都写入已被 Git 忽略的 `tmp/companion-long-run-v2/<matrix-id>/`。用原 matrix id 加 `--resume` 只会从兼容且哈希匹配的检查点恢复；最终报告采用独占写入，不会覆盖旧结论。工程硬门与语义分数分开，只有工程硬门通过的 Profile 才进入能力排行。晚照云返回成功只能证明配置的模型 ID 可调用，不能单独证明实际上游模型身份。
 
 ## 状态闭环验证
 
@@ -114,6 +181,11 @@ pnpm test:state:simulation  # 状态闭环 FakeClock 模拟
 pnpm exec playwright install chromium  # 首次运行 E2E 前安装测试浏览器
 pnpm test:e2e         # Playwright 桌面与移动端流程
 pnpm test:llm:smoke   # 显式真实 Provider 测试
+pnpm test:llm:smoke:claude   # 显式测试 Claude 档案
+pnpm test:llm:smoke:grok     # 显式测试 Grok 档案
+pnpm test:llm:smoke:gemini   # 显式测试 Gemini 档案
+pnpm test:llm:smoke:gpt56-sol # 显式测试 GPT-5.6 Sol 档案
+pnpm test:llm:smoke:bigmodel # 显式测试智谱档案
 ```
 
 ## 结构

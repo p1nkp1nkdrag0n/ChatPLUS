@@ -10,6 +10,7 @@ import { ApiError } from "./domain/errors.js";
 import { registerRoutes, type RouteServices } from "./http/routes.js";
 import type { Clock } from "./runtime/clock.js";
 import type { HourlyScheduler } from "./runtime/hourly-scheduler.js";
+import type { LlmServiceObservationOptions } from "./services/llm-service.js";
 
 export type BuildAppOptions = {
   config?: ServerConfig;
@@ -18,6 +19,7 @@ export type BuildAppOptions = {
   seedDemo?: boolean;
   startScheduler?: boolean;
   logger?: boolean;
+  llmObservation?: LlmServiceObservationOptions;
 };
 
 export type PersonaSimApp = FastifyInstance & {
@@ -47,6 +49,9 @@ export async function buildApp(
     logger: app.log,
     ...(options.database === undefined ? {} : { database: options.database }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
+    ...(options.llmObservation === undefined
+      ? {}
+      : { llmObservation: options.llmObservation }),
   });
   const services = composition.routeServices;
   const { scheduler } = composition;

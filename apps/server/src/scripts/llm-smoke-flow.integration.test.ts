@@ -63,6 +63,8 @@ describe("LLM HTTP smoke flow", () => {
           structuredOutputMode: "json_object",
           supportsThinkingControl: true,
           supportsStreaming: false,
+          reasoningEffort: "low",
+          reasoningRequestFormat: "openai_reasoning_effort_with_thinking",
           maxOutputTokens: 2_048,
         },
       },
@@ -72,7 +74,10 @@ describe("LLM HTTP smoke flow", () => {
 
     expect(result).toMatchObject({
       provider: "openai-compatible",
+      profile: "legacy",
       model: "mock-deepseek",
+      reasoningEffort: "low",
+      reasoningRequestFormat: "openai_reasoning_effort_with_thinking",
       applicationLlmPurposes: ["chat_turn"],
       repairUsed: false,
     });
@@ -83,7 +88,8 @@ describe("LLM HTTP smoke flow", () => {
 
     const body = z.record(z.string(), z.unknown()).parse(requests[0]);
     expect(body["model"]).toBe("mock-deepseek");
-    expect(body["thinking"]).toEqual({ type: "disabled" });
+    expect(body["thinking"]).toEqual({ type: "enabled" });
+    expect(body["reasoning_effort"]).toBe("low");
     expect(body["response_format"]).toEqual({ type: "json_object" });
 
     const messages = z

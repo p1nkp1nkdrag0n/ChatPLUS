@@ -40,6 +40,7 @@ export const DEFAULT_MEMORY_RECALL_MINIMUM_SCORE = 0.42;
 const DEFAULT_MEMORY_RECALL_CANDIDATE_LIMIT = 200;
 const DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT = 50;
 const DEFAULT_MEMORY_RECALL_MAX_EVIDENCE = 3;
+const MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY = 20;
 
 export type AgentMemoryRecallInput = {
   sessionId?: string;
@@ -704,7 +705,13 @@ function groupEvidenceByMemory(
   const grouped = new Map<string, MemoryEvidence[]>();
   for (const item of evidence) {
     const current = grouped.get(item.memoryId) ?? [];
-    current.push(item);
+    // Preview/retrieval-run contracts intentionally cap the evidence id list.
+    // readMemoryEvidence is newest-first, so retain the most recent bounded
+    // evidence rather than letting a frequently reinforced memory make the
+    // entire chat request fail validation.
+    if (current.length < MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY) {
+      current.push(item);
+    }
     grouped.set(item.memoryId, current);
   }
   return grouped;

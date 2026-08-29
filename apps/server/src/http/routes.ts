@@ -101,6 +101,13 @@ export function registerRoutes(
     serverTimeUtc: clock.nowUtc(),
     profile: config.profile,
     llmProvider: llm.providerName,
+    llmProfile: llm.profileName,
+    ...(llm.reasoningEffort === undefined
+      ? {}
+      : { llmReasoningEffort: llm.reasoningEffort }),
+    ...(llm.reasoningRequestFormat === undefined
+      ? {}
+      : { llmReasoningRequestFormat: llm.reasoningRequestFormat }),
     clockMode: isMutableClock(clock) ? "fake" : "system",
   }));
 
@@ -414,8 +421,15 @@ export function registerRoutes(
     settings: store.getSettings(),
     runtime: {
       llmProvider: llm.providerName,
+      llmProfile: llm.profileName,
       llmModel: llm.modelName,
       llmBaseUrl: config.llm.baseUrl,
+      ...(llm.reasoningEffort === undefined
+        ? {}
+        : { llmReasoningEffort: llm.reasoningEffort }),
+      ...(llm.reasoningRequestFormat === undefined
+        ? {}
+        : { llmReasoningRequestFormat: llm.reasoningRequestFormat }),
       hasApiKey: Boolean(config.llm.apiKey),
       clockMode: isMutableClock(clock) ? "fake" : "system",
       profile: config.profile,
@@ -494,7 +508,13 @@ export function registerRoutes(
       activeSseConnections: sse.connectionCount(),
       activeActorQueues: actors.activeActors,
       tables: store.tableCounts(),
-      runtime: { llmProvider: llm.providerName, llmModel: llm.modelName },
+      runtime: {
+        llmProvider: llm.providerName,
+        llmProfile: llm.profileName,
+        llmModel: llm.modelName,
+        reasoningEffort: llm.reasoningEffort ?? "not-configured",
+        reasoningRequestFormat: llm.reasoningRequestFormat ?? "not-configured",
+      },
     }));
 
     app.get("/api/developer/events", (request) => {

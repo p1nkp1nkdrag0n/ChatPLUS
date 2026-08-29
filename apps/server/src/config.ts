@@ -3,6 +3,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   ConversationRetentionPolicySchema,
+  LlmCapabilityProfileSchema,
+  ReasoningEffortSchema,
+  ReasoningRequestFormatSchema,
   type ConversationRetentionPolicy,
   type LlmCapabilityProfile,
 } from "@personasim/contracts";
@@ -24,10 +27,188 @@ const optionalPositiveIntegerFromEnv = z.preprocess(
   (value) => (value === "" || value === undefined ? undefined : value),
   z.coerce.number().int().positive().optional(),
 );
+const optionalApiKeyFromEnv = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().min(1).optional(),
+);
 const falseByDefaultBooleanFromEnv = z
   .enum(["true", "false"])
   .default("false")
   .transform((value) => value === "true");
+
+const activeLlmProfileNameFromEnv = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") return value;
+    const normalized = value.trim().toLowerCase();
+    return normalized === "" ? undefined : normalized;
+  },
+  z
+    .string()
+    .regex(
+      /^[a-z0-9][a-z0-9_-]*$/u,
+      "LLM_ACTIVE_PROFILE must contain only letters, numbers, underscores, and hyphens, and must start with a letter or number.",
+    )
+    .optional(),
+);
+
+const structuredOutputModeFromEnv = z
+  .enum(["native_schema", "json_object", "prompt_json"])
+  .default("json_object");
+const optionalReasoningEffortFromEnv = z.preprocess(
+  (value) => (value === "" || value === undefined ? undefined : value),
+  ReasoningEffortSchema.optional(),
+);
+const optionalReasoningRequestFormatFromEnv = z.preprocess(
+  (value) => (value === "" || value === undefined ? undefined : value),
+  ReasoningRequestFormatSchema.optional(),
+);
+const timeoutMsFromEnv = z.coerce.number().int().positive().default(120_000);
+const maxRetriesFromEnv = z.coerce.number().int().min(0).max(3).default(1);
+const maxOutputTokensFromEnv = z.coerce
+  .number()
+  .int()
+  .positive()
+  .max(64_000)
+  .default(8_192);
+
+const legacyLlmEnvironmentSchema = z.object({
+  baseUrl: z.string().url().default("https://api.deepseek.com"),
+  apiKey: optionalApiKeyFromEnv,
+  model: z.string().default("deepseek-v4-flash"),
+  timeoutMs: timeoutMsFromEnv,
+  maxRetries: maxRetriesFromEnv,
+  structuredOutputMode: structuredOutputModeFromEnv,
+  reasoningEffort: optionalReasoningEffortFromEnv,
+  reasoningRequestFormat: optionalReasoningRequestFormatFromEnv,
+  supportsThinkingControl: booleanFromEnv,
+  supportsStreaming: falseByDefaultBooleanFromEnv,
+  maxContextTokens: optionalPositiveIntegerFromEnv,
+  maxOutputTokens: maxOutputTokensFromEnv,
+});
+
+const secureProfileBaseUrlFromEnv = z
+  .string()
+  .trim()
+  .url()
+  .superRefine((value, context) => {
+    if (!URL.canParse(value)) {
+      context.addIssue({
+        code: "custom",
+        message: "LLM profile BASE_URL must be a valid URL.",
+      });
+      return;
+    }
+    const parsed = new URL(value);
+    const authority = value.slice(value.indexOf("//") + 2).split(/[/?#]/u)[0];
+
+    if (parsed.protocol !== "https:") {
+      context.addIssue({
+        code: "custom",
+        message: "LLM profile BASE_URL must use HTTPS.",
+      });
+    }
+    if (
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      authority?.includes("@")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "LLM profile BASE_URL must not contain user information.",
+      });
+    }
+    if (value.includes("?")) {
+      context.addIssue({
+        code: "custom",
+        message: "LLM profile BASE_URL must not contain a query string.",
+      });
+    }
+    if (value.includes("#")) {
+      context.addIssue({
+        code: "custom",
+        message: "LLM profile BASE_URL must not contain a fragment.",
+      });
+    }
+  });
+
+const liveProfileEnvironmentSchema = z.object({
+  baseUrl: secureProfileBaseUrlFromEnv,
+  apiKey: optionalApiKeyFromEnv,
+  model: z.string().trim().min(1),
+  timeoutMs: timeoutMsFromEnv,
+  maxRetries: maxRetriesFromEnv,
+  structuredOutputMode: structuredOutputModeFromEnv,
+  reasoningEffort: optionalReasoningEffortFromEnv,
+  reasoningRequestFormat: optionalReasoningRequestFormatFromEnv,
+  supportsThinkingControl: falseByDefaultBooleanFromEnv,
+  supportsStreaming: falseByDefaultBooleanFromEnv,
+  maxContextTokens: optionalPositiveIntegerFromEnv,
+  maxOutputTokens: maxOutputTokensFromEnv,
+});
+
+type ProfileEnvironmentField =
+  | "BASE_URL"
+  | "API_KEY"
+  | "MODEL"
+  | "TIMEOUT_MS"
+  | "MAX_RETRIES"
+  | "STRUCTURED_OUTPUT_MODE"
+  | "REASONING_EFFORT"
+  | "REASONING_FORMAT"
+  | "SUPPORTS_THINKING_CONTROL"
+  | "SUPPORTS_STREAMING"
+  | "MAX_CONTEXT_TOKENS"
+  | "MAX_OUTPUT_TOKENS";
+
+function profileEnvironmentPrefix(profileName: string): string {
+  return profileName.replaceAll("-", "_").toUpperCase();
+}
+
+function readLiveProfileEnvironment(profileName: string) {
+  const prefix = `LLM_PROFILE_${profileEnvironmentPrefix(profileName)}_`;
+  const read = (field: ProfileEnvironmentField) =>
+    process.env[`${prefix}${field}`];
+
+  return liveProfileEnvironmentSchema.parse({
+    baseUrl: read("BASE_URL"),
+    apiKey: read("API_KEY"),
+    model: read("MODEL"),
+    timeoutMs: read("TIMEOUT_MS"),
+    maxRetries: read("MAX_RETRIES"),
+    structuredOutputMode: read("STRUCTURED_OUTPUT_MODE"),
+    reasoningEffort: read("REASONING_EFFORT"),
+    reasoningRequestFormat: read("REASONING_FORMAT"),
+    supportsThinkingControl: read("SUPPORTS_THINKING_CONTROL"),
+    supportsStreaming: read("SUPPORTS_STREAMING"),
+    maxContextTokens: read("MAX_CONTEXT_TOKENS"),
+    maxOutputTokens: read("MAX_OUTPUT_TOKENS"),
+  });
+}
+
+function readLegacyLlmEnvironment() {
+  return legacyLlmEnvironmentSchema.parse({
+    baseUrl: process.env.OPENAI_COMPATIBLE_BASE_URL ?? process.env.LLM_BASE_URL,
+    apiKey: process.env.OPENAI_COMPATIBLE_API_KEY ?? process.env.LLM_API_KEY,
+    model: process.env.OPENAI_COMPATIBLE_MODEL ?? process.env.LLM_MODEL,
+    timeoutMs:
+      process.env.OPENAI_COMPATIBLE_TIMEOUT_MS ?? process.env.LLM_TIMEOUT_MS,
+    maxRetries:
+      process.env.OPENAI_COMPATIBLE_MAX_RETRIES ?? process.env.LLM_MAX_RETRIES,
+    structuredOutputMode: process.env.OPENAI_COMPATIBLE_STRUCTURED_OUTPUT_MODE,
+    reasoningEffort:
+      process.env.OPENAI_COMPATIBLE_REASONING_EFFORT ??
+      process.env.LLM_REASONING_EFFORT,
+    reasoningRequestFormat:
+      process.env.OPENAI_COMPATIBLE_REASONING_FORMAT ??
+      process.env.LLM_REASONING_FORMAT,
+    supportsThinkingControl:
+      process.env.OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL,
+    supportsStreaming: process.env.OPENAI_COMPATIBLE_SUPPORTS_STREAMING,
+    maxContextTokens: process.env.OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS,
+    maxOutputTokens: process.env.OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
+  });
+}
 
 const envSchema = z.object({
   NODE_ENV: z
@@ -41,35 +222,7 @@ const envSchema = z.object({
   CLOCK_MODE: z.enum(["system", "fake"]).default("system"),
   FAKE_CLOCK_START: z.iso.datetime().default("2026-08-16T10:00:00.000Z"),
   LLM_PROVIDER: z.enum(["fixture", "openai-compatible"]).default("fixture"),
-  OPENAI_COMPATIBLE_BASE_URL: z
-    .string()
-    .url()
-    .default("https://api.deepseek.com"),
-  OPENAI_COMPATIBLE_API_KEY: z.string().optional(),
-  OPENAI_COMPATIBLE_MODEL: z.string().default("deepseek-v4-flash"),
-  OPENAI_COMPATIBLE_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(120_000),
-  OPENAI_COMPATIBLE_MAX_RETRIES: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(3)
-    .default(1),
-  OPENAI_COMPATIBLE_STRUCTURED_OUTPUT_MODE: z
-    .enum(["native_schema", "json_object", "prompt_json"])
-    .default("json_object"),
-  OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL: booleanFromEnv,
-  OPENAI_COMPATIBLE_SUPPORTS_STREAMING: falseByDefaultBooleanFromEnv,
-  OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS: optionalPositiveIntegerFromEnv,
-  OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(64_000)
-    .default(8_192),
+  LLM_ACTIVE_PROFILE: activeLlmProfileNameFromEnv,
   CONVERSATION_FULL_VERBATIM_HOURS: z.coerce
     .number()
     .int()
@@ -122,6 +275,7 @@ export type ServerConfig = {
   fakeClockStart: string;
   llm: {
     provider: "fixture" | "openai-compatible";
+    profileName?: string;
     baseUrl: string;
     apiKey?: string;
     model: string;
@@ -145,19 +299,19 @@ export type ServerConfig = {
 export function readConfig(
   overrides: Partial<ServerConfig> = {},
 ): ServerConfig {
-  const env = envSchema.parse({
-    ...process.env,
-    OPENAI_COMPATIBLE_BASE_URL:
-      process.env.OPENAI_COMPATIBLE_BASE_URL ?? process.env.LLM_BASE_URL,
-    OPENAI_COMPATIBLE_API_KEY:
-      process.env.OPENAI_COMPATIBLE_API_KEY ?? process.env.LLM_API_KEY,
-    OPENAI_COMPATIBLE_MODEL:
-      process.env.OPENAI_COMPATIBLE_MODEL ?? process.env.LLM_MODEL,
-    OPENAI_COMPATIBLE_TIMEOUT_MS:
-      process.env.OPENAI_COMPATIBLE_TIMEOUT_MS ?? process.env.LLM_TIMEOUT_MS,
-    OPENAI_COMPATIBLE_MAX_RETRIES:
-      process.env.OPENAI_COMPATIBLE_MAX_RETRIES ?? process.env.LLM_MAX_RETRIES,
-  });
+  const env = envSchema.parse(process.env);
+  if (
+    env.LLM_ACTIVE_PROFILE !== undefined &&
+    env.LLM_PROVIDER !== "openai-compatible"
+  ) {
+    throw new TypeError(
+      "LLM_ACTIVE_PROFILE requires LLM_PROVIDER=openai-compatible.",
+    );
+  }
+  const llmEnvironment =
+    env.LLM_ACTIVE_PROFILE === undefined
+      ? readLegacyLlmEnvironment()
+      : readLiveProfileEnvironment(env.LLM_ACTIVE_PROFILE);
 
   const base: ServerConfig = {
     nodeEnv: env.NODE_ENV,
@@ -170,26 +324,34 @@ export function readConfig(
     fakeClockStart: env.FAKE_CLOCK_START,
     llm: {
       provider: env.LLM_PROVIDER,
-      baseUrl: env.OPENAI_COMPATIBLE_BASE_URL.replace(/\/$/, ""),
-      ...(env.OPENAI_COMPATIBLE_API_KEY
-        ? { apiKey: env.OPENAI_COMPATIBLE_API_KEY }
-        : {}),
-      model: env.OPENAI_COMPATIBLE_MODEL,
-      timeoutMs: env.OPENAI_COMPATIBLE_TIMEOUT_MS,
-      maxRetries: env.OPENAI_COMPATIBLE_MAX_RETRIES,
-      maxOutputTokens: env.OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
-      capabilities: {
-        structuredOutputMode: env.OPENAI_COMPATIBLE_STRUCTURED_OUTPUT_MODE,
-        supportsThinkingControl:
-          env.OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL,
-        supportsStreaming: env.OPENAI_COMPATIBLE_SUPPORTS_STREAMING,
-        ...(env.OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS === undefined
+      ...(env.LLM_ACTIVE_PROFILE === undefined
+        ? {}
+        : { profileName: env.LLM_ACTIVE_PROFILE }),
+      baseUrl: llmEnvironment.baseUrl.replace(/\/$/, ""),
+      ...(llmEnvironment.apiKey ? { apiKey: llmEnvironment.apiKey } : {}),
+      model: llmEnvironment.model,
+      timeoutMs: llmEnvironment.timeoutMs,
+      maxRetries: llmEnvironment.maxRetries,
+      maxOutputTokens: llmEnvironment.maxOutputTokens,
+      capabilities: LlmCapabilityProfileSchema.parse({
+        structuredOutputMode: llmEnvironment.structuredOutputMode,
+        supportsThinkingControl: llmEnvironment.supportsThinkingControl,
+        supportsStreaming: llmEnvironment.supportsStreaming,
+        ...(llmEnvironment.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: llmEnvironment.reasoningEffort }),
+        ...(llmEnvironment.reasoningRequestFormat === undefined
           ? {}
           : {
-              maxContextTokens: env.OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS,
+              reasoningRequestFormat: llmEnvironment.reasoningRequestFormat,
             }),
-        maxOutputTokens: env.OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
-      },
+        ...(llmEnvironment.maxContextTokens === undefined
+          ? {}
+          : {
+              maxContextTokens: llmEnvironment.maxContextTokens,
+            }),
+        maxOutputTokens: llmEnvironment.maxOutputTokens,
+      }),
     },
     conversationRetention: {
       fullVerbatimHours: env.CONVERSATION_FULL_VERBATIM_HOURS,

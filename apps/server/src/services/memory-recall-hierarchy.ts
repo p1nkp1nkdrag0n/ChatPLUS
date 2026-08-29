@@ -46,6 +46,7 @@ import {
 const DEFAULT_MINIMUM_SCORE = 0.42;
 const DEFAULT_CANDIDATE_LIMIT = 200;
 const DEFAULT_MAX_EVIDENCE = 3;
+const MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY = 20;
 
 type HierarchyTier =
   "event_card" | "verbatim_quote" | "date_digest" | "basic_memory";
@@ -1120,7 +1121,9 @@ function groupEvidenceByMemory(
   const grouped = new Map<string, MemoryEvidence[]>();
   for (const item of evidence) {
     const current = grouped.get(item.memoryId) ?? [];
-    current.push(item);
+    if (current.length < MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY) {
+      current.push(item);
+    }
     grouped.set(item.memoryId, current);
   }
   return grouped;

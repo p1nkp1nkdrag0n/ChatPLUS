@@ -35,10 +35,188 @@ import {
   resolveLongRunV3ArtifactPaths,
   type LongRunV3RunManifest,
 } from "./companion-long-run-v3-artifacts.js";
+import {
+  combinePlannedNotOccurredEvidence,
+  plannedOccurrenceResponseValid,
+} from "./companion-long-run-v3-runtime.js";
 
 const execFileAsync = promisify(execFile);
 const cleanup: string[] = [];
 const FAKE_API_KEY = "test-only-deepseek-key-never-send";
+
+describe("companion long-run v3 plan/occurrence response evidence", () => {
+  it("accepts natural plan separation without requiring one narrow negation phrase", () => {
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "你现在只是打算整理笔记，我不会说成已经开始了。计划归计划，做了才算数。",
+      ),
+    ).toBe(true);
+    expect(
+      plannedOccurrenceResponseValid(
+        104,
+        "不是同一件事：计划不等于完成，目前没有完成证据。",
+      ),
+    ).toBe(true);
+    expect(
+      plannedOccurrenceResponseValid(23, "这是一个计划，尚未实际整理。"),
+    ).toBe(true);
+    expect(
+      plannedOccurrenceResponseValid(
+        104,
+        "目前是打算，不能算作已经完成，真正做了才算。",
+      ),
+    ).toBe(true);
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "我会分清：现在只是想找时间做，尚未动手。",
+      ),
+    ).toBe(true);
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "收到，我会记作待办，而不是已经完成的事项。",
+      ),
+    ).toBe(true);
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "计划归计划，等真正开始整理后，我再把状态更新成进行中。",
+      ),
+    ).toBe(true);
+    expect(
+      plannedOccurrenceResponseValid(
+        104,
+        "不是同一件事：有证据的只有你曾计划整理；没有证据证明你已经整理完。",
+      ),
+    ).toBe(true);
+    for (const response of [
+      "没有证据表明你已经整理完成了。",
+      "现在不能说你已经整理完成了。",
+      "这个计划不意味着你已经整理完成了。",
+      "我没有说你已经整理完成了。",
+      "还不能确认笔记已经整理完了。",
+      "不能说你已经整理了。",
+      "我不认为你已经整理了。",
+      "并不说明你已经整理了。",
+      "没法确认你已经整理了。",
+      "没有证据表明你已经整理笔记了。",
+      "你现在并没有在整理。",
+      "你尚未着手整理。",
+    ]) {
+      expect(plannedOccurrenceResponseValid(104, response)).toBe(true);
+    }
+  });
+
+  it("rejects a completed claim and does not treat the character in 未来 as negation", () => {
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "你打算整理，而且笔记已经整理完成了。",
+      ),
+    ).toBe(false);
+    expect(
+      plannedOccurrenceResponseValid(104, "这是未来的计划，不过你已经做完了。"),
+    ).toBe(false);
+    expect(
+      plannedOccurrenceResponseValid(23, "这只是打算，但你已经整理完了。"),
+    ).toBe(false);
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "这只是打算，但笔记确实已经整理完成了。",
+      ),
+    ).toBe(false);
+    expect(
+      plannedOccurrenceResponseValid(23, "计划不等于行动但你已经整理完成了。"),
+    ).toBe(false);
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "这是计划，没有疑问你已经整理完成了。",
+      ),
+    ).toBe(false);
+    expect(
+      plannedOccurrenceResponseValid(
+        23,
+        "这原本是计划，但不是还没整理而是你已经整理完成了。",
+      ),
+    ).toBe(false);
+    for (const response of [
+      "你已经整理了。",
+      "你已经整理笔记了。",
+      "笔记已经整理了。",
+      "你确实整理了。",
+      "你已经在整理了。",
+      "你现在正在整理笔记。",
+      "你已经着手整理了。",
+      "你动手整理了。",
+      "采访笔记已经整理妥当。",
+      "你整理过了。",
+      "你现在正整理笔记。",
+    ]) {
+      expect(plannedOccurrenceResponseValid(23, response)).toBe(false);
+    }
+  });
+
+  it("keeps response and durability failures independently visible", () => {
+    expect(
+      combinePlannedNotOccurredEvidence(true, {
+        passed: true,
+        issues: [],
+      }),
+    ).toEqual({
+      passed: true,
+      actual: {
+        response: { passed: true },
+        durability: { passed: true, issues: [] },
+      },
+    });
+    expect(
+      combinePlannedNotOccurredEvidence(false, {
+        passed: true,
+        issues: [],
+      }),
+    ).toEqual({
+      passed: false,
+      actual: {
+        response: { passed: false },
+        durability: { passed: true, issues: [] },
+      },
+    });
+    expect(
+      combinePlannedNotOccurredEvidence(true, {
+        passed: false,
+        issues: ["added_occurred_outcome:outcome-1"],
+      }),
+    ).toEqual({
+      passed: false,
+      actual: {
+        response: { passed: true },
+        durability: {
+          passed: false,
+          issues: ["added_occurred_outcome:outcome-1"],
+        },
+      },
+    });
+    expect(
+      combinePlannedNotOccurredEvidence(false, {
+        passed: false,
+        issues: ["added_occurred_action:action-1"],
+      }),
+    ).toEqual({
+      passed: false,
+      actual: {
+        response: { passed: false },
+        durability: {
+          passed: false,
+          issues: ["added_occurred_action:action-1"],
+        },
+      },
+    });
+  });
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -522,6 +700,35 @@ describe("companion long-run v3 runner pure helpers", () => {
 });
 
 describe("companion long-run v3 checkpoint resume", () => {
+  it("persists both response and durability evidence for the natural T23 plan distinction", async () => {
+    const root = process.cwd();
+    const runId = `fixture-plan-evidence-${randomUUID()}`;
+    const runDirectory = join(root, "tmp", "companion-long-run-v3", runId);
+    cleanup.push(runDirectory);
+
+    await runCompanionLongRunV3({
+      workspaceRoot: root,
+      profile: "fixture",
+      runId,
+      stopAfterCandidate: 23,
+    });
+    const paths = resolveLongRunV3ArtifactPaths(runDirectory);
+    const turns = await readLongRunV3Evidence(paths.turnEvidence);
+    const turn = turns.find((evidence) => evidence.turnId === "shared-023");
+    const assertion = turn?.assertions.find(
+      (candidate) => candidate.code === "planned_not_occurred",
+    );
+
+    expect(turn?.status).toBe("PASS");
+    expect(assertion).toMatchObject({
+      status: "PASS",
+      actual: {
+        response: { passed: true },
+        durability: { passed: true, issues: [] },
+      },
+    });
+  }, 60_000);
+
   it("restores checkpoint-000 before retrying a turn whose artifact write set was incomplete", async () => {
     const root = process.cwd();
     const runId = `fixture-resume-${randomUUID()}`;

@@ -50,6 +50,7 @@ import {
   validateCompanionLongRunV3SupportMode,
   type CompanionLongRunV3CausalRecapStage,
   type CompanionLongRunV3CharacterCausalStage,
+  type CompanionLongRunV3FailClosedValidation,
   type CompanionLongRunV3HardGateResult,
   type CompanionLongRunV3MemoryRecallExpectation,
   type CompanionLongRunV3Snapshot,
@@ -2437,14 +2438,19 @@ function evaluateDeclaredTurnAssertions(
           evidenceMessageId:
             parsed?.userMessage.id ?? "__missing_user_message__",
         });
+        const responsePassed = plannedOccurrenceResponseValid(
+          input.turn.candidateNumber,
+          input.assistantMessage,
+        );
+        const combined = combinePlannedNotOccurredEvidence(
+          responsePassed,
+          durable,
+        );
         return result(
           code,
-          plannedOccurrenceResponseValid(
-            input.turn.candidateNumber,
-            input.assistantMessage,
-          ) && durable.passed,
+          combined.passed,
           "Neither the response nor durable memory/action/outcome tables turn a plan or unknown state into an occurred event.",
-          durable,
+          combined.actual,
         );
       }
       case "restart_preserves_state": {
@@ -3061,17 +3067,97 @@ function abstentionResponseValid(candidate: number, text: string): boolean {
   return text.trim().length > 0;
 }
 
-function plannedOccurrenceResponseValid(
+export function plannedOccurrenceResponseValid(
   candidate: number,
   text: string,
 ): boolean {
   if ([23, 104].includes(candidate)) {
-    return /计划|打算/u.test(text) && /还没|没有|不等于|未/u.test(text);
+    return (
+      text.trim().length > 0 && !hasAffirmativePlannedOccurrenceClaim(text)
+    );
   }
   if ([49, 52, 54, 56, 58, 59, 77, 83].includes(candidate)) {
     return !/你已经(?:完成|得到最终|成功|确定发生)/u.test(text);
   }
   return !/我们已经一起(?:吃饭|见面|看展)/u.test(text);
+}
+
+function hasAffirmativePlannedOccurrenceClaim(text: string): boolean {
+  const patterns = [
+    /(?:你|采访笔记|笔记)[^，,。；;！!？?\n]{0,12}(?:已经|确实|实际(?:上)?|真的)[^，,。；;！!？?\n]{0,8}(?:(?:正在|正|在|着手|动手|开始)?整理(?:采访笔记|笔记)?(?:完(?:成)?|好|完成|妥当)?(?:了|中|过(?:了)?)?|完成|做完|开始整理|归档)/gu,
+    /(?:已经|确实|实际(?:上)?|真的)[^，,。；;！!？?\n]{0,8}(?:(?:正在|正|在|着手|动手|开始)?整理(?:采访笔记|笔记)?(?:完(?:成)?|好|完成|妥当)?(?:了|中|过(?:了)?)?|完成|做完|开始整理|归档)/gu,
+    /(?:你|采访笔记|笔记)[^，,。；;！!？?\n]{0,8}(?:(?:正在|正|在|着手|动手|开始)整理(?:采访笔记|笔记)?(?:了|中)?|整理(?:采访笔记|笔记)?(?:完(?:成)?|好|完成|妥当|了|过(?:了)?)|完成了|做完了|归档了)/gu,
+  ] as const;
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      if (!locallyNegatedOccurrenceClaim(text, match)) return true;
+    }
+  }
+  return false;
+}
+
+function locallyNegatedOccurrenceClaim(
+  text: string,
+  match: RegExpMatchArray,
+): boolean {
+  const index = match.index ?? 0;
+  const claim = match[0];
+  if (
+    /(?:计划|打算|准备|想要|考虑)[^，,。；;！!？?\n]{0,8}(?:整理|归档)/u.test(
+      claim,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /(?:还没有|并没有|尚未|并未|未曾|不曾|并非|不是).{0,10}(?:已经|确实|实际(?:上)?|真的)?.{0,8}(?:整理|完成|做完|开始|着手|动手|归档)/u.test(
+      claim,
+    )
+  ) {
+    return true;
+  }
+
+  const prefix = text.slice(Math.max(0, index - 24), index);
+  const localPrefix =
+    prefix.split(/[，,。；;！!？?\n]|但是|不过|然而|而是|但/u).at(-1) ?? "";
+  if (
+    /(?:不|并不|没(?:有)?|没法|无(?:法)?)(?:能|会|该|应|可以)?(?:说|确认|断定|认定|证明|表明|说明|支持|意味着|代表|声称|认为|说成|当成|算作)[\s“"'‘’]*(?:你|采访笔记|笔记)?$/u.test(
+      localPrefix,
+    ) ||
+    /(?:没有|缺乏)[^，,。；;！!？?\n]{0,10}(?:证据|信息)[^，,。；;！!？?\n]{0,8}(?:证明|表明|说明|支持|确认)?[\s“"'‘’]*(?:你|采访笔记|笔记)?$/u.test(
+      localPrefix,
+    ) ||
+    /(?:不等于|并非|不是|不代表|不意味着|未必是)[\s“"'‘’]*(?:你|采访笔记|笔记)?$/u.test(
+      localPrefix,
+    ) ||
+    /(?:还没(?:有)?|没有|尚未|并未|未曾|不曾)[\s“"'‘’]*$/u.test(localPrefix)
+  ) {
+    return true;
+  }
+
+  const suffix = text.slice(index + claim.length, index + claim.length + 18);
+  return /^[\s”"'’]*(?:的说法)?(?:并不|不)(?:成立|准确|属实|是真的|是事实)/u.test(
+    suffix,
+  );
+}
+
+export function combinePlannedNotOccurredEvidence(
+  responsePassed: boolean,
+  durability: CompanionLongRunV3FailClosedValidation,
+): {
+  passed: boolean;
+  actual: {
+    response: { passed: boolean };
+    durability: CompanionLongRunV3FailClosedValidation;
+  };
+} {
+  return {
+    passed: responsePassed && durability.passed,
+    actual: {
+      response: { passed: responsePassed },
+      durability,
+    },
+  };
 }
 
 function proactiveRowsGrounded(messages: readonly unknown[]): boolean {

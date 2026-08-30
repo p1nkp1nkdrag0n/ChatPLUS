@@ -16,7 +16,7 @@ flowchart LR
   I --> J["Decision / state / relationship projections"]
   J --> D
   J --> K["Action, outcome and reflection progression"]
-  K --> L["Memory and proactive candidate"]
+  K --> L["Memory and life-thread evidence"]
   L --> D
 ```
 
@@ -99,13 +99,17 @@ SSE is a notification channel, not the source of truth. Events tell the browser 
 
 ## Profiles
 
-| Capability                                  | lightweight | daily | high_fidelity |
-| ------------------------------------------- | ----------- | ----- | ------------- |
-| Structured persona and chat                 | yes         | yes   | yes           |
-| Fuzzy today/recently context                | no          | yes   | yes           |
-| Life threads and coarse offline progression | no          | yes   | yes           |
-| Dynamic state and memory                    | minimal     | yes   | yes           |
-| Dilemma/decision/outcome causality          | no          | yes   | yes           |
-| Proactive reflection                        | no          | no    | yes           |
+| Capability                                  | lightweight | daily    | high_fidelity |
+| ------------------------------------------- | ----------- | -------- | ------------- |
+| Structured persona and chat                 | yes         | yes      | yes           |
+| Fuzzy today/recently context                | no          | yes      | yes           |
+| Life threads and coarse offline progression | no          | yes      | yes           |
+| Dynamic state and memory                    | minimal     | yes      | yes           |
+| Dilemma/decision/outcome causality          | no          | yes      | yes           |
+| Proactive messages                          | disabled    | disabled | disabled      |
+
+Proactive-message contracts and persistence remain readable for compatibility,
+but runtime delivery is paused across every profile until its stale-subject and
+lifecycle defects are resolved.
 
 The previous rolling 72-hour planner, exact schedule negotiation and schedule rail are historical implementation paths and no longer define the product contract. See [ADR 0006](adr/0006-fuzzy-life-and-decision-causality.md).

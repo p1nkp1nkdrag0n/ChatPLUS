@@ -21,7 +21,7 @@ import {
 } from "./companion-long-run-v3-manifest.js";
 
 const EXPECTED_SHA256 =
-  "8785096ebdfc1d0d9bbeeb2e5156b10345d9853e6c67fde23a70d2c6ea2366a3";
+  "9758d157a0fb69aae31e6f52781168716cd42982bdff59c65a907bec99ff31ef";
 
 describe("companion long-run v3 manifest", () => {
   it("freezes the approved DeepSeek fuzzy-life baseline", () => {
@@ -302,6 +302,18 @@ describe("companion long-run v3 manifest", () => {
     );
     expect(getLongRunV3Turn(108).hardAssertions).not.toContain(
       "branch_anchor_preserved",
+    );
+  });
+
+  it("keeps proactive delivery disabled throughout the candidate path", () => {
+    for (const turn of allLongRunV3CandidateTurns()) {
+      expect(turn.hardAssertions).toContain("proactive_messages_disabled");
+    }
+    expect(getLongRunV3Turn(84).hardAssertions).not.toContain(
+      "proactive_policy_respected",
+    );
+    expect(getLongRunV3Turn(84).hardAssertions).not.toContain(
+      "proactive_source_linked",
     );
   });
 

@@ -197,6 +197,7 @@ export function buildGuLanV3CharacterSpec(): CharacterSpec {
   draft.schedulePolicy = { ...draft.schedulePolicy, enabled: false };
   draft.proactivePolicy = {
     ...draft.proactivePolicy,
+    enabled: false,
     maxMessagesPerDay: 2,
     quietHours: { startLocal: "23:00", endLocal: "08:00" },
     minimumCloseness: 0.35,

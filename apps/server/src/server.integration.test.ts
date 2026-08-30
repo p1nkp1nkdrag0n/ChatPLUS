@@ -752,7 +752,7 @@ describe("PersonaSim server integration", () => {
     );
   });
 
-  it("creates and sends at most one due proactive message for a high-fidelity shareable activity", async () => {
+  it("keeps proactive messages disabled for high-fidelity characters", async () => {
     const created = await createTestApp();
     app = created.app;
     const character = await createAndPublish(app, "high_fidelity");
@@ -788,6 +788,7 @@ describe("PersonaSim server integration", () => {
       updatedAtUtc: nowUtc,
     });
     app.personasim.store.insertScheduleItem(shareable);
+    await createSession(app, character.id);
     created.clock.setUtc("2026-08-16T07:30:00.000Z");
 
     const activation = await app.inject({
@@ -795,15 +796,34 @@ describe("PersonaSim server integration", () => {
       url: `/api/agents/${character.id}/activate`,
     });
     expect(activation.statusCode).toBe(200);
-    expect(
-      jsonBody<ActivationBody>(activation).proactiveMessage?.messageKind,
-    ).toBe("assistant_proactive");
-    const sent = app.personasim.store.database
+    const activationBody = jsonBody<ActivationBody>(activation);
+    expect(activationBody.capabilities?.proactiveDialogue).toBe(false);
+    expect(activationBody.proactiveMessage).toBeUndefined();
+    const candidates = app.personasim.store.database
       .prepare(
-        "SELECT COUNT(*) AS count FROM proactive_candidates WHERE agent_id = ? AND status = 'sent'",
+        "SELECT COUNT(*) AS count FROM proactive_candidates WHERE agent_id = ?",
       )
       .get(character.id) as { count: number };
-    expect(sent.count).toBe(1);
+    expect(candidates.count).toBe(0);
+    const proactiveMessages = app.personasim.store.database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM messages WHERE agent_id = ? AND message_kind = 'assistant_proactive'",
+      )
+      .get(character.id) as { count: number };
+    expect(proactiveMessages.count).toBe(0);
+    const proactiveCalls = app.personasim.store.database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM llm_calls WHERE agent_id = ? AND purpose = 'compose_proactive_message'",
+      )
+      .get(character.id) as { count: number };
+    expect(proactiveCalls.count).toBe(0);
+
+    await expect(
+      app.personasim.proactiveDelivery.deliverNext(character.id),
+    ).resolves.toEqual({
+      status: "not_claimed",
+      reasonCode: "tier_not_supported",
+    });
 
     const repeated = await app.inject({
       method: "POST",
@@ -1409,7 +1429,10 @@ async function createAndPublish(
 type ActivationBody = {
   settlement: { alreadySettled: boolean };
   proactiveMessage?: { messageKind: string };
-  capabilities?: { offlineSettlement: boolean };
+  capabilities?: {
+    offlineSettlement: boolean;
+    proactiveDialogue: boolean;
+  };
 };
 
 function jsonBody<T>(response: { body: string }): T {

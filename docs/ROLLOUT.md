@@ -2,7 +2,7 @@
 
 > README 与 [ADR 0006](adr/0006-fuzzy-life-and-decision-causality.md) 定义当前产品方向。精确日程相关 flag 只服务于历史数据兼容和回归对照，不再具有产品晋级含义。
 
-## 当前状态总览（2026-08-30）
+## 当前状态总览（2026-08-31）
 
 | Flag                        | 取值                       | 默认       | 阶段                                | 说明                                                                                        |
 | --------------------------- | -------------------------- | ---------- | ----------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -12,7 +12,11 @@
 | `LIVE_WORLD_EFFECTS`        | off / shadow / enforced    | `enforced` | 本地核心闭环                        | 默认校验、限幅并事务化提交状态/关系 proposal；shadow/off 仅用于显式对照                     |
 | `MEMORY_RECALL_MODE`        | legacy / shadow / enforced | `legacy`   | 默认 retention 长跑通过，待 rollout | 测试验证选中的 EvidenceBundle 进入最终 Prompt trace；shadow 不改变 legacy 注入              |
 | `AUTOBIOGRAPHY_MODE`        | off / shadow / enforced    | `off`      | 默认 retention 长跑通过，待 rollout | 控制 checkpoint、autobiography 及 checkpoint-derived event cards，不控制全部 event cards    |
-| ~~`PROACTIVE_COMMIT_MODE`~~ | 已移除                     | —          | 已收敛                              | 主动消息统一走 `ProactiveGenerationService` 两阶段提交，legacy 单事务路径已删除             |
+| ~~`PROACTIVE_COMMIT_MODE`~~ | 已移除                     | —          | 实现已收敛、运行已暂停              | 保留的主动消息实现统一走 `ProactiveGenerationService` 两阶段提交，legacy 单事务路径已删除   |
+
+主动消息的产品能力当前统一为关闭：所有 tier 的 `proactiveDialogue` 都返回
+`false`，新角色的 `proactivePolicy.enabled` 默认为 `false`，前端不提供主动对话编辑入口。
+这不是可由 `.env` 绕过的 rollout 开关；底层表、历史消息类型和两阶段生成服务仅为兼容读取与后续修复保留。
 
 ## 验收证据索引
 
@@ -50,8 +54,7 @@
   checkpoint 层次时才应耦合 rollout。
 - `.env` 被忽略且属于本地状态；受版本控制的默认值来自 `.env.example`/config，
   文档不能据本地 `.env` 声称部署状态。
-- 主动消息的 quiet hours / daily cap / cooldown 在 `ProactiveDeliveryService.loadPolicy`
-  统一评估；候选来源应是有证据的结果、复盘或生活主线里程碑，而不是计划中的日常活动。
+- 主动消息恢复前，必须先修复主题归属、已解决事项仍被追问、辅助调用 token/思考预算和完整日志收集问题；恢复后的 quiet hours / daily cap / cooldown 仍由 `ProactiveDeliveryService.loadPolicy` 统一评估。
 - 记忆召回候选总池不超过 `candidateLimit`（默认 200）：
   关键词命中最多 50 条优先入池，剩余名额再由 importance 排序补齐；
   若召回质量不足，优先调池参数而不是直接上 embedding。

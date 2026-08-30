@@ -40,6 +40,7 @@ export type HardAssertion =
   | "idempotent_replay"
   | "clock_rollback_idempotent"
   | "no_background_llm_while_closed"
+  | "proactive_messages_disabled"
   | "proactive_policy_respected"
   | "proactive_source_linked"
   | "user_boundary_respected"

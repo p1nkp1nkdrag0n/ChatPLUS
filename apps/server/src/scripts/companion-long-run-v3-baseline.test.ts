@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { openDatabase } from "../db/connection.js";
+import { DatabaseStore } from "../db/store.js";
 import {
   LONG_RUN_V3_AGENT_ID,
   createCompanionLongRunV3Baseline,
@@ -31,6 +32,10 @@ describe("companion long-run v3 baseline", () => {
 
     const database = openDatabase(path);
     try {
+      expect(
+        new DatabaseStore(database).getCharacterSpec(LONG_RUN_V3_AGENT_ID)
+          ?.proactivePolicy.enabled,
+      ).toBe(false);
       expect(
         database.prepare("SELECT COUNT(*) AS count FROM schedule_items").get(),
       ).toEqual({ count: 0 });

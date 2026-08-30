@@ -80,6 +80,13 @@ export class ProactiveDeliveryService {
   }
 
   async deliverNext(agentId: string): Promise<ProactiveDeliveryOutcome> {
+    const spec = this.store.getCharacterSpec(agentId);
+    if (
+      spec === undefined ||
+      !capabilitiesForTier(spec.tier).proactiveDialogue
+    ) {
+      return { status: "not_claimed", reasonCode: "tier_not_supported" };
+    }
     const session = this.store.listSessions(agentId)[0];
     if (session === undefined) {
       return { status: "not_claimed", reasonCode: "no_session" };

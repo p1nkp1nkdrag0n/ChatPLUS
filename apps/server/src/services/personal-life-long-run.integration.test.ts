@@ -211,6 +211,9 @@ describe("P0 personal-life long-run acceptance", () => {
         messageKind: string;
         triggerEventId?: string;
       };
+      capabilities?: {
+        proactiveDialogue: boolean;
+      };
     }>(activation);
     expect(activationBody.settlement).toMatchObject({
       fromUtc: START_UTC,
@@ -236,10 +239,8 @@ describe("P0 personal-life long-run acceptance", () => {
       throw new Error("Missing the completed self-initiated activity.");
     }
     expect(completed?.stateDelta.energy).toBe(selfPlan.stateEffects.energy);
-    expect(activationBody.proactiveMessage).toMatchObject({
-      messageKind: "assistant_proactive",
-      triggerEventId: completed?.id,
-    });
+    expect(activationBody.capabilities?.proactiveDialogue).toBe(false);
+    expect(activationBody.proactiveMessage).toBeUndefined();
     expect(
       restarted.personasim.store.getRuntimeState(character.id)
         ?.sleepDebtMinutes,
@@ -386,16 +387,21 @@ describe("P0 personal-life long-run acceptance", () => {
       correlationId: selfPlan.correlationId,
       causationId: selfPlan.causationId,
     });
-    expect(timeline.domainEvents.map((event) => event["eventType"])).toEqual(
+    const domainEventTypes = timeline.domainEvents.map(
+      (event) => event["eventType"],
+    );
+    expect(domainEventTypes).toEqual(
       expect.arrayContaining([
         "conversation.turn_committed",
         "personal_intent.created",
         "personal_intent.consumed",
         "self_plan.committed",
         "simulation.settled",
-        "proactive.claimed",
-        "conversation.proactive_message_sent",
       ]),
+    );
+    expect(domainEventTypes).not.toContain("proactive.claimed");
+    expect(domainEventTypes).not.toContain(
+      "conversation.proactive_message_sent",
     );
 
     const firstRebuild = restarted.personasim.continuityIndex.rebuildAgent(
@@ -475,9 +481,17 @@ describe("P0 personal-life long-run acceptance", () => {
     expect(countsAfterSettlement).toMatchObject({
       personalIntents: 3,
       selfInitiatedScheduleItems: 3,
-      proactiveCandidates: 1,
-      proactiveMessages: 1,
+      proactiveCandidates: 0,
+      proactiveMessages: 0,
     });
+    expect(
+      countWhere(
+        restarted.personasim.store.database,
+        "llm_calls",
+        "agent_id = ? AND purpose = 'compose_proactive_message'",
+        character.id,
+      ),
+    ).toBe(0);
     expect(countsAfterSettlement.activityEvents).toBeGreaterThan(0);
     expect(countsAfterSettlement.eventCards).toBeGreaterThan(0);
     expect(countsAfterSettlement.memories).toBeGreaterThan(0);
@@ -767,7 +781,8 @@ function stabilizeCompletedBranch(
 
   // Settlement intentionally models imperfect adherence. Before the item has
   // any dependent events, re-key this test fixture to a deterministic completed
-  // branch so the acceptance assertions exercise memory and proactive delivery.
+  // branch so the acceptance assertions exercise occurred-memory continuity
+  // while proactive delivery remains product-disabled.
   store.transaction(() => {
     store.database
       .prepare("DELETE FROM schedule_items WHERE id = ?")

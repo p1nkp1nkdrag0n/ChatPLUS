@@ -45,7 +45,10 @@ const CAPABILITIES: Record<SimulationTier, SimulationCapabilities> = {
     longTermMemory: true,
     relationshipDynamics: true,
     relationshipDeltaScale: 1,
-    proactiveDialogue: true,
+    // Temporarily disabled product-wide. Keep the dormant contracts and
+    // persistence path readable until the stale-subject/lifecycle issue is
+    // fixed and the feature is explicitly re-enabled.
+    proactiveDialogue: false,
     personaGuard: true,
     activityEnrichment: true,
     memoryCandidatesPerTurn: 8,

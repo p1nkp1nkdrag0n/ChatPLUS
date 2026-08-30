@@ -34,7 +34,6 @@ const TABS = [
   ["dialogue", "语言风格"],
   ["relationship", "关系"],
   ["knowledge", "知识与边界"],
-  ["proactive", "主动对话"],
   ["json", "高级 JSON"],
   ["versions", "版本历史"],
 ] as const;
@@ -278,19 +277,6 @@ export default function CharacterEditorPage() {
               value={spec.knowledge}
               onChange={(value) =>
                 setAtRoot("knowledge", value as CharacterSpec["knowledge"])
-              }
-            />
-          ) : null}
-          {tab === "proactive" ? (
-            <JsonSectionEditor
-              title="主动对话"
-              description="仅拟真模式启用，并受静默时间、每日上限和关系门槛约束。"
-              value={spec.proactivePolicy}
-              onChange={(value) =>
-                setAtRoot(
-                  "proactivePolicy",
-                  value as CharacterSpec["proactivePolicy"],
-                )
               }
             />
           ) : null}

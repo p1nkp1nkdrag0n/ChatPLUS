@@ -2490,6 +2490,28 @@ function evaluateDeclaredTurnAssertions(
           closeDetail,
         );
       }
+      case "proactive_messages_disabled": {
+        const messages = input.after.messages.filter(
+          (message) =>
+            asRecord(message)?.["message_kind"] === "assistant_proactive",
+        );
+        const candidates = input.after.proactiveCandidates;
+        const calls = input.after.llmCalls.filter(
+          (call) => asRecord(call)?.["purpose"] === "compose_proactive_message",
+        );
+        return result(
+          code,
+          messages.length === 0 &&
+            candidates.length === 0 &&
+            calls.length === 0,
+          "The paused proactive-message capability creates no candidate, message, or model call.",
+          {
+            candidateCount: candidates.length,
+            messageCount: messages.length,
+            modelCallCount: calls.length,
+          },
+        );
+      }
       case "schedule_capability_disabled":
       case "retired_schedule_api_returns_410": {
         const detail = asRecord(

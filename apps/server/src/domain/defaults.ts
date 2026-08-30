@@ -189,7 +189,9 @@ export function buildOriginalDraft(
       socialInvitationBias: 0.62,
     },
     proactivePolicy: {
-      enabled: input.tier === "high_fidelity",
+      // The product capability is paused. Retain the policy shape for
+      // backwards-compatible character/version reads.
+      enabled: false,
       maxMessagesPerDay: 2,
       quietHours: { startLocal: "23:00", endLocal: "08:00" },
       minimumCloseness: 0.35,

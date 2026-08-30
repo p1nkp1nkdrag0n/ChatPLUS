@@ -26,7 +26,7 @@ const NOW_UTC = "2026-08-21T04:37:00.000Z";
 const BUCKET_UTC = "2026-08-21T04:00:00.000Z";
 
 describe("HourlyScheduler personal life ordering", () => {
-  it("runs settlement and personal planning in the actor queue, then two-phase delivery", async () => {
+  it("runs settlement and personal planning in the actor queue, then invokes the delivery coordinator", async () => {
     const clock = new FakeClock(NOW_UTC);
     const sse = new SseHub();
     vi.spyOn(sse, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
@@ -134,20 +134,21 @@ describe("HourlyScheduler personal life ordering", () => {
 const DELIVERY_NOW_UTC = "2026-08-21T12:37:00.000Z";
 const DELIVERY_CANDIDATE_ID = "candidate-hourly-delivery";
 
-describe("HourlyScheduler two-phase proactive delivery", () => {
-  it("releases the outer actor for compose and emits SSE only after postflight commit", async () => {
+describe("HourlyScheduler paused proactive delivery", () => {
+  it("does not compose or emit even when a legacy pending candidate exists", async () => {
     const harness = createDeliveryHarness(false);
     try {
       const scheduler = createDeliveryScheduler(harness);
       await scheduler.tick();
 
       expect(harness.settlementActorCounts).toEqual([1]);
-      expect(harness.composeActorCounts).toEqual([0]);
+      expect(harness.composeActorCounts).toEqual([]);
       expect(harness.legacyDelivery).not.toHaveBeenCalled();
-      expect(harness.messageCreatedEvents).toHaveLength(1);
-      expect(harness.publishRunStatuses).toEqual(["committed"]);
-      expect(readLatestGenerationStatus(harness.database)).toBe("committed");
-      expect(countProactiveMessages(harness.database)).toBe(1);
+      expect(harness.messageCreatedEvents).toEqual([]);
+      expect(harness.publishRunStatuses).toEqual([]);
+      expect(readLatestGenerationStatus(harness.database)).toBeUndefined();
+      expect(readCandidateStatus(harness.database)).toBe("pending");
+      expect(countProactiveMessages(harness.database)).toBe(0);
       expect(harness.logger.error).not.toHaveBeenCalled();
     } finally {
       harness.endUserTurn();
@@ -155,19 +156,19 @@ describe("HourlyScheduler two-phase proactive delivery", () => {
     }
   });
 
-  it("does not emit SSE when a user arrival makes postflight stale", async () => {
+  it("leaves the legacy pending candidate untouched across repeated ticks", async () => {
     const harness = createDeliveryHarness(true);
     try {
       const scheduler = createDeliveryScheduler(harness);
       await scheduler.tick();
+      await scheduler.tick();
 
-      expect(harness.settlementActorCounts).toEqual([1]);
-      expect(harness.composeActorCounts).toEqual([0]);
+      expect(harness.settlementActorCounts).toEqual([1, 1]);
+      expect(harness.composeActorCounts).toEqual([]);
       expect(harness.messageCreatedEvents).toEqual([]);
       expect(harness.publishRunStatuses).toEqual([]);
-      expect(readLatestGenerationStatus(harness.database)).toBe(
-        "stale_discarded",
-      );
+      expect(readLatestGenerationStatus(harness.database)).toBeUndefined();
+      expect(readCandidateStatus(harness.database)).toBe("pending");
       expect(countProactiveMessages(harness.database)).toBe(0);
       expect(harness.logger.error).not.toHaveBeenCalled();
     } finally {
@@ -332,6 +333,13 @@ function readLatestGenerationStatus(database: Database): string | undefined {
       "SELECT status FROM proactive_generation_runs ORDER BY rowid DESC LIMIT 1",
     )
     .get() as { status: string } | undefined;
+  return row?.status;
+}
+
+function readCandidateStatus(database: Database): string | undefined {
+  const row = database
+    .prepare("SELECT status FROM proactive_candidates WHERE id = ?")
+    .get(DELIVERY_CANDIDATE_ID) as { status: string } | undefined;
   return row?.status;
 }
 

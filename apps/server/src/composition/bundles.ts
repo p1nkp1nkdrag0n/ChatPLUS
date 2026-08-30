@@ -41,7 +41,7 @@ const BUNDLES: Readonly<Record<SimulationTier, ServerSimulationBundle>> = {
       schedulePlanning: true,
       offlineSettlement: true,
       hourlySettlement: true,
-      proactiveDialogue: true,
+      proactiveDialogue: false,
     }),
   }),
 };

@@ -38,6 +38,7 @@ const BASE_HARD_ASSERTIONS = [
   "no_exact_schedule_created",
   "prompt_excludes_future_schedule",
   "prompt_includes_life_context",
+  "proactive_messages_disabled",
 ] as const satisfies readonly HardAssertion[];
 
 const T55_CONDITIONAL = {
@@ -865,8 +866,6 @@ function hardAssertionsForSharedTurn(number: number): readonly HardAssertion[] {
   if ([61, 96].includes(number)) extras.push("idempotent_replay");
   if (number === 100) extras.push("clock_rollback_idempotent");
   if (number === 81) extras.push("no_background_llm_while_closed");
-  if (number === 84)
-    extras.push("proactive_policy_respected", "proactive_source_linked");
   if (number >= 73 && number <= 80)
     extras.push("bidirectional_causality_grounded");
   if (number === 108)

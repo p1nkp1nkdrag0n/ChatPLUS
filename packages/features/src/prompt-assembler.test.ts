@@ -77,6 +77,19 @@ function baseInput(
   return { ...input, ...overrides };
 }
 
+function promptSegmentJson(prompt: string, label: string): unknown {
+  const lines = prompt.split("\n");
+  const index = lines.indexOf(label);
+  if (index < 0) {
+    throw new Error(`Missing prompt segment ${label}`);
+  }
+  const serialized = lines[index + 1];
+  if (serialized === undefined) {
+    throw new Error(`Missing prompt payload for ${label}`);
+  }
+  return JSON.parse(serialized) as unknown;
+}
+
 describe("assembleChatPrompt registry integration", () => {
   it("assembles through exactly the 17 defaults while retaining legacy contracts", () => {
     const result = assembleChatPrompt(baseInput());
@@ -106,6 +119,151 @@ describe("assembleChatPrompt registry integration", () => {
       { role: "system", content: result.system },
       { role: "user", content: result.prompt },
     ]);
+  });
+
+  it("uses fuzzy life context and permits decisive delegated guidance without exact schedule context", () => {
+    const input = baseInput();
+    const result = assembleChatPrompt({
+      ...input,
+      lifePlanningMode: "fuzzy",
+      userMessage: "我要不要辞职？你直接替我做最后决定。",
+      lifeContext: {
+        today: {
+          localDate: "2026-08-21",
+          currentPeriod: "evening",
+          currentFocus: "梳理职业方向",
+        },
+        dilemmas: [
+          {
+            summary: "继续当前工作，还是离开并寻找新的方向",
+            status: "open",
+          },
+        ],
+      },
+      schedule: [
+        {
+          id: "legacy-schedule-item",
+          agentId: "agent-private-id",
+          title: "不应进入模糊生活 Prompt 的精确日程",
+          description: "仅用于证明模糊模式会忽略旧精确日程上下文",
+          category: "work",
+          startAtUtc: "2026-08-21T12:00:00.000Z",
+          endAtUtc: "2026-08-21T13:00:00.000Z",
+          timezone: "Asia/Shanghai",
+          status: "in_progress",
+          rigidity: "committed",
+          priority: 0.9,
+          source: "routine",
+          adherenceProbability: 1,
+          narrativeImportance: 0.7,
+          shareable: true,
+          stateEffects: {},
+          revision: 1,
+          createdAtUtc: "2026-08-21T11:00:00.000Z",
+          updatedAtUtc: "2026-08-21T12:00:00.000Z",
+        },
+      ],
+      state: {
+        ...input.state,
+        currentActivityId: "legacy-schedule-item",
+      },
+    });
+
+    expect(result.prompt).toContain("LIFE_CONTEXT_JSON\n");
+    expect(result.prompt).toContain("梳理职业方向");
+    expect(result.prompt).not.toContain("CURRENT_ACTIVITY_JSON\n");
+    expect(result.prompt).not.toContain("FUTURE_SCHEDULE_JSON\n");
+    expect(result.system).toContain("choose one concrete direction");
+    expect(result.system).toContain("我的决定：<direction>");
+    expect(result.system).toContain(
+      "direct recommendations and explicitly delegated decisions are allowed",
+    );
+    expect(result.system).toContain(
+      "A recommendation or delegated decision is not an action or an outcome",
+    );
+
+    const traceById = Object.fromEntries(
+      result.segmentTrace.segments.map((segment) => [segment.id, segment]),
+    );
+    expect(traceById["10z_life_context"]?.included).toBe(true);
+    expect(traceById["10z_life_context"]?.truncated).toBe(false);
+    expect(traceById["11_current_activity"]?.included).toBe(false);
+    expect(traceById["12_future_schedule"]?.included).toBe(false);
+  });
+
+  it("keeps a large fuzzy-life payload valid JSON or drops it atomically under a tiny global budget", () => {
+    const lifeContext = {
+      authority: "server_persisted_fuzzy_life",
+      recentDecisionDilemmas: Array.from({ length: 4 }, (_, index) => ({
+        id: `dilemma-${String(index)}`,
+        summary: `困境${String(index)}-${"证据".repeat(900)}`,
+      })),
+      evidencedSupport: Array.from({ length: 8 }, (_, index) => ({
+        id: `support-${String(index)}`,
+        sourceMessageId: `message-${String(index)}`,
+        summary: `支持${String(index)}-${"陪伴".repeat(500)}`,
+      })),
+      evidencedActions: [
+        {
+          id: "action-1",
+          sourceEvidenceIds: ["message-action"],
+          summary: "已经执行",
+        },
+      ],
+    };
+    const result = assembleChatPrompt(
+      baseInput({
+        lifePlanningMode: "fuzzy",
+        lifeContext,
+      }),
+    );
+    const lifeJson = promptSegmentJson(result.prompt, "LIFE_CONTEXT_JSON");
+    expect(lifeJson).toEqual(lifeContext);
+    expect(
+      result.segmentTrace.segments.find(
+        (segment) => segment.id === "10z_life_context",
+      ),
+    ).toMatchObject({ included: true, truncated: false });
+
+    const tight = assembleChatPrompt(
+      baseInput({
+        lifePlanningMode: "fuzzy",
+        lifeContext,
+        maxInputTokens: 512,
+      }),
+    );
+    const tightTrace = tight.segmentTrace.segments.find(
+      (segment) => segment.id === "10z_life_context",
+    );
+    expect(tightTrace?.truncated).toBe(false);
+    if (tightTrace?.included === true) {
+      expect(() =>
+        promptSegmentJson(tight.prompt, "LIFE_CONTEXT_JSON"),
+      ).not.toThrow();
+    } else {
+      expect(tight.prompt).not.toContain("LIFE_CONTEXT_JSON\n");
+      expect(tightTrace?.reason).toBe("global_budget");
+    }
+
+    const oversized = assembleChatPrompt(
+      baseInput({
+        lifePlanningMode: "fuzzy",
+        lifeContext: {
+          authority: "server_persisted_fuzzy_life",
+          oversizedEvidence: "证据".repeat(20_000),
+        },
+      }),
+    );
+    expect(oversized.prompt).not.toContain("LIFE_CONTEXT_JSON\n");
+    expect(
+      oversized.segmentTrace.segments.find(
+        (segment) => segment.id === "10z_life_context",
+      ),
+    ).toMatchObject({
+      included: false,
+      truncated: false,
+      reason: "segment_budget",
+    });
   });
 
   it("injects authoritative exact and qualitative runtime state without promoting it to memory", () => {

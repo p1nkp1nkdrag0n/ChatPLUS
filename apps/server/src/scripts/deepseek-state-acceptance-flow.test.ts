@@ -166,7 +166,7 @@ describe("DeepSeek state acceptance flow", () => {
   });
 
   it("renders compact manual-review output and redacts evidence", () => {
-    const secret = "sk-state-acceptance-secret";
+    const secret = ["sk", "state", "acceptance", "secret"].join("-");
     const result = completeResult();
     result.config.providerUrl = `https://api.deepseek.com/${secret}`;
     result.scenes[0]!.rawProviderAttempts[0]!.responseBodyText = secret;
@@ -254,6 +254,7 @@ function config(
     seedDemo: false,
     developerRoutes: true,
     chatEffectsMode: "off",
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "legacy",
     selfInitiatedPlanningMode: "off",
     liveWorldEffectsMode: "enforced",

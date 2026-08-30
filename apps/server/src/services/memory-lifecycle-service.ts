@@ -640,19 +640,22 @@ function correctionTargetIsEquivalent(
   incoming: Memory,
 ): boolean {
   const incomingClaim = incoming.claim;
-  if (incomingClaim === undefined) return false;
-  const comparison = reconcileMemoryClaims({
-    existing: toLifecycleMemory(existing),
-    incoming: {
-      ...toLifecycleMemory(incoming),
-      claim: {
-        subjectKey: incomingClaim.subjectKey,
-        disposition: incomingClaim.disposition,
-        recordedAtUtc: incomingClaim.recordedAtUtc,
-      },
-    },
-  });
-  return comparison.kind === "merge";
+  const existingClaim = existing.claim;
+  if (incomingClaim === undefined || existingClaim === undefined) return false;
+  return (
+    existingClaim.subjectKey === incomingClaim.subjectKey &&
+    existingClaim.disposition === incomingClaim.disposition &&
+    canonicalCorrectionContent(existing.content) ===
+      canonicalCorrectionContent(incoming.content)
+  );
+}
+
+function canonicalCorrectionContent(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase();
 }
 
 function memoryWasRecordedAfter(candidate: Memory, incoming: Memory): boolean {

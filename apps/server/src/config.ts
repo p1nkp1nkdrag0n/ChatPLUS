@@ -251,12 +251,11 @@ const envSchema = z.object({
   LOG_LEVEL: z.string().default("info"),
   SEED_DEMO: booleanFromEnv,
   CHAT_EFFECTS_MODE: z.enum(["off", "gated"]).default("gated"),
+  LIFE_PLANNING_MODE: z.enum(["fuzzy", "legacy_exact"]).optional(),
   SCHEDULE_NEGOTIATION_MODE: z
     .enum(["legacy", "shadow", "enforced"])
-    .default("shadow"),
-  SELF_INITIATED_PLANNING: z
-    .enum(["off", "shadow", "enforced"])
-    .default("enforced"),
+    .default("legacy"),
+  SELF_INITIATED_PLANNING: z.enum(["off", "shadow", "enforced"]).default("off"),
   LIVE_WORLD_EFFECTS: z.enum(["off", "shadow", "enforced"]).default("enforced"),
   MEMORY_RECALL_MODE: z
     .enum(["legacy", "shadow", "enforced"])
@@ -289,6 +288,7 @@ export type ServerConfig = {
   seedDemo: boolean;
   developerRoutes: boolean;
   chatEffectsMode: "off" | "gated";
+  lifePlanningMode: "fuzzy" | "legacy_exact";
   scheduleNegotiationMode: "legacy" | "shadow" | "enforced";
   selfInitiatedPlanningMode: "off" | "shadow" | "enforced";
   liveWorldEffectsMode: "off" | "shadow" | "enforced";
@@ -364,6 +364,14 @@ export function readConfig(
     seedDemo: env.SEED_DEMO,
     developerRoutes: env.NODE_ENV !== "production",
     chatEffectsMode: env.CHAT_EFFECTS_MODE,
+    // Product runs use the fuzzy life model. The exact scheduler remains
+    // available only to the existing isolated regression suite while the old
+    // persistence format is kept readable during migration.
+    lifePlanningMode:
+      env.LIFE_PLANNING_MODE ??
+      ((overrides.nodeEnv ?? env.NODE_ENV) === "test"
+        ? "legacy_exact"
+        : "fuzzy"),
     scheduleNegotiationMode: env.SCHEDULE_NEGOTIATION_MODE,
     selfInitiatedPlanningMode: env.SELF_INITIATED_PLANNING,
     liveWorldEffectsMode: env.LIVE_WORLD_EFFECTS,

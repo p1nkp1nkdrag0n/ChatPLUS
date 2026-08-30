@@ -48,6 +48,7 @@ export interface DefaultPromptContext extends PromptContext {
   readonly outputContract?: unknown;
   readonly calendarContext?: unknown;
   readonly followUpContext?: unknown;
+  readonly lifeContext?: unknown;
 }
 
 type DefaultDefinition = {
@@ -264,6 +265,23 @@ export function createFollowUpContextPromptSegment(): PromptSegment<DefaultPromp
   );
 }
 
+export function createLifeContextPromptSegment(): PromptSegment<DefaultPromptContext> {
+  return {
+    ...dynamicExtension(
+      "10z_life_context",
+      "LIFE_CONTEXT_JSON",
+      "lifeContext",
+      95,
+      8_000,
+    ),
+    // A partial JSON object is worse than no optional context: it hides later
+    // causal stages and gives the model malformed evidence. The registry drops
+    // this optional segment atomically when either its own or the global budget
+    // cannot fit the complete server projection.
+    globalOverflowPolicy: "drop",
+  };
+}
+
 function toSegment(
   definition: DefaultDefinition,
 ): PromptSegment<DefaultPromptContext> {
@@ -298,7 +316,7 @@ function toSegment(
 function dynamicExtension(
   id: string,
   label: string,
-  field: "calendarContext" | "followUpContext",
+  field: "calendarContext" | "followUpContext" | "lifeContext",
   priority: number,
   tokenBudget: number,
 ): PromptSegment<DefaultPromptContext> {

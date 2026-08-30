@@ -17,14 +17,18 @@ export interface PromptSegment<TContext extends PromptContext = PromptContext> {
   readonly tokenBudget: number;
   readonly required: boolean;
   readonly cacheable: boolean;
-  /** Defaults to truncate when an optional segment exceeds the global budget. */
+  /**
+   * Defaults to truncate. `drop` keeps an optional structured segment atomic:
+   * exceeding either its own token budget or the global input budget omits the
+   * complete segment instead of slicing its payload.
+   */
   readonly globalOverflowPolicy?: PromptSegmentGlobalOverflowPolicy;
   readonly cacheKey?: (context: TContext) => string | null;
   render(context: TContext): string | null;
 }
 
 export type PromptSegmentTraceReason =
-  "empty" | "global_budget" | "required_budget_too_small";
+  "empty" | "segment_budget" | "global_budget" | "required_budget_too_small";
 
 export interface PromptSegmentTrace {
   readonly id: string;

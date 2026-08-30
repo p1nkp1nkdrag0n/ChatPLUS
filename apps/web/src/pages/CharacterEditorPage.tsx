@@ -33,8 +33,6 @@ const TABS = [
   ["persona", "人格与价值观"],
   ["dialogue", "语言风格"],
   ["relationship", "关系"],
-  ["routines", "日常习惯"],
-  ["schedule", "日程策略"],
   ["knowledge", "知识与边界"],
   ["proactive", "主动对话"],
   ["json", "高级 JSON"],
@@ -270,29 +268,6 @@ export default function CharacterEditorPage() {
               value={spec.userRelationship}
               onChange={(value) =>
                 setAtRoot("userRelationship", value as Record<string, unknown>)
-              }
-            />
-          ) : null}
-          {tab === "routines" ? (
-            <JsonSectionEditor
-              title="日常习惯"
-              description="重复活动是 72 小时滚动计划的稳定骨架。"
-              value={spec.routines}
-              onChange={(value) =>
-                setAtRoot("routines", value as CharacterSpec["routines"])
-              }
-            />
-          ) : null}
-          {tab === "schedule" ? (
-            <JsonSectionEditor
-              title="日程策略"
-              description="睡眠、承诺上限、自发性与邀请倾向均由程序校验。"
-              value={spec.schedulePolicy}
-              onChange={(value) =>
-                setAtRoot(
-                  "schedulePolicy",
-                  value as CharacterSpec["schedulePolicy"],
-                )
               }
             />
           ) : null}

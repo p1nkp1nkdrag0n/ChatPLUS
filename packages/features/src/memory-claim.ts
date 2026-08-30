@@ -8,15 +8,19 @@ export interface DerivedExplicitUserMemoryClaim {
 }
 
 const CORRECTION_PREFIX =
-  /^(?:(?:更正|纠正|修正|更新(?:一下)?|改(?:正|一下)|补充更正)|(?:我|前面|刚才|之前)?(?:刚才|之前|前面)?说错了|correction|update|i\s+(?:was|got\s+that)\s+wrong)\s*[:：,，。.!！-]?\s*/iu;
+  /^(?:(?:更正(?:一下|一个事实|另一件事)?|纠正|修正|更新(?:一下)?|改(?:正|一下)|补充更正)|(?:我|前面|刚才|之前)?(?:刚才|之前|前面)?说错了|correction|update|i\s+(?:was|got\s+that)\s+wrong)\s*[:：,，。.!！-]?\s*/iu;
 const EXPLICIT_REPLACEMENT =
   /(?:不是|并非).{1,120}?(?:而是|应该是)|\bnot\b.{1,120}?\bbut\b/iu;
+const EXPLICIT_CHANGE =
+  /(?:后来)?改(?:成|为|去|到).{1,80}?(?:不再|不去|不是|而非)|(?:延到|改到).{1,40}?(?:不是|而非)|(?:最新事实|被更正的旧信息)/u;
 const QUESTION_OR_NON_ASSERTION =
   /[?？]\s*$|(?:是不是|是否)|(?:吗|呢)\s*$|^(?:我|我们)?(?:如果|假如|假设|假定|要是|比如|例如|譬如|举例|想象一下|听说|有人说|据说)|^(?:if\b|suppose\b|for\s+example\b)/iu;
 const QUOTED_OR_DISCLAIMED =
-  /^(?!(?:我|前面|刚才|之前)?(?:刚才|之前|前面)?说错了)[^，,。.!！？:：]{1,20}(?:说|表示|认为|声称)[，,:：]?|^(?:he\s+said|she\s+said|they\s+said)\b|(?:别|不要).{0,20}(?:记住|记录|当成|当作).{0,20}(?:我的|用户的)?(?:事实|偏好|记忆)|(?:这|那)(?:不|并不)是我的(?:事实|偏好)/iu;
+  /^(?!(?:我|前面|刚才|之前)?(?:刚才|之前|前面)?说错了)(?!(?:以后)?如果我说)[^，,。.!！？:：]{1,20}(?:说|表示|认为|声称)[，,:：]?|^(?:he\s+said|she\s+said|they\s+said)\b|(?:别|不要).{0,20}(?:记住|记录|当成|当作).{0,20}(?:我的|用户的)?(?:事实|偏好|记忆)|(?:这|那)(?:不|并不)是我的(?:事实|偏好)/iu;
 const UNCERTAIN_ASSERTION =
   /(?:可能|也许|或许|大概|似乎|好像|不确定|未确认|没有确认)|\b(?:maybe|perhaps|probably|uncertain|unconfirmed)\b/iu;
+const ASSERTIVE_CONDITIONAL_PREFERENCE =
+  /^如果只看(?:价值排序|长期价值|个人偏好)/u;
 
 /**
  * Returns true only for an explicit correction in verified user-authored text.
@@ -26,7 +30,9 @@ export function hasExplicitMemoryCorrection(text: string): boolean {
   const normalized = text.normalize("NFKC").trim();
   if (!isExplicitUserMemoryStatement(normalized)) return false;
   return (
-    CORRECTION_PREFIX.test(normalized) || EXPLICIT_REPLACEMENT.test(normalized)
+    CORRECTION_PREFIX.test(normalized) ||
+    EXPLICIT_REPLACEMENT.test(normalized) ||
+    EXPLICIT_CHANGE.test(normalized)
   );
 }
 
@@ -34,7 +40,8 @@ export function isExplicitUserMemoryStatement(text: string): boolean {
   const normalized = text.normalize("NFKC").trim();
   return (
     normalized.length >= 3 &&
-    !QUESTION_OR_NON_ASSERTION.test(normalized) &&
+    (!QUESTION_OR_NON_ASSERTION.test(normalized) ||
+      ASSERTIVE_CONDITIONAL_PREFERENCE.test(normalized)) &&
     !QUOTED_OR_DISCLAIMED.test(normalized)
   );
 }
@@ -49,13 +56,16 @@ export function deriveExplicitUserMemoryClaim(input: {
   evidenceText: string;
   candidateContent?: string;
 }): DerivedExplicitUserMemoryClaim | undefined {
+  const explicitCorrection = hasExplicitMemoryCorrection(input.evidenceText);
   const evidence = stripTerminalPunctuation(
     stripMemoryInstructionPrefix(stripCorrectionPrefix(input.evidenceText)),
   );
   if (
     !isExplicitUserMemoryStatement(evidence) ||
     UNCERTAIN_ASSERTION.test(evidence) ||
-    (/(?:不是|并非)/u.test(evidence) && !EXPLICIT_REPLACEMENT.test(evidence))
+    (/(?:不是|并非)/u.test(evidence) &&
+      !EXPLICIT_REPLACEMENT.test(evidence) &&
+      !explicitCorrection)
   ) {
     return undefined;
   }
@@ -84,6 +94,42 @@ export function deriveExplicitUserMemoryClaim(input: {
 type ClaimParser = (text: string) => DerivedExplicitUserMemoryClaim | undefined;
 
 const FACT_PARSERS: readonly ClaimParser[] = [
+  (text) => {
+    if (
+      /(?:采访)?笔记/u.test(text) &&
+      /(?:帆布)?包/u.test(text) &&
+      /(?:内层|书签|M-417)/iu.test(text)
+    ) {
+      return claim("user_fact:notebook:storage");
+    }
+    return undefined;
+  },
+  (text) => {
+    if (
+      /山鸣影像/u.test(text) &&
+      /(?:回复期限|期限|前回复)/u.test(text) &&
+      /9\s*月\s*(?:14|16)\s*日/u.test(text)
+    ) {
+      return claim("user_fact:decision_option:B:reply_deadline");
+    }
+    return undefined;
+  },
+  (text) => {
+    const bestFriend = text.match(
+      /我最好的朋友叫([\p{Script=Han}A-Za-z·]{1,20})/u,
+    )?.[1];
+    const directPerson = text.match(
+      /(?:^|[:：,，。；;])([\p{Script=Han}A-Za-z·]{1,20}?)(?:后来)?(?:改去|准备去)[\p{Script=Han}A-Za-z·]{1,20}(?:进修|学习|工作|生活)/u,
+    )?.[1];
+    const hasDestination =
+      /(?:准备去|改去)[\p{Script=Han}A-Za-z·]{1,20}(?:进修|学习|工作|生活)/u.test(
+        text,
+      );
+    const person = bestFriend ?? directPerson;
+    return person === undefined || person.length === 0 || !hasDestination
+      ? undefined
+      : claim(`user_fact:person:${keyPart(person)}:destination`);
+  },
   (text) => {
     const implicitCorrection = text.match(
       /^([^，。！？,:：;；]{1,40}?)(?:其实|实际上|实际)?是(?:我|用户)?(?:的)?[^，。！？;；]*(?:同学|朋友|同事|亲戚|表姐|表哥|堂姐|堂哥|室友)[^，。！？;；]*(?:[;；].*)?$/u,

@@ -7,7 +7,9 @@ import { readConfig } from "../../apps/server/src/config.js";
 import { FakeClock } from "../../apps/server/src/runtime/clock.js";
 
 const API_PORT = 3001;
-const WEB_PORT = 5173;
+// Keep E2E isolated from Vite's development port. On Windows, 5173 can fall
+// inside a Hyper-V/WSL excluded range and fail with EACCES before tests start.
+const WEB_PORT = Number(process.env["CHATPLUS_E2E_WEB_PORT"] ?? "43173");
 
 export default async function globalSetup() {
   const clock = new FakeClock("2026-08-16T10:00:00.000Z");
@@ -18,6 +20,7 @@ export default async function globalSetup() {
     host: "127.0.0.1",
     databasePath: ":memory:",
     clockMode: "fake",
+    lifePlanningMode: "fuzzy",
     scheduleNegotiationMode: "legacy",
     seedDemo: false,
     developerRoutes: true,

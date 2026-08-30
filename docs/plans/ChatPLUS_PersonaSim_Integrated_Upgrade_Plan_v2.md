@@ -1,5 +1,7 @@
 # ChatPLUS / PersonaSim 综合升级计划 v2
 
+> **历史文档：** 本计划以 72 小时精确日程为核心的产品方向已被 [ADR 0006](../adr/0006-fuzzy-life-and-decision-causality.md) 和 [长程验证方案 v3](ChatPLUS_Fuzzy_Life_Decision_Long_Run_Plan_v3.md) 取代。以下内容仅用于理解旧实现和迁移来源，不是当前产品合同。
+
 > **项目愿景**
 >
 > **他们的人生不会因为你离开而停止，却会因为你来过而发生改变；你的人生也同样如此。**

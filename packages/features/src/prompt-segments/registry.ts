@@ -88,6 +88,7 @@ export class PromptSegmentRegistry<
     const maximumTokens = normalizeMaximumTokens(options.maxInputTokens);
     const candidates: Candidate<TContext>[] = [];
     const empty: EmptyCandidate<TContext>[] = [];
+    const dropped = new Map<string, "segment_budget" | "global_budget">();
 
     for (const segment of this.list()) {
       const rendered = this.#renderSegment(segment, context);
@@ -96,6 +97,22 @@ export class PromptSegmentRegistry<
         continue;
       }
       const normalized = rendered.content.trim();
+      const exceedsSegmentBudget = normalized.length > segment.tokenBudget * 4;
+      if (
+        !segment.required &&
+        segment.globalOverflowPolicy === "drop" &&
+        exceedsSegmentBudget
+      ) {
+        candidates.push({
+          segment,
+          content: normalized,
+          originallyTruncated: false,
+          globallyTruncated: false,
+          cacheHit: rendered.cacheHit,
+        });
+        dropped.set(segment.id, "segment_budget");
+        continue;
+      }
       const content = truncatePromptToTokenBudget(
         normalized,
         segment.tokenBudget,
@@ -109,14 +126,15 @@ export class PromptSegmentRegistry<
       });
     }
 
-    const required = candidates.filter(({ segment }) => segment.required);
+    const required = candidates.filter(
+      ({ segment }) => segment.required && !dropped.has(segment.id),
+    );
     const optional = candidates
-      .filter(({ segment }) => !segment.required)
+      .filter(({ segment }) => !segment.required && !dropped.has(segment.id))
       .sort(compareOptionalPriority);
     fitRequiredCandidates(required, maximumTokens);
 
     const selected = [...required];
-    const dropped = new Set<string>();
     for (const candidate of optional) {
       if (maximumTokens === undefined) {
         selected.push(candidate);
@@ -127,12 +145,12 @@ export class PromptSegmentRegistry<
         continue;
       }
       if (candidate.segment.globalOverflowPolicy === "drop") {
-        dropped.add(candidate.segment.id);
+        dropped.set(candidate.segment.id, "global_budget");
         continue;
       }
       const fitted = fitOptionalCandidate(selected, candidate, maximumTokens);
       if (fitted) selected.push(candidate);
-      else dropped.add(candidate.segment.id);
+      else dropped.set(candidate.segment.id, "global_budget");
     }
 
     const ordered = selected.sort(compareCandidateIds);
@@ -171,7 +189,9 @@ export class PromptSegmentRegistry<
     const bounded =
       rendered === null
         ? null
-        : truncatePromptToTokenBudget(rendered.trim(), segment.tokenBudget);
+        : !segment.required && segment.globalOverflowPolicy === "drop"
+          ? rendered.trim()
+          : truncatePromptToTokenBudget(rendered.trim(), segment.tokenBudget);
     this.#cache.set(cacheKey, bounded);
     return { content: bounded, cacheHit: false };
   }
@@ -299,7 +319,7 @@ function buildTrace<TContext extends PromptContext>(
   candidates: readonly Candidate<TContext>[],
   empty: readonly EmptyCandidate<TContext>[],
   selectedIds: ReadonlySet<string>,
-  droppedIds: ReadonlySet<string>,
+  droppedReasons: ReadonlyMap<string, "segment_budget" | "global_budget">,
 ): PromptSegmentTrace[] {
   const traceById = new Map<string, PromptSegmentTrace>();
   for (const candidate of candidates) {
@@ -317,9 +337,9 @@ function buildTrace<TContext extends PromptContext>(
       ...(included
         ? {}
         : {
-            reason: droppedIds.has(candidate.segment.id)
-              ? ("global_budget" as const)
-              : ("required_budget_too_small" as const),
+            reason:
+              droppedReasons.get(candidate.segment.id) ??
+              ("required_budget_too_small" as const),
           }),
     });
   }

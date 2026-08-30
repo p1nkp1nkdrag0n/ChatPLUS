@@ -8,6 +8,7 @@ export * from "./events.js";
 export * from "./follow-up.js";
 export * from "./llm.js";
 export * from "./llm-capability.js";
+export * from "./life.js";
 export * from "./memory.js";
 export * from "./memory-evidence.js";
 export * from "./memory-recall-preview.js";

@@ -275,6 +275,23 @@ describe("companion long-run v2 rubric", () => {
     expect(COMPANION_LONG_RUN_V2_THRESHOLDS.criticalDimensionMinimum).toBe(2.8);
   });
 
+  it("scores pressure relief and decision causality instead of schedule precision", () => {
+    const byKey = Object.fromEntries(
+      COMPANION_LONG_RUN_V2_RUBRIC.map((dimension) => [
+        dimension.key,
+        dimension.description,
+      ]),
+    );
+    expect(byKey["daily_relevance"]).toContain("clear direction");
+    expect(byKey["emotion"]).toContain("reduce pressure");
+    expect(byKey["memory_time"]).toContain(
+      "discussion, decision, action and later outcome",
+    );
+    expect(byKey["independent_life_schedule"]).toContain(
+      "without relying on a minute-level timetable",
+    );
+  });
+
   it("scores the complete 0-4 rubric using weights", () => {
     expect(scoreCompanionLongRunV2Rubric(scores(0))).toBe(0);
     expect(scoreCompanionLongRunV2Rubric(scores(4))).toBe(4);

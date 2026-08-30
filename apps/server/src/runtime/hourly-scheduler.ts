@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 
 import type { PersonalLifeService } from "../services/personal-life-service.js";
+import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
@@ -34,6 +35,9 @@ export class HourlyScheduler {
       MemoryLifecycleService,
       "maintainAgent"
     >,
+    private readonly life?: Pick<FuzzyLifeService, "advance">,
+    private readonly lifePlanningMode:
+      "fuzzy" | "legacy_exact" = "legacy_exact",
   ) {}
 
   start(): void {
@@ -56,11 +60,20 @@ export class HourlyScheduler {
       activeAgents.map(async (agentId) => {
         try {
           await this.actors.runExclusive(agentId, async () => {
-            await this.settlements.settleAndExtend(agentId, {
-              toUtc: nowUtc,
-              hourlyBucket: bucket,
-            });
-            this.personalLife?.ensureSelfInitiatedPlans(agentId);
+            if (this.lifePlanningMode === "fuzzy") {
+              if (this.life === undefined) {
+                throw new Error(
+                  "Fuzzy life mode requires a composed FuzzyLifeService.",
+                );
+              }
+              this.life.advance(agentId, nowUtc);
+            } else {
+              await this.settlements.settleAndExtend(agentId, {
+                toUtc: nowUtc,
+                hourlyBucket: bucket,
+              });
+              this.personalLife?.ensureSelfInitiatedPlans(agentId);
+            }
             this.memoryLifecycle?.maintainAgent(agentId);
           });
           // ProactiveDeliveryService owns the preflight/postflight actor

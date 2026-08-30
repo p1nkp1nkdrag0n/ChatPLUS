@@ -58,6 +58,10 @@ describe("P1 default-policy 30-day continuity long run", () => {
     }
   });
 
+  // This intentionally materializes and restarts a full 30-day history. It
+  // completes in about five seconds in isolation, but Vitest runs files in
+  // parallel and the SQLite/module-loading contention can exceed the default
+  // 15-second timeout. Keep the allowance local to this long-run test.
   it("keeps prompts bounded, raw messages intact, and continuity indexes growing with evidence", async () => {
     const directory = mkdtempSync(join(tmpdir(), "personasim-default-run-"));
     temporaryDirectories.push(directory);
@@ -316,7 +320,7 @@ describe("P1 default-policy 30-day continuity long run", () => {
         character.id,
       ),
     ).toBe(DAYS);
-  });
+  }, 30_000);
 });
 
 async function openTrackedApp(

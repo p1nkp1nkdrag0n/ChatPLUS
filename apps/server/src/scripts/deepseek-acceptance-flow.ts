@@ -60,7 +60,12 @@ const PromptSegmentTraceSchema = z
     truncated: z.boolean(),
     cacheHit: z.boolean(),
     reason: z
-      .enum(["empty", "global_budget", "required_budget_too_small"])
+      .enum([
+        "empty",
+        "segment_budget",
+        "global_budget",
+        "required_budget_too_small",
+      ])
       .optional(),
   })
   .strict();

@@ -38,11 +38,11 @@ describe("server configuration", () => {
     });
   });
 
-  it("defaults schedule negotiation to shadow comparison mode", () => {
+  it("retires exact schedule negotiation by default", () => {
     const previous = process.env["SCHEDULE_NEGOTIATION_MODE"];
     delete process.env["SCHEDULE_NEGOTIATION_MODE"];
     try {
-      expect(readConfig().scheduleNegotiationMode).toBe("shadow");
+      expect(readConfig().scheduleNegotiationMode).toBe("legacy");
     } finally {
       if (previous === undefined)
         delete process.env["SCHEDULE_NEGOTIATION_MODE"];
@@ -50,14 +50,17 @@ describe("server configuration", () => {
     }
   });
 
-  it("enables the local state and personal-life loops by default", () => {
+  it("uses fuzzy life and disables the exact personal-life planner by default", () => {
     const previousPlanning = process.env["SELF_INITIATED_PLANNING"];
     const previousWorldEffects = process.env["LIVE_WORLD_EFFECTS"];
+    const previousLifeMode = process.env["LIFE_PLANNING_MODE"];
     delete process.env["SELF_INITIATED_PLANNING"];
     delete process.env["LIVE_WORLD_EFFECTS"];
+    delete process.env["LIFE_PLANNING_MODE"];
     try {
-      const config = readConfig();
-      expect(config.selfInitiatedPlanningMode).toBe("enforced");
+      const config = readConfig({ nodeEnv: "development" });
+      expect(config.lifePlanningMode).toBe("fuzzy");
+      expect(config.selfInitiatedPlanningMode).toBe("off");
       expect(config.liveWorldEffectsMode).toBe("enforced");
     } finally {
       if (previousPlanning === undefined)
@@ -66,6 +69,9 @@ describe("server configuration", () => {
       if (previousWorldEffects === undefined)
         delete process.env["LIVE_WORLD_EFFECTS"];
       else process.env["LIVE_WORLD_EFFECTS"] = previousWorldEffects;
+      if (previousLifeMode === undefined)
+        delete process.env["LIFE_PLANNING_MODE"];
+      else process.env["LIFE_PLANNING_MODE"] = previousLifeMode;
     }
   });
 

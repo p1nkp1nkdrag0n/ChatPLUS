@@ -71,13 +71,11 @@
 
 @media (max-width: 900px) {
   .generator-layout,
-  .import-layout,
-  .timeline-layout {
+  .import-layout {
     grid-template-columns: 1fr;
   }
 
-  .form-inspector,
-  .event-ledger {
+  .form-inspector {
     border-top: 1px solid var(--line);
     border-left: 0;
     padding: 26px 0 0;
@@ -339,23 +337,6 @@
   .chat-rail {
     width: min(88vw, 310px);
     bottom: 62px;
-  }
-
-  .timeline-day {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-  .timeline-day__label {
-    position: static;
-  }
-  .timeline-day__track::before {
-    left: 55px;
-  }
-  .timeline-block {
-    grid-template-columns: 40px 12px minmax(0, 1fr);
-  }
-  .timeline-block__meta {
-    grid-column: 3;
   }
 
   .settings-footer {

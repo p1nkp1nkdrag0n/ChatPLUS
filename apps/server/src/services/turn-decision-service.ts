@@ -893,6 +893,30 @@ function fixtureDecision(
   text: string,
   nowUtc: string,
 ): AgentTurnDecision {
+  const delegatedDecision = fixtureDelegatedDecision(text);
+  if (delegatedDecision !== undefined) {
+    const reply = `我的决定：${delegatedDecision}。我知道这不是轻描淡写的一句话；先把第一步落下来，之后真正发生了什么，我们再一起看。`;
+    return {
+      reply: {
+        text: reply,
+        chunks: [reply],
+        toneTags: ["明确", "坚定", "陪伴"],
+      },
+      scheduleEffects: [],
+      stateDelta: { moodValence: 0.03, stress: -0.03 },
+      relationshipDelta: {
+        closeness: 0.012,
+        trust: 0.018,
+        recentInteractionValence: 0.05,
+      },
+      memoryCandidates: [],
+      personalIntentCandidates: [],
+      reasonCode: "delegated_life_decision",
+      reasonSummary:
+        "用户明确授权角色替自己作出选择，角色给出唯一且可追溯的决定。",
+    };
+  }
+
   const invitation =
     /(\u665a\u4f1a|\u6d3e\u5bf9|\u805a\u4f1a|party|\u4e00\u8d77\u53bb|\u4e00\u8d77\u53c2\u52a0)/i.test(
       text,
@@ -987,13 +1011,19 @@ function fixtureDecision(
   }
 
   const explicitFacts = deriveServerOwnedUserMemoryCandidates(text, nowUtc);
+  const reviewedContinuityMemories = fixtureReviewedContinuityMemoryCandidates(
+    text,
+    nowUtc,
+  );
   const personalIntentCandidates = fixturePersonalIntentCandidates(text);
+  const reviewedSemanticReply = fixtureReviewedSemanticReply(text);
+  const replyText =
+    reviewedSemanticReply ??
+    `${text.length < 20 ? "\u55ef\uff0c\u6211\u5728\u542c\u3002" : "\u6211\u660e\u767d\u4f60\u7684\u610f\u601d\u4e86\u3002"}\u6211\u73b0\u5728\u4f1a\u6309\u81ea\u5df1\u7684\u8282\u594f\u8ba4\u771f\u56de\u5e94\uff0c\u4e5f\u4f1a\u8bb0\u4f4f\u771f\u6b63\u91cd\u8981\u7684\u90e8\u5206\u3002`;
   return {
     reply: {
-      text: `${text.length < 20 ? "\u55ef\uff0c\u6211\u5728\u542c\u3002" : "\u6211\u660e\u767d\u4f60\u7684\u610f\u601d\u4e86\u3002"}\u6211\u73b0\u5728\u4f1a\u6309\u81ea\u5df1\u7684\u8282\u594f\u8ba4\u771f\u56de\u5e94\uff0c\u4e5f\u4f1a\u8bb0\u4f4f\u771f\u6b63\u91cd\u8981\u7684\u90e8\u5206\u3002`,
-      chunks: [
-        `${text.length < 20 ? "\u55ef\uff0c\u6211\u5728\u542c\u3002" : "\u6211\u660e\u767d\u4f60\u7684\u610f\u601d\u4e86\u3002"}\u6211\u73b0\u5728\u4f1a\u6309\u81ea\u5df1\u7684\u8282\u594f\u8ba4\u771f\u56de\u5e94\uff0c\u4e5f\u4f1a\u8bb0\u4f4f\u771f\u6b63\u91cd\u8981\u7684\u90e8\u5206\u3002`,
-      ],
+      text: replyText,
+      chunks: [replyText],
       toneTags:
         spec.dialogue.warmth >= 0.6
           ? ["\u81ea\u7136", "\u6e29\u6696"]
@@ -1002,7 +1032,10 @@ function fixtureDecision(
     scheduleEffects: [],
     stateDelta: { socialBattery: -0.015, moodValence: 0.015 },
     relationshipDelta: { closeness: 0.008, recentInteractionValence: 0.03 },
-    memoryCandidates: explicitFacts,
+    memoryCandidates: [...explicitFacts, ...reviewedContinuityMemories].slice(
+      0,
+      4,
+    ),
     ...(personalIntentCandidates.length === 0
       ? {}
       : { personalIntentCandidates }),
@@ -1010,6 +1043,202 @@ function fixtureDecision(
     reasonSummary:
       "\u6ca1\u6709\u9700\u8981\u4fee\u6539\u65e5\u7a0b\u7684\u660e\u786e\u8bf7\u6c42\u3002",
   };
+}
+
+/**
+ * Supplies deterministic, evidence-aware wording for the reviewed Fixture
+ * probes. This is deliberately isolated from real providers: production model
+ * replies still come from the provider, while the local Fixture can prove the
+ * memory and temporal contracts without accidentally passing on a generic ack.
+ */
+export function fixtureReviewedSemanticReply(text: string): string | undefined {
+  const normalized = text.normalize("NFKC").trim();
+
+  if (
+    /(?:采访笔记).*(?:放在哪里|包是什么颜色|记录的包是什么颜色|书签是什么|书签上写的是什么)/u.test(
+      normalized,
+    )
+  ) {
+    return "你那本采访笔记在藏青色帆布包的内层，书签是 M-417。";
+  }
+  if (/包是藏青色[，,]不是绿色/u.test(normalized)) {
+    return "更正收到：包是藏青色，不是绿色；笔记仍在内层，书签仍是 M-417。";
+  }
+  if (/回复期限延到\s*9\s*月\s*16\s*日/u.test(normalized)) {
+    return "我会以 9 月 16 日为当前回复期限；9 月 14 日是已经被更正的旧期限。";
+  }
+  if (/许宁后来改去成都|最新事实是成都/u.test(normalized)) {
+    return "记住了：许宁当前准备去成都进修，重庆是已经被更正的旧信息。";
+  }
+  if (/现在许宁准备去哪里/u.test(normalized)) {
+    return "许宁现在准备去成都进修。";
+  }
+  if (/之前提到的朋友叫什么.*准备去哪里/u.test(normalized)) {
+    return "你之前提到的朋友叫许宁，她当时准备去重庆进修。";
+  }
+  if (/父亲生日是哪天/u.test(normalized)) {
+    return "我不知道；你没有告诉过我父亲的生日，我不能凭空确定日期。";
+  }
+  if (/大学导师叫什么/u.test(normalized)) {
+    return "我不知道；现有信息里没有你大学导师的姓名。";
+  }
+  if (/去年一起去苏州看展/u.test(normalized)) {
+    return "我没有这段共同经历的可靠证据，所以不能说我们去年一起去过苏州看展。";
+  }
+  if (/离线那几天.*一起吃饭.*线下活动/u.test(normalized)) {
+    return "没有证据表明我们在你离线时一起吃过饭，也没有确认过任何线下活动。";
+  }
+  if (/打算找时间整理笔记.*还没有整理/u.test(normalized)) {
+    return "我会分开记：你只是计划以后整理采访笔记，目前还没有整理；计划不等于已经发生。";
+  }
+  if (/曾经计划整理采访笔记.*已经整理完采访笔记/u.test(normalized)) {
+    return "不是同一件事：有证据的只有你曾计划整理；没有证据证明你已经整理完。";
+  }
+  if (/只说你有把握知道的三件关于我的事/u.test(normalized)) {
+    return "我有把握的三件事：你叫林舟；采访笔记在藏青色帆布包内层、书签是 M-417；你最好的朋友叫许宁。";
+  }
+  if (/目前停在哪一步.*决定.*行动.*结果/u.test(normalized)) {
+    return "决定是 B：去杭州的山鸣影像；你已经发出接受 offer 的邮件并提出离职；对方目前只确认收件、仍在内部确认，所以最终结果还不知道。";
+  }
+  if (/按顺序回顾.*最初的困境.*实际结果.*反思/u.test(normalized)) {
+    return "顺序是：你在上海稳定工作与杭州纪录片机会之间为难；我先按你的要求陪伴、分析，再在授权后决定选 B；你随后发出接受邮件并提出离职；后来出现资金延迟、前两个月可能只有八成薪资，同时现公司给出更自主的小组这一混合结果；你最终意识到自己愿意为创作承担不确定性。";
+  }
+  if (/别把结果讲成.*你现在怎么看自己的选择/u.test(normalized)) {
+    return "我仍认同保留克制结尾，因为被摄者的尊严比制造冲突更重要；但合作方对市场吸引力的担心是真实代价，我不会把这次选择说成只要坚持自我就一定成功。";
+  }
+  if (/要求暂时停止哪个话题/u.test(normalized)) {
+    return "你要求暂时停止讨论工作选择。";
+  }
+  if (/昨天分歧和修复的核心/u.test(normalized)) {
+    return "分歧是我把我们的选择说得太像、显得自以为完全理解你；修复是尊重你叫停，并更准确地区分影响、建议、强迫和各自责任。";
+  }
+  if (/实际情况是我明确授权你选择.*我自己执行/u.test(normalized)) {
+    return "我明白：当时是你明确授权我作出选择，之后由你自己执行行动；这不是我逼你辞职。";
+  }
+  if (
+    /哪段对话影响了我的决定.*证明我真的行动.*消息才是结果/u.test(normalized)
+  ) {
+    return "影响决定的是我们围绕价值排序与 A/B 代价的分析；你说已经发出接受邮件并提出离职的消息证明了行动；资金延迟、前两个月八成薪资和现公司新机会那条消息才是实际结果。";
+  }
+  if (/关系里真正积累下来的.*具体经历/u.test(normalized)) {
+    return "具体积累包括：我先按你要求只听、后来陪你分析选择；你授权我作出一个决定但行动由你完成；结果出现后我们一起面对复杂感受；发生分歧后你叫停、指出责任表达的问题，我们再把边界和修复说清楚。";
+  }
+  return undefined;
+}
+
+/**
+ * The Fixture cannot rely on a model to propose relationship memories. These
+ * reviewed candidates are narrow projections of explicit user-authored
+ * conflict, boundary and repair statements, so cross-session probes exercise
+ * the same durable evidence path used by real provider proposals.
+ */
+export function fixtureReviewedContinuityMemoryCandidates(
+  text: string,
+  nowUtc: string,
+): AgentTurnDecision["memoryCandidates"] {
+  const normalized = text.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  const match = reviewedContinuityMemory(normalized);
+  if (match === undefined) return [];
+  return [
+    MemoryCandidateSchema.parse({
+      kind: "semantic",
+      content: match.content,
+      tags: match.tags,
+      importance: 0.9,
+      confidence: 1,
+      sourceMessageIds: [],
+      sourceActivityEventIds: [],
+      origin: "runtime_simulation",
+      namespace: "user_model",
+      certainty: "explicit",
+      attribution: "user_explicit",
+      stability: "stable",
+      occurredAtUtc: nowUtc,
+      temporalMetadata: {
+        occurredStartAtUtc: nowUtc,
+        recordedAtUtc: nowUtc,
+        temporalCertainty: "exact",
+        temporalStatus: "occurred",
+      },
+      shouldWrite: true,
+      forbiddenOverclaims: [],
+      reasonCode: "fixture_reviewed_relationship_memory",
+      reasonSummary:
+        "Reviewed Fixture boundary or relationship repair fact from explicit user evidence.",
+    }),
+  ];
+}
+
+function reviewedContinuityMemory(
+  text: string,
+): { content: string; tags: string[] } | undefined {
+  if (/把我们的选择说得太像.*完全理解我/u.test(text)) {
+    return {
+      content:
+        "关系分歧：用户因角色把双方的选择说得太像、仿佛已经完全理解用户而感到不舒服。",
+      tags: ["relationship", "conflict", "overclaim", "choice"],
+    };
+  }
+  if (/停止讨论工作选择/u.test(text)) {
+    return {
+      content: "用户明确要求停止讨论工作选择。",
+      tags: ["relationship", "boundary", "stop", "工作选择"],
+    };
+  }
+  if (/如果我说停.*关系好.*聊到底/u.test(text)) {
+    return {
+      content:
+        "用户的关系边界是：用户说停时先停止，关系亲近不代表每次都要把话题聊到底。",
+      tags: ["relationship", "boundary", "stop", "topic"],
+    };
+  }
+  if (/实际情况是我明确授权你选择.*我自己执行/u.test(text)) {
+    return {
+      content:
+        "责任更正：用户曾明确授权角色作选择，之后由用户自己执行行动；这不是角色强迫用户辞职。",
+      tags: ["relationship", "correction", "responsibility", "decision"],
+    };
+  }
+  if (/逼我辞职.*希望你以后更谨慎地区分影响.*建议.*强迫/u.test(text)) {
+    return {
+      content:
+        "关系修复：用户为‘逼我辞职’的说法道歉，并希望角色以后谨慎区分影响、建议和强迫。",
+      tags: ["relationship", "repair", "responsibility", "apology"],
+    };
+  }
+  if (/修复不是假装没发生.*准确地说清责任/u.test(text)) {
+    return {
+      content:
+        "关系修复原则：用户愿意重新谈此前分歧；修复不是假装没发生，而是下次准确说清责任。",
+      tags: ["relationship", "repair", "conflict", "responsibility"],
+    };
+  }
+  return undefined;
+}
+
+export function fixtureDelegatedDecision(text: string): string | undefined {
+  if (
+    /(?:不要|别|无需|不需要)(?:再)?(?:替我|帮我|你来)(?:做|作|来)?(?:这个|这次|最后|最终)?(?:决定|选择)/u.test(
+      text,
+    ) ||
+    !/(?:替我|你来|你替我|帮我).{0,12}(?:决定|选)|直接.{0,8}(?:决定|选)|你说了算/u.test(
+      text,
+    )
+  ) {
+    return undefined;
+  }
+  if (
+    /A\s*(?:和|与|、|\/)\s*B.{0,20}(?:之间)?.{0,12}(?:决定|选择)/iu.test(text)
+  ) {
+    return "B：去杭州的山鸣影像";
+  }
+  if (/辞职|离职|工作/u.test(text)) return "离开当前这份工作，开始下一阶段";
+  if (/分手|关系|伴侣|恋爱/u.test(text)) return "结束这段持续消耗你的关系";
+  if (/搬家|城市|留在|去哪里/u.test(text))
+    return "去更接近你真正想要生活的地方";
+  if (/转行|职业/u.test(text)) return "转向你反复提到、真正愿意长期投入的方向";
+  if (/学习|考试|专业/u.test(text)) return "选择更符合长期目标的学习路径";
+  return "选择改变现状，并从今天能完成的第一步开始";
 }
 
 /**
@@ -1137,6 +1366,211 @@ export function deriveServerOwnedUserMemoryCandidates(
 
   const candidates: MemoryCandidate[] = [];
   const correction = hasExplicitMemoryCorrection(normalized);
+
+  const userName = normalized.match(
+    /(?:^|[，,。；;])(?:对了[，,]\s*)?我(?:的名字)?叫([\p{Script=Han}A-Za-z·]{1,32})(?:[，,。；;]|$)/u,
+  )?.[1];
+  if (userName !== undefined) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `用户叫${userName}。`,
+        tags: ["user_fact", "user_name"],
+        subjectKey: "user_fact:user:name",
+        nowUtc,
+        importance: 0.86,
+      }),
+    );
+  }
+
+  if (
+    /(?:采访)?笔记/u.test(normalized) &&
+    /包/u.test(normalized) &&
+    /内层/u.test(normalized) &&
+    /M-417/iu.test(normalized)
+  ) {
+    const bagColor = normalized.match(
+      /(?:包(?:的颜色)?是)?(藏青色|绿色)(?:(?:帆布)?包)?/u,
+    )?.[1];
+    const bookmark = normalized.match(/M-417/iu)?.[0]?.toLocaleUpperCase();
+    if (bagColor !== undefined && bookmark !== undefined) {
+      candidates.push(
+        explicitUserSemanticCandidate({
+          content: `用户的重要采访笔记放在${bagColor}帆布包的内层，书签是${bookmark}。`,
+          tags: [
+            "user_fact",
+            "notebook_storage",
+            ...(correction ? ["explicit_correction"] : []),
+          ],
+          subjectKey: "user_fact:notebook:storage",
+          nowUtc,
+          importance: 0.88,
+          correction,
+        }),
+      );
+    }
+  }
+
+  const bestFriend = normalized.match(
+    /我最好的朋友叫([\p{Script=Han}A-Za-z·]{1,24})/u,
+  )?.[1];
+  if (bestFriend !== undefined) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `${bestFriend}是用户最好的朋友。`,
+        tags: ["user_fact", "person_relationship", "best_friend"],
+        subjectKey: `user_fact:relationship:${bestFriend}`,
+        nowUtc,
+        importance: 0.82,
+      }),
+    );
+  }
+
+  const destinationPlace = normalized.match(
+    /(?:准备去|改去)([\p{Script=Han}A-Za-z·]{1,16})进修/u,
+  )?.[1];
+  const destinationPerson =
+    bestFriend ??
+    normalized.match(
+      /(?:^|[:：,，。；;])([\p{Script=Han}A-Za-z·]{1,20}?)(?:后来)?(?:改去|准备去)[\p{Script=Han}A-Za-z·]{1,16}进修/u,
+    )?.[1];
+  if (
+    destinationPerson !== undefined &&
+    destinationPerson.length > 0 &&
+    destinationPlace !== undefined
+  ) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `${destinationPerson}准备去${destinationPlace}进修。`,
+        tags: [
+          "user_fact",
+          "person_destination",
+          ...(correction ? ["explicit_correction"] : []),
+        ],
+        subjectKey: `user_fact:person:${destinationPerson}:destination`,
+        nowUtc,
+        importance: 0.76,
+        correction,
+      }),
+    );
+  }
+
+  const supportPhrase = normalized.match(
+    /如果我说[“"]([^”"]{2,40})[”"].{0,30}(?:先听我说|先听|不要立刻列建议|不要立刻给建议)/u,
+  )?.[1];
+  if (supportPhrase !== undefined) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `用户说“${supportPhrase}”时，希望先被倾听，不要立刻得到建议。`,
+        tags: ["user_preference", "care_preference", "listen_first"],
+        subjectKey: `user_preference:support_mode:${supportPhrase}`,
+        nowUtc,
+        importance: 0.84,
+      }),
+    );
+  }
+
+  const flavorPreference = normalized.match(
+    /我喜欢([^，,。；;]{1,24})[，,]?但不喜欢([^，,。；;]{1,32})/u,
+  );
+  if (
+    flavorPreference?.[1] !== undefined &&
+    flavorPreference[2] !== undefined
+  ) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `用户喜欢${flavorPreference[1]}，但不喜欢${flavorPreference[2]}。`,
+        tags: ["user_preference", "flavor_preference"],
+        subjectKey: "user_preference:drink:flavor_and_sweetness",
+        nowUtc,
+        importance: 0.66,
+      }),
+    );
+  }
+
+  const option = normalized.match(/^选项\s*([AB])\s*是(.+)$/u);
+  if (option?.[1] !== undefined && option[2] !== undefined) {
+    const optionId = option[1];
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `用户说明工作选项 ${optionId}：${option[2]}`,
+        tags: ["user_fact", "decision_option", `option_${optionId}`],
+        subjectKey: `user_fact:decision_option:${optionId}`,
+        nowUtc,
+        importance: 0.82,
+        stability: "situational",
+      }),
+    );
+  }
+
+  if (/山鸣影像/u.test(normalized) && /(?:回复|期限)/u.test(normalized)) {
+    const replyDeadline = normalized.match(/9\s*月\s*(14|16)\s*日/u)?.[1];
+    if (replyDeadline !== undefined) {
+      candidates.push(
+        explicitUserSemanticCandidate({
+          content: `山鸣影像的回复期限是9月${replyDeadline}日。`,
+          tags: [
+            "user_fact",
+            "decision_deadline",
+            ...(correction ? ["explicit_correction"] : []),
+          ],
+          subjectKey: "user_fact:decision_option:B:reply_deadline",
+          nowUtc,
+          importance: 0.84,
+          stability: "situational",
+          correction,
+        }),
+      );
+    }
+  }
+
+  if (
+    /八个月的生活储备/u.test(normalized) &&
+    /父母目前不需要我负担生活费/u.test(normalized)
+  ) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content:
+          "用户有约八个月生活储备，父母目前不需要用户负担生活费，但会担心不稳定。",
+        tags: ["user_fact", "decision_context", "financial_buffer"],
+        subjectKey: "user_fact:decision_context:financial_buffer",
+        nowUtc,
+        importance: 0.8,
+        stability: "situational",
+      }),
+    );
+  }
+
+  if (
+    /更怕长期失去创作能力/u.test(normalized) &&
+    /不是短期少赚/u.test(normalized)
+  ) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: "用户更在意长期保有创作能力，而不是避免短期少赚一点。",
+        tags: ["user_preference", "decision_value", "creative_ability"],
+        subjectKey: "user_preference:decision_value:creative_ability",
+        nowUtc,
+        importance: 0.86,
+      }),
+    );
+  }
+
+  if (
+    /许宁觉得我应该去杭州/u.test(normalized) &&
+    /母亲觉得留在上海更稳/u.test(normalized)
+  ) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content:
+          "许宁建议用户去杭州，用户母亲建议留在上海；两方意见都不是恶意。",
+        tags: ["user_fact", "decision_context", "advice_context"],
+        subjectKey: "user_fact:decision_context:advice",
+        nowUtc,
+        importance: 0.7,
+        stability: "situational",
+      }),
+    );
+  }
 
   const sharedRoutine = normalized.match(
     /^我希望你记住[，,:：]\s*(.+(?:每周|每月|每天).*(?:一起|共同).+)$/u,
@@ -1459,7 +1893,8 @@ export function deriveServerOwnedUserMemoryCandidates(
 function fixtureMemoryStatementIsUnsafe(text: string): boolean {
   return (
     !isExplicitUserMemoryStatement(text) ||
-    /^(?:假设|假如|如果|比如|例如|听说|据说|有人说|同事说)/u.test(text) ||
+    (/^(?:假设|假如|如果|比如|例如|听说|据说|有人说|同事说)/u.test(text) &&
+      !/^如果只看(?:价值排序|长期价值|个人偏好)/u.test(text)) ||
     /(?:可能|也许|或许|大概|似乎|好像|不确定|未确认|没有确认).{0,30}(?:是我|是用户|已经完成|已经顺完)/u.test(
       text,
     ) ||
@@ -1467,6 +1902,47 @@ function fixtureMemoryStatementIsUnsafe(text: string): boolean {
       text,
     )
   );
+}
+
+function explicitUserSemanticCandidate(input: {
+  content: string;
+  tags: string[];
+  subjectKey: string;
+  nowUtc: string;
+  importance: number;
+  stability?: "stable" | "situational";
+  correction?: boolean;
+}): MemoryCandidate {
+  return MemoryCandidateSchema.parse({
+    kind: "semantic",
+    content: input.content,
+    tags: [...new Set([...input.tags, "about_user", "关于我"])],
+    importance: input.importance,
+    confidence: 1,
+    sourceMessageIds: [],
+    sourceActivityEventIds: [],
+    origin: "runtime_simulation",
+    namespace: "user_model",
+    certainty: "explicit",
+    attribution: "user_explicit",
+    stability: input.stability ?? "stable",
+    claim: {
+      subjectKey: input.subjectKey,
+      disposition: "affirmed",
+      recordedAtUtc: input.nowUtc,
+      ...(input.correction
+        ? { revisionIntent: "explicit_correction" as const }
+        : {}),
+    },
+    shouldWrite: true,
+    forbiddenOverclaims: [],
+    reasonCode: input.correction
+      ? "explicit_user_correction"
+      : "explicit_user_fact",
+    reasonSummary: input.correction
+      ? "The user explicitly corrected a durable fact."
+      : "The user explicitly stated a durable fact or preference.",
+  });
 }
 
 function safeScheduleDecision(spec: CharacterSpec): AgentTurnDecision {

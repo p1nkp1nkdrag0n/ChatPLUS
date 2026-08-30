@@ -37,6 +37,8 @@ type TimelineProjectionInput = {
   messages: MessageLink[];
 };
 
+export type TimelineProjectionMode = "fuzzy" | "legacy_exact";
+
 type Lineage = Pick<
   ApiTimelineEvent,
   | "sourceIntentId"
@@ -76,28 +78,56 @@ const DOMAIN_EVENT_TITLES: Record<string, string> = {
   "simulation.settled": "Simulation settled",
   "proactive.claimed": "Proactive candidate claimed",
   "conversation.proactive_message_sent": "Proactive message sent",
-  "conversation.turn_committed": "Conversation turn committed",
+  "conversation.turn_committed": "一次对话已被记录",
+  "conversation.world_effects_committed": "互动带来了变化",
+  "character.created": "角色设定已创建",
+  "character.published": "角色开始继续生活",
+  "life.daily_context_created": "今天的生活背景已展开",
+  "life.intent_settled": "一天的生活进展已结算",
+  "life.support_recorded": "一次重要陪伴已被记住",
+  "life.delegated_decision_recorded": "共同作出了一个明确选择",
+  "life.decision_follow_up_evidenced": "选择产生了后续变化",
+  "life.pressure_improved_from_user_evidence": "压力有所缓解",
+  "life.pressure_worsened_from_user_evidence": "压力暂时加重",
 };
 
 export function buildTimelineResponse(
   store: DatabaseStore,
   agentId: string,
   limit: number,
+  mode: TimelineProjectionMode,
 ): TimelineResponse {
-  const activityEvents = store.listActivityEvents(agentId, limit);
-  const linkedActivityEvents =
-    limit === 500 ? activityEvents : store.listActivityEvents(agentId, 500);
-  const scheduleItems = store.listSchedule(agentId);
+  const fuzzyLife = mode === "fuzzy";
+  const storedActivityEvents = store.listActivityEvents(agentId, limit);
+  const linkedStoredActivityEvents =
+    limit === 500
+      ? storedActivityEvents
+      : store.listActivityEvents(agentId, 500);
+  const activityEvents = fuzzyLife
+    ? storedActivityEvents.map(withoutScheduleLineage)
+    : storedActivityEvents;
+  const linkedActivityEvents = fuzzyLife
+    ? linkedStoredActivityEvents.map(withoutScheduleLineage)
+    : linkedStoredActivityEvents;
+  // Fuzzy life deliberately does not even read the legacy schedule table. This
+  // matters for migrated databases: a stale exact plan must not become visible
+  // again merely because the user opens the shared-experience timeline.
+  const scheduleItems = fuzzyLife ? [] : store.listSchedule(agentId);
   const domainEvents = store
     .listDomainEvents(agentId, limit)
-    .map((event) => ApiDomainEventSchema.parse(event));
-  const personalIntentIds = new Set(
-    (
-      store.database
-        .prepare("SELECT id FROM personal_intentions WHERE agent_id = ?")
-        .all(agentId) as Array<{ id: string }>
-    ).map((row) => row.id),
-  );
+    .map((event) => ApiDomainEventSchema.parse(event))
+    .filter(
+      (event) => !fuzzyLife || !isLegacyExactPlanningEvent(event.eventType),
+    );
+  const personalIntentIds = fuzzyLife
+    ? new Set<string>()
+    : new Set(
+        (
+          store.database
+            .prepare("SELECT id FROM personal_intentions WHERE agent_id = ?")
+            .all(agentId) as Array<{ id: string }>
+        ).map((row) => row.id),
+      );
   const memories = (
     store.database
       .prepare(
@@ -161,6 +191,43 @@ export function buildTimelineResponse(
     scheduleItems,
     domainEvents,
   };
+}
+
+function withoutScheduleLineage(
+  event: StoredActivityEvent,
+): StoredActivityEvent {
+  if (event.scheduleItemId === undefined) return event;
+  return {
+    id: event.id,
+    agentId: event.agentId,
+    eventType: event.eventType,
+    occurredAtUtc: event.occurredAtUtc,
+    summary: LEGACY_ACTIVITY_EVENT_SUMMARIES[event.eventType],
+    outcomeFacts: [],
+    stateDelta: event.stateDelta,
+    origin: event.origin,
+    idempotencyKey: `fuzzy-timeline:${event.id}`,
+  };
+}
+
+const LEGACY_ACTIVITY_EVENT_SUMMARIES: Record<
+  StoredActivityEvent["eventType"],
+  string
+> = {
+  started: "一项生活活动已经开始。",
+  completed: "一项生活活动已经真实完成。",
+  partial: "一项生活活动取得了部分进展。",
+  skipped: "一项生活活动最终没有发生。",
+  cancelled: "一项生活活动在发生前被取消。",
+};
+
+function isLegacyExactPlanningEvent(eventType: string): boolean {
+  return (
+    eventType.startsWith("schedule.") ||
+    eventType.startsWith("personal_intent.") ||
+    eventType.startsWith("self_plan.") ||
+    eventType === "simulation.settled"
+  );
 }
 
 export function projectTimelineEvents(
@@ -520,19 +587,39 @@ function firstExisting<T>(
 }
 
 function summarizeDomainEvent(event: ApiDomainEvent): string {
+  const narrative = NARRATIVE_EVENT_SUMMARIES[event.eventType];
+  if (narrative !== undefined) return narrative;
   if (isRecord(event.payload)) {
     const reasonSummary = stringField(event.payload, "reasonSummary");
     if (reasonSummary !== undefined) return reasonSummary.slice(0, 1_000);
     const summary = stringField(event.payload, "summary");
     if (summary !== undefined) return summary.slice(0, 1_000);
   }
-  const serialized = JSON.stringify(event.payload);
-  return (
-    serialized === undefined || serialized.length === 0
-      ? event.eventType
-      : serialized
-  ).slice(0, 1_000);
+  return `已保存“${DOMAIN_EVENT_TITLES[event.eventType] ?? event.eventType}”的审计证据。`;
 }
+
+const NARRATIVE_EVENT_SUMMARIES: Record<string, string> = {
+  "character.created": "角色的初始人格、目标和关系起点已经保存。",
+  "character.published": "角色从草稿进入持续生活状态，后续变化会独立累积。",
+  "life.daily_context_created":
+    "角色形成了今天想推进的事情和近期关注，但这些意图不代表事情已经发生。",
+  "life.intent_settled":
+    "角色的一项日常意图得到了可追溯的进展结果，并继续影响近期生活主线。",
+  "life.support_recorded":
+    "角色对一次困境或压力作出了倾听、分析或建议，回应方式已被记录。",
+  "life.delegated_decision_recorded":
+    "测试用户明确交出决定权后，角色选择了唯一方向；后续行动与结果仍需分别举证。",
+  "life.decision_follow_up_evidenced":
+    "用户提供了后续证据，系统据此分别记录行动、实际结果或事后反思。",
+  "life.pressure_improved_from_user_evidence":
+    "根据用户后续反馈，这次交流后压力下降、清晰度或被理解感有所提升。",
+  "life.pressure_worsened_from_user_evidence":
+    "根据用户后续反馈，当前压力仍在增加，角色会在后续交流中继续承接。",
+  "conversation.turn_committed":
+    "用户与角色完成了一轮对话，相关状态、关系与人生选择证据已原子保存。",
+  "conversation.world_effects_committed":
+    "这次互动对当下状态或关系产生了经过校验的细微变化。",
+};
 
 function parseRecord(value: string): Record<string, unknown> {
   try {

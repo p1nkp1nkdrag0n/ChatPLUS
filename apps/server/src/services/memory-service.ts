@@ -58,6 +58,7 @@ export function readActiveMemoryRecords(
         temporal_certainty, temporal_status
        FROM memories
        WHERE agent_id = ? AND status = 'active'
+         AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
        ORDER BY importance DESC, created_at_utc DESC, id ASC LIMIT ?`,
     )
@@ -110,6 +111,7 @@ export function readRecallCandidateRecords(
               temporal_certainty, temporal_status
              FROM memories
              WHERE agent_id = ? AND status = 'active'
+               AND superseded_by_id IS NULL AND merged_into_id IS NULL
                AND (valid_until_utc IS NULL OR valid_until_utc > ?)
                AND (${exactAnchors
                  .flatMap(() => [
@@ -179,6 +181,7 @@ export function readRecallCandidateRecords(
       `SELECT ${frequencyColumns}
        FROM memories
        WHERE agent_id = ? AND status = 'active'
+         AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)`,
     )
     .get(...keywordParams, agentId, nowUtc) as
@@ -206,6 +209,7 @@ export function readRecallCandidateRecords(
         temporal_certainty, temporal_status
        FROM memories
        WHERE agent_id = ? AND status = 'active'
+         AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
          AND (${keywordClauses})
        ORDER BY (${scoreExpression}) DESC, importance DESC, created_at_utc DESC, id ASC
@@ -293,7 +297,13 @@ export function validateMergeAndPersistMemories(
           input.nowUtc,
         )
       : [];
-  const candidates = [...serverOwnedCandidates, ...input.candidates];
+  const candidates = [
+    ...serverOwnedCandidates,
+    ...(authoritativeMessage?.role === "user" &&
+    blocksUnverifiedModelMemoryCandidates(authoritativeMessage.content)
+      ? []
+      : input.candidates),
+  ];
   if (candidates.length === 0) return [];
   const existingRecords = readActiveMemoryRecords(
     input.store,
@@ -384,6 +394,28 @@ export function validateMergeAndPersistMemories(
     }
   }
   return persisted;
+}
+
+/**
+ * A question, explicit uncertainty, or an unfinished plan is not independent
+ * evidence for a model-proposed durable fact. Narrow server-owned extractors
+ * may still emit a typed planned commitment for supported lifecycle flows;
+ * untrusted model additions are discarded for these turns.
+ */
+function blocksUnverifiedModelMemoryCandidates(text: string): boolean {
+  const normalized = text.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  if (!isExplicitUserMemoryStatement(normalized)) return true;
+  if (/(?:不知道|不清楚|无法确认|没有信息|尚未确认|未确认)/u.test(normalized)) {
+    return true;
+  }
+  const planning = /(?:打算|计划|准备|想找时间|以后想|将来想)/u.test(
+    normalized,
+  );
+  const explicitlyUnfinished =
+    /(?:还没|尚未|并未|没有)(?:开始|完成|整理|执行|行动|发生|确认)|(?:还没|尚未|并未).{0,20}(?:做|完成|发生|行动)/u.test(
+      normalized,
+    );
+  return planning && explicitlyUnfinished;
 }
 
 type EvidenceCatalog = {
@@ -764,10 +796,31 @@ function hasQualifyingSharedExperienceEvidence(
     if (item.sourceType !== "message") return false;
     const source = catalog.messages.get(item.sourceId);
     if (source === undefined || source.role === "system") return false;
+    if (!messageDirectlyAssertsOccurredSharedExperience(source.content)) {
+      return false;
+    }
     return /\b(?:we|us|our|together|you\s+and\s+i|both\s+of\s+us)\b|\u6211\u4eec|\u54b1\u4eec|\u4e00\u8d77|\u5171\u540c|\u4f60\u548c\u6211/iu.test(
       item.quote ?? source.content,
     );
   });
+}
+
+function messageDirectlyAssertsOccurredSharedExperience(text: string): boolean {
+  const normalized = text.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  if (!isExplicitUserMemoryStatement(normalized)) return false;
+  if (
+    /(?:打算|计划|准备|以后|将来|想要).{0,40}(?:一起|共同)/u.test(normalized)
+  ) {
+    return false;
+  }
+  if (
+    /(?:没有|没|并未|从未|未曾).{0,24}(?:一起|共同|见面|吃饭|活动|看展)/u.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+  return true;
 }
 
 const MEMORY_GROUNDING_STOP_WORDS = new Set([

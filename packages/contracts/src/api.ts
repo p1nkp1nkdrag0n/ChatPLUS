@@ -139,6 +139,7 @@ export const PublishCharacterResponseSchema = z
   .object({
     character: CharacterSpecSchema,
     schedule: z.array(ScheduleItemSchema).max(200),
+    lifeContext: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type PublishCharacterResponse = z.infer<
@@ -246,11 +247,23 @@ export const ActivateAgentResponseSchema = z
     characterLocalTime: z.string().trim().min(1).max(64),
     currentActivity: ScheduleItemSchema.optional(),
     schedule: z.array(ScheduleItemSchema).max(300),
+    lifeContext: z.record(z.string(), z.unknown()).optional(),
     settlement: AgentActivationSettlementSchema.optional(),
     proactiveMessage: ApiStoredMessageSchema.optional(),
   })
   .strict();
 export type ActivateAgentResponse = z.infer<typeof ActivateAgentResponseSchema>;
+
+export const AgentScheduleResponseSchema = z
+  .object({
+    items: z.array(ScheduleItemSchema).max(1_000),
+    serverTimeUtc: UtcDateTimeSchema,
+    retired: z.boolean().optional(),
+    replacement: z.literal("fuzzy_life_context").optional(),
+    lifeContext: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+export type AgentScheduleResponse = z.infer<typeof AgentScheduleResponseSchema>;
 
 export const ApiStoredSessionSchema = z
   .object({

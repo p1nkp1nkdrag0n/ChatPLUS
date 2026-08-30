@@ -1,9 +1,11 @@
 # PersonaSim visual system
 
-The two ImageGen concepts in `docs/design/` are the visual source of truth for the MVP:
+The two ImageGen concepts in `docs/design/` are historical visual references for the MVP's typography, spacing and editorial tone:
 
-- `chat-screen-concept.png` — primary chat, state rail, schedule mutation and proactive message.
+- `chat-screen-concept.png` — primary chat and state rail; its schedule rail is superseded and must not be reproduced.
 - `character-editor-concept.png` — structured editing, field locks, provenance and version controls.
+
+The current product source of truth removes all user-facing character schedule, future-72-hours and exact-current-activity surfaces. Chat may show a compact “最近状态” or “近期主线” summary; causal history belongs in the timeline/developer views.
 
 ## Direction
 
@@ -28,7 +30,7 @@ Use an 8 px spacing grid, 6–12 px control radii, and shadows only for transien
 
 ## Signature motif
 
-A one-pixel thread with a small circular node connects cause and effect: a user invitation to a schedule change, an activity event to a proactive message, or a selected field to its provenance. It is semantic, not decorative.
+A one-pixel thread with a small circular node connects cause and effect: a dilemma to support, a decision to a later outcome, a reflection to a relationship milestone, or a selected field to its provenance. It is semantic, not decorative.
 
 ## Responsive model
 
@@ -40,6 +42,6 @@ A one-pixel thread with a small circular node connects cause and effect: a user 
 
 - Navigation routes, selected state and keyboard focus are visible.
 - Forms expose loading, validation, autosave and published states.
-- Schedule changes animate only opacity/transform and honor reduced motion.
+- Causal-history changes animate only opacity/transform and honor reduced motion.
 - Chat composer, editor actions, tabs, timeline filters and developer clock controls are functional.
 - Icons use one consistent 1.75 px outline family and include accessible labels.

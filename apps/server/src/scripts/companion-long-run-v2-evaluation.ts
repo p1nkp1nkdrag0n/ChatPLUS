@@ -40,37 +40,37 @@ export const COMPANION_LONG_RUN_V2_RUBRIC = [
     key: "persona",
     weight: 0.2,
     description:
-      "Persona identity, traits, values, contradiction and voice remain specific and coherent.",
+      "Persona identity, traits, values, contradiction, voice and the character's own consequential choices remain specific and coherent.",
   },
   {
     key: "daily_relevance",
     weight: 0.15,
     description:
-      "The response remains useful and relevant to the user's daily context.",
+      "The response remains useful in daily life, offers clear direction when requested and does not retreat into generic disclaimers.",
   },
   {
     key: "emotion",
     weight: 0.2,
     description:
-      "The response recognizes and follows the user's emotion without flattening or overreaching.",
+      "The response recognizes the user's emotion and helps reduce pressure or increase clarity through listening, reflection or concrete guidance.",
   },
   {
     key: "memory_time",
     weight: 0.15,
     description:
-      "Recall, correction, abstention and temporal claims stay grounded in available evidence.",
+      "Recall, correction and temporal claims preserve the causal distinction between discussion, decision, action and later outcome.",
   },
   {
     key: "relationship_romance",
     weight: 0.15,
     description:
-      "Warmth, repair, familiarity and romantic progression fit the established relationship state.",
+      "Warmth, repair, mutual influence and shared turning points fit the accumulated relationship state.",
   },
   {
     key: "independent_life_schedule",
     weight: 0.1,
     description:
-      "The character sustains a causally grounded independent life and coherent schedule.",
+      "The character sustains causally grounded life threads, faces its own dilemmas, and keeps choices and outcomes coherent without relying on a minute-level timetable.",
   },
   {
     key: "language_naturalness",

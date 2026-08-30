@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  MapPin,
   MessageCircleMore,
   Send,
   Sparkles,
@@ -12,7 +11,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -20,18 +18,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { DateTime } from "luxon";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
-import type {
-  ChatMessage,
-  ChatSession,
-  RuntimeState,
-  ScheduleItem,
-} from "../api/types";
+import type { ChatMessage, ChatSession, RuntimeState } from "../api/types";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
-import { ScheduleRail } from "../components/ScheduleRail";
 import { StatusMeter } from "../components/StatusMeter";
 import { TierLabel } from "../components/TierLabel";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
-import { formatLocalTime, nowWindow } from "../lib/date";
+import { formatLocalTime } from "../lib/date";
 import {
   resolveMessageDelivery,
   sequentialAnimationSignature,
@@ -91,35 +83,6 @@ export default function ChatPage() {
     enabled: Boolean(characterId),
   });
   const state = stateQuery.data ?? activationQuery.data?.state;
-  const simulationNowUtc =
-    state?.asOfUtc ??
-    activationQuery.data?.serverTimeUtc ??
-    activationQuery.data?.state.asOfUtc;
-  const scheduleWindow = useMemo(
-    () => nowWindow(24, simulationNowUtc),
-    [simulationNowUtc],
-  );
-  const scheduleQuery = useQuery({
-    queryKey: [
-      "agent",
-      characterId,
-      "schedule",
-      scheduleWindow.fromUtc,
-      scheduleWindow.toUtc,
-    ],
-    queryFn: () =>
-      api.agents.schedule(
-        characterId!,
-        scheduleWindow.fromUtc,
-        scheduleWindow.toUtc,
-      ),
-    enabled: Boolean(
-      characterId && simulationNowUtc && character?.tier !== "lightweight",
-    ),
-  });
-  const schedule = scheduleQuery.data
-    ? unwrapList<ScheduleItem>(scheduleQuery.data, "items")
-    : (activationQuery.data?.schedule ?? []);
 
   const sendMutation = useMutation({
     mutationFn: (message: string) =>
@@ -153,9 +116,6 @@ export default function ChatPage() {
       );
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["messages", characterId] }),
-        queryClient.invalidateQueries({
-          queryKey: ["agent", characterId, "schedule"],
-        }),
         queryClient.invalidateQueries({
           queryKey: ["agent", characterId, "state"],
         }),
@@ -230,9 +190,6 @@ export default function ChatPage() {
   if (!character || !session) return null;
 
   const timezone = character.identity.timezone;
-  const currentActivity = schedule.find(
-    (item) => item.status === "in_progress",
-  );
   const showRail = character.tier !== "lightweight";
   const submit = () => {
     const message = text.trim();
@@ -290,7 +247,7 @@ export default function ChatPage() {
               <h2>从此刻开始</h2>
               <p>
                 {character.identity.name}{" "}
-                会按照已发布的人格回应。日程、关系和记忆只会在校验后更新。
+                会按照已发布的人格回应。经历、关系和记忆只会在校验后更新。
               </p>
             </div>
           ) : null}
@@ -367,41 +324,7 @@ export default function ChatPage() {
 
       {railOpen && showRail ? (
         <aside className="chat-rail">
-          <section className="rail-section rail-section--now">
-            <div className="rail-heading">
-              <h2>此刻</h2>
-              <span>
-                {formatLocalTime(
-                  state?.asOfUtc ?? DateTime.utc().toISO(),
-                  timezone,
-                )}
-              </span>
-            </div>
-            <div className="current-activity">
-              <span className="life-dot life-dot--published" />
-              <div>
-                <strong>{currentActivity?.title ?? "自由时间"}</strong>
-                <span>
-                  {currentActivity?.description ?? "没有正在进行的固定活动"}
-                </span>
-              </div>
-            </div>
-            {state?.locationContext ? (
-              <p className="location-context">
-                <MapPin size={14} /> {state.locationContext}
-              </p>
-            ) : null}
-          </section>
           {state ? <StateOverview state={state} /> : null}
-          <section className="rail-section">
-            <div className="rail-heading">
-              <h2>接下来 24 小时</h2>
-              <Link to={`/characters/${character.id}/timeline`}>
-                完整时间线
-              </Link>
-            </div>
-            <ScheduleRail items={schedule} timezone={timezone} />
-          </section>
         </aside>
       ) : null}
     </div>
@@ -526,7 +449,7 @@ export function MessageBubble({
       {proactive ? (
         <div className="proactive-origin">
           <span />
-          <Sparkles size={13} /> 主动消息 · 来自完成的行程
+          <Sparkles size={13} /> 主动消息 · 来自近期经历
           <span />
         </div>
       ) : null}
@@ -548,7 +471,7 @@ export function MessageBubble({
       ) : null}
       {proactive ? (
         <button className="message-origin-link" type="button">
-          <MessageCircleMore size={14} /> 查看触发行程
+          <MessageCircleMore size={14} /> 查看触发经历
         </button>
       ) : null}
     </div>

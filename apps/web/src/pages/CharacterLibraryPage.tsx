@@ -47,7 +47,7 @@ export default function CharacterLibraryPage() {
       {!query.isPending && !query.isError && characters.length === 0 ? (
         <EmptyState
           title="先创造一个会继续生活的角色"
-          description="只需要八个简短答案。Fixture 模型无需 API Key，也能完成角色生成、日程和聊天演示。"
+          description="只需要八个简短答案。Fixture 模型无需 API Key，也能完成角色生成、持续生活和聊天演示。"
           action={
             <Link className="button button--primary" to="/create">
               开始创建 <ArrowRight size={16} aria-hidden="true" />
@@ -60,7 +60,7 @@ export default function CharacterLibraryPage() {
         <section className="character-list" aria-label="角色列表">
           <div className="character-list__heading">
             <span>角色</span>
-            <span>生活状态</span>
+            <span>近期主线</span>
             <span>最近更新</span>
             <span className="sr-only">操作</span>
           </div>
@@ -86,15 +86,12 @@ export default function CharacterLibraryPage() {
                 <span className={`life-dot life-dot--${character.status}`} />
                 <div>
                   <strong>
-                    {character.currentActivity ||
-                      (character.status === "draft" ? "等待发布" : "自由时间")}
+                    {character.status === "draft" ? "等待发布" : "生活仍在继续"}
                   </strong>
                   <span>
-                    {character.nextActivityAtUtc
-                      ? `下一项 · ${formatLocalDateTime(character.nextActivityAtUtc)}`
-                      : character.status === "draft"
-                        ? "完成设定后开始 72 小时日程"
-                        : "未来暂无固定安排"}
+                    {character.status === "draft"
+                      ? "完成设定后开始长期陪伴"
+                      : "选择、感受与共同经历会在交流中积累"}
                   </span>
                 </div>
               </div>

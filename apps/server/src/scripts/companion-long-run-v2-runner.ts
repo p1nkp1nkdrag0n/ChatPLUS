@@ -219,6 +219,7 @@ export function buildLongRunV2ServerConfig(
     developerRoutes: true,
     seedDemo: false,
     chatEffectsMode: "gated",
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "enforced",
     selfInitiatedPlanningMode: "enforced",
     liveWorldEffectsMode: "enforced",

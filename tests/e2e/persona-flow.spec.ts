@@ -96,8 +96,8 @@ test.describe("PersonaSim fixture flow", () => {
     const expandRail = page.getByRole("button", { name: "展开状态栏" });
     if (await expandRail.isVisible()) await expandRail.click();
     const rail = page.locator(".chat-rail");
-    await expect(rail.getByText("接下来 24 小时")).toBeVisible();
-    await expect(rail.getByText(/晚会/).first()).toBeVisible();
+    await expect(rail.getByText("状态概览")).toBeVisible();
+    await expect(rail.getByText("压力", { exact: true })).toBeVisible();
   });
 
   test("import form rejects an unsupported file extension client-side", async ({
@@ -117,7 +117,7 @@ test.describe("PersonaSim fixture flow", () => {
     ).toBeVisible();
   });
 
-  test("renders the recall inspector and authoritative timeline lineage", async ({
+  test("renders the recall inspector and a fuzzy-life timeline without exact schedule lineage", async ({
     page,
     request,
   }, testInfo) => {
@@ -200,10 +200,22 @@ test.describe("PersonaSim fixture flow", () => {
 
     await page.goto(`/characters/${characterId}/timeline`);
     await expect(page.locator(".page--timeline")).toBeVisible();
+    const eventLedger = page.locator(".event-ledger");
     await expect(
-      page
+      page.getByRole("heading", { name: "\u53d8\u5316\u8bb0\u5f55" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "\u5171\u540c\u7ecf\u5386" }),
+    ).toBeVisible();
+    await expect(eventLedger.locator("li").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(eventLedger).not.toContainText("ScheduleItem");
+    await expect(eventLedger).not.toContainText("schedule.");
+    await expect(
+      eventLedger
         .locator("details.timeline-lineage summary")
-        .filter({ hasText: "ScheduleItem \u2192 Memory \u2192 Message" })
+        .filter({ hasText: "Correlation / causation" })
         .first(),
     ).toBeVisible({ timeout: 30_000 });
     await page.screenshot({

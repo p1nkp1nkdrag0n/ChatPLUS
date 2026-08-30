@@ -101,6 +101,30 @@ describe("verified user memory claim derivation", () => {
     ).toBe(true);
   });
 
+  it("maps the v3 notebook, deadline, and destination corrections to stable slots", () => {
+    const cases = [
+      [
+        "我刚才说错了，包是藏青色，不是绿色。笔记仍在内层，书签还是 M-417。",
+        "user_fact:notebook:storage",
+      ],
+      [
+        "更正一个事实：山鸣影像后来把回复期限延到 9 月 16 日，不是 9 月 14 日。",
+        "user_fact:decision_option:B:reply_deadline",
+      ],
+      [
+        "更正另一件事：许宁后来改去成都进修，不去重庆了。",
+        "user_fact:person:许宁:destination",
+      ],
+    ] as const;
+
+    for (const [evidenceText, subjectKey] of cases) {
+      expect(hasExplicitMemoryCorrection(evidenceText)).toBe(true);
+      expect(
+        deriveExplicitUserMemoryClaim({ category: "user_fact", evidenceText }),
+      ).toEqual({ subjectKey, disposition: "affirmed" });
+    }
+  });
+
   it("uses candidate content to select a supported fact from compound evidence", () => {
     const evidenceText = "小林是我大学同学，现在住在苏州。";
     expect(

@@ -20,6 +20,10 @@ import type {
   ConversationContextService,
   PreparedConversationContext,
 } from "./conversation-context-service.js";
+import type {
+  ConversationLifeImpact,
+  FuzzyLifeService,
+} from "./fuzzy-life-service.js";
 import type { MemoryRecallPreview } from "./memory-recall-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
 import type { PersonalIntentService } from "./personal-intent-service.js";
@@ -36,6 +40,7 @@ import type {
 
 export interface TurnCommitServiceOptions {
   scheduleNegotiationMode?: "legacy" | "shadow" | "enforced";
+  lifePlanningMode?: "fuzzy" | "legacy_exact";
 }
 
 export interface ChatTurnCommand {
@@ -74,6 +79,7 @@ export class TurnCommitService {
     private readonly sse: SseHub,
     private readonly contexts?: ConversationContextService,
     private readonly options: TurnCommitServiceOptions = {},
+    private readonly fuzzyLife?: FuzzyLifeService,
   ) {
     this.retrievalRuns = new RetrievalRunRepository(store.database);
   }
@@ -146,10 +152,14 @@ export class TurnCommitService {
       createdAtUtc: input.nowUtc,
     };
 
-    let effectsToApply = input.world.validation.accepted;
+    const fuzzyLifeEnabled = this.options.lifePlanningMode === "fuzzy";
+    let effectsToApply = fuzzyLifeEnabled
+      ? []
+      : input.world.validation.accepted;
     let scheduleChanges: ScheduleItem[] = [];
     let memoryIds: string[] = [];
     let personalIntentIds: string[] = [];
+    let lifeImpact: ConversationLifeImpact | undefined;
     try {
       this.store.transaction(() => {
         const duplicate = this.store.findTurnByClientMessageId(
@@ -206,19 +216,23 @@ export class TurnCommitService {
           });
         }
         this.persistRecallAudit(input, userMessage);
-        personalIntentIds = this.persistPersonalIntents(
-          input,
-          userMessage,
-          input.world.proposalRejections,
-        );
+        personalIntentIds = fuzzyLifeEnabled
+          ? []
+          : this.persistPersonalIntents(
+              input,
+              userMessage,
+              input.world.proposalRejections,
+            );
         this.persistWorldEffectsAudit(input, userMessage);
-        this.persistNegotiation(input, userMessage);
-        scheduleChanges = this.schedules.applyValidatedEffects(
-          input.command.agentId,
-          effectsToApply,
-          input.nowUtc,
-        );
-        this.persistScheduleCommand(input, userMessage, scheduleChanges);
+        if (!fuzzyLifeEnabled) {
+          this.persistNegotiation(input, userMessage);
+          scheduleChanges = this.schedules.applyValidatedEffects(
+            input.command.agentId,
+            effectsToApply,
+            input.nowUtc,
+          );
+          this.persistScheduleCommand(input, userMessage, scheduleChanges);
+        }
         for (const rejection of input.world.proposalRejections) {
           this.store.insertRejectedProposal({
             agentId: input.command.agentId,
@@ -256,6 +270,23 @@ export class TurnCommitService {
             }).map((memory) => memory.id)
           : [];
         this.store.insertMessage(assistantMessage);
+        if (fuzzyLifeEnabled) {
+          if (this.fuzzyLife === undefined) {
+            throw new Error(
+              "Fuzzy life mode requires a composed FuzzyLifeService.",
+            );
+          }
+          lifeImpact = this.fuzzyLife.recordConversationTurn({
+            agentId: input.command.agentId,
+            sessionId: input.sessionId,
+            userMessageId: userMessage.id,
+            assistantMessageId: assistantMessage.id,
+            userText: userMessage.content,
+            assistantText: assistantMessage.content,
+            recordedAtUtc: input.nowUtc,
+            correlationId: input.command.clientMessageId,
+          });
+        }
         if (
           !this.store.insertDomainEvent({
             agentId: input.command.agentId,
@@ -271,6 +302,7 @@ export class TurnCommitService {
               memoryIds,
               reasonCode: input.world.decision.reasonCode,
               personalIntentIds,
+              ...(lifeImpact === undefined ? {} : { lifeImpact }),
             },
             correlationId: input.command.clientMessageId,
             causationId: userMessage.id,

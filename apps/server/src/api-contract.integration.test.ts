@@ -2,6 +2,7 @@ import type { ServerResponse } from "node:http";
 
 import {
   ActivateAgentResponseSchema,
+  AgentScheduleResponseSchema,
   CharacterMutationResponseSchema,
   CreateSessionResponseSchema,
   GetSettingsResponseSchema,
@@ -41,6 +42,7 @@ describe("shared API transport contracts", () => {
         clockMode: "fake",
         seedDemo: false,
         developerRoutes: true,
+        lifePlanningMode: "legacy_exact",
         scheduleNegotiationMode: "legacy",
         llm: {
           provider: "fixture",
@@ -93,6 +95,21 @@ describe("shared API transport contracts", () => {
       ActivateAgentResponseSchema,
     );
     expect(activated.agentId).toBe(agentId);
+
+    const schedule = parseResponse(
+      await app.inject({
+        method: "GET",
+        url: `/api/agents/${agentId}/schedule`,
+      }),
+      200,
+      AgentScheduleResponseSchema,
+    );
+    if (schedule.retired === true) {
+      expect(schedule.items).toEqual([]);
+      expect(schedule.replacement).toBe("fuzzy_life_context");
+    } else {
+      expect(schedule.items.length).toBeGreaterThan(0);
+    }
 
     const createdSession = parseResponse(
       await app.inject({
@@ -348,7 +365,14 @@ describe("shared API transport contracts", () => {
 
     expect(
       timeline.events.find((event) => event.id === activityEventId),
-    ).toMatchObject(expectedLineage);
+    ).toMatchObject({
+      ...expectedLineage,
+      title: originalScheduleItem.title,
+      source: "self_initiated",
+    });
+    expect(timeline.scheduleItems.map((item) => item.id)).toContain(
+      scheduleItemId,
+    );
     const committedPlan = timeline.events.find(
       (event) => event.type === "self_plan.committed",
     );

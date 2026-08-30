@@ -10,6 +10,7 @@ import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore } from "../db/store.js";
 import { CalendarRepository } from "../repositories/calendar-repository.js";
+import { LifeRepository } from "../repositories/life-repository.js";
 import { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
 import { ActorQueue } from "../runtime/actor-queue.js";
 import { FakeClock, SystemClock, type Clock } from "../runtime/clock.js";
@@ -31,6 +32,7 @@ import { ConversationActivityTracker } from "../services/conversation-activity-t
 import { DateDigestService } from "../services/date-digest-service.js";
 import { FollowUpRepository } from "../services/follow-up-repository.js";
 import { FollowUpService } from "../services/follow-up-service.js";
+import { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import {
   LlmService,
   type LlmServiceObservationOptions,
@@ -64,6 +66,7 @@ import {
   CONVERSATION_ACTIVITY_TRACKER_TOKEN,
   DATE_DIGEST_SERVICE_TOKEN,
   FOLLOW_UP_SERVICE_TOKEN,
+  LIFE_SERVICE_TOKEN,
   MEMORY_LIFECYCLE_SERVICE_TOKEN,
   MEMORY_RECALL_SERVICE_TOKEN,
   PERSONAL_INTENT_SERVICE_TOKEN,
@@ -239,6 +242,7 @@ function createDomainPlugin(
         SERVER_SERVICE_IDS.personalIntents,
         SERVER_SERVICE_IDS.selfPlanning,
         SERVER_SERVICE_IDS.personalLife,
+        SERVER_SERVICE_IDS.life,
         SERVER_SERVICE_IDS.conversations,
         SERVER_SERVICE_IDS.turnDecisions,
         SERVER_SERVICE_IDS.worldEffects,
@@ -282,6 +286,11 @@ function createDomainPlugin(
         schedules,
         sse,
         config.selfInitiatedPlanningMode,
+      );
+      const life = new FuzzyLifeService(
+        store,
+        new LifeRepository(store.database),
+        clock,
       );
       const continuityRepository = new ContinuityRepository(store);
       const continuityMemoryRepository = new ContinuityMemoryRepository(store);
@@ -370,6 +379,7 @@ function createDomainPlugin(
       proactiveDeliveryRef.current = proactiveDelivery;
       const conversationOptions = {
         chatEffectsMode: config.chatEffectsMode,
+        lifePlanningMode: config.lifePlanningMode,
         liveWorldEffectsMode: config.liveWorldEffectsMode,
         scheduleNegotiationMode: config.scheduleNegotiationMode,
         memoryRecallMode: config.memoryRecallMode,
@@ -396,6 +406,7 @@ function createDomainPlugin(
         sse,
         conversationContext,
         conversationOptions,
+        life,
       );
       const conversations = new ConversationService(
         store,
@@ -413,6 +424,7 @@ function createDomainPlugin(
           decisions: turnDecisions,
           worldEffects,
           commits: turnCommits,
+          fuzzyLife: life,
         },
       );
 
@@ -423,6 +435,7 @@ function createDomainPlugin(
       context.services.provide(PERSONAL_INTENT_SERVICE_TOKEN, personalIntents);
       context.services.provide(SELF_PLANNING_SERVICE_TOKEN, selfPlanning);
       context.services.provide(PERSONAL_LIFE_SERVICE_TOKEN, personalLife);
+      context.services.provide(LIFE_SERVICE_TOKEN, life);
       context.services.provide(AUTOBIOGRAPHY_SERVICE_TOKEN, autobiographies);
       context.services.provide(CALENDAR_SERVICE_TOKEN, calendar);
       context.services.provide(CHECKPOINT_SERVICE_TOKEN, checkpoints);
@@ -480,6 +493,8 @@ function createSchedulerPlugin(): KernelPlugin<ServerKernelEvents> {
         context.services.resolve(PERSONAL_LIFE_SERVICE_TOKEN),
         context.services.resolve(PROACTIVE_DELIVERY_SERVICE_TOKEN),
         context.services.resolve(MEMORY_LIFECYCLE_SERVICE_TOKEN),
+        context.services.resolve(LIFE_SERVICE_TOKEN),
+        context.services.resolve(SERVER_CONFIG_TOKEN).lifePlanningMode,
       );
       context.services.provide(SCHEDULER_SERVICE_TOKEN, scheduler);
       context.events.on("server.stopping", () => {

@@ -17,6 +17,7 @@ import type { ConversationService } from "../services/conversation-service.js";
 import type { ContinuityIndexService } from "../services/continuity-index-service.js";
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
+import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { FollowUpService } from "../services/follow-up-service.js";
 import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
 import type { LlmService } from "../services/llm-service.js";
@@ -53,6 +54,7 @@ export const SERVER_SERVICE_IDS = {
   personalIntents: "server.personal-intents",
   selfPlanning: "server.self-planning",
   personalLife: "server.personal-life",
+  life: "server.fuzzy-life",
   autobiographies: "server.autobiographies",
   calendar: "server.calendar",
   checkpoints: "server.checkpoints",
@@ -102,6 +104,9 @@ export const SELF_PLANNING_SERVICE_TOKEN =
   createServiceToken<SelfPlanningService>(SERVER_SERVICE_IDS.selfPlanning);
 export const PERSONAL_LIFE_SERVICE_TOKEN =
   createServiceToken<PersonalLifeService>(SERVER_SERVICE_IDS.personalLife);
+export const LIFE_SERVICE_TOKEN = createServiceToken<FuzzyLifeService>(
+  SERVER_SERVICE_IDS.life,
+);
 export const AUTOBIOGRAPHY_SERVICE_TOKEN =
   createServiceToken<AutobiographyService>(SERVER_SERVICE_IDS.autobiographies);
 export const CALENDAR_SERVICE_TOKEN = createServiceToken<CalendarService>(

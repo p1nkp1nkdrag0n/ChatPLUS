@@ -1,17 +1,18 @@
-# Feature Flag Rollout Guide（历史与实验覆盖）
+# Feature Flag Rollout Guide（纯模糊生活方向）
 
-> 本文保留非核心能力和显式对照实验的历史 rollout 说明。README 定义的本地 PersonaSim 核心闭环不再以 shadow/off 作为默认体验。
+> README 与 [ADR 0006](adr/0006-fuzzy-life-and-decision-causality.md) 定义当前产品方向。精确日程相关 flag 只服务于历史数据兼容和回归对照，不再具有产品晋级含义。
 
-## 当前状态总览（2026-08-28）
+## 当前状态总览（2026-08-30）
 
-| Flag                        | 取值                       | 默认     | 阶段                                  | 说明                                                                                     |
-| --------------------------- | -------------------------- | -------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `SCHEDULE_NEGOTIATION_MODE` | legacy / shadow / enforced | `shadow` | 集成测试齐备，待 rollout              | 服务端协商状态机有独立测试；受版本控制的默认值仍是 shadow                                |
-| `SELF_INITIATED_PLANNING`   | off / shadow / enforced    | `enforced` | 本地核心闭环                        | 默认规划并持久化角色生活；shadow/off 仅用于显式对照实验                                  |
-| `LIVE_WORLD_EFFECTS`        | off / shadow / enforced    | `enforced` | 本地核心闭环                        | 默认校验、限幅并事务化提交状态/关系 proposal；shadow/off 仅用于显式对照                  |
-| `MEMORY_RECALL_MODE`        | legacy / shadow / enforced | `legacy` | 默认 retention 长跑通过，待 rollout   | 测试验证选中的 EvidenceBundle 进入最终 Prompt trace；shadow 不改变 legacy 注入           |
-| `AUTOBIOGRAPHY_MODE`        | off / shadow / enforced    | `off`    | 默认 retention 长跑通过，待 rollout   | 控制 checkpoint、autobiography 及 checkpoint-derived event cards，不控制全部 event cards |
-| ~~`PROACTIVE_COMMIT_MODE`~~ | 已移除                     | —        | 已收敛                                | 主动消息统一走 `ProactiveGenerationService` 两阶段提交，legacy 单事务路径已删除          |
+| Flag                        | 取值                       | 默认       | 阶段                                | 说明                                                                                        |
+| --------------------------- | -------------------------- | ---------- | ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| `LIFE_PLANNING_MODE`        | fuzzy / legacy_exact       | `fuzzy`    | 本地核心方向                        | 产品运行不注入未来精确日程；`legacy_exact` 只供旧测试和迁移回归                             |
+| `SCHEDULE_NEGOTIATION_MODE` | legacy / shadow / enforced | `legacy`   | **产品路径已废弃**                  | 仅用于读取旧日程、历史测试和迁移回归；不得作为新功能验收门                                  |
+| `SELF_INITIATED_PLANNING`   | off / shadow / enforced    | `off`      | **旧精确排程已关闭**                | 历史 `PersonalIntent → ScheduleItem` 投影只供迁移回归；新的模糊生活上下文由独立领域模型承载 |
+| `LIVE_WORLD_EFFECTS`        | off / shadow / enforced    | `enforced` | 本地核心闭环                        | 默认校验、限幅并事务化提交状态/关系 proposal；shadow/off 仅用于显式对照                     |
+| `MEMORY_RECALL_MODE`        | legacy / shadow / enforced | `legacy`   | 默认 retention 长跑通过，待 rollout | 测试验证选中的 EvidenceBundle 进入最终 Prompt trace；shadow 不改变 legacy 注入              |
+| `AUTOBIOGRAPHY_MODE`        | off / shadow / enforced    | `off`      | 默认 retention 长跑通过，待 rollout | 控制 checkpoint、autobiography 及 checkpoint-derived event cards，不控制全部 event cards    |
+| ~~`PROACTIVE_COMMIT_MODE`~~ | 已移除                     | —          | 已收敛                              | 主动消息统一走 `ProactiveGenerationService` 两阶段提交，legacy 单事务路径已删除             |
 
 ## 验收证据索引
 
@@ -21,9 +22,10 @@
   - 验证非空 world effects、后续 29 轮 EvidenceBundle 召回注入、care cue continuity、持久化 `promptSegmentTrace` 的必要 segments/预算、checkpoint/autobiography evidence 与 restart idempotency。
   - 其中 `scheduleAction` 始终为 `none`；schedule negotiation mutation 语义由独立测试套件覆盖。
   - 这是 fixture/integration 证据，不是真实 provider 或 rollout 证据。
-- P0 自主生活长跑（DST 夜行 / 29h 离线 / 重启）：
+- 历史 P0 精确日程长跑（DST 夜行 / 29h 离线 / 重启，仅作迁移回归）：
   `apps/server/src/services/personal-life-long-run.integration.test.ts`
 - 场景级验收（10 个 sim 场景）：`pnpm sim:p1`（见 `apps/server/src/scenarios/p1-scenario-harness.ts`）
+- 当前产品长程验收规格：[纯模糊生活与人生选择长程验证方案](plans/ChatPLUS_Fuzzy_Life_Decision_Long_Run_Plan_v3.md)。新的核心证据是困境、支持、决定、行动、结果和复盘链路，而不是 schedule mutation。
 
 ## 晋级检查单（每个 flag 通用）
 
@@ -31,25 +33,25 @@
 2. **Developer Page 对比**：
    - Memory Recall：`legacy selected memories` vs `new selected evidence` 差异
      （`POST /api/developer/agents/:id/memory-recall-preview` + Retrieval Runs 回放）；
-   - Self Planning：bundle 提案 vs 实际日程差异；
+   - Self Planning：模糊生活提案 vs 当日生活背景和长期主线差异；
    - World Effects：shadow 审计的 delta 分布是否合理（无越界、无频繁满 clamp）。
 3. **测试 parity**：对应 integration 套件在 enforced 下全绿。
 4. **切换 enforced**：一次只切一个 flag，保留至少一个版本的 rollback 窗口。
 5. **删除 legacy**：rollback 窗口内无回滚需求后，删除旧路径并更新本表。
 
-> 上述晋级清单继续适用于 memory/autobiography 等非核心能力；world effects 与 self planning 的 shadow 现在只承担显式比较和诊断用途。
+> 上述晋级清单继续适用于 memory/autobiography 等非核心能力；world effects 与 self planning 的 shadow 现在只承担显式比较和诊断用途。Schedule negotiation 不再参加产品 rollout。
 
 ## 已知边界（放量前注意）
 
 - `AUTOBIOGRAPHY_MODE=off` 会停止 checkpoint、autobiography 和 checkpoint-derived event cards；
-  settlement 仍会写入 activity-event cards，因此 event_cards 并非全局关闭。
+  历史 settlement 仍可能存在 activity-event cards，但新普通生活不应继续通过精确 `ScheduleItem` 生成它们。
 - `MEMORY_RECALL_MODE=enforced` 且 autobiography 关闭时，仍可使用 verified
   verbatim/activity/date-digest evidence，但缺少 checkpoint/autobiography 来源；只有需要
   checkpoint 层次时才应耦合 rollout。
 - `.env` 被忽略且属于本地状态；受版本控制的默认值来自 `.env.example`/config，
   文档不能据本地 `.env` 声称部署状态。
 - 主动消息的 quiet hours / daily cap / cooldown 在 `ProactiveDeliveryService.loadPolicy`
-  统一评估；`settlement-service` 不再承担投递职责。
+  统一评估；候选来源应是有证据的结果、复盘或生活主线里程碑，而不是计划中的日常活动。
 - 记忆召回候选总池不超过 `candidateLimit`（默认 200）：
   关键词命中最多 50 条优先入池，剩余名额再由 importance 排序补齐；
   若召回质量不足，优先调池参数而不是直接上 embedding。

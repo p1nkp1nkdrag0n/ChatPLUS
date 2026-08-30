@@ -1,7 +1,7 @@
 import {
   Bot,
   Braces,
-  Clock3,
+  History,
   Library,
   Plus,
   Settings,
@@ -27,7 +27,7 @@ interface NavigationItem {
 const PRIMARY_NAVIGATION: NavigationItem[] = [
   { to: "/characters", label: "角色", icon: Library },
   { to: "/create", label: "创建", icon: Plus },
-  { to: "/timeline", label: "时间线", icon: Clock3 },
+  { to: "/timeline", label: "共同经历", icon: History },
 ];
 
 const SECONDARY_NAVIGATION: NavigationItem[] = [
@@ -76,9 +76,6 @@ export function AppShell() {
     void Promise.all([
       queryClient.invalidateQueries({
         queryKey: ["agent", activeCharacterId, "state"],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["agent", activeCharacterId, "schedule"],
       }),
       queryClient.invalidateQueries({
         queryKey: ["agent", activeCharacterId, "timeline"],

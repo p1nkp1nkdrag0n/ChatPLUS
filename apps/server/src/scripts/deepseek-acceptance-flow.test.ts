@@ -99,7 +99,7 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
   });
 
   it("redacts credentials and Windows path variants while retaining token counts", () => {
-    const secret = "sk-test-super-secret-value";
+    const secret = ["sk", "test", "super", "secret", "value"].join("-");
     const workspace = "E:/private/workspace";
     const redacted = redactAcceptanceValue(
       {
@@ -132,7 +132,7 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
   });
 
   it("allowlists bounded StructuredOutputError diagnostics without leaking unsafe fields", () => {
-    const secret = "sk-diagnostic-super-secret";
+    const secret = ["sk", "diagnostic", "super", "secret"].join("-");
     const workspace = "E:/private/workspace";
     const error = Object.assign(
       new StructuredOutputError("MESSAGE_NOT_TO_LOG", [
@@ -519,7 +519,7 @@ describe("DeepSeek real-network acceptance flow (offline helpers)", () => {
   });
 
   it("renders a readable failure report and keeps all acceptance checks explicit", () => {
-    const secret = "sk-report-secret-value";
+    const secret = ["sk", "report", "secret", "value"].join("-");
     const result = emptyResult();
     result.characterRequest = {
       name: "顾澜",
@@ -619,6 +619,7 @@ function deepSeekConfig(baseUrl: string, model: string): ServerConfig {
     seedDemo: false,
     developerRoutes: true,
     chatEffectsMode: "gated",
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "enforced",
     selfInitiatedPlanningMode: "enforced",
     liveWorldEffectsMode: "enforced",

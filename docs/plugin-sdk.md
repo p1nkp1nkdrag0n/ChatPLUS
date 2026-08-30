@@ -23,7 +23,7 @@ The context offers:
 - a logger that must redact credentials;
 - lifecycle cleanup registration.
 
-Persistent facts such as `message.created` or `settlement.completed` are separately recorded in SQLite `domain_events`. The in-memory bus is for runtime coordination and SSE notification.
+Persistent facts such as `message.created`, `decision.recorded` or `life.outcome_recorded` are separately recorded in SQLite `domain_events`. The in-memory bus is for runtime coordination and SSE notification.
 
 ## Bundle composition
 
@@ -35,8 +35,8 @@ core
 ├── conversation and LLM provider
 └── audit/cost meter
 
-daily = core + schedule + settlement + state + memory + relationship
-high-fidelity = daily + proactive dialogue + persona guard
+daily = core + fuzzy life + decision causality + state + memory + relationship
+high-fidelity = daily + proactive reflection + persona guard
 ```
 
 ## Explicit non-goals

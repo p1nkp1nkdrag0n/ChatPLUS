@@ -66,6 +66,7 @@ describe("continuity memory recall hierarchy", () => {
       query: "shared trail memory",
       nowUtc: SHANGHAI_NOW,
       timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
     });
 
     expect(preview.strategy.name).toBe("continuity_hierarchy_v1");
@@ -99,6 +100,48 @@ describe("continuity memory recall hierarchy", () => {
       run.candidates.filter((candidate) => candidate.decision === "selected"),
     ).toHaveLength(3);
     expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+  });
+
+  it("fails closed when a persisted EventCard points to a missing evidence source", async () => {
+    const harness = await createHarness({
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const card = sharedEventCard({
+      id: "event-card-missing-source",
+      agentId: harness.agentId,
+      messageId: "message-missing-source",
+      title: "Missing-source lantern walk",
+      summary: "The missing-source lantern walk was a shared experience.",
+      occurredAtUtc: "2026-08-20T01:00:00.000Z",
+    });
+    const continuity = new ContinuityRepository(app.personasim.store);
+    expect(continuity.upsertEventCards([card])).toBe(1);
+    expect(
+      continuity.searchEventCards({
+        agentId: harness.agentId,
+        query: "missing-source lantern walk",
+      }),
+    ).toEqual([expect.objectContaining({ id: card.id })]);
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      query: "missing-source lantern walk",
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+
+    expect(preview.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    expect(
+      latestRun(app, harness.agentId).inputSnapshot.hierarchy,
+    ).toMatchObject({ finalTier: "none" });
   });
 
   it("falls back to Verbatim and then none without using basic memories", async () => {

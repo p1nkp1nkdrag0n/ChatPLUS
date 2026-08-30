@@ -224,14 +224,14 @@ export default function CharacterGeneratorPage() {
                 selected={form.tier === "lightweight"}
                 onSelect={() => update("tier", "lightweight")}
                 title="轻量模拟"
-                description="传统角色对话，不推进独立日程。"
+                description="传统角色对话，不推进独立生活主线。"
               />
               <TierOption
                 value="daily"
                 selected={form.tier === "daily"}
                 onSelect={() => update("tier", "daily")}
                 title="日常模拟"
-                description="72 小时日程、离线结算和动态状态。"
+                description="持续生活、离线推进和动态状态。"
               />
               <TierOption
                 value="high_fidelity"

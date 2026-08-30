@@ -53,6 +53,7 @@ describe("PersonaSim server integration", () => {
         "014_retrieval_run_date_digest.sql",
         "015_llm_provider_profiles.sql",
         "016_llm_reasoning_config.sql",
+        "017_fuzzy_life_decisions.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -85,6 +86,18 @@ describe("PersonaSim server integration", () => {
           "proactive_generation_runs",
           "calendar_entries",
           "retrieval_runs",
+          "daily_life_contexts",
+          "daily_life_intents",
+          "life_threads",
+          "life_outcomes",
+          "dilemma_episodes",
+          "pressure_episodes",
+          "support_interventions",
+          "decision_records",
+          "action_records",
+          "outcome_records",
+          "reflection_records",
+          "relationship_milestones",
         ]),
       );
       expect(database.pragma("foreign_keys", { simple: true })).toBe(1);

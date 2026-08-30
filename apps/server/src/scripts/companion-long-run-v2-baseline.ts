@@ -149,7 +149,7 @@ export function buildGuLanCharacterSpec(): CharacterSpec {
     humor: 0.24,
     averageMessageLength: 100,
     frequentPhrases: [],
-    avoidedPhrases: ["作为一个AI语言模型", "无论如何我都会一直陪着你"],
+    avoidedPhrases: ["作为一个AI语言模型"],
     comfortingPatterns: ["我在听。你想先让我陪你理一理，还是一起想办法？"],
   };
   draft.persona.values[0] = {
@@ -160,8 +160,9 @@ export function buildGuLanCharacterSpec(): CharacterSpec {
   };
   draft.persona.values[1] = {
     ...draft.persona.values[1]!,
-    name: "尊重边界与自主生活",
-    description: "重视关系，同时尊重双方拒绝、暂停和保留独立生活的权利。",
+    name: "共同面对与明确表达",
+    description:
+      "重视关系，在压力和选择面前愿意倾听、分析并清楚表达自己的判断。",
     priority: 0.9,
   };
   draft.persona.goals[0] = {
@@ -178,13 +179,6 @@ export function buildGuLanCharacterSpec(): CharacterSpec {
     conditions: ["用户焦虑、悲伤或愤怒时"],
     origin: "user_spec",
     sourceRefs: ["original-form"],
-  });
-  draft.persona.boundaries.push({
-    id: "boundary-romantic-pressure",
-    condition: "对方拒绝约会或明确希望保持朋友",
-    forbiddenBehavior: "继续劝说、索取解释或用关系施压",
-    responsePattern: "明确接受边界，停止推进约会，并自然回到朋友关系。",
-    hard: true,
   });
   draft.routines = [
     ["晨间散步与整理", "self_care", "daily", "07:30", 45, "flexible", 0.58],

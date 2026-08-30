@@ -359,107 +359,7 @@
   white-space: pre-line;
 }
 
-.timeline-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
-  gap: 46px;
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
-.timeline-day {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: 20px;
-  padding-bottom: 28px;
-}
-
-.timeline-day__label {
-  position: sticky;
-  top: 20px;
-  align-self: start;
-}
-
-.timeline-day__label span,
-.timeline-day__label strong {
-  display: block;
-}
-
-.timeline-day__label span {
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.timeline-day__label strong {
-  margin-top: 2px;
-  font-size: 13px;
-}
-
-.timeline-day__track {
-  position: relative;
-  display: grid;
-  gap: 0;
-}
-
-.timeline-day__track::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 70px;
-  width: 1px;
-  background: var(--line-strong);
-}
-
-.timeline-block {
-  position: relative;
-  display: grid;
-  grid-template-columns: 52px 16px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: flex-start;
-  min-height: 74px;
-  padding: 10px 0;
-}
-
-.timeline-block time {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.timeline-block__node {
-  z-index: 1;
-  width: 9px;
-  height: 9px;
-  margin-top: 4px;
-  border: 2px solid var(--canvas);
-  border-radius: 50%;
-  background: var(--line-strong);
-  box-shadow: 0 0 0 1px var(--line-strong);
-}
-
-.timeline-block--in_progress .timeline-block__node,
-.timeline-block--planned .timeline-block__node {
-  background: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-
-.timeline-block strong {
-  font-size: 13px;
-}
-
-.timeline-block p,
-.timeline-block__meta {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.timeline-block__meta {
-  font-family: var(--font-mono);
-}
-
-.timeline-block__title-row {
+.event-ledger__title-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -497,8 +397,8 @@
 }
 
 .event-ledger {
-  border-left: 1px solid var(--line);
-  padding-left: 28px;
+  max-width: 920px;
+  margin: 0 auto;
 }
 
 .event-ledger__heading,
@@ -526,6 +426,10 @@
   border-bottom: 1px solid var(--line);
 }
 
+.event-ledger li > div {
+  min-width: 0;
+}
+
 .event-ledger__node {
   display: inline-flex;
   width: 22px;
@@ -548,6 +452,10 @@
   margin-top: 3px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.event-ledger li p {
+  overflow-wrap: anywhere;
 }
 
 .settings-document {

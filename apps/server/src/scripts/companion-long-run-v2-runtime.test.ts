@@ -95,6 +95,7 @@ function fixtureConfig(databasePath: string): ServerConfig {
     seedDemo: false,
     developerRoutes: true,
     chatEffectsMode: "gated",
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "enforced",
     selfInitiatedPlanningMode: "enforced",
     liveWorldEffectsMode: "enforced",

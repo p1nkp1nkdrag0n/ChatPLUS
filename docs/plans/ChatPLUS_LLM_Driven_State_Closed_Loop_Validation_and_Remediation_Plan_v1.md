@@ -1,5 +1,7 @@
 # ChatPLUS 大语言模型驱动角色状态使用与变化闭环修改计划（Codex）
 
+> **历史文档：** 本计划保留为 2026-08-28 状态闭环证据。其精确日程和旧交互范围不再定义当前验收；现行方向见 [ADR 0006](../adr/0006-fuzzy-life-and-decision-causality.md) 与 [长程验证方案 v3](ChatPLUS_Fuzzy_Life_Decision_Long_Run_Plan_v3.md)。
+
 > 文档性质：以 README 核心目标为唯一产品方向的代码修改与功能验证计划。
 >
 > 制定日期：2026-08-28

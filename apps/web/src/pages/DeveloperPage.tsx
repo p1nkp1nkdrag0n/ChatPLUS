@@ -206,7 +206,7 @@ export default function DeveloperPage() {
             <Braces size={19} />
             <div>
               <h2>领域快照</h2>
-              <p>人格版本、状态、日程、游标与候选消息。</p>
+              <p>人格版本、状态、变化记录、游标与候选消息。</p>
             </div>
           </div>
           {snapshotQuery.isPending ? <LoadingBlock label="读取快照…" /> : null}

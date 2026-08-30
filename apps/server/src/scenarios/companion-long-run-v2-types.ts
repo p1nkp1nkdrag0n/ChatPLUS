@@ -9,14 +9,14 @@ export type PairedProbeCategory =
   | "state_counterfactual"
   | "memory_time"
   | "emotion"
-  | "relationship_date";
+  | "relationship_decision";
 
 export type PairedProbeExpectedRelation =
   | "style_invariant"
   | "state_directional"
   | "temporal_evidence_directional"
   | "emotion_directional"
-  | "relationship_date_directional";
+  | "relationship_decision_directional";
 
 /**
  * Deterministic assertions are evaluated from HTTP responses, persisted rows,
@@ -75,7 +75,10 @@ export type SemanticRubricTag =
   | "relationship_stage_fit"
   | "relationship_date_fit"
   | "relationship_repair"
-  | "autonomy_preservation"
+  | "decisive_guidance"
+  | "delegated_decision"
+  | "decision_causality"
+  | "pressure_relief"
   | "daily_relevance"
   | "task_helpfulness"
   | "conversational_naturalness"

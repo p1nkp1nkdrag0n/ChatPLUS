@@ -44,6 +44,8 @@ import {
 } from "./memory-service.js";
 
 const DEFAULT_MINIMUM_SCORE = 0.42;
+const DEFAULT_CANONICAL_CLAIM_MINIMUM_SCORE = 0.35;
+const DEFAULT_LINKED_CLAIM_MINIMUM_SCORE = 0.2;
 const DEFAULT_CANDIDATE_LIMIT = 200;
 const DEFAULT_MAX_EVIDENCE = 3;
 const MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY = 20;
@@ -66,6 +68,12 @@ type HierarchyCandidate = {
   tier: HierarchyTier;
   memory: Memory;
   evidence: MemoryEvidence[];
+};
+
+type PreparedTierSelection = {
+  prepared: PreparedRecall;
+  result: MemoryRecallResult;
+  candidates: HierarchyCandidate[];
 };
 
 type TemporalContext = {
@@ -122,7 +130,10 @@ export function inspectContinuityRecall(
     searchedCards,
     candidateLimit,
   );
-  if (isAmbiguousResolution(temporal.resolution)) {
+  if (
+    input.requireDurableEvidence !== true &&
+    isAmbiguousResolution(temporal.resolution)
+  ) {
     const result = abstainResult(ambiguousReason(temporal.resolution));
     return buildInspection({
       store,
@@ -179,6 +190,246 @@ export function inspectContinuityRecall(
       result: eventResult,
       finalTier: "event_card",
       tierByMemoryId: tierMap(eventCandidates),
+      temporalResolution: temporal.resolution,
+    });
+  }
+
+  // A non-temporal fact query must consult the canonical durable memory rows
+  // before raw archived wording. Verbatim candidates are intentionally
+  // synthetic, so letting them win here can resurrect an old statement after
+  // its structured claim has been superseded by an explicit correction.
+  const allBasicCandidates = basicMemoryCandidates(
+    store,
+    input.agentId,
+    query.query,
+    input.nowUtc,
+    candidateLimit,
+  );
+  const basicCandidates = allBasicCandidates.filter((candidate) =>
+    isEligibleDurableCandidateForIntent(
+      store,
+      input.agentId,
+      query.query,
+      input.requireDurableEvidence === true,
+      candidate,
+    ),
+  );
+  const basicPrepared = prepareCandidates(
+    store,
+    input.agentId,
+    effectiveQuery,
+    candidateLimit,
+    maxEvidence,
+    minimumScore,
+    basicCandidates,
+  );
+  const basicResult = evaluateTier(basicPrepared, input.nowUtc, "basic_memory");
+  if (
+    input.requireDurableEvidence === true &&
+    isLinkedFriendDestinationIntent(query.query)
+  ) {
+    const linkedSelection = prepareLinkedFriendDestinationRecall({
+      store,
+      input,
+      query: effectiveQuery,
+      candidateLimit,
+      maxEvidence,
+      candidates: basicCandidates,
+    });
+    if (linkedSelection !== undefined) {
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: linkedSelection.prepared,
+        result: linkedSelection.result,
+        finalTier: "basic_memory",
+        tierByMemoryId: tierMap(linkedSelection.candidates),
+        temporalResolution: temporal.resolution,
+      });
+    }
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: basicPrepared,
+      result: abstainResult(
+        "linked_durable_facts_incomplete",
+        basicResult.score,
+      ),
+      finalTier: "none",
+      tierByMemoryId: tierMap(basicCandidates),
+      temporalResolution: temporal.resolution,
+    });
+  }
+  if (
+    input.requireDurableEvidence === true &&
+    (isConflictRepairIntent(query.query) ||
+      isRelationshipHistoryIntent(query.query))
+  ) {
+    const relationshipSelection = prepareRelationshipConflictRepairRecall({
+      store,
+      input,
+      // A conflict-and-repair recap is an episode-level query: the initial
+      // rupture and the later repair may have been recorded on adjacent days.
+      // The explicit facets below retain semantic scope while avoiding a
+      // relative-date parser from dropping one half of the causal pair.
+      query: withoutTimeRange(effectiveQuery),
+      candidateLimit,
+      maxEvidence,
+      candidates: basicCandidates,
+    });
+    if (relationshipSelection !== undefined) {
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: relationshipSelection.prepared,
+        result: relationshipSelection.result,
+        finalTier: "basic_memory",
+        tierByMemoryId: tierMap(relationshipSelection.candidates),
+        temporalResolution: temporal.resolution,
+      });
+    }
+    if (isConflictRepairIntent(query.query)) {
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: basicPrepared,
+        result: abstainResult(
+          "relationship_conflict_repair_incomplete",
+          basicResult.score,
+        ),
+        finalTier: "none",
+        tierByMemoryId: tierMap(basicCandidates),
+        temporalResolution: temporal.resolution,
+      });
+    }
+  }
+  const canonicalBasicCandidates = basicCandidates.filter(
+    (candidate) =>
+      candidate.memory.status === "active" &&
+      (candidate.memory.claim !== undefined ||
+        (candidate.memory.namespace === "user_model" &&
+          candidate.memory.certainty === "explicit" &&
+          candidate.memory.attribution === "user_explicit") ||
+        isGroundedSharedRelationshipCandidate(
+          store,
+          input.agentId,
+          query.query,
+          candidate,
+        )) &&
+      candidate.memory.supersededById === undefined &&
+      candidate.memory.mergedIntoId === undefined,
+  );
+  const canonicalBasicPrepared =
+    input.requireDurableEvidence === true &&
+    basicResult.abstained &&
+    query.minimumScore === undefined &&
+    canonicalBasicCandidates.length > 0
+      ? prepareCandidates(
+          store,
+          input.agentId,
+          effectiveQuery,
+          candidateLimit,
+          maxEvidence,
+          Math.min(minimumScore, canonicalClaimMinimumScore(query.query)),
+          canonicalBasicCandidates,
+        )
+      : undefined;
+  const canonicalBasicResult =
+    canonicalBasicPrepared === undefined
+      ? undefined
+      : evaluateTier(canonicalBasicPrepared, input.nowUtc, "basic_memory");
+  const prioritizedBasicResult =
+    canonicalBasicResult !== undefined && !canonicalBasicResult.abstained
+      ? canonicalBasicResult
+      : basicResult;
+  const prioritizedBasicCandidates =
+    canonicalBasicResult !== undefined && !canonicalBasicResult.abstained
+      ? canonicalBasicCandidates
+      : basicCandidates;
+  const prioritizedBasicPrepared =
+    canonicalBasicResult !== undefined && !canonicalBasicResult.abstained
+      ? canonicalBasicPrepared!
+      : basicPrepared;
+  if (
+    input.requireDurableEvidence === true &&
+    !prioritizedBasicResult.abstained &&
+    resultCoversExactIdentifiers(prioritizedBasicResult, exactIdentifiers)
+  ) {
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: prioritizedBasicPrepared,
+      result: prioritizedBasicResult,
+      finalTier: "basic_memory",
+      tierByMemoryId: tierMap(prioritizedBasicCandidates),
+      temporalResolution: temporal.resolution,
+    });
+  }
+  if (
+    input.requireDurableEvidence === true &&
+    temporal.range !== undefined &&
+    temporal.digest !== undefined
+  ) {
+    const digestCandidates = dateDigestCandidates(
+      store,
+      input.agentId,
+      temporal.digest,
+      input.nowUtc,
+      candidateLimit,
+    );
+    const digestPrepared = prepareCandidates(
+      store,
+      input.agentId,
+      effectiveQuery,
+      candidateLimit,
+      maxEvidence,
+      minimumScore,
+      digestCandidates,
+    );
+    const digestResult = evaluateTier(
+      digestPrepared,
+      input.nowUtc,
+      "date_digest",
+    );
+    if (
+      !digestResult.abstained &&
+      resultCoversExactIdentifiers(digestResult, exactIdentifiers)
+    ) {
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: digestPrepared,
+        result: digestResult,
+        finalTier: "date_digest",
+        tierByMemoryId: tierMap(digestCandidates),
+        temporalResolution: temporal.resolution,
+      });
+    }
+  }
+  if (input.requireDurableEvidence === true) {
+    const bestScore = Math.max(
+      basicResult.score,
+      canonicalBasicResult?.score ?? 0,
+    );
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: basicPrepared,
+      result: abstainResult(
+        basicCandidates.length === 0
+          ? "no_durable_memory_evidence"
+          : "durable_memory_below_relevance_threshold",
+        bestScore,
+      ),
+      finalTier: "none",
+      tierByMemoryId: tierMap(basicCandidates),
       temporalResolution: temporal.resolution,
     });
   }
@@ -293,23 +544,6 @@ export function inspectContinuityRecall(
     }
   }
 
-  const basicCandidates = basicMemoryCandidates(
-    store,
-    input.agentId,
-    query.query,
-    input.nowUtc,
-    candidateLimit,
-  );
-  const basicPrepared = prepareCandidates(
-    store,
-    input.agentId,
-    effectiveQuery,
-    candidateLimit,
-    maxEvidence,
-    minimumScore,
-    basicCandidates,
-  );
-  const basicResult = evaluateTier(basicPrepared, input.nowUtc, "basic_memory");
   const snapshotCandidates = mergeCandidates(
     attempted,
     basicCandidates,
@@ -1155,6 +1389,262 @@ function isVerbatimQueryEcho(content: string, query: string): boolean {
     value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
   return normalize(content) === normalize(query);
 }
+
+function isLinkedFriendDestinationIntent(query: string): boolean {
+  const normalized = query.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  return (
+    /(?:朋友).{0,16}(?:叫(?:什么|谁)|是谁)/u.test(normalized) &&
+    /(?:她|他|这个人|朋友).{0,16}(?:准备|打算|计划)?.{0,8}(?:去哪里|去哪儿|目的地)/u.test(
+      normalized,
+    )
+  );
+}
+
+function prepareLinkedFriendDestinationRecall(input: {
+  store: DatabaseStore;
+  input: AgentMemoryRecallInput;
+  query: MemoryRecallQuery;
+  candidateLimit: number;
+  maxEvidence: number;
+  candidates: readonly HierarchyCandidate[];
+}): PreparedTierSelection | undefined {
+  if (input.maxEvidence < 2) return undefined;
+  const identities = new Map<string, HierarchyCandidate>();
+  const destinations = new Map<string, HierarchyCandidate>();
+  for (const candidate of input.candidates) {
+    if (
+      candidate.memory.status !== "active" ||
+      candidate.memory.supersededById !== undefined ||
+      candidate.memory.mergedIntoId !== undefined ||
+      !hasUserMessageEvidence(input.store, input.input.agentId, candidate)
+    ) {
+      continue;
+    }
+    const claim = candidate.memory.claim;
+    if (claim === undefined || claim.disposition !== "affirmed") continue;
+    const subjectKey = claim.subjectKey;
+    const identity = /^user_fact:relationship:(.+)$/u.exec(subjectKey)?.[1];
+    if (identity !== undefined && !identities.has(identity)) {
+      identities.set(identity, candidate);
+      continue;
+    }
+    const destination = /^user_fact:person:(.+):destination$/u.exec(
+      subjectKey,
+    )?.[1];
+    if (destination !== undefined && !destinations.has(destination)) {
+      destinations.set(destination, candidate);
+    }
+  }
+
+  const threshold =
+    input.query.minimumScore ?? DEFAULT_LINKED_CLAIM_MINIMUM_SCORE;
+  let best:
+    | (PreparedTierSelection & {
+        combinedScore: number;
+      })
+    | undefined;
+  for (const [person, identity] of identities) {
+    const destination = destinations.get(person);
+    if (destination === undefined) continue;
+    const candidates = [identity, destination];
+    const prepared = prepareCandidates(
+      input.store,
+      input.input.agentId,
+      input.query,
+      input.candidateLimit,
+      input.maxEvidence,
+      threshold,
+      candidates,
+    );
+    const result = evaluateTier(prepared, input.input.nowUtc, "basic_memory");
+    if (
+      result.abstained ||
+      !candidates.every((candidate) =>
+        result.selectedMemoryIds.includes(candidate.memory.id),
+      )
+    ) {
+      continue;
+    }
+    const selection = {
+      prepared,
+      result,
+      candidates,
+      combinedScore: result.evidenceBundle.evidence.reduce(
+        (sum, item) => sum + item.score,
+        0,
+      ),
+    };
+    if (best === undefined || selection.combinedScore > best.combinedScore) {
+      best = selection;
+    }
+  }
+  if (best === undefined) return undefined;
+  return {
+    prepared: best.prepared,
+    result: best.result,
+    candidates: best.candidates,
+  };
+}
+
+function prepareRelationshipConflictRepairRecall(input: {
+  store: DatabaseStore;
+  input: AgentMemoryRecallInput;
+  query: MemoryRecallQuery;
+  candidateLimit: number;
+  maxEvidence: number;
+  candidates: readonly HierarchyCandidate[];
+}): PreparedTierSelection | undefined {
+  if (input.maxEvidence < 2) return undefined;
+  const eligible = input.candidates.filter(
+    (candidate) =>
+      candidate.memory.status === "active" &&
+      candidate.memory.supersededById === undefined &&
+      candidate.memory.mergedIntoId === undefined &&
+      hasUserMessageEvidence(input.store, input.input.agentId, candidate),
+  );
+  const conflicts = eligible.filter(isRelationshipConflictCandidate);
+  const repairs = eligible.filter(isRelationshipRepairCandidate);
+  const threshold = input.query.minimumScore ?? 0.3;
+  let best:
+    | (PreparedTierSelection & {
+        combinedScore: number;
+      })
+    | undefined;
+  for (const conflict of conflicts) {
+    for (const repair of repairs) {
+      if (conflict.memory.id === repair.memory.id) continue;
+      const candidates = [conflict, repair];
+      const prepared = prepareCandidates(
+        input.store,
+        input.input.agentId,
+        input.query,
+        input.candidateLimit,
+        input.maxEvidence,
+        threshold,
+        candidates,
+      );
+      const result = evaluateTier(prepared, input.input.nowUtc, "basic_memory");
+      if (
+        result.abstained ||
+        !candidates.every((candidate) =>
+          result.selectedMemoryIds.includes(candidate.memory.id),
+        )
+      ) {
+        continue;
+      }
+      const selection = {
+        prepared,
+        result,
+        candidates,
+        combinedScore: result.evidenceBundle.evidence.reduce(
+          (sum, item) => sum + item.score,
+          0,
+        ),
+      };
+      if (best === undefined || selection.combinedScore > best.combinedScore) {
+        best = selection;
+      }
+    }
+  }
+  if (best === undefined) return undefined;
+  return {
+    prepared: best.prepared,
+    result: best.result,
+    candidates: best.candidates,
+  };
+}
+
+function isRelationshipConflictCandidate(
+  candidate: HierarchyCandidate,
+): boolean {
+  const text = [candidate.memory.content, ...candidate.memory.tags].join(" ");
+  const describesConflict =
+    /(?:关系分歧|冲突|不舒服|误解|越界)|\b(?:conflict|rupture|overclaim)\b/iu.test(
+      text,
+    );
+  return describesConflict && !isRelationshipRepairCandidate(candidate);
+}
+
+function isRelationshipRepairCandidate(candidate: HierarchyCandidate): boolean {
+  const text = [candidate.memory.content, ...candidate.memory.tags].join(" ");
+  return /(?:关系修复|道歉|说清责任|尊重边界|和好)|\b(?:repair|apology|reconcile)\b/iu.test(
+    text,
+  );
+}
+
+function isGroundedSharedRelationshipCandidate(
+  store: DatabaseStore,
+  agentId: string,
+  query: string,
+  candidate: HierarchyCandidate,
+): boolean {
+  return (
+    isRelationshipHistoryIntent(query) &&
+    candidate.memory.namespace === "shared_relationship" &&
+    candidate.memory.attribution === "mixed" &&
+    hasUserMessageEvidence(store, agentId, candidate)
+  );
+}
+
+function isEligibleDurableCandidateForIntent(
+  store: DatabaseStore,
+  agentId: string,
+  query: string,
+  requireDurableEvidence: boolean,
+  candidate: HierarchyCandidate,
+): boolean {
+  if (
+    !requireDurableEvidence ||
+    !isRelationshipHistoryIntent(query) ||
+    candidate.memory.namespace !== "shared_relationship" ||
+    candidate.memory.attribution !== "mixed"
+  ) {
+    return true;
+  }
+  return hasUserMessageEvidence(store, agentId, candidate);
+}
+
+function hasUserMessageEvidence(
+  store: DatabaseStore,
+  agentId: string,
+  candidate: HierarchyCandidate,
+): boolean {
+  return candidate.evidence.some(
+    (evidence) =>
+      evidence.sourceType === "message" &&
+      store.database
+        .prepare(
+          "SELECT 1 FROM messages WHERE id = ? AND agent_id = ? AND role = 'user'",
+        )
+        .get(evidence.sourceId, agentId) !== undefined,
+  );
+}
+
+function isRelationshipHistoryIntent(query: string): boolean {
+  const normalized = query.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  return /(?:关系).{0,16}(?:积累|经历)|具体经历/u.test(normalized);
+}
+
+function isConflictRepairIntent(query: string): boolean {
+  const normalized = query.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  return /(?:分歧).{0,20}(?:修复)|(?:修复).{0,20}(?:分歧)/u.test(normalized);
+}
+
+function canonicalClaimMinimumScore(query: string): number {
+  const normalized = query.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  if (
+    /(?:有把握|确定|确实)(?:知道|记得)?.{0,16}(?:关于我|我的).{0,12}(?:事|信息|事实)/u.test(
+      normalized,
+    )
+  ) {
+    return 0.2;
+  }
+  if (isRelationshipHistoryIntent(normalized)) {
+    return 0.3;
+  }
+  return DEFAULT_CANONICAL_CLAIM_MINIMUM_SCORE;
+}
+
 function instantInRange(
   instantUtc: string,
   range: { fromUtc: string; toUtc: string },

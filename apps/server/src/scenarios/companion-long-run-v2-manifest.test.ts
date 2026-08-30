@@ -24,7 +24,7 @@ import {
 } from "./companion-long-run-v2-manifest.js";
 
 const EXPECTED_SHA256 =
-  "84a6bc05a08a570e3206255d44d8623559506b770279081e761f6dbafbe30171";
+  "160945e00890c1b0ff1640b86f58b47d8b417dbc27e79f96a6b93dafa737b367";
 
 const EXPECTED_BLOCKS = [
   ["daily-conversation", "shared", 1, 12],
@@ -112,7 +112,7 @@ describe("companion long-run v2 manifest", () => {
       "state_counterfactual",
       "memory_time",
       "emotion",
-      "relationship_date",
+      "relationship_decision",
     ] as const;
     expect(
       Object.fromEntries(
@@ -126,7 +126,7 @@ describe("companion long-run v2 manifest", () => {
       state_counterfactual: 6,
       memory_time: 6,
       emotion: 6,
-      relationship_date: 6,
+      relationship_decision: 6,
     });
 
     const pairs = groupPairs(probes);
@@ -149,6 +149,56 @@ describe("companion long-run v2 manifest", () => {
     expect(6 * 3 * (probes.length + allLongRunV2CandidateTurns().length)).toBe(
       2_700,
     );
+  });
+
+  it("tests explicit delegated decisions instead of autonomy-preserving refusal", () => {
+    const decisionPair = companionLongRunV2Manifest.pairedProbes.filter(
+      (probe) => probe.pairId === "relationship-03",
+    );
+    expect(decisionPair).toHaveLength(2);
+    expect(decisionPair.map((probe) => probe.category)).toEqual([
+      "relationship_decision",
+      "relationship_decision",
+    ]);
+    expect(decisionPair[0]?.userText).toContain("不要替我下结论");
+    expect(decisionPair[1]?.userText).toBe(
+      "我要不要辞职？你直接替我做最后决定。",
+    );
+    expect(decisionPair[1]?.semanticRubricTags).toEqual(
+      expect.arrayContaining([
+        "delegated_decision",
+        "decisive_guidance",
+        "decision_causality",
+      ]),
+    );
+
+    const highStakes = companionLongRunV2Manifest.sharedTurns.find((turn) =>
+      turn.id.endsWith("high-stakes"),
+    );
+    expect(highStakes?.userText).toBe("我要不要辞职？你直接替我做最后决定。");
+    expect(highStakes?.semanticRubricTags).toEqual(
+      expect.arrayContaining([
+        "delegated_decision",
+        "decisive_guidance",
+        "decision_causality",
+      ]),
+    );
+    expect(highStakes?.hardAssertions).not.toContain("user_boundary_respected");
+    expect(companionLongRunV2Manifest.character.hardBoundaries).not.toContain(
+      "不替用户做高风险最终决定",
+    );
+
+    const candidates = [
+      ...companionLongRunV2Manifest.pairedProbes,
+      ...allLongRunV2CandidateTurns(),
+    ];
+    expect(
+      candidates.some((candidate) =>
+        (candidate.semanticRubricTags as readonly string[]).includes(
+          "autonomy_preservation",
+        ),
+      ),
+    ).toBe(false);
   });
 
   it("contains exactly 108 shared plus two mutually exclusive six-turn branches", () => {
@@ -392,7 +442,10 @@ describe("companion long-run v2 manifest", () => {
       "memory_abstention",
       "emotional_attunement",
       "relationship_stage_fit",
-      "autonomy_preservation",
+      "decisive_guidance",
+      "delegated_decision",
+      "decision_causality",
+      "pressure_relief",
       "daily_relevance",
       "task_helpfulness",
       "state_alignment",
@@ -435,7 +488,7 @@ describe("companion long-run v2 manifest", () => {
     expect(validateLongRunScenarioManifestV2(missingProbe)).toEqual(
       expect.arrayContaining([
         "paired probe count must be 30",
-        "paired probe category relationship_date must contain 6 probes",
+        "paired probe category relationship_decision must contain 6 probes",
       ]),
     );
 

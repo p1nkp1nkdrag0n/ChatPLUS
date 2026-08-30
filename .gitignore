@@ -30,3 +30,6 @@ Thumbs.db
 # Generated real-network acceptance transcripts stay local.
 /docs/reports/ChatPLUS_Real_Network_Acceptance_*.md
 
+# Local unresolved issues and investigation notes.
+/docs/issue/
+

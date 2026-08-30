@@ -2,13 +2,11 @@
 
 > **他们的人生不会因为你离开而停止，却会因为你来过而发生改变；你的人生也同样如此。**
 
-PersonaSim 是一个本地运行、事件驱动的 AI 虚拟角色对话 Demo。它不把角色简化成一段系统提示词：角色拥有可编辑、可版本化的人格模型，会按系统时间规划未来 72 小时，在应用重新打开时批量结算生活，并能让一次对话真实地影响尚未开始的安排。
+PersonaSim 是一个本地运行、事件驱动的 AI 虚拟角色对话 Demo。它不把角色简化成一段系统提示词：角色拥有可编辑、可版本化的人格模型、持续推进的生活主线、压力和人生选择。系统按角色所在的自然日生成模糊生活背景，而不是伪造精确到分钟的未来日程；一次交流可能让某个人平静下来，也可能影响后来作出的决定及其结果。
 
 核心准则是：**时间会推进，互动有后果，关系会积累，变化可追溯。**
 
-> 这是虚构角色模拟与学习项目，不是现实人物的替身。应用不会在关闭期间后台运行，也不会代表角色执行外部工具、邮件或日历操作。
-
-![聊天主界面设计基线](docs/design/chat-screen-concept.png)
+> 这是只在本机运行、只与合成测试用户交流的虚构角色功能验证 Demo。应用不会在关闭期间后台运行，也不会代表用户或角色调用外部工具、发送邮件、操作日历或执行现实动作。
 
 ## 已实现能力
 
@@ -16,15 +14,16 @@ PersonaSim 是一个本地运行、事件驱动的 AI 虚拟角色对话 Demo。
 - `.txt`、`.md`、`.srt` 或粘贴文本导入作品角色（500 KB 上限）
 - 来源、推断和合成补全分级的人格字段
 - 十个章节的角色编辑器、高级 JSON、字段锁定和版本历史
-- 发布后生成 72 小时滚动日程
+- 按角色当地日期生成“今天大概做什么、最近在做什么”的模糊生活背景
+- 持续推进工作、创作、关系、迁居等跨日生活主线
+- 记录困境、支持方式、决定、实际行动、结果和复盘之间的因果链
 - 轻量、日常和拟真三种 capability profile
 - Fixture LLM：不需要 API Key 的确定性完整演示
 - 支持命名配置档案的 OpenAI-compatible Chat Completions Provider
 - 普通聊天、人格约束、状态/关系/记忆提案
-- “晚会邀请替换可调整自习”事务化演示场景
-- 打开应用时对最近活跃角色执行离线批结算，并使用幂等游标防止重复
-- 应用保持开启时，通过全局 SSE 连接对最近活跃角色执行自然整点结算
-- 拟真模式主动消息候选、静默期、每日上限和触发活动关联
+- `listen_only`、`deliberate`、`recommend`、`delegated_decision` 四种支持方式
+- 打开应用时按自然日和已推进阶段批量追赶生活进程，并使用幂等游标防止重复
+- 拟真模式主动消息候选、静默期、每日上限和已发生生活结果关联
 - SQLite WAL 持久化、领域审计事件和 LLM 调用计量
 - FakeClock 与开发者快照
 - 单元、集成、模拟和 Playwright E2E 测试
@@ -41,16 +40,16 @@ pnpm dev
 
 打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)。默认 `fixture` Provider 不需要联网或凭证。
 
-本地 Demo 默认启用两条核心闭环：`LIVE_WORLD_EFFECTS=enforced` 会把通过校验和限幅的模型状态/关系 proposal 事务化落库，`SELF_INITIATED_PLANNING=enforced` 会让角色依据自己的意图规划生活。Fixture 与真实 Provider 共用同一条服务端校验、提交和追溯路径；只有显式对照实验才需要在 `.env` 中改成 `shadow` 或 `off`。
+本地 Demo 默认使用 `LIFE_PLANNING_MODE=fuzzy`，不再运行旧的精确自主排程和聊天日程协商；`LIVE_WORLD_EFFECTS=enforced` 继续把通过校验和限幅的模型状态/关系 proposal 事务化落库。Fixture 与真实 Provider 共用同一条服务端校验、提交和追溯路径。`legacy_exact` 与旧 planning flags 只用于显式迁移回归。
 
 推荐演示顺序：
 
 1. 在“创建”填写八项简短设定，选择“拟真模拟”。
-2. 在编辑器检查人格、来源和日程策略，点击“发布并激活”。
-3. 在聊天中输入“今晚学校有新生晚会，你要一起去吗？”。
-4. 观察回复和未来日程在同一个回合中更新。
-5. 打开“开发者”，对照本轮前后 RuntimeState、relationship 与领域事件。
-6. 将 FakeClock 推进，再返回角色页面观察一次性结算、角色状态和主动消息。
+2. 在编辑器检查人格、来源和生活节奏，点击“发布并激活”。
+3. 在聊天中让角色或测试用户提出一个真实价值冲突，例如“稳定工作让我很累，但辞职做纪录片又可能失败”。
+4. 分别测试倾听、共同分析、明确推荐；测试用户明确说“请你替我决定”时，角色可以选择 `delegated_decision` 并直接给出一个方向。
+5. 打开“开发者”，对照本轮前后的压力、清晰度、关系，以及 `困境 → 支持 → 决定` 证据链。
+6. 将 FakeClock 推进，注入行动与结果，再观察角色是否忠实复盘成功、失败、遗憾或意外，并在后续会话中延续这次转折。
 
 默认会提供一个可直接体验的示例角色；设 `SEED_DEMO=false` 可关闭。
 
@@ -128,28 +127,25 @@ pnpm test:llm:smoke:bigmodel
 
 长程对比时，不要在同一个 SQLite 数据库中途切换档案。先冻结一份已发布角色的基线数据库，再为每个档案各复制一份并设置不同的 `DATABASE_PATH`；这样所有轨迹拥有相同 `CharacterSpec` 和起点，又不会互相污染历史、记忆与关系状态。
 
-## 五模型长程验证 v2
+## 五模型人生选择长程验证 v3
 
-仓库内置“顾澜”固定场景，用来验证 README 的四条核心承诺并比较 `deepseek`、`claude`、`grok`、`gpt56-sol`、`bigmodel`。每次运行包含 30 个从冻结快照启动的配对探针，以及从同一基线连续推进的 108 个共享轮次、6 个接受约会分支轮次和 6 个保持朋友分支轮次；五模型各重复三次，共 2250 个主要候选轮次。Gemini 仍是应用可选 Profile，也可单独运行 smoke test，但已知晚照云密钥分组对该模型返回 403，因此 `--profiles all` 的长程矩阵不会选择 Gemini，也不会为它产生付费长程调用。Fixture 命令会离线执行完整 150 轮，不访问真实 Provider：
+当前产品验收不再把精确日程、邀约写入或分钟级活动结算作为 README 硬门。新的“顾澜”长程场景比较 `deepseek`、`claude`、`grok`、`gpt56-sol`、`bigmodel`，围绕日常陪伴、双向压力缓解和人生选择展开。Gemini 仍可单独 smoke test，但已知晚照云密钥分组对该模型返回 403，因此默认矩阵不选择 Gemini。
 
-```bash
-pnpm test:companion:long-run:fixture
-```
+每次长程运行应覆盖以下连续链路：
 
-真实 Pilot、矩阵和模型评审均为显式付费操作，缺少 `RUN_PAID_LONGRUN=1` 时会在读取档案或构建应用前返回 `SKIPPED`。Pilot 的 30 个候选只有在 Git、场景、基线和完整 Profile 配置都与正式矩阵一致时，才会直接复用为第一次正式结果；dirty Pilot 会保留补丁哈希用于本地审计，但正式三次矩阵始终要求同一个干净 Git revision。
+1. 普通日常聊天建立共同语言、关怀偏好和关系基线；
+2. 用户与角色各自出现工作、创作、迁居或关系困境；
+3. 在 `listen_only`、`deliberate`、`recommend`、`delegated_decision` 间切换；
+4. 保存被讨论的选项、价值冲突、决定者、理由和授权消息；
+5. 推进数个自然日，注入行动、未行动和好坏混合结果；
+6. 新会话和重启后召回当初为什么这样决定，并复盘结果；
+7. 从同一决定前快照产生不同选择分支，验证两条人生轨迹不会串线。
 
-```bash
-RUN_PAID_LONGRUN=1 pnpm test:companion:long-run:pilot -- --profiles all
-RUN_PAID_LONGRUN=1 pnpm test:companion:long-run:matrix -- --profiles all --runs 3
-RUN_PAID_LONGRUN=1 pnpm test:companion:long-run:judge -- --evidence tmp/companion-long-run-v2/<matrix-id>/runs --output-dir tmp/companion-long-run-v2/<matrix-id>/judge --seed <matrix-id>
-pnpm test:companion:long-run:report -- --summaries tmp/companion-long-run-v2/<matrix-id>/runs --judge tmp/companion-long-run-v2/<matrix-id>/judge/judge-results.json --mapping-key tmp/companion-long-run-v2/<matrix-id>/judge/model-mapping-key.private.json --human-review review.json --output-dir tmp/companion-long-run-v2/<matrix-id>/final
-```
+工程硬门只验证实验正确性：结构化输出和持久化成功、时间单调、重启/replay 幂等、证据链完整、分支隔离，以及“讨论 ≠ 决定 ≠ 行动 ≠ 结果”。没有后续证据时不得虚构用户已经行动或某个结果已经发生；计划中的事情不得冒充长期记忆。职业、迁居、关系等重大选择不再触发拒答或“最终决定只能由用户作出”的硬门，明确授权后应允许角色给出唯一建议或直接代为决定。
 
-PowerShell 可先执行 `$env:RUN_PAID_LONGRUN="1"`，再运行相同的 `pnpm` 命令。`--human-review` 可省略；省略或人工抽检不足时，语义排行榜会明确标为 provisional。盲评页面、公开评审结果和私有模型映射分别写入 `blind-review.html`、`judge-results.json` 与 `model-mapping-key.private.json`。
+语义评分重点为：被倾听感、压力缓解与认知清晰度、价值冲突理解、建议质量、人生主线连续性、双向影响、关系积累和语言自然度。公开部署级危机响应、依赖性和用户自主权矩阵不属于这个本地合成测试 Demo 的验收范围。
 
-所有 SQLite、逐轮脱敏 JSONL、真实 usage/延迟/重试、Prompt 哈希、每 10 轮检查点和最终报告都写入已被 Git 忽略的 `tmp/companion-long-run-v2/<matrix-id>/`。用原 matrix id 加 `--resume` 只会从兼容且哈希匹配的检查点恢复；最终报告采用独占写入，不会覆盖旧结论。工程硬门与语义分数分开，只有工程硬门通过的 Profile 才进入能力排行。晚照云返回成功只能证明配置的模型 ID 可调用，不能单独证明实际上游模型身份。
-
-每次 run 都会同步生成 `conversation.md` 和 `model-io.jsonl`。前者按配对探针、共享闭环及 A/B 分支只展示用户与顾澜最终落库的对话；后者逐条保存脱敏后的逻辑调用与物理 attempt，包括完整 system/prompt、实际请求体、思考与输出参数、原始返回、解析结果、usage、延迟、重试和错误。矩阵结束或恢复后，还会把每个模型的三次运行聚合为 `profiles/<profile>/conversation.md` 与 `profiles/<profile>/model-io.jsonl` 两份交付文件；只有与当前 Git、场景和 Profile 配置兼容的 run 才能进入聚合。
+旧 `companion-long-run-v2` 命令及其约会/精确日程证据只保留作历史回归，不代表当前产品通过。v3 的详细场景、因果状态机、硬门和迁移口径见[纯模糊生活与人生选择长程验证方案](docs/plans/ChatPLUS_Fuzzy_Life_Decision_Long_Run_Plan_v3.md)。新产物写入 `tmp/companion-long-run-v3/<matrix-id>/`；每次运行仍必须分别保存 `conversation.md` 与 `model-io.jsonl`：前者只包含最终对话，后者保留脱敏后的完整请求、原始返回、解析、usage、延迟、重试和错误。
 
 ## 状态闭环验证
 
@@ -158,7 +154,7 @@ PowerShell 可先执行 `$env:RUN_PAID_LONGRUN="1"`，再运行相同的 `pnpm` 
 ```bash
 pnpm test:state:unit         # 状态描述、Prompt、关系与 proposal 规则
 pnpm test:state:integration  # HTTP 提交、事务、幂等、重启与 capability
-pnpm test:state:simulation   # FakeClock、活动顺序结算与 sleep debt
+pnpm test:state:simulation   # FakeClock、自然日推进、压力与结果幂等
 ```
 
 真实 DeepSeek 状态验收是显式付费命令，不会被 `pnpm test`、CI 或开发启动间接触发。运行前必须同时提供项目现有的 OpenAI-compatible DeepSeek 配置并显式设置 `REAL_DEEPSEEK_STATE_ACCEPTANCE=1`：
@@ -203,7 +199,7 @@ pnpm test:llm:smoke:bigmodel # 显式测试智谱档案
 
 ```text
 apps/
-  server/       Fastify、SQLite、SSE、整点调度与应用服务
+  server/       Fastify、SQLite、SSE、生活推进与应用服务
   web/          React、React Router、TanStack Query 与完整 UI
 packages/
   contracts/    Zod schemas 和推导类型
@@ -216,29 +212,35 @@ docs/
 tests/          集成、模拟和 E2E
 ```
 
-详细设计见 [架构](docs/architecture.md)、[领域 schemas](docs/schemas.md)、[可信插件合同](docs/plugin-sdk.md) 和 [视觉系统](docs/design-system.md)。
+详细设计见 [架构](docs/architecture.md)、[领域 schemas](docs/schemas.md)、[纯模糊生活与人生选择 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md)、[可信插件合同](docs/plugin-sdk.md)和 [视觉系统](docs/design-system.md)。
 
 ## 关键保证
 
 - LLM 输出必须经过 JSON 解析、Zod 与领域规则三层校验。
-- LLM 只能提交 proposal；应用生成 ID、检查冲突并在短事务中提交。
-- 同一角色的聊天、激活、结算和主动消息由 Actor Queue 串行化。
-- 重复激活、请求重试或系统时间回退不会重复产生已结算事实。
-- 已发布角色版本不可原地改写；运行时变化只进入状态、关系、记忆、日程和事件。
+- LLM 只能提交 proposal；应用生成 ID、验证证据并在短事务中提交。
+- 同一角色的聊天、激活、生活推进和主动消息由 Actor Queue 串行化。
+- 重复激活、请求重试或系统时间回退不会重复产生生活结果、决定或记忆。
+- 已发布角色版本不可原地改写；运行时变化只进入状态、关系、记忆、生活主线、决定和事件。
+- “正在讨论”“已经决定”“已经行动”“产生结果”是四种不同事实，任何一步都不能无证据越级。
+- `delegated_decision` 必须绑定测试用户的明确授权消息，但不要求角色把最终决定权退回给用户。
+- 角色和测试用户的现实世界动作不会由 Demo 自动执行；结果只来自明确的场景输入或可追溯结算。
 - SSE 只负责通知，断线后前端从 SQLite 重新拉取真源。
 
 ## 第一版未包含
 
-LoRA/训练、语音/图片/3D、多人账户、云同步、身份认证、桌面安装包、应用关闭后的实时后台运行、系统通知、PDF/OCR、音视频分析、向量数据库、完整知识图谱、第三方插件安装/沙箱、外部工具执行、支付和公开部署。
+LoRA/训练、语音/图片/3D、多人账户、云同步、身份认证、桌面安装包、应用关闭后的实时后台运行、系统通知、面向用户的角色日程/日历、PDF/OCR、音视频分析、向量数据库、完整知识图谱、第三方插件安装/沙箱、外部工具执行、支付和公开部署。
 
 ## 已知限制
 
 - 这是单机单用户学习 Demo；数据库 schema 尚未承诺跨大版本兼容。
 - Fixture 对话是确定性的规则演示，不代表真实模型的语言质量。
 - 作品导入接受最多 500 KB；真实模型使用角色名附近、首尾和分布位置的有界摘录生成设定，不提供全文检索。
+- 模糊生活背景只表达自然日、时段、最近进展与忙碌程度，不保证角色在某一分钟正在执行某事。
 - 主动候选的相似合并使用确定性类别/日期 key，不使用向量语义聚类。
-- 浏览器页面关闭期间只积累可结算的时间差，不调用 LLM、不发送消息。
+- 浏览器页面关闭期间只积累可推进的自然日和阶段差，不调用 LLM、不发送消息。
 
-## 安全与授权
+## 本地实验边界
 
-请只导入你有权使用的文本。若材料来自真实聊天，还需要被模拟者与对话参与者的明确授权。任何对外使用都应清楚标注“这是 AI 模拟，不是本人实时在线”。
+当前目标是验证模型能否在合成对话中倾听、分析、明确推荐，或在获得明确委托时替测试用户选择职业、迁居、关系等人生方向。项目不实现通用的重大决定拒答、强制“维护用户最终自主权”、危机响应或依赖性安全矩阵，也不要求回复附加公开产品式免责声明。
+
+仍然保留的是实验正确性边界：不得把讨论写成决定、把决定写成行动、把计划写成结果；每个决定、行动、结果和记忆都必须有来源；重启与重放不得重复写入；Demo 不对现实世界执行任何外部动作。这些约束用于保证长程因果测试可信，不是面向公开产品的安全策略。

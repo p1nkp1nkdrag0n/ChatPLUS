@@ -31,6 +31,7 @@ import type { ContinuityIndexService } from "../services/continuity-index-servic
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
 import type { FollowUpService } from "../services/follow-up-service.js";
+import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { LlmService } from "../services/llm-service.js";
 import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import type { MemoryRecallService } from "../services/memory-recall-service.js";
@@ -52,6 +53,7 @@ export type RouteServices = {
   schedules: ScheduleService;
   settlements: SettlementService;
   personalLife: PersonalLifeService;
+  life: FuzzyLifeService;
   autobiographies: AutobiographyService;
   calendar: CalendarService;
   checkpoints: CheckpointService;
@@ -92,6 +94,7 @@ export function registerRoutes(
     schedules,
     settlements,
     personalLife,
+    life,
     conversationActivity,
     conversations,
   } = services;
@@ -212,6 +215,13 @@ export function registerRoutes(
       .parse(request.body ?? {});
     return actors.runExclusive(id, async () => {
       const character = characters.publish(id, body.expectedVersion);
+      if (config.lifePlanningMode === "fuzzy") {
+        return {
+          character,
+          schedule: [],
+          lifeContext: life.promptContext(id),
+        };
+      }
       const plan = await schedules.ensure72Hours(
         id,
         store.listSchedule(id).length === 0,
@@ -225,7 +235,11 @@ export function registerRoutes(
     const activated = await actors.runExclusive(id, async () => {
       const spec = store.getCharacterSpec(id);
       if (!spec) throw notFound("Character");
-      const capabilities = capabilitiesForTier(spec.tier);
+      const tierCapabilities = capabilitiesForTier(spec.tier);
+      const capabilities =
+        config.lifePlanningMode === "fuzzy"
+          ? { ...tierCapabilities, schedule: false }
+          : tierCapabilities;
       if (
         capabilities.proactiveDialogue &&
         store.listSessions(id).length === 0
@@ -235,6 +249,10 @@ export function registerRoutes(
           `与${spec.identity.name}的对话`,
           clock.nowUtc(),
         );
+      }
+      if (config.lifePlanningMode === "fuzzy") {
+        life.advance(id);
+        return { capabilities };
       }
       const settlement = await settlements.settleAndExtend(id);
       personalLife.ensureSelfInitiatedPlans(id);
@@ -266,6 +284,16 @@ export function registerRoutes(
   app.get("/api/agents/:id/schedule", (request) => {
     const { id } = idParamsSchema.parse(request.params);
     const range = rangeQuerySchema.parse(request.query);
+    if (config.lifePlanningMode === "fuzzy") {
+      if (!store.getCharacterSummary(id)) throw notFound("Character");
+      return {
+        items: [],
+        serverTimeUtc: clock.nowUtc(),
+        retired: true,
+        replacement: "fuzzy_life_context",
+        lifeContext: life.promptContext(id),
+      };
+    }
     return {
       items: schedules.list(id, range.fromUtc, range.toUtc),
       serverTimeUtc: clock.nowUtc(),
@@ -274,6 +302,14 @@ export function registerRoutes(
 
   app.post("/api/agents/:id/schedule/effects", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
+    if (config.lifePlanningMode === "fuzzy") {
+      if (!store.getCharacterSummary(id)) throw notFound("Character");
+      throw new ApiError(
+        410,
+        "exact_schedule_retired",
+        "Exact schedule effects are retired in fuzzy life mode.",
+      );
+    }
     const body = z
       .object({ effects: z.array(z.unknown()) })
       .parse(request.body);
@@ -308,7 +344,12 @@ export function registerRoutes(
     const query = z
       .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
       .parse(request.query);
-    return buildTimelineResponse(store, id, query.limit);
+    return buildTimelineResponse(
+      store,
+      id,
+      query.limit,
+      config.lifePlanningMode,
+    );
   });
 
   app.get("/api/agents/:id/memories", (request) => {
@@ -377,7 +418,11 @@ export function registerRoutes(
     try {
       const result = await actors.runExclusive(input.agentId, async () => {
         const turn = await conversations.chat(sessionId, input);
-        if (turn.idempotentReplay || turn.scheduleChanges.length > 0) {
+        if (
+          config.lifePlanningMode === "fuzzy" ||
+          turn.idempotentReplay ||
+          turn.scheduleChanges.length > 0
+        ) {
           return turn;
         }
         const planning = personalLife.ensureSelfInitiatedPlans(input.agentId);
@@ -403,7 +448,11 @@ export function registerRoutes(
         const session =
           conversations.listSessions(id)[0] ?? conversations.createSession(id);
         const turn = await conversations.chat(session.id, input);
-        if (turn.idempotentReplay || turn.scheduleChanges.length > 0) {
+        if (
+          config.lifePlanningMode === "fuzzy" ||
+          turn.idempotentReplay ||
+          turn.scheduleChanges.length > 0
+        ) {
           return turn;
         }
         const planning = personalLife.ensureSelfInitiatedPlans(id);
@@ -584,14 +633,22 @@ export function registerRoutes(
 
     app.post("/api/developer/agents/:id/settle", async (request) => {
       const { id } = idParamsSchema.parse(request.params);
-      const settlement = await actors.runExclusive(id, async () => {
+      const lifecycle = await actors.runExclusive(id, async () => {
+        if (config.lifePlanningMode === "fuzzy") {
+          return {
+            mode: "fuzzy" as const,
+            result: life.advance(id),
+          };
+        }
         const settlement = await settlements.settleAndExtend(id);
         personalLife.ensureSelfInitiatedPlans(id);
-        return settlement;
+        return { mode: "legacy_exact" as const, result: settlement };
       });
       const proactiveOutcome = await services.proactiveDelivery.deliverNext(id);
       return {
-        settlement,
+        ...(lifecycle.mode === "fuzzy"
+          ? { lifecycle }
+          : { settlement: lifecycle.result }),
         proactiveMessage:
           proactiveOutcome.status === "committed"
             ? proactiveOutcome.message
@@ -659,15 +716,20 @@ function buildAgentSnapshot(
   const state = services.store.getRuntimeState(id);
   const cursor = services.store.getCursor(id);
   if (!spec || !state || !cursor) throw notFound("Character");
-  const capabilities = capabilitiesForTier(spec.tier);
+  const tierCapabilities = capabilitiesForTier(spec.tier);
+  const capabilities =
+    services.config.lifePlanningMode === "fuzzy"
+      ? { ...tierCapabilities, schedule: false }
+      : tierCapabilities;
   const nowUtc = services.clock.nowUtc();
   const next24Utc = DateTime.fromISO(nowUtc)
     .plus({ hours: 24 })
     .toUTC()
     .toISO()!;
-  const schedule = capabilities.schedule
-    ? services.store.listSchedule(id, { fromUtc: nowUtc, toUtc: next24Utc })
-    : [];
+  const schedule =
+    services.config.lifePlanningMode === "legacy_exact" && capabilities.schedule
+      ? services.store.listSchedule(id, { fromUtc: nowUtc, toUtc: next24Utc })
+      : [];
   const currentActivity = schedule.find(
     (item) =>
       compareUtc(item.startAtUtc, nowUtc) <= 0 &&
@@ -686,6 +748,9 @@ function buildAgentSnapshot(
       .toISO(),
     currentActivity,
     schedule,
+    ...(services.config.lifePlanningMode === "fuzzy"
+      ? { lifeContext: services.life.promptContext(id, nowUtc) }
+      : {}),
     ...extra,
   };
 }
@@ -695,8 +760,14 @@ async function settleActiveAgents(services: RouteServices): Promise<void> {
   await Promise.all(
     services.sse.getActiveAgentIds().map(async (agentId) => {
       await services.actors.runExclusive(agentId, async () => {
-        await services.settlements.settleAndExtend(agentId, { toUtc: nowUtc });
-        services.personalLife.ensureSelfInitiatedPlans(agentId);
+        if (services.config.lifePlanningMode === "fuzzy") {
+          services.life.advance(agentId, nowUtc);
+        } else {
+          await services.settlements.settleAndExtend(agentId, {
+            toUtc: nowUtc,
+          });
+          services.personalLife.ensureSelfInitiatedPlans(agentId);
+        }
         services.memoryLifecycle.maintainAgent(agentId);
       });
       await services.proactiveDelivery.deliverNext(agentId);

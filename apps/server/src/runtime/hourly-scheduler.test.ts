@@ -97,6 +97,38 @@ describe("HourlyScheduler personal life ordering", () => {
     expect(deliverNext).toHaveBeenCalledWith(AGENT_ID);
     expect(logger.error).not.toHaveBeenCalled();
   });
+
+  it("advances fuzzy life without invoking exact settlement or schedule planning", async () => {
+    const clock = new FakeClock(NOW_UTC);
+    const sse = new SseHub();
+    vi.spyOn(sse, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
+    const actors = new ActorQueue();
+    const settleAndExtend = vi.fn();
+    const ensureSelfInitiatedPlans = vi.fn();
+    const advance = vi.fn();
+    const deliverNext = vi.fn();
+    const logger = { error: vi.fn() };
+    const scheduler = new HourlyScheduler(
+      clock,
+      sse,
+      actors,
+      { settleAndExtend } as unknown as SettlementService,
+      logger,
+      { ensureSelfInitiatedPlans },
+      { deliverNext },
+      undefined,
+      { advance },
+      "fuzzy",
+    );
+
+    await scheduler.tick();
+
+    expect(advance).toHaveBeenCalledWith(AGENT_ID, NOW_UTC);
+    expect(settleAndExtend).not.toHaveBeenCalled();
+    expect(ensureSelfInitiatedPlans).not.toHaveBeenCalled();
+    expect(deliverNext).toHaveBeenCalledWith(AGENT_ID);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
 });
 
 const DELIVERY_NOW_UTC = "2026-08-21T12:37:00.000Z";

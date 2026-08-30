@@ -50,6 +50,13 @@ export type AgentMemoryRecallInput = {
   timezone?: string;
   limit?: number;
   maxEvidence?: number;
+  /**
+   * Enforced chat prompts require every selected candidate to resolve to a
+   * persisted, supported evidence source. Verified persisted EventCards
+   * remain the highest-priority continuity tier; archive-only Verbatim
+   * candidates do not become eligible merely because a source message exists.
+   */
+  requireDurableEvidence?: boolean;
 };
 
 export interface ContinuityRecallDependencies {
@@ -94,7 +101,10 @@ export class MemoryRecallService {
   }
 
   recall(input: AgentMemoryRecallInput): MemoryRecallResult {
-    return recallAgentMemories(this.store, input);
+    return this.continuity === undefined
+      ? recallAgentMemories(this.store, input)
+      : inspectContinuityRecall(this.store, this.continuity, input).preview
+          .result;
   }
 
   preview(input: AgentMemoryRecallInput): MemoryRecallPreview {

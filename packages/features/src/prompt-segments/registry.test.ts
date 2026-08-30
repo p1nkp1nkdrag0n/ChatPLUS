@@ -180,6 +180,27 @@ describe("PromptSegmentRegistry", () => {
     });
   });
 
+  it("drops an atomic optional segment when its own token budget is exceeded", () => {
+    const registry = new PromptSegmentRegistry<TestContext>([
+      segment({
+        id: "01_atomic_json",
+        content: `STRUCTURED_JSON\n${JSON.stringify({ value: "x".repeat(200) })}`,
+        tokenBudget: 10,
+        globalOverflowPolicy: "drop",
+      }),
+    ]);
+
+    const result = registry.render({});
+
+    expect(result.prompt).toBe("");
+    expect(result.trace.droppedSegmentIds).toEqual(["01_atomic_json"]);
+    expect(result.trace.segments[0]).toMatchObject({
+      included: false,
+      truncated: false,
+      reason: "segment_budget",
+    });
+  });
+
   it("caches only cacheable segments with a safe non-null key", () => {
     const cachedRender = vi.fn(() => "cached");
     const nullKeyRender = vi.fn(() => "null-key");

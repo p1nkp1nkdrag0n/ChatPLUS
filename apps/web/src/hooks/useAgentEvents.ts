@@ -20,9 +20,6 @@ export function useAgentEvents(agentId: string | undefined): void {
     const source = new EventSource(`/api/agents/${agentId}/events`);
     const refresh = () => {
       void queryClient.invalidateQueries({
-        queryKey: ["agent", agentId, "schedule"],
-      });
-      void queryClient.invalidateQueries({
         queryKey: ["agent", agentId, "state"],
       });
       void queryClient.invalidateQueries({

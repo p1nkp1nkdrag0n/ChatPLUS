@@ -23,6 +23,7 @@ import {
 import type { Clock } from "../runtime/clock.js";
 import type { SseHub } from "../sse/hub.js";
 import type { ConversationContextService } from "./conversation-context-service.js";
+import type { FuzzyLifeService } from "./fuzzy-life-service.js";
 import { calculateLlmPromptTokenBudget } from "./llm-prompt-headroom.js";
 import type { LlmService } from "./llm-service.js";
 import { MemoryRecallService } from "./memory-recall-service.js";
@@ -50,6 +51,7 @@ export interface ConversationServiceOptions {
   scheduleNegotiationMode?: "legacy" | "shadow" | "enforced";
   liveWorldEffectsMode?: "off" | "shadow" | "enforced";
   memoryRecallMode?: "legacy" | "shadow" | "enforced";
+  lifePlanningMode?: "fuzzy" | "legacy_exact";
   conversationRetention?: ConversationRetentionPolicy;
 }
 
@@ -58,6 +60,7 @@ export interface ConversationTurnCollaborators {
   decisions?: TurnDecisionService;
   worldEffects?: WorldEffectService;
   commits?: TurnCommitService;
+  fuzzyLife?: FuzzyLifeService;
 }
 
 /**
@@ -69,6 +72,7 @@ export class ConversationService {
   private readonly decisions: TurnDecisionService;
   private readonly worldEffects: WorldEffectService;
   private readonly commits: TurnCommitService;
+  private readonly fuzzyLife: FuzzyLifeService | undefined;
 
   constructor(
     private readonly store: DatabaseStore,
@@ -83,6 +87,7 @@ export class ConversationService {
     private readonly contexts?: ConversationContextService,
     collaborators: ConversationTurnCollaborators = {},
   ) {
+    this.fuzzyLife = collaborators.fuzzyLife;
     const intentService =
       personalIntents ?? new PersonalIntentService(store, clock);
     this.memoryRecalls = memoryRecalls ?? new MemoryRecallService(store);
@@ -109,6 +114,7 @@ export class ConversationService {
         sse,
         contexts,
         options,
+        this.fuzzyLife,
       );
   }
 
@@ -160,7 +166,17 @@ export class ConversationService {
       });
     }
 
-    await this.settlements.settleAndExtend(input.agentId);
+    const fuzzyLifeEnabled = this.options.lifePlanningMode === "fuzzy";
+    if (fuzzyLifeEnabled) {
+      if (this.fuzzyLife === undefined) {
+        throw new Error(
+          "Fuzzy life mode requires a composed FuzzyLifeService.",
+        );
+      }
+      this.fuzzyLife.advance(input.agentId);
+    } else {
+      await this.settlements.settleAndExtend(input.agentId);
+    }
     const spec = this.store.getCharacterSpec(input.agentId);
     const state = this.store.getRuntimeState(input.agentId);
     if (!spec || !state) throw notFound("Character");
@@ -181,7 +197,10 @@ export class ConversationService {
     });
     const userMessageId = createEntityId("message");
     const assistantMessageId = createEntityId("message");
-    const capabilities = capabilitiesForTier(spec.tier);
+    const tierCapabilities = capabilitiesForTier(spec.tier);
+    const capabilities = fuzzyLifeEnabled
+      ? { ...tierCapabilities, schedule: false }
+      : tierCapabilities;
     const schedule = capabilities.schedule
       ? this.store.listSchedule(input.agentId, {
           fromUtc: nowUtc,
@@ -200,6 +219,7 @@ export class ConversationService {
             query: input.text,
             nowUtc,
             timezone: spec.identity.timezone,
+            requireDurableEvidence: memoryRecallMode === "enforced",
           })
         : undefined;
     const recallPreview = recallRecording?.preview;
@@ -289,6 +309,14 @@ export class ConversationService {
       })),
       nowUtc,
       userMessage: input.text,
+      ...(this.options.lifePlanningMode === undefined
+        ? {}
+        : { lifePlanningMode: this.options.lifePlanningMode }),
+      ...(fuzzyLifeEnabled
+        ? {
+            lifeContext: this.fuzzyLife!.promptContext(input.agentId, nowUtc),
+          }
+        : {}),
       decisionMode: effects.scheduleNegotiationEligible
         ? this.options.scheduleNegotiationMode === "shadow"
           ? "schedule_negotiation_shadow"
@@ -300,7 +328,7 @@ export class ConversationService {
         ? {}
         : { liveWorldEffectsMode: this.options.liveWorldEffectsMode }),
     });
-    const turn = await this.decisions.decide({
+    const decidedTurn = await this.decisions.decide({
       spec,
       userText: input.text,
       agentId: input.agentId,
@@ -312,6 +340,16 @@ export class ConversationService {
       schedule,
       effects,
     });
+    const turn = fuzzyLifeEnabled
+      ? {
+          ...decidedTurn,
+          decision: {
+            ...decidedTurn.decision,
+            scheduleEffects: [],
+            personalIntentCandidates: [],
+          },
+        }
+      : decidedTurn;
     const world = await this.worldEffects.resolve({
       sessionId,
       agentId: input.agentId,

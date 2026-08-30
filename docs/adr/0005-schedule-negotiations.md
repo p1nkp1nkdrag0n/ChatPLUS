@@ -1,8 +1,10 @@
-# ADR 0005: Schedule agreements are server-owned negotiations
+# ADR 0005: Schedule agreements are server-owned negotiations (superseded)
 
 ## Status
 
-Accepted for incremental implementation.
+Superseded by [ADR 0006](0006-fuzzy-life-and-decision-causality.md).
+
+This document is retained as the historical contract for legacy schedule rows and regression evidence. Exact calendar coordination, multi-turn schedule offers and the future schedule projection no longer define the product surface or current acceptance gates.
 
 ## Context
 

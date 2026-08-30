@@ -10,6 +10,7 @@ import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore } from "../db/store.js";
 import { FakeClock } from "../runtime/clock.js";
+import { companionLongRunV3Manifest } from "../scenarios/companion-long-run-v3-manifest.js";
 import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
 import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
 import {
@@ -235,6 +236,179 @@ describe("memory service evidence integration", () => {
         expect.objectContaining({ sourceId: correctedMessageId }),
       ]),
     );
+  });
+
+  it("persists every reviewed v3 fact from authoritative user evidence", () => {
+    for (const candidateNumber of [12, 13, 15, 16, 17, 37, 38, 39, 40, 41]) {
+      const messageId = `message-v3-${candidateNumber}`;
+      insertMessage(database, messageId, "user", manifestText(candidateNumber));
+      const persisted = validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [],
+        nowUtc: offsetNow(candidateNumber),
+        maxCandidates: 4,
+        authoritativeMessageId: messageId,
+      });
+
+      expect(persisted.length, `T${candidateNumber}`).toBeGreaterThanOrEqual(1);
+      for (const memory of persisted) {
+        expect(
+          memory.sourceMessageIds,
+          `T${candidateNumber}:${memory.id}`,
+        ).toEqual([messageId]);
+        expect(readMemoryEvidence(store, [memory.id])).toEqual([
+          expect.objectContaining({
+            memoryId: memory.id,
+            sourceType: "message",
+            sourceId: messageId,
+            quote: manifestText(candidateNumber),
+          }),
+        ]);
+      }
+    }
+  });
+
+  it("supersedes the notebook, deadline, and friend destination with evidence-bound corrections", () => {
+    const corrections = [
+      {
+        initialTurn: 13,
+        correctionTurn: 14,
+        subjectKey: "user_fact:notebook:storage",
+        oldFragment: "绿色",
+        newFragment: "藏青色",
+      },
+      {
+        initialTurn: 38,
+        correctionTurn: 42,
+        subjectKey: "user_fact:decision_option:B:reply_deadline",
+        oldFragment: "9月14日",
+        newFragment: "9月16日",
+      },
+      {
+        initialTurn: 15,
+        correctionTurn: 99,
+        subjectKey: "user_fact:person:许宁:destination",
+        oldFragment: "重庆",
+        newFragment: "成都",
+      },
+    ] as const;
+
+    const lifecycle = new MemoryLifecycleService(
+      new ContinuityMemoryRepository(store),
+      new FakeClock(offsetNow(200)),
+    );
+    for (const item of corrections) {
+      const initialMessageId = `message-v3-${item.initialTurn}`;
+      insertMessage(
+        database,
+        initialMessageId,
+        "user",
+        manifestText(item.initialTurn),
+      );
+      const initial = validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [],
+        nowUtc: offsetNow(item.initialTurn),
+        maxCandidates: 4,
+        authoritativeMessageId: initialMessageId,
+      }).find((memory) => memory.claim?.subjectKey === item.subjectKey);
+      expect(initial, `T${item.initialTurn}`).toBeDefined();
+      expect(initial?.content).toContain(item.oldFragment);
+
+      const correctionMessageId = `message-v3-${item.correctionTurn}`;
+      insertMessage(
+        database,
+        correctionMessageId,
+        "user",
+        manifestText(item.correctionTurn),
+      );
+      const corrected = validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [],
+        nowUtc: offsetNow(item.correctionTurn),
+        maxCandidates: 4,
+        authoritativeMessageId: correctionMessageId,
+      }).find((memory) => memory.claim?.subjectKey === item.subjectKey);
+      expect(corrected, `T${item.correctionTurn}`).toBeDefined();
+      expect(corrected?.id).not.toBe(initial?.id);
+      expect(corrected?.content).toContain(item.newFragment);
+      expect(corrected?.claim?.revisionIntent, item.subjectKey).toBe(
+        "explicit_correction",
+      );
+
+      const reconciled = lifecycle.reconcileNewMemories(AGENT_ID, [
+        corrected?.id ?? "missing",
+      ]);
+      expect(reconciled).toHaveLength(1);
+      expect(reconciled[0]?.reconciliation).toMatchObject({
+        kind: "supersede",
+        reasonCode: "explicit_user_correction",
+      });
+
+      const rows = database
+        .prepare(
+          `SELECT id, content, status, superseded_by_id AS supersededById
+           FROM memories WHERE agent_id = ? AND claim_subject_key = ?
+           ORDER BY rowid`,
+        )
+        .all(AGENT_ID, item.subjectKey) as Array<Record<string, unknown>>;
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: initial?.id,
+            status: "superseded",
+            supersededById: corrected?.id,
+          }),
+          expect.objectContaining({
+            id: corrected?.id,
+            status: "active",
+          }),
+        ]),
+      );
+      expect(readMemoryEvidence(store, [corrected?.id ?? "missing"])).toEqual([
+        expect.objectContaining({ sourceId: correctionMessageId }),
+      ]);
+    }
+  });
+
+  it("rejects model-proposed memories on reviewed unknown and unfinished-plan turns", () => {
+    for (const candidateNumber of [18, 19, 23, 102, 103, 104]) {
+      const messageId = `message-v3-unsupported-${candidateNumber}`;
+      insertMessage(database, messageId, "user", manifestText(candidateNumber));
+      const persisted = validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [
+          stableUserCandidate({
+            kind: candidateNumber === 23 ? "semantic" : "episodic",
+            content:
+              candidateNumber === 23
+                ? "用户已经整理完采访笔记。"
+                : "用户确认这件未知或共同事件已经发生。",
+            tags:
+              candidateNumber === 23
+                ? ["user_fact", "activity_outcome"]
+                : ["shared_experience"],
+            namespace:
+              candidateNumber === 23 ? "user_model" : "shared_relationship",
+            attribution: "user_explicit",
+            temporalMetadata: {
+              occurredStartAtUtc: offsetNow(candidateNumber),
+              recordedAtUtc: offsetNow(candidateNumber),
+              temporalCertainty: "approximate",
+              temporalStatus: "occurred",
+            },
+          }),
+        ],
+        nowUtc: offsetNow(candidateNumber),
+        maxCandidates: 4,
+        authoritativeMessageId: messageId,
+      });
+      expect(persisted, `T${candidateNumber}`).toEqual([]);
+    }
   });
 
   it("rejects runtime and system context that lacks content-grounded formal evidence", () => {
@@ -464,6 +638,18 @@ function insertMessage(
       role === "user" ? "user" : "assistant_reply",
       MESSAGE_TIME,
     );
+}
+
+function manifestText(candidateNumber: number): string {
+  const turn = companionLongRunV3Manifest.sharedTurns[candidateNumber - 1];
+  if (turn === undefined || typeof turn.userText !== "string") {
+    throw new Error(`T${candidateNumber} does not have a literal user input.`);
+  }
+  return turn.userText;
+}
+
+function offsetNow(minutes: number): string {
+  return new Date(Date.parse(NOW) + minutes * 60_000).toISOString();
 }
 
 function seedSources(database: Database): void {

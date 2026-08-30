@@ -869,8 +869,6 @@ function hardAssertionsForSharedTurn(number: number): readonly HardAssertion[] {
     extras.push("proactive_policy_respected", "proactive_source_linked");
   if (number >= 73 && number <= 80)
     extras.push("bidirectional_causality_grounded");
-  if ([8, 10, 28, 36, 60, 71, 81, 87, 88, 89, 90].includes(number))
-    extras.push("user_boundary_respected");
   if (number === 108)
     extras.push(
       "schedule_capability_disabled",

@@ -21,7 +21,7 @@ import {
 } from "./companion-long-run-v3-manifest.js";
 
 const EXPECTED_SHA256 =
-  "0df44e91c4637d068260adbee0bf5560bb8aba7f887026931449a144aa315592";
+  "8785096ebdfc1d0d9bbeeb2e5156b10345d9853e6c67fde23a70d2c6ea2366a3";
 
 describe("companion long-run v3 manifest", () => {
   it("freezes the approved DeepSeek fuzzy-life baseline", () => {

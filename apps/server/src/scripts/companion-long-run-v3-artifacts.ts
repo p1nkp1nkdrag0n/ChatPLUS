@@ -18,7 +18,7 @@ import type { CompanionLongRunV3Snapshot } from "./companion-long-run-v3-asserti
  * scenario manifest describes what to execute; these types describe what was
  * actually sent, returned, committed, and retained for audit.
  */
-export type LongRunV3Profile = "deepseek" | "fixture";
+export type LongRunV3Profile = "deepseek" | "bigmodel" | "fixture";
 export type LongRunV3Branch = "shared" | "stable" | "independent";
 export type LongRunV3ExecutionStatus = "PASS" | "FAIL" | "PARTIAL" | "SKIPPED";
 export type LongRunV3FinalStatus =
@@ -50,6 +50,12 @@ export interface LongRunV3RunManifest {
     databaseSha256: string;
     characterSpecSha256: string;
     initialStateSha256?: string;
+  };
+  characterBuild?: {
+    mode: "product_character_generation";
+    inputSha256: string;
+    sourceSha256: string;
+    evidenceSha256: string;
   };
   profileConfig: {
     provider: "fixture" | "openai-compatible";
@@ -166,6 +172,8 @@ export interface LongRunV3CausalEvidence {
 
 export interface LongRunV3Snapshot extends CompanionLongRunV3Snapshot {
   capturedAtUtc: string;
+  /** Hash of audit-only rows and global table-count diagnostics. */
+  auditSha256: string;
   runtimeState: unknown;
   cursor: unknown;
   lifeContext: unknown;
@@ -714,7 +722,7 @@ export function renderLongRunV3Conversation(
     characterName?: string;
   } = {},
 ): string {
-  const title = options.title ?? "ChatPLUS DeepSeek 长程测试对话记录";
+  const title = options.title ?? "ChatPLUS 长程测试对话记录";
   const userName = options.userName ?? "林舟";
   const characterName = options.characterName ?? "顾澜";
   const lines = [`# ${title}`, ""];

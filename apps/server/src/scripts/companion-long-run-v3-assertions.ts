@@ -47,9 +47,11 @@ export interface CompanionLongRunV3ScheduleRow {
 }
 
 /**
- * Complete (not tail-truncated) durable projection used by hard gates.
- * `durableSha256` must cover every durable table that a replay is forbidden
- * to mutate, including messages, memories, causal records, and domain events.
+ * Complete (not tail-truncated) business projection used by hard gates.
+ * `durableSha256` covers business state that a replay is forbidden to mutate,
+ * including messages, memories, causal records, and domain events. Append-only
+ * LLM/retrieval/rejection audit rows are tracked separately by artifact
+ * snapshots and intentionally do not affect this business-state hash.
  */
 export interface CompanionLongRunV3Snapshot {
   durableSha256: string;

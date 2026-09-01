@@ -70,11 +70,7 @@ import {
   type LongRunV3Snapshot,
   type LongRunV3TurnEvidence,
 } from "./companion-long-run-v3-artifacts.js";
-import {
-  LONG_RUN_V3_AGENT_ID,
-  LONG_RUN_V3_SESSION_ID,
-  sha256CanonicalV3,
-} from "./companion-long-run-v3-baseline.js";
+import { sha256CanonicalV3 } from "./companion-long-run-v3-baseline.js";
 import type { ObservationSlice } from "./companion-long-run-v2-observer.js";
 import {
   LongRunV2Runtime,
@@ -138,6 +134,33 @@ export interface LongRunV3RuntimeSnapshot extends LongRunV3Snapshot {
   sessions: readonly unknown[];
   settlements: readonly unknown[];
   activityEvents: readonly unknown[];
+}
+
+const LONG_RUN_V3_AUDIT_HASH_KEYS = [
+  "rejectedProposals",
+  "retrievalRuns",
+  "retrievalRunsFullSha256",
+  "llmCalls",
+  "tableCounts",
+] as const;
+
+/**
+ * Keeps business-state equality independent from append-only model/retrieval
+ * telemetry while retaining a separate fingerprint for auditing that data.
+ */
+export function hashLongRunV3SnapshotProjections(
+  projection: Readonly<Record<string, unknown>>,
+): { durableSha256: string; auditSha256: string } {
+  const businessProjection = { ...projection };
+  const auditProjection: Record<string, unknown> = {};
+  for (const key of LONG_RUN_V3_AUDIT_HASH_KEYS) {
+    auditProjection[key] = projection[key];
+    delete businessProjection[key];
+  }
+  return {
+    durableSha256: sha256CanonicalV3(businessProjection),
+    auditSha256: sha256CanonicalV3(auditProjection),
+  };
 }
 
 /**
@@ -280,14 +303,17 @@ export class LongRunV3Runtime {
           break;
         }
         case "restart_app": {
-          const before = this.snapshot(agentId).durableSha256;
+          const before = this.snapshot(agentId);
           const cursor = this.observer.cursor();
           await this.restart();
-          const after = this.snapshot(agentId).durableSha256;
+          const after = this.snapshot(agentId);
           results.push(
             completed(action, this.nowUtc, {
-              beforeRestartSha256: before,
-              afterRestartSha256: after,
+              beforeRestartSha256: before.durableSha256,
+              afterRestartSha256: after.durableSha256,
+              beforeRestartAuditSha256: before.auditSha256,
+              afterRestartAuditSha256: after.auditSha256,
+              auditStateUnchanged: before.auditSha256 === after.auditSha256,
               logicalCallsWhileRestarting:
                 this.observer.slice(cursor).logicalCalls.length,
             }),
@@ -303,9 +329,9 @@ export class LongRunV3Runtime {
           break;
         }
         case "replay_turn": {
-          const before = this.snapshot(agentId).durableSha256;
+          const before = this.snapshot(agentId);
           const replay = await this.executeReplay(action.sourceTurnId, history);
-          const after = this.snapshot(agentId).durableSha256;
+          const after = this.snapshot(agentId);
           results.push(
             completed(action, this.nowUtc, {
               sourceTurnId: action.sourceTurnId,
@@ -313,9 +339,13 @@ export class LongRunV3Runtime {
               parsed: replay.parsed,
               observations: replay.observations,
               idempotentReplay: replay.parsed?.idempotentReplay === true,
-              beforeDurableSha256: before,
-              afterDurableSha256: after,
-              durableStateUnchanged: before === after,
+              beforeDurableSha256: before.durableSha256,
+              afterDurableSha256: after.durableSha256,
+              durableStateUnchanged:
+                before.durableSha256 === after.durableSha256,
+              beforeAuditSha256: before.auditSha256,
+              afterAuditSha256: after.auditSha256,
+              auditStateUnchanged: before.auditSha256 === after.auditSha256,
             }),
           );
           break;
@@ -470,7 +500,7 @@ export class LongRunV3Runtime {
     const cursor = this.store.getCursor(agentId) ?? null;
     const tableCounts = this.store.tableCounts();
 
-    const durableProjection = {
+    const snapshotHashProjection = {
       runtimeState,
       cursor,
       dailyContexts,
@@ -496,7 +526,7 @@ export class LongRunV3Runtime {
       retrievalRuns,
       // Retrieval input/prompt snapshots are intentionally not duplicated in
       // every turn artifact. Their complete table digest still participates in
-      // replay equality, so an in-place mutation cannot escape the hard gate.
+      // the separate audit hash, so in-place audit mutation remains visible.
       retrievalRunsFullSha256: tableDigest(database, "retrieval_runs", agentId),
       llmCalls,
       sessions,
@@ -504,10 +534,14 @@ export class LongRunV3Runtime {
       activityEvents,
       tableCounts,
     };
+    const { durableSha256, auditSha256 } = hashLongRunV3SnapshotProjections(
+      snapshotHashProjection,
+    );
 
     return {
       capturedAtUtc: this.nowUtc,
-      durableSha256: sha256CanonicalV3(durableProjection),
+      durableSha256,
+      auditSha256,
       runtimeState,
       cursor,
       lifeContext: {
@@ -620,7 +654,7 @@ export class LongRunV3Runtime {
     const rollbackUtc = new Date(
       Date.parse(originalUtc) - action.durationMinutes * 60_000,
     ).toISOString();
-    const before = this.snapshot(agentId).durableSha256;
+    const before = this.snapshot(agentId);
     const observerCursor = this.observer.cursor();
     await this.inner.applyActions(
       [{ kind: "set_clock", atUtc: rollbackUtc }],
@@ -635,15 +669,18 @@ export class LongRunV3Runtime {
         agentId,
       );
     }
-    const after = this.snapshot(agentId).durableSha256;
+    const after = this.snapshot(agentId);
     const observations = this.observer.slice(observerCursor);
     return completed(action, this.nowUtc, {
       originalUtc,
       rollbackUtc,
       restoredUtc: this.nowUtc,
-      beforeDurableSha256: before,
-      afterDurableSha256: after,
-      durableStateUnchanged: before === after,
+      beforeDurableSha256: before.durableSha256,
+      afterDurableSha256: after.durableSha256,
+      durableStateUnchanged: before.durableSha256 === after.durableSha256,
+      beforeAuditSha256: before.auditSha256,
+      afterAuditSha256: after.auditSha256,
+      auditStateUnchanged: before.auditSha256 === after.auditSha256,
       observations,
     });
   }
@@ -1091,6 +1128,7 @@ export class LongRunV3Runtime {
 export async function executeLongRunV3Scenario(
   context: LongRunV3ExecutionContext,
 ): Promise<void> {
+  const agentId = context.baseline.characterId;
   const completedTurnIds = new Set(context.turns.map((turn) => turn.turnId));
   let sharedAnchorSha256: string | undefined;
 
@@ -1102,7 +1140,7 @@ export async function executeLongRunV3Scenario(
     const runtime = createExecutionRuntime(context, context.sharedDatabasePath);
     await runtime.open();
     try {
-      restoreRememberedTurns(runtime, context.turns);
+      restoreRememberedTurns(runtime, context.turns, agentId);
       await executeTurnSequence({
         runtime,
         context,
@@ -1111,7 +1149,7 @@ export async function executeLongRunV3Scenario(
         completedTurnIds,
       });
       if (hasReachedConfiguredStop(context)) return;
-      sharedAnchorSha256 = runtime.snapshot(LONG_RUN_V3_AGENT_ID).durableSha256;
+      sharedAnchorSha256 = runtime.snapshot(agentId).durableSha256;
       runtime.checkpointWal();
     } finally {
       await runtime.close();
@@ -1126,8 +1164,7 @@ export async function executeLongRunV3Scenario(
     );
     await anchorRuntime.open();
     try {
-      sharedAnchorSha256 =
-        anchorRuntime.snapshot(LONG_RUN_V3_AGENT_ID).durableSha256;
+      sharedAnchorSha256 = anchorRuntime.snapshot(agentId).durableSha256;
       anchorRuntime.checkpointWal();
     } finally {
       await anchorRuntime.close();
@@ -1151,8 +1188,8 @@ export async function executeLongRunV3Scenario(
     );
     await runtime.open();
     try {
-      restoreRememberedTurns(runtime, context.turns);
-      const actualAnchor = runtime.snapshot(LONG_RUN_V3_AGENT_ID).durableSha256;
+      restoreRememberedTurns(runtime, context.turns, agentId);
+      const actualAnchor = runtime.snapshot(agentId).durableSha256;
       if (
         !context.turns.some((turn) => turn.branch === branch) &&
         actualAnchor !== sharedAnchorSha256
@@ -1185,6 +1222,16 @@ function hasReachedConfiguredStop(context: LongRunV3ExecutionContext): boolean {
   );
 }
 
+function mergeObservationSlices(
+  first: ObservationSlice,
+  second: ObservationSlice,
+): ObservationSlice {
+  return {
+    logicalCalls: [...first.logicalCalls, ...second.logicalCalls],
+    providerAttempts: [...first.providerAttempts, ...second.providerAttempts],
+  };
+}
+
 interface ExecuteTurnSequenceInput {
   runtime: LongRunV3Runtime;
   context: LongRunV3ExecutionContext;
@@ -1197,18 +1244,19 @@ interface ExecuteTurnSequenceInput {
 async function executeTurnSequence(
   input: ExecuteTurnSequenceInput,
 ): Promise<void> {
+  const agentId = input.context.baseline.characterId;
   for (const turn of input.turns) {
     if (input.completedTurnIds.has(turn.id)) continue;
-    const initialSnapshot = input.runtime.snapshot(LONG_RUN_V3_AGENT_ID);
+    const initialSnapshot = input.runtime.snapshot(agentId);
     const observationCursor = input.runtime.observer.cursor();
     const actionsBefore = await executeScenarioActions(
       input.runtime,
       turn.actionsBefore ?? [],
       input.context,
     );
-    const before = input.runtime.snapshot(LONG_RUN_V3_AGENT_ID);
+    const before = input.runtime.snapshot(agentId);
     const fakeTimeBeforeUtc = input.runtime.nowUtc;
-    const decision = resolvePersistedLongRunV3Decision(input.runtime);
+    const decision = resolvePersistedLongRunV3Decision(input.runtime, agentId);
     const userText = resolveLongRunV3ConditionalUserText(
       turn.userText,
       decision,
@@ -1216,7 +1264,7 @@ async function executeTurnSequence(
     const clientMessageId = `client-long-run-v3-${turn.id}`;
     const sessionId = input.runtime.selectSession(turn.sessionKey);
     const response = await input.runtime.sendMessage({
-      agentId: LONG_RUN_V3_AGENT_ID,
+      agentId,
       sessionKey: turn.sessionKey,
       text: userText,
       clientMessageId,
@@ -1227,8 +1275,15 @@ async function executeTurnSequence(
       turn.actionsAfter ?? [],
       input.context,
     );
-    const after = input.runtime.snapshot(LONG_RUN_V3_AGENT_ID);
-    const observations = input.runtime.observer.slice(observationCursor);
+    const after = input.runtime.snapshot(agentId);
+    const turnObservations = input.runtime.observer.slice(observationCursor);
+    const observations =
+      turn.candidateNumber === 1 && input.context.characterBuild !== undefined
+        ? mergeObservationSlices(
+            input.context.characterBuild.observations,
+            turnObservations,
+          )
+        : turnObservations;
     const assistantMessage = response.parsed?.assistantMessage.content ?? "";
     const actionResults = [...actionsBefore, ...actionsAfter];
     const branchExpectation =
@@ -1430,7 +1485,7 @@ async function executeScenarioActions(
       continue;
     }
     results.push(
-      ...(await runtime.applyActions([action], LONG_RUN_V3_AGENT_ID)),
+      ...(await runtime.applyActions([action], context.baseline.characterId)),
     );
   }
   return results;
@@ -1474,13 +1529,14 @@ function createExecutionRuntime(
     databasePath,
     config,
     startAtUtc,
-    initialSessionId: LONG_RUN_V3_SESSION_ID,
+    initialSessionId: context.baseline.sessionId,
   });
 }
 
 function restoreRememberedTurns(
   runtime: LongRunV3Runtime,
   evidence: readonly LongRunV3TurnEvidence[],
+  agentId: string,
 ): void {
   const specs = new Map(
     [
@@ -1496,7 +1552,7 @@ function restoreRememberedTurns(
     const assistantMessage = asRecord(response?.["assistantMessage"]);
     runtime.rememberTurn({
       turnId: turn.turnId,
-      agentId: LONG_RUN_V3_AGENT_ID,
+      agentId,
       sessionKey: spec.sessionKey,
       text: turn.userMessage,
       clientMessageId: turn.clientMessageId,
@@ -1512,10 +1568,11 @@ function restoreRememberedTurns(
 
 function resolvePersistedLongRunV3Decision(
   runtime: LongRunV3Runtime,
+  agentId: string,
 ): LongRunV3Decision | undefined {
   const source = runtime.rememberedTurn("shared-048");
   const decision = runtime
-    .snapshot(LONG_RUN_V3_AGENT_ID)
+    .snapshot(agentId)
     .decisions.find(
       (candidate) =>
         source?.userMessageId !== undefined &&

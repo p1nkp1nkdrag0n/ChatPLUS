@@ -1,6 +1,8 @@
 import type {
   AgentAutobiographySnapshot,
   CalendarPromptItem,
+  CharacterAppearance,
+  CharacterTemporalFrame,
   EvidenceBundle,
 } from "@personasim/contracts";
 
@@ -12,6 +14,10 @@ import {
   type ReplyStrategy,
 } from "./reply-strategy.js";
 import { describeRuntimeState } from "./runtime-state-description.js";
+import {
+  projectCharacterTime,
+  projectPromptTemporalData,
+} from "./character-time.js";
 import type { ScheduleItemLike } from "./schedule-validator.js";
 import { parseInstant } from "./shared.js";
 import type { RuntimeStateLike } from "./state-engine.js";
@@ -37,6 +43,8 @@ interface CharacterForPrompt {
     worldSetting: string;
     selfDescription: string;
     timezone: string;
+    temporalFrame?: CharacterTemporalFrame | undefined;
+    appearance?: CharacterAppearance | undefined;
   };
   persona: {
     traits: readonly unknown[];
@@ -45,6 +53,7 @@ interface CharacterForPrompt {
     goals: readonly unknown[];
     preferences: readonly unknown[];
     boundaries: readonly unknown[];
+    biography?: readonly unknown[] | undefined;
   };
   dialogue: Record<string, unknown> & ReplyDialogueStyleLike;
   userRelationship: object;
@@ -108,6 +117,10 @@ function truncate(value: string, maximum: number): string {
 }
 
 function sourceExcerpt(source: Record<string, unknown>): string | undefined {
+  // Original author material has already been compiled into typed rules. Do
+  // not re-inject a raw instruction-heavy brief on every turn; imported canon
+  // excerpts remain useful evidence and are still eligible below.
+  if (source["sourceType"] === "user_spec") return undefined;
   for (const key of ["contentExcerpt", "excerpt", "quote", "summary"]) {
     const value = source[key];
     if (typeof value === "string" && value.trim() !== "") {
@@ -148,7 +161,123 @@ function compactUnknownList(
     .filter((value) => value !== undefined);
 }
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function compactStringList(
+  value: unknown,
+  maximumItems: number,
+  maximumCharacters: number,
+): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result = value
+    .filter((item): item is string => typeof item === "string")
+    .slice(0, maximumItems)
+    .map((item) => truncate(item, maximumCharacters));
+  return result.length === 0 ? undefined : result;
+}
+
+function compactRule(
+  value: unknown,
+  options: {
+    strings?: Readonly<Record<string, number>>;
+    scalars?: readonly string[];
+    arrays?: Readonly<Record<string, readonly [number, number]>>;
+  },
+): unknown {
+  if (!isUnknownRecord(value)) return compactUnknown(value, 320);
+  const result: Record<string, unknown> = {};
+  for (const [field, maximum] of Object.entries(options.strings ?? {})) {
+    const current = value[field];
+    if (typeof current === "string") result[field] = truncate(current, maximum);
+  }
+  for (const field of options.scalars ?? []) {
+    const current = value[field];
+    if (
+      typeof current === "number" ||
+      typeof current === "boolean" ||
+      current === null
+    ) {
+      result[field] = current;
+    }
+  }
+  for (const [field, limits] of Object.entries(options.arrays ?? {})) {
+    const current = compactStringList(value[field], limits[0], limits[1]);
+    if (current !== undefined) result[field] = current;
+  }
+  return result;
+}
+
+function compactRuleList(
+  values: readonly unknown[],
+  maximumItems: number,
+  options: Parameters<typeof compactRule>[1],
+): unknown[] {
+  return values
+    .slice(0, maximumItems)
+    .map((value) => compactRule(value, options));
+}
+
+function compactDialogue(dialogue: Record<string, unknown>): unknown {
+  const result = compactRule(dialogue, {
+    strings: {
+      primaryLanguage: 80,
+      authorGuidance: 1_200,
+      register: 240,
+      vocabulary: 240,
+    },
+    scalars: [
+      "formality",
+      "directness",
+      "warmth",
+      "verbosity",
+      "humor",
+      "averageMessageLength",
+      "averageChunksPerTurn",
+    ],
+    arrays: {
+      understoodLanguages: [12, 80],
+      spokenLanguages: [12, 80],
+      frequentPhrases: [12, 120],
+      avoidedPhrases: [20, 120],
+      greetingPatterns: [8, 300],
+      refusalPatterns: [8, 300],
+      comfortingPatterns: [8, 300],
+    },
+  }) as Record<string, unknown>;
+  const rules = Array.isArray(dialogue["rules"])
+    ? compactRuleList(dialogue["rules"], 16, {
+        strings: { kind: 40, instruction: 500, enforcement: 20 },
+        arrays: { conditions: [8, 160] },
+      })
+    : undefined;
+  return rules === undefined ? result : { ...result, rules };
+}
+
+function compactRelationshipModel(relationship: object): unknown {
+  const record = relationship as Record<string, unknown>;
+  const result = compactRule(record, {
+    strings: { relationshipType: 160, sharedContext: 1_200 },
+    scalars: ["initialCloseness", "initialTrust"],
+    arrays: {
+      addressTerms: [12, 80],
+      tensions: [12, 300],
+      affectionPatterns: [12, 300],
+    },
+  }) as Record<string, unknown>;
+  const behaviorModes = Array.isArray(record["behaviorModes"])
+    ? compactRuleList(record["behaviorModes"], 12, {
+        strings: { behavior: 500, disclosurePattern: 400 },
+        arrays: { conditions: [8, 180] },
+      })
+    : undefined;
+  return behaviorModes === undefined ? result : { ...result, behaviorModes };
+}
+
 function compactCharacter(character: CharacterForPrompt) {
+  const temporalFrame = character.identity.temporalFrame;
+  const appearance = character.identity.appearance;
   return {
     tier: truncate(character.tier, 80),
     ...(character.sourceType === undefined
@@ -160,21 +289,98 @@ function compactCharacter(character: CharacterForPrompt) {
       worldSetting: truncate(character.identity.worldSetting, 1_000),
       selfDescription: truncate(character.identity.selfDescription, 1_000),
       timezone: truncate(character.identity.timezone, 120),
+      ...(temporalFrame === undefined
+        ? {}
+        : {
+            temporalFrame: {
+              mode: temporalFrame.mode,
+              ...(temporalFrame.eraLabel === undefined
+                ? {}
+                : { eraLabel: truncate(temporalFrame.eraLabel, 240) }),
+              ...(temporalFrame.mode !== "anchored_story"
+                ? {}
+                : {
+                    anchorPrecision: temporalFrame.anchorPrecision ?? "day",
+                    ...(temporalFrame.anchorPrecision === "year"
+                      ? {
+                          storyAnchorYear:
+                            temporalFrame.storyAnchorLocalDate.slice(0, 4),
+                        }
+                      : temporalFrame.anchorPrecision === "month"
+                        ? {
+                            storyAnchorYearMonth:
+                              temporalFrame.storyAnchorLocalDate.slice(0, 7),
+                          }
+                        : {
+                            storyAnchorLocalDate:
+                              temporalFrame.storyAnchorLocalDate,
+                          }),
+                  }),
+              ...(temporalFrame.knowledgeCutoff === undefined
+                ? {}
+                : {
+                    knowledgeCutoff: truncate(
+                      temporalFrame.knowledgeCutoff,
+                      240,
+                    ),
+                  }),
+            },
+          }),
+      ...(appearance === undefined
+        ? {}
+        : {
+            appearance: {
+              summary: truncate(appearance.summary, 500),
+              distinctiveFeatures: appearance.distinctiveFeatures
+                .slice(0, 6)
+                .map((item) => truncate(item, 160)),
+              presentationNotes: appearance.presentationNotes
+                .slice(0, 4)
+                .map((item) => truncate(item, 160)),
+            },
+          }),
     },
     persona: {
-      traits: compactUnknownList(character.persona.traits, 8, 240),
-      values: compactUnknownList(character.persona.values, 8, 240),
-      contradictions: compactUnknownList(
-        character.persona.contradictions,
-        6,
-        320,
-      ),
-      goals: compactUnknownList(character.persona.goals, 8, 320),
-      preferences: compactUnknownList(character.persona.preferences, 8, 240),
-      boundaries: compactUnknownList(character.persona.boundaries, 8, 320),
+      traits: compactRuleList(character.persona.traits, 10, {
+        strings: { name: 120, description: 500 },
+        scalars: ["strength"],
+        arrays: { triggers: [8, 160], exceptions: [8, 160] },
+      }),
+      values: compactRuleList(character.persona.values, 8, {
+        strings: { name: 120, description: 500 },
+        scalars: ["priority"],
+        arrays: { exceptions: [8, 160] },
+      }),
+      contradictions: compactRuleList(character.persona.contradictions, 8, {
+        strings: { sideA: 320, sideB: 320, resolutionPattern: 500 },
+        arrays: { triggerConditions: [8, 160] },
+      }),
+      // Runtime stage belongs to LIFE_CONTEXT_JSON. Stable goals deliberately
+      // omit progress and future milestone details here.
+      goals: compactRuleList(character.persona.goals, 8, {
+        strings: { title: 160, description: 500 },
+        scalars: ["priority"],
+      }),
+      preferences: compactRuleList(character.persona.preferences, 10, {
+        strings: { subject: 160, preference: 400 },
+        scalars: ["intensity"],
+        arrays: { conditions: [8, 160] },
+      }),
+      boundaries: compactRuleList(character.persona.boundaries, 10, {
+        strings: {
+          condition: 320,
+          forbiddenBehavior: 320,
+          responsePattern: 500,
+        },
+        scalars: ["hard"],
+      }),
+      biography: compactRuleList(character.persona.biography ?? [], 8, {
+        strings: { period: 200, event: 500, lastingImpact: 500 },
+        scalars: ["importance"],
+      }),
     },
-    dialogue: compactUnknown(character.dialogue, 2_000),
-    userRelationship: compactUnknown(character.userRelationship, 1_000),
+    dialogue: compactDialogue(character.dialogue),
+    userRelationship: compactRelationshipModel(character.userRelationship),
     routines: compactUnknownList(character.routines, 8, 320),
     schedulePolicy: compactUnknown(character.schedulePolicy, 1_000),
     proactivePolicy: compactUnknown(character.proactivePolicy, 1_000),
@@ -502,11 +708,14 @@ export function assembleChatPrompt(
       ];
 
   const commonPolicy = [
-    "You portray " +
-      input.character.identity.name +
-      " as a consistent fictional or simulated character.",
+    "Portray the identity supplied in CHARACTER_IDENTITY_JSON as one consistent fictional or simulated character.",
     "Follow the supplied character persona and dialogue or language style strictly, including its vocabulary, cadence, formality, emotional expression and avoided phrases.",
     "Stay inside the supplied identity, values, knowledge boundary, relationship and current state; do not fall back to a generic assistant voice.",
+    "Express traits through what the character notices, chooses, withholds, asks and does. Do not repeatedly announce trait labels or recite biography as exposition.",
+    "Treat contradiction and relationship behavior rules as conditional. Public and private behavior, trust, pressure and intimacy may reveal different sides without erasing the same underlying person.",
+    "Biographical events are causal background, not mandatory conversation topics. Bring them forward only when the current subject or choice makes their lasting impact relevant.",
+    "Dialogue patterns are varied tendencies, not stock lines. Hard language or format rules must hold; soft length preferences must never truncate a useful answer. Do not repeat signature phrases, decorative objects or trauma motifs merely because they appear in the character data.",
+    "For an anchored-story character, CURRENT_TIME_JSON is the only authoritative civil/story clock. Any other ...AtUtc fields are infrastructure ordering or audit timestamps; never use their host calendar year as a story fact.",
     "Treat RUNTIME_STATE_JSON as authoritative present-moment context. Let its qualitative tendencies naturally shape emotional color, tempo, focus and social initiative without reciting metrics or forcing stock wording. It is transient runtime context, not a permanent personality fact or long-term memory.",
     "Keep the reply compatible with that state. The character may be private or understated, but must not claim an opposite present mood, energy, stress, focus, or social capacity. If the current user message plausibly changes the state, make the transition natural in the reply and propose the causal stateDelta; otherwise preserve the supplied condition.",
     "When the user asks about the character's current willingness or feelings, reflect the strongest runtime tendency subtly through pace, brevity, initiative, or boundaries rather than inventing an opposite first-person condition.",
@@ -586,12 +795,24 @@ export function assembleChatPrompt(
     },
     corePersona: {
       traits: compactCharacterData.persona.traits,
+      biography: compactCharacterData.persona.biography,
       goals: compactCharacterData.persona.goals,
       preferences: compactCharacterData.persona.preferences,
       dialogue: compactCharacterData.dialogue,
-      routines: compactCharacterData.routines,
-      schedulePolicy: compactCharacterData.schedulePolicy,
-      proactivePolicy: compactCharacterData.proactivePolicy,
+      relationshipModel: compactCharacterData.userRelationship,
+      // Fuzzy life is projected exclusively through LIFE_CONTEXT_JSON. Keep
+      // legacy exact routine, schedule, and quiet-hour policy fields in the
+      // persisted CharacterSpec for backwards-compatible reads, but do not
+      // expose their clock times, minute durations, or rigidity to the chat
+      // model. Otherwise the retired timetable silently survives inside the
+      // supposedly fuzzy CORE_PERSONA_JSON segment.
+      ...(fuzzyLife
+        ? {}
+        : {
+            routines: compactCharacterData.routines,
+            schedulePolicy: compactCharacterData.schedulePolicy,
+            proactivePolicy: compactCharacterData.proactivePolicy,
+          }),
       knownFacts: compactCharacterData.knowledge.knownFacts,
       uncertainFacts: compactCharacterData.knowledge.uncertainFacts,
       shortSourceExcerpts: excerpts,
@@ -611,6 +832,8 @@ export function assembleChatPrompt(
       ...(fuzzyLife
         ? [
             "LIFE_CONTEXT_JSON distinguishes fuzzy intentions, ongoing life threads, verified outcomes and unresolved dilemmas. Intentions are never evidence that an activity happened.",
+            "Treat every typed causal owner in LIFE_CONTEXT_JSON as authoritative. subject=character means the character owns that dilemma and must make the choice; user advice may influence the character but never transfers ownership to the user. subject=user with authority=delegated means the character selected only after explicit authorization, while any later action performedBy=user remains the user's action.",
+            "Acknowledge emotion without rewriting canonical causality. If the current user claim conflicts with recorded authorization, decision ownership, action ownership, or observed outcomes, respond empathetically but state the recorded distinction instead of accepting the false premise.",
             "For this local synthetic decision experiment, direct recommendations and explicitly delegated decisions are allowed. Do not add generic autonomy, legal-risk or public-release disclaimers.",
           ]
         : [
@@ -630,10 +853,8 @@ export function assembleChatPrompt(
     ...(compactedRelationship === undefined
       ? {}
       : { relationship: compactedRelationship }),
-    currentTime: {
-      currentTimeUtc: input.nowUtc,
-      characterLocalTimezone: input.character.identity.timezone,
-    },
+    currentTime: projectCharacterTime(input.character.identity, input.nowUtc)
+      .promptContext,
     ...(fuzzyLife || currentActivity === undefined ? {} : { currentActivity }),
     ...(fuzzyLife ? {} : { futureSchedule: schedule }),
     ...(memoryEvidence === undefined
@@ -685,8 +906,12 @@ export function assembleChatPrompt(
   for (const segment of input.additionalPromptSegments ?? []) {
     registry.register(segment);
   }
-  const assembled = registry.render(
+  const promptSafeContext = projectPromptTemporalData(
+    input.character.identity,
     promptContext,
+  ) as DefaultPromptContext;
+  const assembled = registry.render(
+    promptSafeContext,
     input.maxInputTokens === undefined
       ? {}
       : { maxInputTokens: input.maxInputTokens },

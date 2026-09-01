@@ -6,6 +6,7 @@ import {
   DecisionRecordSchema,
   DilemmaEpisodeSchema,
   LifeOutcomeSchema,
+  LifeThreadSchema,
   LocalDateSchema,
   OutcomeRecordSchema,
   SupportInterventionSchema,
@@ -73,6 +74,61 @@ const validDelegatedDecision = {
 } as const;
 
 describe("fuzzy life and decision contracts", () => {
+  it("keeps old life threads readable and requires complete milestone projection metadata", () => {
+    const legacyThread = {
+      id: "thread-1",
+      agentId: "agent-1",
+      subject: "character",
+      title: "完成长片",
+      summary: "持续推进长片创作",
+      domain: "creative",
+      status: "active",
+      currentStage: "持续推进中",
+      startedLocalDate: "2026-09-01",
+      sourceMessageIds: [],
+      idempotencyKey: "thread:agent-1:goal-1",
+      revision: 1,
+      schemaVersion: 1,
+      createdAtUtc: "2026-09-01T00:00:00.000Z",
+      updatedAtUtc: "2026-09-01T00:00:00.000Z",
+    } as const;
+    expect(LifeThreadSchema.safeParse(legacyThread).success).toBe(true);
+    expect(
+      LifeThreadSchema.safeParse({
+        ...legacyThread,
+        currentMilestoneId: "milestone-1",
+      }).success,
+    ).toBe(false);
+    expect(
+      LifeThreadSchema.safeParse({
+        ...legacyThread,
+        timelinePlan: {
+          schemaVersion: 1,
+          sourceGoalId: "goal-1",
+          sourceCharacterVersion: 1,
+          origin: "character_spec",
+          timeBasis: { mode: "realtime", timezone: "Asia/Shanghai" },
+          milestones: [
+            {
+              id: "milestone-1",
+              afterDays: 0,
+              title: "起点",
+              focus: "确认方向",
+            },
+            {
+              id: "milestone-2",
+              afterDays: 14,
+              title: "形成节奏",
+              focus: "保持投入",
+            },
+          ],
+          planSha256: "a".repeat(64),
+        },
+        currentMilestoneId: "milestone-1",
+      }).success,
+    ).toBe(true);
+  });
+
   it("accepts a fuzzy dilemma without inventing an exact occurrence time", () => {
     expect(DilemmaEpisodeSchema.parse(validDilemma).status).toBe("open");
     expect(

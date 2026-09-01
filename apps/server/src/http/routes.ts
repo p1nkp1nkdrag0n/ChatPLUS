@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { DateTime } from "luxon";
 import { z } from "zod";
 import { MemoryRecallPreviewRequestSchema } from "@personasim/contracts";
+import { projectCharacterTime } from "@personasim/features";
 
 import type { ServerConfig } from "../config.js";
 import type { DatabaseStore } from "../db/store.js";
@@ -743,9 +744,8 @@ function buildAgentSnapshot(
     state,
     cursor,
     serverTimeUtc: nowUtc,
-    characterLocalTime: DateTime.fromISO(nowUtc)
-      .setZone(spec.identity.timezone)
-      .toISO(),
+    characterLocalTime: projectCharacterTime(spec.identity, nowUtc)
+      .localDateTime,
     currentActivity,
     schedule,
     ...(services.config.lifePlanningMode === "fuzzy"

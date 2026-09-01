@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   ActionRecordSchema,
   DailyLifeContextSchema,
@@ -12,6 +14,8 @@ import {
   RelationshipMilestoneSchema,
   SupportInterventionSchema,
   type CharacterSpec,
+  type CharacterGoal,
+  type CharacterGoalMilestone,
   type DailyLifeContext,
   type DailyLifeIntent,
   type DayPeriod,
@@ -20,17 +24,29 @@ import {
   type LifeDomain,
   type LifeOutcome,
   type LifeThread,
+  type LifeThreadClock,
+  type LifeThreadTimelinePlan,
+  type OutcomeRecord,
   type PressureEpisode,
+  type ReflectionRecord,
   type RuntimeState,
   type SupportIntervention,
   type SupportMode,
 } from "@personasim/contracts";
-import { seededUnit, stableId } from "@personasim/features";
+import {
+  projectCharacterTime,
+  seededUnit,
+  stableId,
+} from "@personasim/features";
 import { DateTime } from "luxon";
 
 import type { DatabaseStore } from "../db/store.js";
+import { buildTimeBasedGoalMilestones } from "../domain/defaults.js";
 import { notFound } from "../domain/errors.js";
-import type { LifeRepository } from "../repositories/life-repository.js";
+import {
+  LifeThreadRevisionConflictError,
+  type LifeRepository,
+} from "../repositories/life-repository.js";
 import type { Clock } from "../runtime/clock.js";
 
 type DomainEventWrite = Omit<
@@ -95,11 +111,9 @@ export class FuzzyLifeService {
     const spec = this.store.getCharacterSpec(agentId);
     const state = this.store.getRuntimeState(agentId);
     if (!spec || !state) throw notFound("Character");
-    const local = DateTime.fromISO(atUtc, { setZone: true }).setZone(
-      spec.identity.timezone,
-    );
-    const localDate = local.toISODate()!;
-    const threads = this.ensureGoalThreads(spec, localDate, atUtc);
+    const local = projectCharacterTime(spec.identity, atUtc);
+    const localDate = local.localDate;
+    const threads = this.ensureGoalThreads(spec, atUtc);
     let context = this.repository.findDailyContext(agentId, localDate);
     if (context === undefined) {
       const intents = buildDailyIntents(spec, threads, localDate, atUtc);
@@ -204,9 +218,10 @@ export class FuzzyLifeService {
   ): FuzzyLifeAdvanceResult {
     const spec = this.store.getCharacterSpec(agentId);
     if (!spec) throw notFound("Character");
-    const currentLocalDate = DateTime.fromISO(toUtc, { setZone: true })
-      .setZone(spec.identity.timezone)
-      .toISODate()!;
+    const currentLocalDate = projectCharacterTime(
+      spec.identity,
+      toUtc,
+    ).localDate;
     const settledContextIds: string[] = [];
     const createdOutcomeIds: string[] = [];
 
@@ -284,7 +299,20 @@ export class FuzzyLifeService {
 
   promptContext(agentId: string, atUtc = this.clock.nowUtc()): unknown {
     const snapshot = this.ensureToday(agentId, atUtc);
-    const recentDecisions = this.repository.listCurrentDecisions(agentId, 4);
+    const currentDecisions = this.repository.listCurrentDecisions(agentId, 32);
+    const recentDecisions = currentDecisions.slice(0, 4);
+    const recentActions = this.repository.listRecentActions(agentId, 32);
+    const recentOutcomes = this.repository.listRecentOutcomeRecords(
+      agentId,
+      32,
+    );
+    const recentReflections = this.repository.listRecentReflections(
+      agentId,
+      32,
+    );
+    const decisionById = new Map(
+      currentDecisions.map((decision) => [decision.id, decision]),
+    );
     return {
       authority: "server_persisted_fuzzy_life",
       semantics: {
@@ -292,8 +320,13 @@ export class FuzzyLifeService {
         decisionsAreNotActions: true,
         actionsAreNotOutcomes: true,
         characterTimePrecision: "day_or_period",
+        characterLifeOwner: "character",
+        lifeThreadStagesAdvanceByCharacterLocalDate: true,
+        lifeThreadStageIsNotDailyOutcome: true,
+        lifeThreadStageIsNotProofOfExternalSuccess: true,
       },
       today: {
+        subject: "character",
         localDate: snapshot.context.localDate,
         currentPeriod: snapshot.context.currentPeriod,
         availability: snapshot.context.availability,
@@ -306,12 +339,14 @@ export class FuzzyLifeService {
         })),
       },
       ongoingThreads: snapshot.threads.map((thread) => ({
+        subject: "character",
         title: thread.title,
         currentStage: thread.currentStage,
         progressNote: thread.progressNote,
         nextStepHint: thread.nextStepHint,
       })),
       verifiedRecentOutcomes: snapshot.recentOutcomes.map((outcome) => ({
+        subject: "character",
         effectiveLocalDate: outcome.effectiveLocalDate,
         outcomeKind: outcome.outcomeKind,
         summary: compactLifePromptText(outcome.summary),
@@ -320,6 +355,8 @@ export class FuzzyLifeService {
         .listOpenDilemmas(agentId, 4)
         .map((episode) => ({
           id: episode.id,
+          subject: episode.subject,
+          domain: episode.domain,
           title: episode.title,
           summary: compactLifePromptText(episode.summary, 1_200),
           options: episode.options.map((option) => option.label),
@@ -331,6 +368,8 @@ export class FuzzyLifeService {
           : [
               {
                 id: episode.id,
+                subject: episode.subject,
+                domain: episode.domain,
                 status: episode.status,
                 title: episode.title,
                 summary: compactLifePromptText(episode.summary, 1_200),
@@ -347,6 +386,10 @@ export class FuzzyLifeService {
         .listOpenPressures(agentId, 4)
         .map((episode) => ({
           id: episode.id,
+          subject: episode.subject,
+          pressureKind: episode.pressureKind,
+          dilemmaId: episode.dilemmaId,
+          threadId: episode.threadId,
           triggerSummary: compactLifePromptText(episode.triggerSummary),
           status: episode.status,
           currentPressure: episode.currentPressure,
@@ -359,6 +402,7 @@ export class FuzzyLifeService {
         .listRecentMilestones(agentId, 4)
         .map((milestone) => ({
           id: milestone.id,
+          subject: "shared",
           kind: milestone.kind,
           summary: compactLifePromptText(milestone.summary),
           interventionIds: milestone.interventionIds,
@@ -394,38 +438,102 @@ export class FuzzyLifeService {
         authorizedByMessageId: decision.authorizedByMessageId,
         effectiveLocalDate: decision.effectiveLocalDate,
       })),
-      evidencedActions: this.repository
-        .listRecentActions(agentId, 4)
-        .map((action) => ({
-          id: action.id,
-          decisionId: action.decisionId,
-          actionKind: action.actionKind,
-          summary: compactLifePromptText(action.summary),
-          sourceEvidenceIds: action.sourceEvidenceIds,
-          effectiveLocalDate: action.effectiveLocalDate,
-        })),
-      evidencedConsequences: this.repository
-        .listRecentOutcomeRecords(agentId, 4)
-        .map((outcome) => ({
+      canonicalCausalFacts: recentDecisions.map((decision) => ({
+        dilemmaId: decision.dilemmaId,
+        subject: decision.subject,
+        decision: {
+          decisionId: decision.id,
+          subject: decision.subject,
+          authority: decision.authority,
+          decidedBy: decision.decidedBy,
+          selectionSummary: compactLifePromptText(
+            decision.selectionSummary,
+            800,
+          ),
+          authorizedByMessageId: decision.authorizedByMessageId,
+          sourceMessageIds: decision.sourceMessageIds,
+        },
+        actions: recentActions
+          .filter((action) => action.decisionId === decision.id)
+          .slice(0, 4)
+          .map((action) => ({
+            actionId: action.id,
+            decisionId: action.decisionId,
+            subject: action.subject,
+            performedBy: action.performedBy,
+            actionKind: action.actionKind,
+            summary: compactLifePromptText(action.summary, 800),
+            sourceEvidenceIds: action.sourceEvidenceIds,
+          })),
+        outcomes: recentOutcomes
+          .filter((outcome) => outcome.decisionId === decision.id)
+          .slice(0, 4)
+          .map((outcome) => ({
+            outcomeId: outcome.id,
+            decisionId: outcome.decisionId,
+            subject: decision.subject,
+            actionIds: outcome.actionIds,
+            causeKind: outcome.causeKind,
+            valence: outcome.valence,
+            summary: compactLifePromptText(outcome.summary, 800),
+            sourceEvidenceIds: outcome.sourceEvidenceIds,
+          })),
+        reflections: recentReflections
+          .filter((reflection) => reflection.decisionId === decision.id)
+          .slice(0, 4)
+          .map((reflection) => ({
+            reflectionId: reflection.id,
+            decisionId: reflection.decisionId,
+            outcomeId: reflection.outcomeId,
+            subject: reflection.subject,
+            reflectedBy: reflection.reflectedBy,
+            stanceTowardDecision: reflection.stanceTowardDecision,
+            summary: compactLifePromptText(reflection.summary, 800),
+            sourceMessageIds: reflection.sourceMessageIds,
+          })),
+      })),
+      evidencedActions: recentActions.slice(0, 4).map((action) => ({
+        id: action.id,
+        decisionId: action.decisionId,
+        subject: action.subject,
+        performedBy: action.performedBy,
+        actionKind: action.actionKind,
+        summary: compactLifePromptText(action.summary),
+        sourceEvidenceIds: action.sourceEvidenceIds,
+        effectiveLocalDate: action.effectiveLocalDate,
+      })),
+      evidencedConsequences: recentOutcomes.slice(0, 4).map((outcome) => {
+        const decision = decisionById.get(outcome.decisionId);
+        return {
           id: outcome.id,
           decisionId: outcome.decisionId,
+          ...(decision === undefined
+            ? {}
+            : {
+                subject: decision.subject,
+                decisionAuthority: decision.authority,
+                decidedBy: decision.decidedBy,
+              }),
           actionIds: outcome.actionIds,
+          causeKind: outcome.causeKind,
           valence: outcome.valence,
+          status: outcome.status,
           summary: compactLifePromptText(outcome.summary),
           sourceEvidenceIds: outcome.sourceEvidenceIds,
           effectiveLocalDate: outcome.effectiveLocalDate,
-        })),
-      reflections: this.repository
-        .listRecentReflections(agentId, 4)
-        .map((reflection) => ({
-          id: reflection.id,
-          decisionId: reflection.decisionId,
-          outcomeId: reflection.outcomeId,
-          stanceTowardDecision: reflection.stanceTowardDecision,
-          summary: compactLifePromptText(reflection.summary),
-          sourceMessageIds: reflection.sourceMessageIds,
-          effectiveLocalDate: reflection.effectiveLocalDate,
-        })),
+        };
+      }),
+      reflections: recentReflections.slice(0, 4).map((reflection) => ({
+        id: reflection.id,
+        decisionId: reflection.decisionId,
+        outcomeId: reflection.outcomeId,
+        subject: reflection.subject,
+        reflectedBy: reflection.reflectedBy,
+        stanceTowardDecision: reflection.stanceTowardDecision,
+        summary: compactLifePromptText(reflection.summary),
+        sourceMessageIds: reflection.sourceMessageIds,
+        effectiveLocalDate: reflection.effectiveLocalDate,
+      })),
     };
   }
 
@@ -441,10 +549,8 @@ export class FuzzyLifeService {
   }): ConversationLifeImpact {
     const spec = this.store.getCharacterSpec(input.agentId);
     if (!spec) throw notFound("Character");
-    const local = DateTime.fromISO(input.recordedAtUtc, {
-      setZone: true,
-    }).setZone(spec.identity.timezone);
-    const localDate = local.toISODate()!;
+    const local = projectCharacterTime(spec.identity, input.recordedAtUtc);
+    const localDate = local.localDate;
     const period = dayPeriod(local.hour);
     const pressureFollowUp = this.applyPressureFollowUp(
       input,
@@ -815,36 +921,35 @@ export class FuzzyLifeService {
         "decision_outcome",
         `${decision.id}:${input.userMessageId}`,
       );
-      const inserted = this.repository.insertOutcomeRecord(
-        OutcomeRecordSchema.parse({
-          id: candidateOutcomeId,
-          agentId: input.agentId,
-          sessionId: input.sessionId,
-          decisionId: decision.id,
-          actionIds,
-          causeKind:
-            actionIds.length === 0
-              ? "external"
-              : hasMixedCausation(input.userText)
-                ? "mixed"
-                : "action",
-          valence: inferOutcomeValence(input.userText),
-          summary: input.userText,
-          consequenceFacts: [input.userText],
-          sourceEvidenceIds: [input.userMessageId],
-          confidence: 0.82,
-          status: "observed",
-          effectiveLocalDate: localDate,
-          effectivePeriod: period,
-          temporalPrecision: "period",
-          recordedAtUtc: input.recordedAtUtc,
-          idempotencyKey: `decision-outcome:${decision.id}:${input.userMessageId}`,
-          schemaVersion: 1,
-        }),
-      );
+      const outcome = OutcomeRecordSchema.parse({
+        id: candidateOutcomeId,
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+        decisionId: decision.id,
+        actionIds,
+        causeKind:
+          actionIds.length === 0
+            ? "external"
+            : hasMixedCausation(input.userText)
+              ? "mixed"
+              : "action",
+        valence: inferOutcomeValence(input.userText),
+        summary: input.userText,
+        consequenceFacts: [input.userText],
+        sourceEvidenceIds: [input.userMessageId],
+        confidence: 0.82,
+        status: "observed",
+        effectiveLocalDate: localDate,
+        effectivePeriod: period,
+        temporalPrecision: "period",
+        recordedAtUtc: input.recordedAtUtc,
+        idempotencyKey: `decision-outcome:${decision.id}:${input.userMessageId}`,
+        schemaVersion: 1,
+      });
+      const inserted = this.repository.insertOutcomeRecord(outcome);
       if (inserted) {
         outcomeId = candidateOutcomeId;
-        this.linkOutcomeToPressureEpisode(decision, candidateOutcomeId, input);
+        this.linkOutcomeToPressureEpisode(decision, outcome, input);
       }
     }
 
@@ -867,38 +972,40 @@ export class FuzzyLifeService {
         "reflection",
         `${decision.id}:${reflectionSourceMessageId}`,
       );
-      const inserted = this.repository.insertReflection(
-        ReflectionRecordSchema.parse({
-          id: candidateReflectionId,
-          agentId: input.agentId,
-          sessionId: input.sessionId,
-          subject: decision.subject,
-          reflectedBy:
-            decision.subject === "user"
-              ? "user"
-              : decision.subject === "character"
-                ? "character"
-                : "joint",
-          decisionId: decision.id,
-          ...(linkedOutcomeId === undefined
-            ? {}
-            : { outcomeId: linkedOutcomeId }),
-          summary: reflectionText,
-          lessons: [reflectionLesson(reflectionText)],
-          stanceTowardDecision: reflectionStance(reflectionText),
-          changedInterpretation: /后悔|改主意|不是.*想的|重新/u.test(
-            reflectionText,
-          ),
-          sourceMessageIds: [reflectionSourceMessageId],
-          effectiveLocalDate: localDate,
-          effectivePeriod: period,
-          temporalPrecision: "period",
-          recordedAtUtc: input.recordedAtUtc,
-          idempotencyKey: `reflection:${decision.id}:${reflectionSourceMessageId}`,
-          schemaVersion: 1,
-        }),
-      );
-      if (inserted) reflectionId = candidateReflectionId;
+      const reflection = ReflectionRecordSchema.parse({
+        id: candidateReflectionId,
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+        subject: decision.subject,
+        reflectedBy:
+          decision.subject === "user"
+            ? "user"
+            : decision.subject === "character"
+              ? "character"
+              : "joint",
+        decisionId: decision.id,
+        ...(linkedOutcomeId === undefined
+          ? {}
+          : { outcomeId: linkedOutcomeId }),
+        summary: reflectionText,
+        lessons: [reflectionLesson(reflectionText)],
+        stanceTowardDecision: reflectionStance(reflectionText),
+        changedInterpretation: /后悔|改主意|不是.*想的|重新/u.test(
+          reflectionText,
+        ),
+        sourceMessageIds: [reflectionSourceMessageId],
+        effectiveLocalDate: localDate,
+        effectivePeriod: period,
+        temporalPrecision: "period",
+        recordedAtUtc: input.recordedAtUtc,
+        idempotencyKey: `reflection:${decision.id}:${reflectionSourceMessageId}`,
+        schemaVersion: 1,
+      });
+      const inserted = this.repository.insertReflection(reflection);
+      if (inserted) {
+        reflectionId = candidateReflectionId;
+        this.linkReflectionToPressureEpisode(decision, reflection, input);
+      }
     }
 
     let milestoneId: string | undefined;
@@ -1582,12 +1689,105 @@ export class FuzzyLifeService {
 
   private linkOutcomeToPressureEpisode(
     decision: DecisionRecord,
-    outcomeId: string,
+    outcome: OutcomeRecord,
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
   ): void {
+    const pressure = this.selectPressureForDecision(decision);
+    if (pressure === undefined || pressure.outcomeIds.includes(outcome.id)) {
+      return;
+    }
+    const updated =
+      decision.subject === "character"
+        ? progressPressureFromOutcome(pressure, outcome, input.recordedAtUtc)
+        : linkPressureOutcomeEvidence(pressure, outcome, input.recordedAtUtc);
+    this.repository.updatePressure(updated);
+    this.recordEvent({
+      agentId: input.agentId,
+      streamType: "pressure_episode",
+      streamId: pressure.id,
+      eventType:
+        decision.subject === "character"
+          ? "life.pressure_progressed_from_outcome"
+          : "life.pressure_outcome_linked",
+      recordedAtUtc: input.recordedAtUtc,
+      effectiveAtUtc: input.recordedAtUtc,
+      payload: {
+        pressureEpisodeId: pressure.id,
+        dilemmaId: decision.dilemmaId,
+        decisionId: decision.id,
+        outcomeId: outcome.id,
+        outcomeValence: outcome.valence,
+        before: pressureLifecycleSnapshot(pressure),
+        after: pressureLifecycleSnapshot(updated),
+      },
+      correlationId: input.correlationId,
+      causationId: input.userMessageId,
+      idempotencyKey: `pressure-outcome:${pressure.id}:${outcome.id}`,
+    });
+  }
+
+  private linkReflectionToPressureEpisode(
+    decision: DecisionRecord,
+    reflection: ReflectionRecord,
+    input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+  ): void {
+    // User pressure metrics are updated only by explicit user-authored scale or
+    // status evidence. Character pressure may advance from the character's
+    // own observed outcome and reflection because those are its first-party
+    // evidence. This preserves the H12 distinction between a user's life event
+    // occurring and the user actually reporting how it affected them.
+    if (decision.subject !== "character") return;
+    if (reflection.outcomeId !== undefined) {
+      const linkedOutcome = this.repository
+        .listRecentOutcomeRecords(input.agentId, 128)
+        .find((outcome) => outcome.id === reflection.outcomeId);
+      if (linkedOutcome !== undefined) {
+        this.linkOutcomeToPressureEpisode(decision, linkedOutcome, input);
+      }
+    }
+
+    const pressure = this.selectPressureForDecision(decision);
+    if (pressure === undefined) return;
+    const eventKey = `pressure-reflection:${pressure.id}:${reflection.id}`;
+    const alreadyProgressed = this.store.database
+      .prepare("SELECT 1 FROM domain_events WHERE idempotency_key = ?")
+      .get(eventKey);
+    if (alreadyProgressed !== undefined) return;
+
+    const updated = progressPressureFromReflection(
+      pressure,
+      reflection,
+      input.recordedAtUtc,
+    );
+    this.repository.updatePressure(updated);
+    this.recordEvent({
+      agentId: input.agentId,
+      streamType: "pressure_episode",
+      streamId: pressure.id,
+      eventType: "life.pressure_progressed_from_reflection",
+      recordedAtUtc: input.recordedAtUtc,
+      effectiveAtUtc: input.recordedAtUtc,
+      payload: {
+        pressureEpisodeId: pressure.id,
+        dilemmaId: decision.dilemmaId,
+        decisionId: decision.id,
+        reflectionId: reflection.id,
+        reflectionStance: reflection.stanceTowardDecision,
+        before: pressureLifecycleSnapshot(pressure),
+        after: pressureLifecycleSnapshot(updated),
+      },
+      correlationId: input.correlationId,
+      causationId: input.userMessageId,
+      idempotencyKey: eventKey,
+    });
+  }
+
+  private selectPressureForDecision(
+    decision: DecisionRecord,
+  ): PressureEpisode | undefined {
     const dilemma = this.findDilemma(decision.dilemmaId);
     if (dilemma === undefined) return;
-    const candidates = this.listPressureEpisodes(input.agentId).filter(
+    const candidates = this.listPressureEpisodes(decision.agentId).filter(
       (episode) => episode.subject === decision.subject,
     );
     const referencedPressureIds = new Set(
@@ -1617,36 +1817,11 @@ export class FuzzyLifeService {
           this.pressureEvidenceTexts(episode),
         ) >= PRESSURE_DILEMMA_RELEVANCE_THRESHOLD,
     );
-    const pressure =
+    return (
       exactlyOne(directlyLinked) ??
       exactlyOne(exactDilemma) ??
-      exactlyOne(semanticallyLinked);
-    if (pressure === undefined || pressure.outcomeIds.includes(outcomeId)) {
-      return;
-    }
-    const updated = PressureEpisodeSchema.parse({
-      ...pressure,
-      outcomeIds: [...pressure.outcomeIds, outcomeId],
-      updatedAtUtc: input.recordedAtUtc,
-    });
-    this.repository.updatePressure(updated);
-    this.recordEvent({
-      agentId: input.agentId,
-      streamType: "pressure_episode",
-      streamId: pressure.id,
-      eventType: "life.pressure_outcome_linked",
-      recordedAtUtc: input.recordedAtUtc,
-      effectiveAtUtc: input.recordedAtUtc,
-      payload: {
-        pressureEpisodeId: pressure.id,
-        dilemmaId: decision.dilemmaId,
-        decisionId: decision.id,
-        outcomeId,
-      },
-      correlationId: input.correlationId,
-      causationId: input.userMessageId,
-      idempotencyKey: `pressure-outcome:${pressure.id}:${outcomeId}`,
-    });
+      exactlyOne(semanticallyLinked)
+    );
   }
 
   private listPressureEpisodes(agentId: string): PressureEpisode[] {
@@ -1753,17 +1928,16 @@ export class FuzzyLifeService {
     return undefined;
   }
 
-  private ensureGoalThreads(
-    spec: CharacterSpec,
-    localDate: string,
-    atUtc: string,
-  ): LifeThread[] {
+  private ensureGoalThreads(spec: CharacterSpec, atUtc: string): LifeThread[] {
     for (const goal of spec.persona.goals.slice(0, 4)) {
       const key = `life-thread:${spec.id}:goal:${goal.id}`;
-      if (this.repository.findThreadByIdempotencyKey(key) !== undefined)
-        continue;
-      this.repository.insertThread(
-        LifeThreadSchema.parse({
+      const existing = this.repository.findThreadByIdempotencyKey(key);
+      if (existing === undefined) {
+        const timelinePlan = freezeTimelinePlan(spec, goal, atUtc);
+        const milestones = timelinePlan.milestones;
+        const firstMilestone = milestones[0]!;
+        const localDate = timelineLocalDate(timelinePlan.timeBasis, atUtc);
+        const thread = LifeThreadSchema.parse({
           id: stableId("life_thread", key),
           agentId: spec.id,
           subject: "character",
@@ -1771,20 +1945,195 @@ export class FuzzyLifeService {
           summary: goal.description,
           domain: inferDomain(`${goal.title} ${goal.description}`),
           status: "active",
-          currentStage: "持续推进中",
-          progressNote: `当前进度约为 ${Math.round(goal.progress * 100)}%`,
-          nextStepHint: `今天为“${goal.title}”推进一个可完成的小步骤`,
+          currentStage: firstMilestone.title,
+          progressNote: firstMilestone.focus,
+          nextStepHint: milestoneNextStep(firstMilestone, milestones[1]),
+          timelinePlan,
+          currentMilestoneId: firstMilestone.id,
           startedLocalDate: localDate,
+          lastAdvancedLocalDate: localDate,
           sourceMessageIds: [],
           idempotencyKey: key,
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
           createdAtUtc: atUtc,
           updatedAtUtc: atUtc,
-        }),
-      );
+        });
+        this.store.transaction(() => {
+          if (!this.repository.insertThread(thread)) return;
+          this.recordEvent({
+            agentId: spec.id,
+            streamType: "life_thread",
+            streamId: thread.id,
+            streamVersion: thread.revision,
+            eventType: "life.thread_created",
+            recordedAtUtc: atUtc,
+            effectiveAtUtc: atUtc,
+            payload: {
+              threadId: thread.id,
+              sourceGoalId: goal.id,
+              sourceCharacterVersion: spec.version,
+              timelinePlanSha256: timelinePlan.planSha256,
+              milestoneId: firstMilestone.id,
+              effectiveLocalDate: localDate,
+              temporalPrecision: "day",
+              progressionBasis: "published_character_timeline",
+            },
+            idempotencyKey: `life-thread:${thread.id}:created`,
+          });
+        });
+      }
+    }
+
+    // Creation follows the current published head, while advancement follows
+    // each thread's own immutable plan. A goal that is later removed, moved
+    // below the prompt limit, or moved to another timezone must keep aging on
+    // the exact timeline that created it.
+    for (const thread of this.repository.listAllActiveThreads(spec.id)) {
+      this.advanceGoalThread(thread.id, atUtc);
     }
     return this.repository.listActiveThreads(spec.id, 6);
+  }
+
+  private advanceGoalThread(threadId: string, atUtc: string): void {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        this.store.transaction(() => {
+          const thread = this.repository.findThreadById(threadId);
+          if (thread === undefined || thread.status !== "active") return;
+          const migration =
+            thread.timelinePlan === undefined
+              ? resolveLegacyTimelinePlan(this.store, thread)
+              : undefined;
+          const timelinePlan = migration?.plan ?? thread.timelinePlan!;
+          assertTimelinePlanHash(timelinePlan);
+          const milestones = timelinePlan.milestones;
+          const localDate = timelineLocalDate(timelinePlan.timeBasis, atUtc);
+          const elapsedDays = localCalendarDayDifference(
+            thread.startedLocalDate,
+            localDate,
+          );
+          const dateIndex = milestoneIndexAt(milestones, elapsedDays);
+          const persistedIndex =
+            migration?.persistedIndex ??
+            milestones.findIndex(
+              (milestone) => milestone.id === thread.currentMilestoneId,
+            );
+          if (persistedIndex < 0) {
+            throw new Error(
+              `Life thread ${thread.id} points to a milestone outside its frozen plan`,
+            );
+          }
+          // A developer clock rollback may change today's projected date, but
+          // it must never rewind an already reached life stage.
+          const targetIndex = Math.max(persistedIndex, dateIndex);
+          const target = milestones[targetIndex]!;
+          const projectionChanged =
+            thread.currentStage !== target.title ||
+            thread.progressNote !== target.focus ||
+            thread.nextStepHint !==
+              milestoneNextStep(target, milestones[targetIndex + 1]);
+          const crossed = milestones.slice(persistedIndex + 1, targetIndex + 1);
+          const transitions: Array<{
+            eventType: string;
+            payload: Record<string, unknown>;
+            idempotencyKey: string;
+          }> = [];
+          if (migration !== undefined) {
+            transitions.push({
+              eventType: "life.thread_timeline_attached",
+              payload: {
+                threadId: thread.id,
+                sourceGoalId: timelinePlan.sourceGoalId,
+                sourceCharacterVersion: timelinePlan.sourceCharacterVersion,
+                timelinePlanSha256: timelinePlan.planSha256,
+                attachedMilestoneId: milestones[persistedIndex]!.id,
+                progressionBasis: "frozen_character_timeline",
+              },
+              idempotencyKey: `life-thread:${thread.id}:timeline-attached:v1`,
+            });
+          }
+          crossed.forEach((milestone, index) => {
+            const previous = milestones[persistedIndex + index]!;
+            transitions.push({
+              eventType: "life.thread_milestone_reached",
+              payload: {
+                threadId: thread.id,
+                sourceGoalId: timelinePlan.sourceGoalId,
+                sourceCharacterVersion: timelinePlan.sourceCharacterVersion,
+                timelinePlanSha256: timelinePlan.planSha256,
+                milestoneId: milestone.id,
+                previousMilestoneId: previous.id,
+                phaseTitle: milestone.title,
+                effectiveLocalDate: milestoneEffectiveLocalDate(
+                  thread.startedLocalDate,
+                  milestone.afterDays,
+                ),
+                temporalPrecision: "day",
+                progressionBasis: "frozen_character_timeline",
+              },
+              idempotencyKey: `life-thread:${thread.id}:milestone:${milestone.id}`,
+            });
+          });
+          if (
+            migration === undefined &&
+            crossed.length === 0 &&
+            projectionChanged
+          ) {
+            transitions.push({
+              eventType: "life.thread_projection_repaired",
+              payload: {
+                threadId: thread.id,
+                timelinePlanSha256: timelinePlan.planSha256,
+                milestoneId: target.id,
+                effectiveLocalDate: localDate,
+                temporalPrecision: "day",
+              },
+              idempotencyKey: `life-thread:${thread.id}:projection-repaired:${target.id}:${thread.revision}`,
+            });
+          }
+          if (transitions.length === 0) return;
+          const updated = LifeThreadSchema.parse({
+            ...thread,
+            currentStage: target.title,
+            progressNote: target.focus,
+            nextStepHint: milestoneNextStep(
+              target,
+              milestones[targetIndex + 1],
+            ),
+            timelinePlan,
+            currentMilestoneId: target.id,
+            lastAdvancedLocalDate: milestoneEffectiveLocalDate(
+              thread.startedLocalDate,
+              target.afterDays,
+            ),
+            revision: thread.revision + transitions.length,
+            schemaVersion: 2,
+            updatedAtUtc: atUtc,
+          });
+          transitions.forEach((transition, index) => {
+            this.recordEvent({
+              agentId: thread.agentId,
+              streamType: "life_thread",
+              streamId: thread.id,
+              streamVersion: thread.revision + index + 1,
+              eventType: transition.eventType,
+              recordedAtUtc: atUtc,
+              // Infrastructure ordering instant. The day-precision story
+              // effective date lives in the event payload.
+              effectiveAtUtc: atUtc,
+              payload: transition.payload,
+              idempotencyKey: transition.idempotencyKey,
+            });
+          });
+          this.repository.updateThread(updated, thread.revision);
+        });
+        return;
+      } catch (error) {
+        if (!(error instanceof LifeThreadRevisionConflictError) || attempt > 0)
+          throw error;
+      }
+    }
   }
 
   private applyPressureFollowUp(
@@ -1974,10 +2323,35 @@ export class FuzzyLifeService {
   }
 
   private recordEvent(input: DomainEventWrite): void {
-    this.store.insertDomainEvent({
+    const event = {
       ...input,
       streamVersion: input.streamVersion ?? 1,
-    });
+    };
+    if (event.streamType === "life_thread") {
+      const occupyingVersion = this.store.getDomainEventByStreamVersion(
+        event.streamType,
+        event.streamId,
+        event.streamVersion,
+      );
+      if (
+        occupyingVersion !== undefined &&
+        !sameLifeThreadEvent(occupyingVersion, event)
+      ) {
+        throw new Error(
+          `Life-thread event stream version ${event.streamVersion} is already occupied for ${event.streamId}`,
+        );
+      }
+    }
+    if (this.store.insertDomainEvent(event)) return;
+    if (event.streamType !== "life_thread") return;
+    const existing = this.store.getDomainEventByIdempotencyKey(
+      event.idempotencyKey,
+    );
+    if (existing === undefined || !sameLifeThreadEvent(existing, event)) {
+      throw new Error(
+        `Life-thread event idempotency collision: ${event.idempotencyKey}`,
+      );
+    }
   }
 
   private domainEventId(idempotencyKey: string): string {
@@ -1988,6 +2362,362 @@ export class FuzzyLifeService {
       throw new Error("Life outcome evidence event is missing");
     return row.id;
   }
+}
+
+function sameLifeThreadEvent(
+  actual: Record<string, unknown>,
+  expected: DomainEventWrite & { streamVersion: number },
+): boolean {
+  return (
+    actual["agentId"] === expected.agentId &&
+    actual["streamType"] === expected.streamType &&
+    actual["streamId"] === expected.streamId &&
+    actual["streamVersion"] === expected.streamVersion &&
+    actual["eventType"] === expected.eventType &&
+    actual["idempotencyKey"] === expected.idempotencyKey &&
+    JSON.stringify(actual["payload"]) === JSON.stringify(expected.payload)
+  );
+}
+
+function linkPressureOutcomeEvidence(
+  episode: PressureEpisode,
+  outcome: OutcomeRecord,
+  updatedAtUtc: string,
+): PressureEpisode {
+  const sourceMessageIds = [
+    ...new Set([...episode.sourceMessageIds, ...outcome.sourceEvidenceIds]),
+  ];
+  return PressureEpisodeSchema.parse({
+    ...episode,
+    outcomeIds: [...new Set([...episode.outcomeIds, outcome.id])],
+    sourceMessageIds,
+    latestEvidenceMessageId:
+      outcome.sourceEvidenceIds.at(-1) ?? episode.latestEvidenceMessageId,
+    effectiveLocalDate: outcome.effectiveLocalDate,
+    ...(outcome.effectivePeriod === undefined
+      ? { effectivePeriod: undefined, temporalPrecision: "day" as const }
+      : {
+          effectivePeriod: outcome.effectivePeriod,
+          temporalPrecision: "period" as const,
+        }),
+    updatedAtUtc,
+  });
+}
+
+function progressPressureFromOutcome(
+  episode: PressureEpisode,
+  outcome: OutcomeRecord,
+  updatedAtUtc: string,
+): PressureEpisode {
+  const transition =
+    episode.status === "resolved"
+      ? { pressure: 0, clarity: 0, status: "resolved" as const }
+      : outcomePressureTransition(outcome.valence);
+  const sourceMessageIds = [
+    ...new Set([...episode.sourceMessageIds, ...outcome.sourceEvidenceIds]),
+  ];
+  const latestEvidenceMessageId =
+    outcome.sourceEvidenceIds.at(-1) ?? episode.latestEvidenceMessageId;
+  return PressureEpisodeSchema.parse({
+    ...episode,
+    status: transition.status,
+    currentPressure: clamp01(episode.currentPressure + transition.pressure),
+    currentClarity: clamp01(episode.currentClarity + transition.clarity),
+    outcomeIds: [...new Set([...episode.outcomeIds, outcome.id])],
+    sourceMessageIds,
+    latestEvidenceMessageId,
+    effectiveLocalDate: outcome.effectiveLocalDate,
+    ...(outcome.effectivePeriod === undefined
+      ? { effectivePeriod: undefined, temporalPrecision: "day" as const }
+      : {
+          effectivePeriod: outcome.effectivePeriod,
+          temporalPrecision: "period" as const,
+        }),
+    updatedAtUtc,
+  });
+}
+
+function progressPressureFromReflection(
+  episode: PressureEpisode,
+  reflection: ReflectionRecord,
+  updatedAtUtc: string,
+): PressureEpisode {
+  const closesCompletedChain =
+    reflection.outcomeId !== undefined &&
+    episode.outcomeIds.includes(reflection.outcomeId) &&
+    (reflection.stanceTowardDecision === "affirm" ||
+      reflection.stanceTowardDecision === "mixed");
+  const transition =
+    episode.status === "resolved"
+      ? { pressure: 0, clarity: 0, status: "resolved" as const }
+      : closesCompletedChain
+        ? { pressure: -0.06, clarity: 0.12, status: "resolved" as const }
+        : reflectionPressureTransition(
+            reflection.stanceTowardDecision,
+            episode.status,
+          );
+  const sourceMessageIds = [
+    ...new Set([...episode.sourceMessageIds, ...reflection.sourceMessageIds]),
+  ];
+  const latestEvidenceMessageId =
+    reflection.sourceMessageIds.at(-1) ?? episode.latestEvidenceMessageId;
+  return PressureEpisodeSchema.parse({
+    ...episode,
+    status: transition.status,
+    currentPressure: clamp01(episode.currentPressure + transition.pressure),
+    currentClarity: clamp01(episode.currentClarity + transition.clarity),
+    sourceMessageIds,
+    latestEvidenceMessageId,
+    ...(transition.status === "resolved"
+      ? {
+          resolutionEvidenceMessageId:
+            latestEvidenceMessageId ?? episode.resolutionEvidenceMessageId,
+        }
+      : { resolutionEvidenceMessageId: undefined }),
+    effectiveLocalDate: reflection.effectiveLocalDate,
+    ...(reflection.effectivePeriod === undefined
+      ? { effectivePeriod: undefined, temporalPrecision: "day" as const }
+      : {
+          effectivePeriod: reflection.effectivePeriod,
+          temporalPrecision: "period" as const,
+        }),
+    updatedAtUtc,
+  });
+}
+
+function outcomePressureTransition(valence: OutcomeRecord["valence"]): {
+  pressure: number;
+  clarity: number;
+  status: Exclude<PressureEpisode["status"], "open" | "resolved">;
+} {
+  switch (valence) {
+    case "positive":
+      return { pressure: -0.12, clarity: 0.14, status: "improving" };
+    case "negative":
+      return { pressure: 0.1, clarity: 0.08, status: "worsening" };
+    case "mixed":
+      return { pressure: -0.04, clarity: 0.12, status: "improving" };
+    case "neutral":
+      return { pressure: -0.02, clarity: 0.08, status: "improving" };
+  }
+}
+
+function reflectionPressureTransition(
+  stance: ReflectionRecord["stanceTowardDecision"],
+  currentStatus: PressureEpisode["status"],
+): {
+  pressure: number;
+  clarity: number;
+  status: PressureEpisode["status"];
+} {
+  switch (stance) {
+    case "affirm":
+      return { pressure: -0.06, clarity: 0.12, status: "improving" };
+    case "mixed":
+      return { pressure: -0.03, clarity: 0.1, status: "improving" };
+    case "question":
+      return { pressure: 0.02, clarity: 0.06, status: "worsening" };
+    case "reverse":
+      return { pressure: 0.06, clarity: 0.08, status: "worsening" };
+    case "unclear":
+      return { pressure: 0, clarity: 0.05, status: currentStatus };
+  }
+}
+
+function pressureLifecycleSnapshot(episode: PressureEpisode): {
+  status: PressureEpisode["status"];
+  pressure: number;
+  clarity: number;
+  feltUnderstood: number;
+  outcomeIds: string[];
+  latestEvidenceMessageId: string;
+} {
+  return {
+    status: episode.status,
+    pressure: episode.currentPressure,
+    clarity: episode.currentClarity,
+    feltUnderstood: episode.currentFeltUnderstood,
+    outcomeIds: episode.outcomeIds,
+    latestEvidenceMessageId: episode.latestEvidenceMessageId,
+  };
+}
+
+function timeMilestonesForGoal(goal: CharacterGoal): CharacterGoalMilestone[] {
+  return goal.milestones ?? buildTimeBasedGoalMilestones(goal.id, goal.title);
+}
+
+function freezeTimelinePlan(
+  spec: CharacterSpec,
+  goal: CharacterGoal,
+  anchorUtc: string,
+): LifeThreadTimelinePlan {
+  const milestones = structuredClone(timeMilestonesForGoal(goal));
+  const timeBasis = timelineClockForCharacter(spec, anchorUtc);
+  const origin: LifeThreadTimelinePlan["origin"] =
+    goal.milestones === undefined ? "legacy_fallback_v1" : "character_spec";
+  const unsigned: Omit<LifeThreadTimelinePlan, "planSha256"> = {
+    schemaVersion: 1 as const,
+    sourceGoalId: goal.id,
+    sourceCharacterVersion: spec.version,
+    origin,
+    timeBasis,
+    milestones,
+  };
+  return {
+    ...unsigned,
+    planSha256: hashTimelinePlan(unsigned),
+  };
+}
+
+function timelineClockForCharacter(
+  spec: CharacterSpec,
+  fallbackSystemAnchorUtc: string,
+): LifeThreadClock {
+  const frame = spec.identity.temporalFrame;
+  if (frame?.mode !== "anchored_story") {
+    return { mode: "realtime", timezone: spec.identity.timezone };
+  }
+  return {
+    mode: "anchored_story",
+    timezone: spec.identity.timezone,
+    storyAnchorLocalDate: frame.storyAnchorLocalDate,
+    systemAnchorUtc: frame.systemAnchorUtc ?? fallbackSystemAnchorUtc,
+  };
+}
+
+function timelineLocalDate(clock: LifeThreadClock, atUtc: string): string {
+  const identity =
+    clock.mode === "realtime"
+      ? { timezone: clock.timezone }
+      : {
+          timezone: clock.timezone,
+          temporalFrame: {
+            mode: "anchored_story" as const,
+            eraLabel: "frozen life-thread story clock",
+            storyAnchorLocalDate: clock.storyAnchorLocalDate,
+            systemAnchorUtc: clock.systemAnchorUtc,
+          },
+        };
+  return projectCharacterTime(identity, atUtc).localDate;
+}
+
+function hashTimelinePlan(
+  value: Omit<LifeThreadTimelinePlan, "planSha256">,
+): string {
+  const canonical = {
+    schemaVersion: value.schemaVersion,
+    sourceGoalId: value.sourceGoalId,
+    sourceCharacterVersion: value.sourceCharacterVersion,
+    origin: value.origin,
+    timeBasis: value.timeBasis,
+    milestones: value.milestones,
+  };
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+function assertTimelinePlanHash(plan: LifeThreadTimelinePlan): void {
+  const unsigned = {
+    schemaVersion: plan.schemaVersion,
+    sourceGoalId: plan.sourceGoalId,
+    sourceCharacterVersion: plan.sourceCharacterVersion,
+    origin: plan.origin,
+    timeBasis: plan.timeBasis,
+    milestones: plan.milestones,
+  };
+  if (hashTimelinePlan(unsigned) !== plan.planSha256) {
+    throw new Error(
+      `Life-thread timeline plan hash mismatch for goal ${plan.sourceGoalId}`,
+    );
+  }
+}
+
+function resolveLegacyTimelinePlan(
+  store: DatabaseStore,
+  thread: LifeThread,
+): { plan: LifeThreadTimelinePlan; persistedIndex: number } {
+  const candidates = store
+    .listCharacterVersions(thread.agentId)
+    .flatMap(({ spec }) =>
+      spec.persona.goals.flatMap((goal) =>
+        `life-thread:${thread.agentId}:goal:${goal.id}` ===
+        thread.idempotencyKey
+          ? [{ spec, goal }]
+          : [],
+      ),
+    )
+    .filter(({ spec, goal }) => {
+      const plan = freezeTimelinePlan(spec, goal, thread.createdAtUtc);
+      return (
+        timelineLocalDate(plan.timeBasis, thread.createdAtUtc) ===
+        thread.startedLocalDate
+      );
+    });
+  const createdBefore = candidates.filter(
+    ({ spec }) =>
+      Date.parse(spec.createdAtUtc) <= Date.parse(thread.createdAtUtc),
+  );
+  const selected = (createdBefore.length > 0 ? createdBefore : candidates)[0];
+  if (selected === undefined) {
+    throw new Error(
+      `Cannot resolve a frozen source plan for legacy life thread ${thread.id}`,
+    );
+  }
+  const plan = freezeTimelinePlan(
+    selected.spec,
+    selected.goal,
+    thread.createdAtUtc,
+  );
+  const titleMatches = plan.milestones
+    .map((milestone, index) =>
+      milestone.title === thread.currentStage ? index : -1,
+    )
+    .filter((index) => index >= 0);
+  return {
+    plan,
+    persistedIndex: titleMatches.length === 1 ? titleMatches[0]! : 0,
+  };
+}
+
+function localCalendarDayDifference(
+  fromLocalDate: string,
+  toLocalDate: string,
+) {
+  const from = DateTime.fromISO(fromLocalDate, { zone: "UTC" }).startOf("day");
+  const to = DateTime.fromISO(toLocalDate, { zone: "UTC" }).startOf("day");
+  return Math.trunc(to.diff(from, "days").days);
+}
+
+function milestoneIndexAt(
+  milestones: CharacterGoalMilestone[],
+  elapsedDays: number,
+): number {
+  let index = 0;
+  for (let candidate = 1; candidate < milestones.length; candidate += 1) {
+    if (milestones[candidate]!.afterDays > elapsedDays) break;
+    index = candidate;
+  }
+  return index;
+}
+
+function milestoneEffectiveLocalDate(
+  startedLocalDate: string,
+  afterDays: number,
+): string {
+  return DateTime.fromISO(startedLocalDate, { zone: "UTC" })
+    .plus({ days: afterDays })
+    .toISODate()!;
+}
+
+function milestoneNextStep(
+  milestone: CharacterGoalMilestone,
+  next: CharacterGoalMilestone | undefined,
+): string {
+  const text =
+    milestone.nextStepHint ??
+    (next === undefined
+      ? `继续维持并复盘“${milestone.title}”阶段。`
+      : `为之后进入“${next.title}”阶段保留可持续的准备。`);
+  return text.slice(0, 240);
 }
 
 function buildDailyIntents(
@@ -2011,12 +2741,19 @@ function buildDailyIntents(
       importance: Math.max(0.45, goal.priority),
       goalRefIds: [goal.id],
       threadIds: threads
-        .filter((thread) => thread.title === goal.title)
+        .filter(
+          (thread) =>
+            thread.timelinePlan?.sourceGoalId === goal.id ||
+            (thread.timelinePlan === undefined && thread.title === goal.title),
+        )
         .map((thread) => thread.id),
     }));
   const routineIntents: DailyIntentSeed[] = spec.routines
     .filter(
-      (routine) => routine.category !== "sleep" && routine.category !== "meal",
+      (routine) =>
+        routine.category !== "sleep" &&
+        routine.category !== "meal" &&
+        !spec.persona.goals.some((goal) => goal.title === routine.title),
     )
     .slice(0, Math.max(0, 4 - goalIntents.length))
     .map((routine) => ({
@@ -2833,8 +3570,14 @@ function reflectionStance(
   text: string,
 ): "affirm" | "question" | "reverse" | "mixed" | "unclear" {
   if (/后悔|改主意|不该|选错|反悔/u.test(text)) return "reverse";
-  if (/庆幸|值得|选对|没选错|很满意/u.test(text)) return "affirm";
-  if (/一方面|但也|有好有坏|复杂/u.test(text)) return "mixed";
+  if (
+    /一方面|但也|有好有坏|复杂|(?:仍)?认同.{0,80}(?:但|代价)|(?:但|同时).{0,48}(?:代价|担心)/u.test(
+      text,
+    )
+  )
+    return "mixed";
+  if (/庆幸|值得|选对|没选错|很满意|(?:仍)?认同|仍会选择/u.test(text))
+    return "affirm";
   if (/怀疑|不确定|是不是/u.test(text)) return "question";
   return "unclear";
 }

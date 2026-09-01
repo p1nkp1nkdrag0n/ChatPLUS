@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ServerConfig } from "../config.js";
 import { getLongRunV3Turn } from "../scenarios/companion-long-run-v3-manifest.js";
 import {
-  assertPaidDeepSeekRunReady,
+  assertPaidLongRunV3ProfileReady,
   assertLongRunV3EngineeringGatePassed,
   parseCompanionLongRunV3CliArgs,
   suggestedRunId,
@@ -86,8 +86,24 @@ describe("companion long-run v3 CLI", () => {
       runId: "deepseek-reviewed-r1",
       resume: true,
     });
+    expect(
+      parseCompanionLongRunV3CliArgs([
+        "run",
+        "--run-id",
+        "bigmodel-reviewed-r1",
+        "--profile=bigmodel",
+      ]),
+    ).toEqual({
+      command: "run",
+      profile: "bigmodel",
+      runId: "bigmodel-reviewed-r1",
+      resume: false,
+    });
     expect(suggestedRunId("deepseek", now)).toBe(
       "deepseek-20260901-010203-004Z",
+    );
+    expect(suggestedRunId("bigmodel", now)).toBe(
+      "bigmodel-20260901-010203-004Z",
     );
   });
 
@@ -97,7 +113,7 @@ describe("companion long-run v3 CLI", () => {
     { argv: ["resume"], message: /requires --run-id/u },
     {
       argv: ["run", "--profile", "claude"],
-      message: /only the DeepSeek real profile/u,
+      message: /deepseek or bigmodel/u,
     },
     {
       argv: ["run", "--runs", "3"],
@@ -147,43 +163,76 @@ describe("companion long-run v3 paid guard", () => {
     };
 
     await expect(
-      assertPaidDeepSeekRunReady(
+      assertPaidLongRunV3ProfileReady(
         join(tmpdir(), "this-git-directory-must-not-be-read"),
+        "deepseek",
         deliberatelyInvalidEnvironment,
       ),
     ).rejects.toThrow(/RUN_PAID_LONGRUN=1/u);
   });
 
-  it("reports a missing key without opening the Git dependency", async () => {
-    const environment = fakeDeepSeekEnvironment();
-    delete environment.OPENAI_COMPATIBLE_API_KEY;
+  it.each([
+    {
+      profile: "deepseek" as const,
+      environment: fakeDeepSeekEnvironment(),
+      keyEnvironment: "OPENAI_COMPATIBLE_API_KEY",
+    },
+    {
+      profile: "bigmodel" as const,
+      environment: fakeBigModelEnvironment(),
+      keyEnvironment: "LLM_PROFILE_BIGMODEL_API_KEY",
+    },
+  ])(
+    "reports a missing $profile key without opening the Git dependency",
+    async ({ profile, environment, keyEnvironment }) => {
+      delete environment[keyEnvironment];
 
-    await expect(
-      assertPaidDeepSeekRunReady(
-        join(tmpdir(), "this-git-directory-also-must-not-be-read"),
-        environment,
-      ),
-    ).rejects.toThrow(/OPENAI_COMPATIBLE_API_KEY/u);
-  });
+      await expect(
+        assertPaidLongRunV3ProfileReady(
+          join(tmpdir(), "this-git-directory-also-must-not-be-read"),
+          profile,
+          environment,
+        ),
+      ).rejects.toThrow(keyEnvironment);
+    },
+  );
 
-  it("accepts a clean injected Git root and rejects a dirty one without exposing the key", async () => {
-    const repository = await createCleanGitRepository();
-    const environment = fakeDeepSeekEnvironment();
+  it.each([
+    {
+      profile: "deepseek" as const,
+      environment: fakeDeepSeekEnvironment(),
+      secret: FAKE_API_KEY,
+    },
+    {
+      profile: "bigmodel" as const,
+      environment: fakeBigModelEnvironment(),
+      secret: "test-only-bigmodel-key-never-send",
+    },
+  ])(
+    "accepts a clean injected Git root for $profile and rejects a dirty one without exposing the key",
+    async ({ profile, environment, secret }) => {
+      const repository = await createCleanGitRepository();
 
-    await expect(
-      assertPaidDeepSeekRunReady(repository, environment),
-    ).resolves.toBeUndefined();
+      await expect(
+        assertPaidLongRunV3ProfileReady(repository, profile, environment),
+      ).resolves.toBeUndefined();
 
-    await writeFile(join(repository, "uncommitted.txt"), "dirty\n", "utf8");
-    let message = "";
-    try {
-      await assertPaidDeepSeekRunReady(repository, environment);
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
-    expect(message).toMatch(/clean Git worktree/u);
-    expect(message).not.toContain(FAKE_API_KEY);
-  });
+      await writeFile(join(repository, "uncommitted.txt"), "dirty\n", "utf8");
+      let message = "";
+      try {
+        await assertPaidLongRunV3ProfileReady(repository, profile, environment);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toMatch(/clean Git worktree/u);
+      expect(message).not.toContain(secret);
+
+      environment.RUN_PAID_LONGRUN_ALLOW_DIRTY = "1";
+      await expect(
+        assertPaidLongRunV3ProfileReady(repository, profile, environment),
+      ).resolves.toBeUndefined();
+    },
+  );
 });
 
 describe("companion long-run v3 runner pure helpers", () => {
@@ -356,10 +405,13 @@ describe("companion long-run v3 runner pure helpers", () => {
     );
   });
 
-  it("routes durable causal, pressure, and memory assertion failures into H07/H12/H13", () => {
+  it("routes exact assertion codes to their owning hard gates", () => {
     expect(
       hardGateFailureMatches("H07", "shared-055:causal_stage_separation"),
     ).toBe(true);
+    expect(
+      hardGateFailureMatches("H03", "shared-055:causal_stage_separation"),
+    ).toBe(false);
     expect(
       hardGateFailureMatches(
         "H12",
@@ -386,7 +438,7 @@ describe("companion long-run v3 runner pure helpers", () => {
         "H07",
         "shared-107:relationship_continuity_grounded",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hardGateFailureMatches(
         "H13",
@@ -399,6 +451,9 @@ describe("companion long-run v3 runner pure helpers", () => {
     expect(
       hardGateFailureMatches("H17", "shared-001:prompt_includes_life_context"),
     ).toBe(true);
+    expect(
+      hardGateFailureMatches("H13", "shared-013:not_memory_write_grounded"),
+    ).toBe(false);
   });
 
   it("fails the aggregate H17 gate for missing or truncated LIFE_CONTEXT_JSON", () => {
@@ -413,10 +468,14 @@ describe("companion long-run v3 runner pure helpers", () => {
     }
   });
 
-  it("rejects both retired exact-schedule segments from the aggregate H06 prompt shape", () => {
+  it("rejects retired exact-schedule labels and keys from the aggregate H06 prompt shape", () => {
     expect(
       longRunV3PromptShapeValid([
-        { system: "LIFE_CONTEXT_JSON\n{}", prompt: "ordinary turn" },
+        {
+          system:
+            'CURRENT_TIME_JSON\n{"localDate":"2026-09-01"}\nLIFE_CONTEXT_JSON\n{}',
+          prompt: "ordinary turn",
+        },
       ]),
     ).toBe(true);
     for (const retiredLabel of [
@@ -430,6 +489,29 @@ describe("companion long-run v3 runner pure helpers", () => {
             prompt: "ordinary turn",
           },
         ]),
+      ).toBe(false);
+    }
+    for (const retiredKey of [
+      "currentActivity",
+      "futureSchedule",
+      "preferredStartLocal",
+      "preferredDurationMinutes",
+      "sleepWindow",
+      "horizonHours",
+      "maxCommittedHoursPerDay",
+      "quietHours",
+      "schedulePolicy",
+      "proactivePolicy",
+      "routines",
+    ]) {
+      expect(
+        longRunV3PromptShapeValid([
+          {
+            system: `CORE_PERSONA_JSON\n{"${retiredKey}":{}}\nLIFE_CONTEXT_JSON\n{}`,
+            prompt: "ordinary turn",
+          },
+        ]),
+        retiredKey,
       ).toBe(false);
     }
   });
@@ -698,6 +780,28 @@ function fakeDeepSeekEnvironment(): NodeJS.ProcessEnv {
     OPENAI_COMPATIBLE_SUPPORTS_THINKING_CONTROL: "false",
     OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS: "131072",
     OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS: "32768",
+  };
+}
+
+function fakeBigModelEnvironment(): NodeJS.ProcessEnv {
+  return {
+    RUN_PAID_LONGRUN: "1",
+    LLM_PROVIDER: "openai-compatible",
+    LLM_ACTIVE_PROFILE: "bigmodel",
+    LLM_PROFILE_BIGMODEL_BASE_URL:
+      "https://open.bigmodel.test/api/coding/paas/v4",
+    LLM_PROFILE_BIGMODEL_API_KEY: "test-only-bigmodel-key-never-send",
+    LLM_PROFILE_BIGMODEL_MODEL: "glm-5.3-flash",
+    LLM_PROFILE_BIGMODEL_TIMEOUT_MS: "300000",
+    LLM_PROFILE_BIGMODEL_MAX_RETRIES: "1",
+    LLM_PROFILE_BIGMODEL_STRUCTURED_OUTPUT_MODE: "json_object",
+    LLM_PROFILE_BIGMODEL_REASONING_EFFORT: "max",
+    LLM_PROFILE_BIGMODEL_REASONING_FORMAT:
+      "openai_reasoning_effort_with_thinking",
+    LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL: "false",
+    LLM_PROFILE_BIGMODEL_SUPPORTS_STREAMING: "false",
+    LLM_PROFILE_BIGMODEL_MAX_CONTEXT_TOKENS: "1000000",
+    LLM_PROFILE_BIGMODEL_MAX_OUTPUT_TOKENS: "32768",
   };
 }
 

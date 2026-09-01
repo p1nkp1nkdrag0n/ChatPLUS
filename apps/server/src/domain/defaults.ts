@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   CharacterDraft,
   ImportedCharacterInput,
@@ -7,6 +9,58 @@ import type {
 
 function ruleId(prefix: string, index: number): string {
   return `${prefix}-${index + 1}`;
+}
+
+function goalMilestoneId(goalId: string, index: number): string {
+  const digest = createHash("sha256")
+    .update(`${goalId}:${index}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `goal_milestone_${index + 1}_${digest}`;
+}
+
+export function buildTimeBasedGoalMilestones(
+  goalId: string,
+  goalTitle: string,
+) {
+  return [
+    {
+      id: goalMilestoneId(goalId, 0),
+      afterDays: 0,
+      title: "确认起点",
+      focus: `明确“${goalTitle}”目前最重要的部分，以及近期能持续投入的方式。`,
+      nextStepHint: "先形成一个不依赖精确钟点、可以稳定继续的起步节奏。",
+    },
+    {
+      id: goalMilestoneId(goalId, 1),
+      afterDays: 14,
+      title: "形成节奏",
+      focus: `让“${goalTitle}”从一次性愿望变成最近一段时间反复投入的生活主线。`,
+      nextStepHint: "保留有效做法，并识别最常出现的现实阻力。",
+    },
+    {
+      id: goalMilestoneId(goalId, 2),
+      afterDays: 45,
+      title: "处理阻力",
+      focus: `面对“${goalTitle}”推进中已经显现的取舍、压力或资源限制。`,
+      nextStepHint: "根据已经形成的节奏作一次有代价但可解释的选择。",
+    },
+    {
+      id: goalMilestoneId(goalId, 3),
+      afterDays: 90,
+      title: "阶段复盘与调整",
+      focus: `围绕“${goalTitle}”回看这段时间的投入、阻力和取舍，调整下一阶段的关注点；不把经过的天数当作已经取得成果的证据。`,
+      nextStepHint:
+        "根据真实发生的行动与结果调整优先级；没有证据时只保留当前方向。",
+    },
+    {
+      id: goalMilestoneId(goalId, 4),
+      afterDays: 180,
+      title: "融入长期生活",
+      focus: `把“${goalTitle}”带来的经验和变化整合进长期生活方向。`,
+      nextStepHint: "继续维持、调整或自然开启下一阶段，不依赖虚构的完成证据。",
+    },
+  ];
 }
 
 export function originalDialogueStyleFact(dialogueStyle: string): string {
@@ -28,6 +82,7 @@ export function buildOriginalDraft(
   const initialRelationship = initialRelationshipPreset(
     input.initialRelationship,
   );
+  const temporalFrame = originalTemporalFrame(input);
   return {
     tier: input.tier,
     sourceType: "original",
@@ -37,6 +92,7 @@ export function buildOriginalDraft(
       worldSetting: input.worldSetting,
       selfDescription: `${input.name}是一位${input.workOrRole}。${input.mainGoal}`,
       timezone: input.timezone,
+      ...(temporalFrame === undefined ? {} : { temporalFrame }),
     },
     persona: {
       traits: input.coreTraits.map((name, index) => ({
@@ -84,7 +140,7 @@ export function buildOriginalDraft(
           sideB: "回应重要他人的邀请",
           triggerConditions: ["用户提出临时邀请时"],
           resolutionPattern:
-            "评估已有日程的刚性与邀请的意义，必要时提出替代时间。",
+            "结合最近的生活主线、精力和关系意义，决定回应、推迟或拒绝。",
           origin: "synthetic_extension",
         },
       ],
@@ -97,6 +153,7 @@ export function buildOriginalDraft(
           progress: 0.05,
           origin: "user_spec",
           sourceRefs: ["original-form"],
+          milestones: buildTimeBasedGoalMilestones("goal-1", input.mainGoal),
         },
       ],
       preferences: [
@@ -125,13 +182,6 @@ export function buildOriginalDraft(
           responsePattern: "说明自己不确定，并向用户确认。",
           hard: true,
         },
-        {
-          id: "boundary-3",
-          condition: "被要求代表真人作出法律、金钱或外部承诺",
-          forbiddenBehavior: "冒充真人或执行外部操作",
-          responsePattern: "明确这是本地模拟，不能代表真人承诺。",
-          hard: true,
-        },
       ],
     },
     dialogue: {
@@ -145,9 +195,12 @@ export function buildOriginalDraft(
       averageChunksPerTurn: 2,
       frequentPhrases: [],
       avoidedPhrases: ["作为一个AI语言模型"],
-      greetingPatterns: ["嗨，今天怎么样？"],
-      refusalPatterns: ["这件事我不太想这样做，不过我们可以换个办法。"],
-      comfortingPatterns: ["我在听。你可以慢慢说。"],
+      greetingPatterns: ["从对方当下的具体内容切入，不使用固定问候句。"],
+      refusalPatterns: ["先说明自己的真实边界，再按情境决定是否提出替代方式。"],
+      comfortingPatterns: [
+        "先回应对方此刻最具体的感受，再判断倾听或建议更合适。",
+      ],
+      authorGuidance: input.dialogueStyle,
     },
     userRelationship: {
       relationshipType: input.initialRelationship,
@@ -156,6 +209,9 @@ export function buildOriginalDraft(
       addressTerms: ["你"],
       sharedContext: "这是双方共同开始的一段持续对话。",
     },
+    // Compatibility-only in fuzzy-life mode: the runtime does not expose these
+    // exact clock fields to the chat model, while legacy schedule mode still
+    // depends on the established routine shape.
     routines: [
       ["晨间整理", "self_care", "daily", "07:30", 30, "flexible", 0.55],
       ["早餐", "meal", "daily", "08:00", 30, "committed", 0.7],
@@ -221,10 +277,40 @@ export function buildOriginalDraft(
         id: "original-form",
         sourceType: "user_spec",
         label: "原创角色表单",
+        ...(input.characterBrief === undefined
+          ? {}
+          : { excerpt: input.characterBrief.slice(0, 1_000) }),
       },
     ],
     lockedPaths: [],
   };
+}
+
+function originalTemporalFrame(
+  input: OriginalCharacterInput,
+): CharacterDraft["identity"]["temporalFrame"] | undefined {
+  const source = `${input.worldSetting}\n${input.characterBrief ?? ""}`;
+  const contextualYear =
+    /(?:时代背景|故事背景|故事发生(?:于|在)?|当前(?:故事)?时间)[^0-9]{0,24}([12]\d{3})\s*年/u.exec(
+      source,
+    )?.[1];
+  const year =
+    input.storyAnchorYear ??
+    (contextualYear === undefined ? undefined : Number(contextualYear));
+  if (year !== undefined) {
+    return {
+      mode: "anchored_story",
+      eraLabel: input.storyEra ?? `${year} 年的故事世界`,
+      // January 1 is only a schema placeholder. CharacterService replaces
+      // month/day with a server-owned operational date while retaining year
+      // precision, so it is never presented as an author-supplied fact.
+      storyAnchorLocalDate: `${String(year).padStart(4, "0")}-01-01`,
+      anchorPrecision: "year",
+    };
+  }
+  return input.storyEra === undefined
+    ? undefined
+    : { mode: "realtime", eraLabel: input.storyEra };
 }
 
 export function initialRelationshipPreset(description: string): {

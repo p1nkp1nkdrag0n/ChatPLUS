@@ -411,6 +411,69 @@ describe("memory service evidence integration", () => {
     }
   });
 
+  it("does not promote an unverified causal accusation into fact and persists the later ownership correction", () => {
+    const accusationMessageId = "message-v3-causal-accusation";
+    insertMessage(database, accusationMessageId, "user", manifestText(93));
+    const poisonedCandidate = stableUserCandidate({
+      content: "用户一直后悔被角色强迫辞职，角色应为用户辞职的行动负责。",
+      tags: ["user_fact", "causal_attribution", "coercion"],
+      reasonCode: "model_causal_summary",
+      reasonSummary:
+        "The model converted the current accusation into a durable fact.",
+    });
+    expect(
+      validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [poisonedCandidate],
+        nowUtc: offsetNow(93),
+        maxCandidates: 4,
+        authoritativeMessageId: accusationMessageId,
+      }),
+    ).toEqual([]);
+
+    const correctionMessageId = "message-v3-causal-correction";
+    insertMessage(database, correctionMessageId, "user", manifestText(94));
+    const corrected = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [poisonedCandidate],
+      nowUtc: offsetNow(94),
+      maxCandidates: 4,
+      authoritativeMessageId: correctionMessageId,
+    });
+    expect(corrected).toHaveLength(1);
+    expect(corrected[0]).toMatchObject({
+      kind: "relationship",
+      namespace: "shared_relationship",
+      certainty: "explicit",
+      attribution: "mixed",
+      content:
+        "责任更正：用户曾明确授权角色作选择，之后由用户自己执行行动；这不是角色强迫用户辞职。",
+      claim: {
+        subjectKey:
+          "relationship:causality:work_choice:decision_and_action_ownership",
+        disposition: "affirmed",
+        revisionIntent: "explicit_correction",
+      },
+    });
+    expect(corrected[0]?.tags).toEqual(
+      expect.arrayContaining([
+        "relationship causal correction",
+        "episode work choice responsibility",
+        "subject shared",
+        "actor user",
+      ]),
+    );
+    expect(readMemoryEvidence(store, [corrected[0]?.id ?? "missing"])).toEqual([
+      expect.objectContaining({
+        sourceType: "message",
+        sourceId: correctionMessageId,
+        quote: manifestText(94),
+      }),
+    ]);
+  });
+
   it("rejects runtime and system context that lacks content-grounded formal evidence", () => {
     const runtimeCandidate = stableUserCandidate({
       content: "The character's current energy is low.",

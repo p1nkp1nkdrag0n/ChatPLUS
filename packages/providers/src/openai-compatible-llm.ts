@@ -147,8 +147,8 @@ function normalizeRetries(value: number | undefined, fallback: number): number {
 
 function normalizeTimeout(value: number | undefined): number {
   const timeout = value ?? 60_000;
-  if (!Number.isFinite(timeout) || timeout < 100 || timeout > 300_000) {
-    throw new TypeError("timeoutMs must be between 100 and 300000");
+  if (!Number.isFinite(timeout) || timeout < 100 || timeout > 900_000) {
+    throw new TypeError("timeoutMs must be between 100 and 900000");
   }
   return timeout;
 }
@@ -243,6 +243,7 @@ function isRetryable(error: unknown): boolean {
         "NETWORK_ERROR",
         "INVALID_RESPONSE_ENVELOPE",
         "EMPTY_RESPONSE",
+        "EMPTY_FINAL_AFTER_REASONING",
       ].includes(error.code)
     ) {
       return true;
@@ -504,6 +505,17 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       }
       const content = extractContent(choice.message.content).trim();
       if (content === "") {
+        const reasoningContent = choice.message["reasoning_content"];
+        if (
+          typeof reasoningContent === "string" &&
+          reasoningContent.trim() !== ""
+        ) {
+          throw new LlmProviderError(
+            "LLM stopped after reasoning without returning final content",
+            "EMPTY_FINAL_AFTER_REASONING",
+            status,
+          );
+        }
         throw new LlmProviderError(
           "LLM returned empty content",
           "EMPTY_RESPONSE",

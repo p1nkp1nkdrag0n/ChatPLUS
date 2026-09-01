@@ -293,6 +293,87 @@ export const LifeThreadStatusSchema = z.enum([
 ]);
 export type LifeThreadStatus = z.infer<typeof LifeThreadStatusSchema>;
 
+export const LifeThreadMilestoneSchema = z
+  .object({
+    id: EntityIdSchema,
+    afterDays: z.number().int().min(0).max(3_650),
+    title: z.string().trim().min(1).max(160),
+    focus: z.string().trim().min(1).max(1_000),
+    nextStepHint: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+export type LifeThreadMilestone = z.infer<typeof LifeThreadMilestoneSchema>;
+
+/**
+ * A thread owns the civil clock used to advance its frozen plan. This keeps a
+ * published goal stable even if a later character version changes timezone or
+ * moves to a different story-era anchor.
+ */
+export const LifeThreadClockSchema = z.discriminatedUnion("mode", [
+  z
+    .object({
+      mode: z.literal("realtime"),
+      timezone: IanaTimezoneSchema,
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("anchored_story"),
+      timezone: IanaTimezoneSchema,
+      storyAnchorLocalDate: LocalDateSchema,
+      systemAnchorUtc: UtcDateTimeSchema,
+    })
+    .strict(),
+]);
+export type LifeThreadClock = z.infer<typeof LifeThreadClockSchema>;
+
+export const LifeThreadTimelinePlanSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    sourceGoalId: EntityIdSchema,
+    sourceCharacterVersion: z.number().int().positive(),
+    origin: z.enum(["character_spec", "legacy_fallback_v1"]),
+    timeBasis: LifeThreadClockSchema,
+    milestones: z.array(LifeThreadMilestoneSchema).min(2).max(12),
+    planSha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u, "Expected a SHA-256 timeline plan hash"),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.milestones[0]?.afterDays !== 0) {
+      context.addIssue({
+        code: "custom",
+        message: "The first life-thread milestone must start at day 0",
+        path: ["milestones", 0, "afterDays"],
+      });
+    }
+    const ids = new Set<string>();
+    for (const [index, milestone] of value.milestones.entries()) {
+      if (ids.has(milestone.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Life-thread milestone ids must be unique",
+          path: ["milestones", index, "id"],
+        });
+      }
+      ids.add(milestone.id);
+      if (
+        index > 0 &&
+        milestone.afterDays <= value.milestones[index - 1]!.afterDays
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Life-thread milestone day offsets must increase strictly",
+          path: ["milestones", index, "afterDays"],
+        });
+      }
+    }
+  });
+export type LifeThreadTimelinePlan = z.infer<
+  typeof LifeThreadTimelinePlanSchema
+>;
+
 export const LifeThreadSchema = z
   .object({
     id: EntityIdSchema,
@@ -305,6 +386,8 @@ export const LifeThreadSchema = z
     currentStage: ShortTextSchema,
     progressNote: NonEmptyTextSchema.optional(),
     nextStepHint: ShortTextSchema.optional(),
+    timelinePlan: LifeThreadTimelinePlanSchema.optional(),
+    currentMilestoneId: EntityIdSchema.optional(),
     startedLocalDate: LocalDateSchema,
     lastAdvancedLocalDate: LocalDateSchema.optional(),
     closedLocalDate: LocalDateSchema.optional(),
@@ -317,6 +400,32 @@ export const LifeThreadSchema = z
   .strict()
   .superRefine((value, context) => {
     addDuplicateIssue(value.sourceMessageIds, "sourceMessageIds", context);
+    if (
+      (value.timelinePlan === undefined) !==
+      (value.currentMilestoneId === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "timelinePlan and currentMilestoneId must be provided together",
+        path: ["currentMilestoneId"],
+      });
+    }
+    if (value.timelinePlan !== undefined) {
+      const ids = new Set(
+        value.timelinePlan.milestones.map((milestone) => milestone.id),
+      );
+      if (
+        value.currentMilestoneId !== undefined &&
+        !ids.has(value.currentMilestoneId)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "currentMilestoneId must belong to milestonePlan",
+          path: ["currentMilestoneId"],
+        });
+      }
+    }
     if (
       value.lastAdvancedLocalDate !== undefined &&
       value.lastAdvancedLocalDate < value.startedLocalDate

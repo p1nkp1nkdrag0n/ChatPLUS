@@ -190,16 +190,56 @@ describe("enforced durable continuity recall", () => {
     assertConflictRepairEvidenceSources(harness.app, harness.agentId);
     assertLatestRecallReplays(harness.app, harness.agentId);
 
-    const converted = harness.app.personasim.store.database
+    const relationshipRows = harness.app.personasim.store.database
       .prepare(
-        `UPDATE memories
-         SET namespace = 'shared_relationship', attribution = 'mixed'
+        `SELECT type, namespace, attribution, claim_subject_key AS claimSubjectKey,
+           tags_json AS tagsJson
+         FROM memories
          WHERE agent_id = ? AND status = 'active'
            AND superseded_by_id IS NULL AND merged_into_id IS NULL
-           AND tags_json LIKE '%relationship%'`,
+           AND tags_json LIKE '%relationship event%'
+         ORDER BY created_at_utc, id`,
       )
-      .run(harness.agentId);
-    expect(converted.changes).toBeGreaterThan(0);
+      .all(harness.agentId) as Array<{
+      type: string;
+      namespace: string;
+      attribution: string;
+      claimSubjectKey: string | null;
+      tagsJson: string;
+    }>;
+    // Equivalent boundary/repair restatements may be lifecycle-merged, but
+    // each typed facet must remain represented by an active durable record.
+    expect(relationshipRows.length).toBeGreaterThanOrEqual(4);
+    expect(
+      relationshipRows.every((row) => {
+        const tags = JSON.parse(row.tagsJson) as unknown;
+        return (
+          row.type === "relationship" &&
+          row.namespace === "shared_relationship" &&
+          row.attribution === "mixed" &&
+          row.claimSubjectKey?.startsWith("relationship:") === true &&
+          Array.isArray(tags) &&
+          tags.some(
+            (tag: unknown) =>
+              typeof tag === "string" && tag.startsWith("episode "),
+          )
+        );
+      }),
+    ).toBe(true);
+    const activeTags = relationshipRows.flatMap((row) => {
+      const tags = JSON.parse(row.tagsJson) as unknown;
+      return Array.isArray(tags)
+        ? tags.filter((tag): tag is string => typeof tag === "string")
+        : [];
+    });
+    expect(activeTags).toEqual(
+      expect.arrayContaining([
+        "relationship boundary",
+        "relationship conflict",
+        "relationship repair",
+        "relationship causal correction",
+      ]),
+    );
 
     harness.clock.setUtc("2026-09-30T01:00:00.000Z");
     for (const candidateNumber of [107]) {

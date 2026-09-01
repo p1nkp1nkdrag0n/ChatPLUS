@@ -115,12 +115,15 @@ export const api = {
     generate: (input: {
       name: string;
       worldSetting: string;
+      storyEra?: string;
+      storyAnchorYear?: string;
       workOrRole: string;
       traits: string[];
       coreContradiction: string;
       primaryGoal: string;
       initialRelationship: string;
       dialogueStyle: string;
+      characterBrief?: string;
       tier: SimulationTier;
       timezone: string;
     }) =>
@@ -129,12 +132,21 @@ export const api = {
         body: body({
           name: input.name,
           worldSetting: input.worldSetting,
+          ...(input.storyEra?.trim()
+            ? { storyEra: input.storyEra.trim() }
+            : {}),
+          ...(input.storyAnchorYear?.trim()
+            ? { storyAnchorYear: Number(input.storyAnchorYear) }
+            : {}),
           workOrRole: input.workOrRole,
           coreTraits: input.traits,
           coreContradiction: input.coreContradiction,
           mainGoal: input.primaryGoal,
           initialRelationship: input.initialRelationship,
           dialogueStyle: input.dialogueStyle,
+          ...(input.characterBrief?.trim()
+            ? { characterBrief: input.characterBrief.trim() }
+            : {}),
           tier: input.tier,
           timezone: input.timezone,
         }),

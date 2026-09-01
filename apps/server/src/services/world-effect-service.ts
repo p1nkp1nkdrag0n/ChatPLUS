@@ -20,7 +20,10 @@ import type {
   RuntimeState,
 } from "../domain/schemas.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
-import { loadDailyRelationshipUsage } from "./relationship-effect-usage.js";
+import {
+  loadDailyRelationshipSignedUsage,
+  type RelationshipDailySignedUsage,
+} from "./relationship-effect-usage.js";
 import type {
   PartialProposalValidation,
   ScheduleService,
@@ -99,6 +102,7 @@ export interface WorldEffectTrace {
   sources: {
     relationshipBaseline: "server_interaction_baseline";
     semanticProposal: "none" | "model_validated_envelope";
+    relationshipEvidence: "neutral" | "rupture_or_boundary" | "explicit_repair";
   };
   proposed: {
     stateDelta?: unknown;
@@ -462,6 +466,23 @@ export class WorldEffectService {
       personalIntentCandidates: groundedPersonalIntentCandidates,
     };
 
+    const effectMode: WorldEffectMode =
+      input.turn.worldEffectsAudit?.mode ?? "off";
+    const validatedRelationshipDelta =
+      effectMode === "enforced"
+        ? decision.relationshipDelta
+        : input.turn.worldEffectsAudit?.validation.effects.relationshipDelta;
+    const relationshipSemantics = validateRelationshipSemanticDirection({
+      userText: input.userText,
+      delta: validatedRelationshipDelta,
+    });
+    if (effectMode === "enforced") {
+      decision = replaceRelationshipDelta(
+        decision,
+        relationshipSemantics.accepted,
+      );
+    }
+
     const proposalRejections: TurnProposalRejection[] = [
       ...input.turn.modelRejections.map((rejection) => ({
         reasonCode: rejection.reasonCode,
@@ -470,6 +491,7 @@ export class WorldEffectService {
       })),
       ...personalIntentRejections,
       ...scheduleCommitmentRejections,
+      ...relationshipSemantics.rejections,
       ...validation.rejections.map((rejection) => ({
         reasonCode: rejection.code,
         reasonSummary: rejection.message,
@@ -490,17 +512,19 @@ export class WorldEffectService {
           : acceptedCount > 0
             ? "partial"
             : "effects_rejected";
-    const effectMode: WorldEffectMode =
-      input.turn.worldEffectsAudit?.mode ?? "off";
     const effectiveInteractionAtUtc = monotonicUtc(
       input.state.relationship.lastInteractionAtUtc,
       input.nowUtc,
     );
-    const dailyUsage = loadDailyRelationshipUsage(
+    const signedUsage = loadDailyRelationshipSignedUsage(
       this.store,
       input.agentId,
       input.spec.identity.timezone,
       effectiveInteractionAtUtc,
+    );
+    const dailyUsage = signedUsageForProposal(
+      decision.relationshipDelta,
+      signedUsage,
     );
     const actual = applyTurnState({
       state: input.state,
@@ -517,10 +541,13 @@ export class WorldEffectService {
         ? applyTurnState({
             state: input.state,
             stateDelta: shadowAccepted?.stateDelta,
-            relationshipDelta: shadowAccepted?.relationshipDelta,
+            relationshipDelta: relationshipSemantics.accepted,
             nowUtc: input.nowUtc,
             capabilities: input.capabilities,
-            dailyUsage,
+            dailyUsage: signedUsageForProposal(
+              relationshipSemantics.accepted,
+              signedUsage,
+            ),
           })
         : undefined;
     const worldValidation = input.turn.worldEffectsAudit?.validation;
@@ -532,23 +559,31 @@ export class WorldEffectService {
         relationshipBaseline: "server_interaction_baseline",
         semanticProposal:
           worldValidation === undefined ? "none" : "model_validated_envelope",
+        relationshipEvidence: relationshipSemantics.evidence,
       },
       proposed: worldValidation?.proposed ?? {},
       accepted: {
         ...(worldValidation?.effects.stateDelta === undefined
           ? {}
           : { stateDelta: worldValidation.effects.stateDelta }),
-        ...(worldValidation?.effects.relationshipDelta === undefined
+        ...(relationshipSemantics.accepted === undefined
           ? {}
           : {
-              relationshipDelta: worldValidation.effects.relationshipDelta,
+              relationshipDelta: relationshipSemantics.accepted,
             }),
       },
       actual: actual.trace,
       ...(wouldApply === undefined ? {} : { wouldApply: wouldApply.trace }),
-      rejectionCodes:
-        worldValidation?.rejections.map((rejection) => rejection.reasonCode) ??
-        [],
+      rejectionCodes: [
+        ...new Set([
+          ...(worldValidation?.rejections.map(
+            (rejection) => rejection.reasonCode,
+          ) ?? []),
+          ...relationshipSemantics.rejections.map(
+            (rejection) => rejection.reasonCode,
+          ),
+        ]),
+      ],
       validationLimitsApplied: worldValidation?.limitsApplied ?? [],
     };
     const nextState = actual.state;
@@ -1032,6 +1067,93 @@ function appendNegotiationReplyIssues(
       message: "Reply rejects an agreement represented by a committed command.",
     });
   }
+}
+
+interface RelationshipSemanticValidation {
+  evidence: "neutral" | "rupture_or_boundary" | "explicit_repair";
+  accepted: AgentTurnDecision["relationshipDelta"];
+  rejections: TurnProposalRejection[];
+}
+
+/**
+ * Relationship proposals describe the consequence of the current turn. An
+ * apology in the assistant reply is not evidence that the user has accepted a
+ * repair, so explicit user rupture/boundary language blocks contradictory
+ * positive durable movement. The server rejects only the unsupported sign; it
+ * never invents a negative delta on the model's behalf.
+ */
+function validateRelationshipSemanticDirection(input: {
+  userText: string;
+  delta: AgentTurnDecision["relationshipDelta"];
+}): RelationshipSemanticValidation {
+  const evidence = relationshipEvidenceKind(input.userText);
+  if (input.delta === undefined || evidence !== "rupture_or_boundary") {
+    return { evidence, accepted: input.delta, rejections: [] };
+  }
+
+  const accepted: RelationshipDeltaLike = { ...input.delta };
+  const rejections: TurnProposalRejection[] = [];
+  for (const field of [
+    "closeness",
+    "trust",
+    "recentInteractionValence",
+  ] as const) {
+    const proposed = accepted[field];
+    if (proposed === undefined || proposed <= 0) continue;
+    delete accepted[field];
+    rejections.push({
+      reasonCode: "relationship_direction_unsupported",
+      reasonSummary: `Positive ${field} movement is unsupported by explicit user rupture or boundary evidence.`,
+      raw: { field, proposed, evidence: input.userText },
+    });
+  }
+  return {
+    evidence,
+    accepted: Object.keys(accepted).length === 0 ? undefined : accepted,
+    rejections,
+  };
+}
+
+function relationshipEvidenceKind(
+  userText: string,
+): RelationshipSemanticValidation["evidence"] {
+  const text = userText.replace(/\s+/gu, " ").trim();
+  const explicitRepair =
+    /(?:我们(?:已经)?和好|愿意重新(?:谈|聊|开始)|接受(?:你的)?道歉|原谅你|误会(?:已经)?(?:讲清楚|说开)|谢谢你.{0,24}(?:停下来|道歉|重新听)|(?:我|这件事).{0,18}对不起|修复.{0,20}(?:更准确|说清责任|继续|重新))/u.test(
+      text,
+    );
+  if (explicitRepair) return "explicit_repair";
+  const ruptureOrBoundary =
+    /(?:不舒服|受伤|越界|不公平|没有?被(?:听见|理解)|你没(?:有)?(?:听懂|听进去)|停止(?:讨论|聊)|不想继续(?:这个|这件|该)?话题|如果我说停|先别再?(?:提|说|问|聊)|别再(?:提|说|问|聊)|逼我.{0,20}(?:辞职|选择|决定))/u.test(
+      text,
+    );
+  return ruptureOrBoundary ? "rupture_or_boundary" : "neutral";
+}
+
+function replaceRelationshipDelta(
+  decision: AgentTurnDecision,
+  relationshipDelta: AgentTurnDecision["relationshipDelta"],
+): AgentTurnDecision {
+  if (relationshipDelta !== undefined) {
+    return { ...decision, relationshipDelta };
+  }
+  const withoutRelationshipDelta = { ...decision };
+  delete withoutRelationshipDelta.relationshipDelta;
+  return withoutRelationshipDelta;
+}
+
+function signedUsageForProposal(
+  proposal: AgentTurnDecision["relationshipDelta"],
+  usage: RelationshipDailySignedUsage,
+): RelationshipDailyUsage {
+  const selected: RelationshipDailyUsage = {};
+  for (const field of RELATIONSHIP_EFFECT_FIELDS) {
+    const proposed = proposal?.[field];
+    const net = usage.net[field] ?? 0;
+    const outstanding = proposed !== undefined && proposed < 0 ? -net : net;
+    if (outstanding > 0) selected[field] = outstanding;
+  }
+  return selected;
 }
 
 function applyTurnState(input: {

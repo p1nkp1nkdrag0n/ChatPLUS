@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { companionLongRunV3Manifest } from "../scenarios/companion-long-run-v3-manifest.js";
 import {
+  deriveServerOwnedContinuityMemoryCandidates,
   deriveServerOwnedUserMemoryCandidates,
   fixtureDelegatedDecision,
   fixtureReviewedContinuityMemoryCandidates,
@@ -156,7 +157,7 @@ describe("server-owned deterministic user memory extraction", () => {
     expect(reply(107)).toMatch(/只听.*行动由你完成.*分歧/u);
   });
 
-  it("projects only reviewed explicit boundary and repair statements into Fixture durable memories", () => {
+  it("projects reviewed relationship evidence with typed event, subject, actor, and episode ownership", () => {
     const expected = new Map<number, string>([
       [85, "关系分歧"],
       [87, "停止讨论工作选择"],
@@ -166,20 +167,45 @@ describe("server-owned deterministic user memory extraction", () => {
       [96, "关系修复原则"],
     ]);
     for (const [candidateNumber, fragment] of expected) {
-      const candidates = fixtureReviewedContinuityMemoryCandidates(
+      const candidates = deriveServerOwnedContinuityMemoryCandidates(
         manifestText(candidateNumber),
         NOW,
       );
       expect(candidates, `T${candidateNumber}`).toHaveLength(1);
       expect(candidates[0], `T${candidateNumber}`).toMatchObject({
-        kind: "semantic",
-        namespace: "user_model",
+        kind: "relationship",
+        namespace: "shared_relationship",
         certainty: "explicit",
-        attribution: "user_explicit",
-        stability: "stable",
+        attribution: "mixed",
         shouldWrite: true,
+        reasonCode: "server_owned_relationship_evidence",
       });
       expect(candidates[0]?.content, `T${candidateNumber}`).toContain(fragment);
+      expect(candidates[0]?.tags, `T${candidateNumber}`).toEqual(
+        expect.arrayContaining([
+          "relationship_event",
+          "actor:user",
+          "episode:work_choice_responsibility",
+        ]),
+      );
+      expect(candidates[0]?.tags, `T${candidateNumber}`).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(
+            /^relationship_(?:conflict|boundary|repair|causal_correction)$/u,
+          ),
+          expect.stringMatching(/^subject:(?:user|shared)$/u),
+        ]),
+      );
+      expect(candidates[0]?.claim?.subjectKey, `T${candidateNumber}`).toMatch(
+        /^relationship:/u,
+      );
+      expect(
+        fixtureReviewedContinuityMemoryCandidates(
+          manifestText(candidateNumber),
+          NOW,
+        ),
+        `legacy alias T${candidateNumber}`,
+      ).toEqual(candidates);
     }
     for (const candidateNumber of [18, 19, 23, 92, 97, 102, 103, 104, 107]) {
       expect(

@@ -2,6 +2,7 @@ export * from "./activity-affinity.js";
 export * from "./autobiography.js";
 export * from "./calendar-relevance.js";
 export * from "./checkpoint.js";
+export * from "./character-time.js";
 export * from "./conversation-retention.js";
 export * from "./date-digest.js";
 export * from "./follow-up.js";

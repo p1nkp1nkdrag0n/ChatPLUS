@@ -33,9 +33,103 @@ export function truncatePromptToTokenBudget(
 ): string {
   if (tokenBudget <= 0 || value.length === 0) return "";
   const maximumCharacters = tokenBudget * 4;
+  return truncatePromptToCharacterBudget(value, maximumCharacters);
+}
+
+function truncatePromptToCharacterBudget(
+  value: string,
+  maximumCharacters: number,
+): string {
+  if (maximumCharacters <= 0 || value.length === 0) return "";
   if (value.length <= maximumCharacters) return value;
+  const structured = compactLabeledJson(value, maximumCharacters);
+  if (typeof structured === "string") return structured;
+  if (structured === null) {
+    throw new PromptSegmentRegistryError(
+      "required_segments_exceed_budget",
+      "The prompt budget is too small to retain a valid structured segment.",
+    );
+  }
   if (maximumCharacters === 1) return ".";
-  return value.slice(0, maximumCharacters - 3) + "...";
+  return value.slice(0, Math.max(0, maximumCharacters - 3)) + "...";
+}
+
+function compactLabeledJson(
+  value: string,
+  maximumCharacters: number,
+): string | null | undefined {
+  const newline = value.indexOf("\n");
+  if (newline <= 0) return undefined;
+  const label = value.slice(0, newline);
+  if (!/^[A-Z0-9_]+_JSON$/u.test(label)) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value.slice(newline + 1));
+  } catch {
+    return undefined;
+  }
+  const configurations = [
+    [2_000, 20],
+    [1_000, 12],
+    [600, 8],
+    [360, 6],
+    [240, 4],
+    [160, 3],
+    [100, 2],
+    [60, 1],
+    [32, 1],
+  ] as const;
+  for (const [maximumString, maximumArray] of configurations) {
+    const serialized = JSON.stringify(
+      compactJsonValue(parsed, maximumString, maximumArray),
+    );
+    const candidate = `${label}\n${serialized}`;
+    if (candidate.length <= maximumCharacters) return candidate;
+  }
+  const marker = `${label}\n{"_truncated":true}`;
+  return marker.length <= maximumCharacters ? marker : null;
+}
+
+function compactJsonValue(
+  value: unknown,
+  maximumString: number,
+  maximumArray: number,
+): unknown {
+  if (typeof value === "string") {
+    if (value.length <= maximumString) return value;
+    return value.slice(0, Math.max(1, maximumString - 1)) + "…";
+  }
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, maximumArray)
+      .map((item) => compactJsonValue(item, maximumString, maximumArray));
+  }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        compactJsonValue(item, maximumString, maximumArray),
+      ]),
+    );
+  }
+  return value;
+}
+
+function minimumPromptCharacters(value: string): number {
+  const newline = value.indexOf("\n");
+  if (newline <= 0) return 1;
+  const label = value.slice(0, newline);
+  if (!/^[A-Z0-9_]+_JSON$/u.test(label)) return 1;
+  try {
+    JSON.parse(value.slice(newline + 1));
+    return `${label}\n{"_truncated":true}`.length;
+  } catch {
+    return 1;
+  }
 }
 
 export class PromptSegmentRegistry<
@@ -265,7 +359,10 @@ function fitRequiredCandidates<TContext extends PromptContext>(
   }
   while (assemblyTokens(required) > maximumTokens) {
     const largest = [...required]
-      .filter((candidate) => candidate.content.length > 1)
+      .filter(
+        (candidate) =>
+          candidate.content.length > minimumPromptCharacters(candidate.content),
+      )
       .sort(
         (left, right) =>
           right.content.length - left.content.length ||
@@ -278,9 +375,13 @@ function fitRequiredCandidates<TContext extends PromptContext>(
       );
     }
     const excess = assemblyTokens(required) - maximumTokens;
-    largest.content = largest.content.slice(
-      0,
-      Math.max(1, largest.content.length - Math.max(1, excess * 4)),
+    const minimumCharacters = minimumPromptCharacters(largest.content);
+    largest.content = truncatePromptToCharacterBudget(
+      largest.content,
+      Math.max(
+        minimumCharacters,
+        largest.content.length - Math.max(1, excess * 4),
+      ),
     );
     largest.globallyTruncated = true;
   }
@@ -291,7 +392,7 @@ function fitOptionalCandidate<TContext extends PromptContext>(
   candidate: Candidate<TContext>,
   maximumTokens: number,
 ): boolean {
-  let low = 1;
+  let low = minimumPromptCharacters(candidate.content);
   let high = candidate.content.length;
   let best = 0;
   while (low <= high) {
@@ -309,7 +410,10 @@ function fitOptionalCandidate<TContext extends PromptContext>(
   }
   if (best === 0) return false;
   if (best < candidate.content.length) {
-    candidate.content = candidate.content.slice(0, best);
+    candidate.content = truncatePromptToCharacterBudget(
+      candidate.content,
+      best,
+    );
     candidate.globallyTruncated = true;
   }
   return true;

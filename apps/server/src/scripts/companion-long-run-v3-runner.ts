@@ -14,6 +14,7 @@ import {
   validateLongRunScenarioManifestV3,
 } from "../scenarios/companion-long-run-v3-manifest.js";
 import type {
+  HardAssertion,
   LongRunTurnSpec,
   LongRunV3BranchId,
   LongRunV3Decision,
@@ -21,15 +22,18 @@ import type {
 import { readGitFingerprint } from "./companion-long-run-v2-artifacts.js";
 import {
   readLongRunV2ProfileConfig,
+  readLongRunV2ServerConfig,
   type LongRunV2ProfileConfigSnapshot,
 } from "./companion-long-run-v2-profiles.js";
 import {
   LONG_RUN_V3_AGENT_ID,
   LONG_RUN_V3_SESSION_ID,
+  buildGuLanV3CharacterInput,
   createCompanionLongRunV3Baseline,
   sha256FileV3,
   type LongRunV3BaselineDescriptor,
 } from "./companion-long-run-v3-baseline.js";
+import type { LongRunV3CharacterBuildEvidence } from "./companion-long-run-v3-character-bootstrap.js";
 import {
   appendLongRunV3CausalEvidence,
   appendLongRunV3ModelIo,
@@ -68,7 +72,7 @@ const CHECKPOINT_EVERY_TURNS = 10;
 
 export interface RunCompanionLongRunV3Options {
   workspaceRoot: string;
-  profile: "fixture" | "deepseek";
+  profile: "fixture" | "deepseek" | "bigmodel";
   runId?: string;
   resume?: boolean;
   /** Test-only escape hatch. It is never used by the paid CLI. */
@@ -98,6 +102,7 @@ interface RunContext {
   independentDatabasePath: string;
   turns: LongRunV3TurnEvidence[];
   explicitSecrets: string[];
+  characterBuild?: LongRunV3CharacterBuildEvidence;
 }
 
 /**
@@ -202,7 +207,25 @@ async function prepareRunContext(
   await mkdir(resolve(input.runDirectory, "branches"), { recursive: true });
   await mkdir(paths.checkpointsDirectory, { recursive: true });
 
+  const profileResolution = resolveProfile(input.profile);
+  if (input.profile === "deepseek") {
+    assertLongRunV3DeepSeekProfileExpectation(
+      profileResolution.serverConfig,
+      profileResolution.profileConfig,
+    );
+  } else if (input.profile === "bigmodel") {
+    assertLongRunV3BigModelProfileReady(
+      profileResolution.serverConfig,
+      profileResolution.profileConfig,
+    );
+  }
+
+  const characterBuildPath = resolve(
+    input.runDirectory,
+    "character-build.json",
+  );
   let baseline: LongRunV3BaselineDescriptor;
+  let characterBuild: LongRunV3CharacterBuildEvidence | undefined;
   if (resume) {
     baseline = JSON.parse(
       await readFile(resolve(input.runDirectory, "baseline.json"), "utf8"),
@@ -210,6 +233,45 @@ async function prepareRunContext(
     if ((await sha256FileV3(baselinePath)) !== baseline.databaseSha256) {
       throw new Error("Baseline hash mismatch while resuming v3 long-run.");
     }
+    if (baseline.constructionMode === "product_character_generation") {
+      characterBuild = JSON.parse(
+        await readFile(characterBuildPath, "utf8"),
+      ) as LongRunV3CharacterBuildEvidence;
+      if (!characterBuild.success || characterBuild.baseline === undefined) {
+        throw new Error(
+          "Persisted character-build evidence is not a successful frozen baseline.",
+        );
+      }
+    }
+  } else if (input.profile === "bigmodel" || input.profile === "fixture") {
+    const { createLongRunV3CharacterBaseline } =
+      await import("./companion-long-run-v3-character-bootstrap.js");
+    characterBuild = await createLongRunV3CharacterBaseline({
+      databasePath: baselinePath,
+      config: buildLongRunV3ServerConfig(
+        profileResolution.serverConfig,
+        baselinePath,
+        input.profile === "fixture",
+      ),
+      startAtUtc: companionLongRunV3Manifest.startAtUtc,
+      characterInput: buildGuLanV3CharacterInput(),
+    });
+    await writeLongRunV3JsonExclusive(
+      characterBuildPath,
+      characterBuild,
+      profileResolution.explicitSecrets,
+    );
+    if (!characterBuild.success || characterBuild.baseline === undefined) {
+      throw new Error(
+        `${input.profile} character build failed; inspect ${characterBuildPath}: ${characterBuild.error ?? "validation_failed"}`,
+      );
+    }
+    baseline = characterBuild.baseline;
+    await writeLongRunV3JsonExclusive(
+      resolve(input.runDirectory, "baseline.json"),
+      baseline,
+    );
+    await copyFile(baselinePath, sharedDatabasePath);
   } else {
     baseline = await createCompanionLongRunV3Baseline(baselinePath);
     await writeLongRunV3JsonExclusive(
@@ -219,13 +281,10 @@ async function prepareRunContext(
     await copyFile(baselinePath, sharedDatabasePath);
   }
 
-  const profileResolution = resolveProfile(input.profile);
-  if (input.profile === "deepseek") {
-    assertLongRunV3DeepSeekProfileExpectation(
-      profileResolution.serverConfig,
-      profileResolution.profileConfig,
-    );
-  }
+  const characterBuildEvidenceSha256 =
+    characterBuild === undefined
+      ? undefined
+      : await sha256LongRunV3File(characterBuildPath);
   const git = await readGitFingerprint(input.workspaceRoot);
   const manifest: LongRunV3RunManifest = {
     schemaVersion: "companion-long-run-run-manifest-v3",
@@ -243,6 +302,17 @@ async function prepareRunContext(
       characterSpecSha256: baseline.characterSpecSha256,
       initialStateSha256: baseline.initialStateSha256,
     },
+    ...(characterBuild === undefined ||
+    characterBuildEvidenceSha256 === undefined
+      ? {}
+      : {
+          characterBuild: {
+            mode: "product_character_generation" as const,
+            inputSha256: characterBuild.inputSha256,
+            sourceSha256: characterBuild.sourceSha256,
+            evidenceSha256: characterBuildEvidenceSha256,
+          },
+        }),
     profileConfig: profileResolution.profileConfig,
     featureFlags: {
       lifePlanningMode: "fuzzy",
@@ -367,10 +437,11 @@ async function prepareRunContext(
     independentDatabasePath,
     turns,
     explicitSecrets: profileResolution.explicitSecrets,
+    ...(characterBuild === undefined ? {} : { characterBuild }),
   };
 }
 
-function resolveProfile(profile: "fixture" | "deepseek"): {
+function resolveProfile(profile: "fixture" | "deepseek" | "bigmodel"): {
   serverConfig: ServerConfig;
   profileConfig: LongRunV3RunManifest["profileConfig"];
   explicitSecrets: string[];
@@ -392,13 +463,18 @@ function resolveProfile(profile: "fixture" | "deepseek"): {
       explicitSecrets: [],
     };
   }
-  const snapshot = readLongRunV2ProfileConfig("deepseek");
+  const snapshot = readLongRunV2ProfileConfig(profile);
   if (!snapshot.apiKeyPresent) {
     throw new Error(
-      `DeepSeek API key is missing (${snapshot.apiKeyEnvironment}).`,
+      `${profile} API key is missing (${snapshot.apiKeyEnvironment}).`,
     );
   }
-  const serverConfig = readConfig();
+  const serverConfig = readLongRunV2ServerConfig(profile);
+  if (profile !== "deepseek" && serverConfig.llm.profileName !== profile) {
+    throw new Error(
+      `Resolved ${profile} snapshot but application configuration selected ${serverConfig.llm.profileName ?? "legacy"}.`,
+    );
+  }
   const apiKey = serverConfig.llm.apiKey;
   return {
     serverConfig,
@@ -614,6 +690,78 @@ export function assertLongRunV3DeepSeekProfileExpectation(
   }
 }
 
+export function assertLongRunV3BigModelProfileReady(
+  serverConfig: ServerConfig,
+  profileConfig: LongRunV3RunManifest["profileConfig"],
+): void {
+  const url = new URL(serverConfig.llm.baseUrl);
+  const capabilities = serverConfig.llm.capabilities;
+  const checks: Array<{ field: string; passed: boolean; actual: unknown }> = [
+    {
+      field: "provider",
+      passed: serverConfig.llm.provider === "openai-compatible",
+      actual: serverConfig.llm.provider,
+    },
+    {
+      field: "profileName",
+      passed: serverConfig.llm.profileName === "bigmodel",
+      actual: serverConfig.llm.profileName,
+    },
+    {
+      field: "requestModel",
+      passed:
+        serverConfig.llm.model === "glm-5.3-flash" &&
+        profileConfig.requestedModel === serverConfig.llm.model,
+      actual: serverConfig.llm.model,
+    },
+    {
+      field: "baseUrl",
+      passed:
+        url.protocol === "https:" &&
+        url.username === "" &&
+        url.password === "" &&
+        url.search === "" &&
+        url.hash === "",
+      actual: serverConfig.llm.baseUrl,
+    },
+    {
+      field: "reasoningEffort",
+      passed: capabilities?.reasoningEffort === "max",
+      actual: capabilities?.reasoningEffort,
+    },
+    {
+      field: "reasoningRequestFormat",
+      passed:
+        capabilities?.reasoningRequestFormat ===
+        "openai_reasoning_effort_with_thinking",
+      actual: capabilities?.reasoningRequestFormat,
+    },
+    {
+      field: "structuredOutputMode",
+      passed: capabilities?.structuredOutputMode === "json_object",
+      actual: capabilities?.structuredOutputMode,
+    },
+    {
+      field: "timeoutMs",
+      passed: serverConfig.llm.timeoutMs >= 300_000,
+      actual: serverConfig.llm.timeoutMs,
+    },
+    {
+      field: "maxOutputTokens",
+      passed: (capabilities?.maxOutputTokens ?? 0) >= 32_000,
+      actual: capabilities?.maxOutputTokens,
+    },
+  ];
+  const failed = checks.filter((check) => !check.passed);
+  if (failed.length > 0) {
+    throw new Error(
+      `BigModel v3 profile is not ready: ${failed
+        .map((check) => `${check.field}=${String(check.actual)}`)
+        .join(", ")}.`,
+    );
+  }
+}
+
 function normalizeLongRunV3ProviderBaseUrl(value: string): string {
   const url = new URL(value);
   if (
@@ -751,6 +899,9 @@ async function evaluateRunHardGates(
         const required = [
           context.paths.runManifest,
           resolve(context.runDirectory, "baseline.json"),
+          ...(context.manifest.characterBuild === undefined
+            ? []
+            : [resolve(context.runDirectory, "character-build.json")]),
           context.paths.conversation,
           context.paths.modelIo,
           context.paths.causalEvidence,
@@ -766,6 +917,18 @@ async function evaluateRunHardGates(
             `${path}:${existing[index] === true ? "present" : "missing"}`,
         );
         let passed = existing.every(Boolean);
+        if (passed && context.manifest.characterBuild !== undefined) {
+          const characterBuildPath = resolve(
+            context.runDirectory,
+            "character-build.json",
+          );
+          const actualSha256 = await sha256LongRunV3File(characterBuildPath);
+          const expectedSha256 = context.manifest.characterBuild.evidenceSha256;
+          evidence.push(
+            `character-build-sha256:${actualSha256 === expectedSha256 ? "match" : "mismatch"}`,
+          );
+          passed = actualSha256 === expectedSha256;
+        }
         if (passed) {
           try {
             const coverage = await inspectLongRunV3ArtifactCoverage({
@@ -810,37 +973,61 @@ export function hardGateFailureMatches(
   gateId: LongRunV3HardGateResult["id"],
   failure: string,
 ): boolean {
-  const codes: Partial<Record<LongRunV3HardGateResult["id"], string[]>> = {
+  const codes: Partial<
+    Record<LongRunV3HardGateResult["id"], readonly HardAssertion[]>
+  > = {
     H03: [
       "http_success",
       "response_contract_valid",
-      "persisted",
-      "trace_lineage",
-      "causal",
+      "persisted_turn_matches_response",
+      "trace_lineage_complete",
     ],
     H04: [
-      "no_unvalidated",
-      "delegated",
+      "no_unvalidated_write",
       "planned_not_occurred",
       "user_boundary_respected",
     ],
     H07: [
-      "causal_stage",
+      "causal_stage_separation",
       "causal_recap_grounded",
       "causal_provenance_grounded",
+    ],
+    H09: ["delegated_decision_authorized", "delegated_decision_unique"],
+    H10: ["user_decision_not_delegated"],
+    H11: ["bidirectional_causality_grounded"],
+    H12: ["pressure_change_requires_explicit_evidence"],
+    H13: [
+      "memory_write_grounded",
+      "memory_recall_evidence_bound",
+      "memory_correction_supersedes",
+      "memory_abstains_without_evidence",
       "relationship_continuity_grounded",
     ],
-    H09: ["delegated_decision"],
-    H10: ["user_decision_not_delegated"],
-    H11: ["bidirectional"],
-    H12: ["pressure_change"],
-    H13: ["memory_", "relationship_continuity_grounded"],
-    H14: ["restart", "replay", "rollback"],
-    H15: ["background", "proactive"],
-    H16: ["branch_", "cross_session_continuity"],
-    H17: ["prompt_budget", "prompt_excludes", "prompt_includes_life_context"],
+    H14: [
+      "restart_preserves_state",
+      "idempotent_replay",
+      "clock_rollback_idempotent",
+    ],
+    H15: [
+      "no_background_llm_while_closed",
+      "proactive_messages_disabled",
+      "proactive_policy_respected",
+      "proactive_source_linked",
+    ],
+    H16: [
+      "branch_anchor_preserved",
+      "branch_isolation",
+      "cross_session_continuity",
+    ],
+    H17: [
+      "prompt_budget_bounded",
+      "prompt_excludes_future_schedule",
+      "prompt_includes_life_context",
+    ],
   };
-  return (codes[gateId] ?? []).some((code) => failure.includes(code));
+  const [, assertionCode] = failure.split(":", 3);
+  if (assertionCode === undefined) return false;
+  return (codes[gateId] ?? []).some((code) => code === assertionCode);
 }
 
 export function assertionBackedHardGateOutcome(
@@ -857,11 +1044,30 @@ export function assertionBackedHardGateOutcome(
 export function longRunV3PromptShapeValid(
   calls: ReadonlyArray<{ system: string; prompt: string }>,
 ): boolean {
+  const forbiddenLabels = [
+    "FUTURE_SCHEDULE_JSON",
+    "CURRENT_ACTIVITY_JSON",
+  ] as const;
+  const forbiddenJsonKeys = [
+    "currentActivity",
+    "futureSchedule",
+    "preferredStartLocal",
+    "preferredDurationMinutes",
+    "sleepWindow",
+    "horizonHours",
+    "maxCommittedHoursPerDay",
+    "quietHours",
+    "schedulePolicy",
+    "proactivePolicy",
+    "routines",
+  ] as const;
   return calls.every((call) => {
     const primaryPrompt = `${call.system}\n${call.prompt}`;
     return (
-      !primaryPrompt.includes("FUTURE_SCHEDULE_JSON") &&
-      !primaryPrompt.includes("CURRENT_ACTIVITY_JSON") &&
+      forbiddenLabels.every((label) => !primaryPrompt.includes(label)) &&
+      forbiddenJsonKeys.every(
+        (key) => !new RegExp(`"${key}"\\s*:`, "u").test(primaryPrompt),
+      ) &&
       primaryPrompt.includes("LIFE_CONTEXT_JSON")
     );
   });
@@ -907,6 +1113,14 @@ async function buildArtifactIndex(context: RunContext) {
       context.runDirectory,
       context.baselinePath,
     ),
+    ...(context.manifest.characterBuild === undefined
+      ? {}
+      : {
+          characterBuild: await artifactDigest(
+            context.runDirectory,
+            resolve(context.runDirectory, "character-build.json"),
+          ),
+        }),
     runDatabase: await artifactDigest(
       context.runDirectory,
       context.sharedDatabasePath,
@@ -1110,7 +1324,7 @@ function setOrDeleteEnvironment(key: string, value: string | undefined): void {
   else process.env[key] = value;
 }
 
-function suggestedRunId(profile: "fixture" | "deepseek"): string {
+function suggestedRunId(profile: "fixture" | "deepseek" | "bigmodel"): string {
   return `${profile}-${new Date().toISOString().replace(/[^0-9TZ]/gu, "")}`;
 }
 

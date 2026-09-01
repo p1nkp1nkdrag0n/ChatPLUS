@@ -73,6 +73,21 @@ describe("safe JSON parsing", () => {
 });
 
 describe("OpenAI-compatible provider", () => {
+  it("accepts a fifteen-minute timeout for high-effort structured compilation", () => {
+    expect(() =>
+      createOpenAiCompatibleLlmProvider({
+        apiKey: "test-placeholder-token",
+        timeoutMs: 900_000,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      createOpenAiCompatibleLlmProvider({
+        apiKey: "test-placeholder-token",
+        timeoutMs: 900_001,
+      }),
+    ).toThrow(/between 100 and 900000/u);
+  });
+
   it("normalizes the runtime-owned 72-hour horizon before strict character validation", async () => {
     const proposal = await validCharacterProposal();
     proposal.draft.schedulePolicy.horizonHours = 168;
@@ -208,6 +223,61 @@ describe("OpenAI-compatible provider", () => {
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(body).toHaveProperty("max_tokens");
     expect(JSON.stringify(value)).not.toContain("reasoning");
+  });
+
+  it("retries a reasoning-only stop without promoting hidden reasoning to the reply", async () => {
+    const metrics: LlmCallMetric[] = [];
+    let attempts = 0;
+    const provider = createOpenAiCompatibleLlmProvider({
+      apiKey: "test-placeholder-token",
+      maxRetries: 1,
+      retryDelay: () => Promise.resolve(),
+      onMetric: (metric) => metrics.push(metric),
+      fetch: () => {
+        attempts += 1;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              model: "deepseek-test",
+              choices: [
+                {
+                  message:
+                    attempts === 1
+                      ? {
+                          content: "",
+                          reasoning_content:
+                            "internal reasoning that must not become a reply",
+                        }
+                      : { content: '{"ok":true}' },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: {
+                prompt_tokens: 10,
+                completion_tokens: attempts === 1 ? 300 : 4,
+                total_tokens: attempts === 1 ? 310 : 14,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      },
+    });
+
+    await expect(
+      provider.generateObject({
+        purpose: "chat_turn",
+        system: "Return JSON.",
+        prompt: "Test",
+        schema: z.object({ ok: z.boolean() }).strict(),
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(attempts).toBe(2);
+    expect(metrics[0]).toMatchObject({
+      success: false,
+      errorCode: "EMPTY_FINAL_AFTER_REASONING",
+      finishReason: "stop",
+    });
   });
 
   it("reports provider response identity, finish reason, and reported usage for a successful physical attempt", async () => {

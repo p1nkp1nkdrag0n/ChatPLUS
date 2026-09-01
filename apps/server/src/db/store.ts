@@ -766,6 +766,59 @@ export class DatabaseStore {
     return result.changes > 0;
   }
 
+  hasFuzzyLifeState(agentId: string): boolean {
+    const row = this.database
+      .prepare(
+        `SELECT (
+          EXISTS(SELECT 1 FROM daily_life_contexts WHERE agent_id = ?)
+          OR EXISTS(SELECT 1 FROM life_threads WHERE agent_id = ?)
+        ) AS present`,
+      )
+      .get(agentId, agentId) as { present: number };
+    return row.present === 1;
+  }
+
+  getDomainEventByIdempotencyKey(
+    idempotencyKey: string,
+  ): Record<string, unknown> | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT agent_id AS agentId, stream_type AS streamType,
+          stream_id AS streamId, stream_version AS streamVersion,
+          event_type AS eventType, recorded_at_utc AS recordedAtUtc,
+          effective_at_utc AS effectiveAtUtc, payload_json AS payloadJson,
+          idempotency_key AS idempotencyKey
+         FROM domain_events WHERE idempotency_key = ?`,
+      )
+      .get(idempotencyKey) as Record<string, unknown> | undefined;
+    if (row === undefined) return undefined;
+    const { payloadJson, ...event } = row;
+    return { ...event, payload: parseJsonValue(payloadJson) };
+  }
+
+  getDomainEventByStreamVersion(
+    streamType: string,
+    streamId: string,
+    streamVersion: number,
+  ): Record<string, unknown> | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT agent_id AS agentId, stream_type AS streamType,
+          stream_id AS streamId, stream_version AS streamVersion,
+          event_type AS eventType, recorded_at_utc AS recordedAtUtc,
+          effective_at_utc AS effectiveAtUtc, payload_json AS payloadJson,
+          idempotency_key AS idempotencyKey
+         FROM domain_events
+         WHERE stream_type = ? AND stream_id = ? AND stream_version = ?
+         ORDER BY rowid LIMIT 1`,
+      )
+      .get(streamType, streamId, streamVersion) as
+      Record<string, unknown> | undefined;
+    if (row === undefined) return undefined;
+    const { payloadJson, ...event } = row;
+    return { ...event, payload: parseJsonValue(payloadJson) };
+  }
+
   listDomainEvents(
     agentId?: string,
     limit = 100,

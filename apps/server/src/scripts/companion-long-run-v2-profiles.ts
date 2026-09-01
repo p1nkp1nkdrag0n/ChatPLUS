@@ -194,6 +194,24 @@ export function readLongRunV2ProfileConfig(
   return snapshotProfileConfig(profile, config);
 }
 
+/**
+ * Resolves the complete server configuration for one isolated paid profile.
+ * Unlike the serializable snapshot above, this value may contain the API key
+ * and must therefore stay in memory. The environment swap is synchronous and
+ * restored before the function returns.
+ */
+export function readLongRunV2ServerConfig(
+  profile: LongRunV2Profile,
+  parentEnvironment: Readonly<NodeJS.ProcessEnv> = process.env,
+  configReader: ConfigReader = readConfig,
+): ServerConfig {
+  const childEnvironment = buildLongRunV2ChildEnvironment(
+    profile,
+    parentEnvironment,
+  );
+  return withLlmEnvironment(childEnvironment, configReader);
+}
+
 export function preparePaidLongRunProfiles(
   argv: readonly string[],
   environment: Readonly<NodeJS.ProcessEnv> = process.env,

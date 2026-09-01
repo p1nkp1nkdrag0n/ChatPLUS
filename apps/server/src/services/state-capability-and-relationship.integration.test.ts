@@ -239,6 +239,132 @@ describe("state capability and relationship scenarios", () => {
       states[2]!.relationship.recentInteractionValence,
     );
   });
+
+  it("rejects positive durable movement when the user explicitly reports hurt", async () => {
+    const created = await createHarness();
+    app = created.app;
+    mockChat(app, () => ({
+      replyDecision: { text: "我听见你不舒服，也会先停下来。" },
+      worldEffects: {
+        relationshipDelta: {
+          closeness: 0.02,
+          trust: 0.02,
+          recentInteractionValence: 0.25,
+        },
+      },
+    }));
+    const character = await createAndPublish(app, "high_fidelity");
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "relationship-hurt-positive-rejected",
+      "我有点不舒服。你刚才把我们的选择说得太像了，我觉得有点受伤。",
+    );
+
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.state.relationship.closeness).toBe(
+      before.relationship.closeness,
+    );
+    expect(body.state.relationship.trust).toBe(before.relationship.trust);
+    expect(body.state.relationship.recentInteractionValence).toBe(
+      before.relationship.recentInteractionValence,
+    );
+    expect(body.state.relationship.familiarity).toBeGreaterThan(
+      before.relationship.familiarity,
+    );
+    const audit = worldEffectsAudit(
+      app,
+      character.id,
+      "relationship-hurt-positive-rejected",
+    );
+    expect(nestedValue(audit?.payload, "rejectionCodes")).toContain(
+      "relationship_direction_unsupported",
+    );
+    expect(nestedValue(audit?.payload, "source", "relationshipEvidence")).toBe(
+      "rupture_or_boundary",
+    );
+  });
+
+  it("keeps separate same-day rupture and repair movement budgets", async () => {
+    const created = await createHarness();
+    app = created.app;
+    const envelopes = [
+      {
+        replyDecision: { text: "我刚才确实没有听准确。" },
+        worldEffects: {
+          relationshipDelta: {
+            closeness: -0.04,
+            trust: -0.03,
+            recentInteractionValence: -0.3,
+          },
+        },
+      },
+      {
+        replyDecision: { text: "谢谢你愿意把误会说开。" },
+        worldEffects: {
+          relationshipDelta: {
+            closeness: 0.04,
+            trust: 0.03,
+            recentInteractionValence: 0.3,
+          },
+        },
+      },
+    ];
+    let index = 0;
+    mockChat(app, () => envelopes[index++]!);
+    const character = await createAndPublish(app, "high_fidelity");
+    const initial = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const rupture = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "relationship-directional-budget-rupture",
+      "等等，你刚才把我的意思理解反了，我有点受伤。",
+    );
+    expect(rupture.statusCode).toBe(201);
+    const afterRupture = jsonBody<ChatTurnResult>(rupture).state;
+    expect(afterRupture.relationship.closeness).toBeCloseTo(
+      initial.relationship.closeness - 0.04,
+      10,
+    );
+    expect(afterRupture.relationship.trust).toBeCloseTo(
+      initial.relationship.trust - 0.03,
+      10,
+    );
+
+    const repair = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "relationship-directional-budget-repair",
+      "谢谢你停下来重新听我说，也把误会讲清楚了。我们和好了。",
+    );
+    expect(repair.statusCode).toBe(201);
+    const afterRepair = jsonBody<ChatTurnResult>(repair).state;
+    expect(afterRepair.relationship.closeness).toBeCloseTo(
+      initial.relationship.closeness,
+      10,
+    );
+    expect(afterRepair.relationship.trust).toBeCloseTo(
+      initial.relationship.trust,
+      10,
+    );
+    const audit = worldEffectsAudit(
+      app,
+      character.id,
+      "relationship-directional-budget-repair",
+    );
+    expect(nestedValue(audit?.payload, "source", "relationshipEvidence")).toBe(
+      "explicit_repair",
+    );
+  });
 });
 
 type Tier = "lightweight" | "daily" | "high_fidelity";

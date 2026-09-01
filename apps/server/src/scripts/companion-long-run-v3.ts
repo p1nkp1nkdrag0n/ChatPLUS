@@ -7,10 +7,11 @@ import { readLongRunV2ProfileConfig } from "./companion-long-run-v2-profiles.js"
 import { runCompanionLongRunV3 } from "./companion-long-run-v3-runner.js";
 
 export type CompanionLongRunV3Command = "fixture" | "run" | "resume";
+export type CompanionLongRunV3RealProfile = "deepseek" | "bigmodel";
 
 export interface CompanionLongRunV3CliOptions {
   command: CompanionLongRunV3Command;
-  profile: "fixture" | "deepseek";
+  profile: "fixture" | CompanionLongRunV3RealProfile;
   runId: string;
   resume: boolean;
 }
@@ -20,9 +21,9 @@ const workspaceRoot = resolve(dirname(scriptPath), "../../../..");
 
 const USAGE = [
   "Usage:",
-  "  companion-long-run-v3 fixture [--run-id <id>] [--profile deepseek] [--runs 1]",
-  "  companion-long-run-v3 run [--run-id <id>] [--profile deepseek] [--runs 1]",
-  "  companion-long-run-v3 resume --run-id <id> [--profile deepseek] [--runs 1]",
+  "  companion-long-run-v3 fixture [--run-id <id>] [--profile deepseek|bigmodel] [--runs 1]",
+  "  companion-long-run-v3 run [--run-id <id>] [--profile deepseek|bigmodel] [--runs 1]",
+  "  companion-long-run-v3 resume --run-id <id> [--profile deepseek|bigmodel] [--runs 1]",
 ].join("\n");
 
 export function parseCompanionLongRunV3CliArgs(
@@ -81,9 +82,13 @@ export function parseCompanionLongRunV3CliArgs(
     );
   }
 
-  if (declaredProfile !== undefined && declaredProfile !== "deepseek") {
+  if (
+    declaredProfile !== undefined &&
+    declaredProfile !== "deepseek" &&
+    declaredProfile !== "bigmodel"
+  ) {
     throw new TypeError(
-      "The v3 long-run supports only the DeepSeek real profile; --profile must be deepseek.",
+      "The v3 long-run real profile must be deepseek or bigmodel.",
     );
   }
   if (declaredRuns !== undefined && declaredRuns !== "1") {
@@ -97,7 +102,8 @@ export function parseCompanionLongRunV3CliArgs(
     );
   }
 
-  const profile = rawCommand === "fixture" ? "fixture" : "deepseek";
+  const profile =
+    rawCommand === "fixture" ? "fixture" : (declaredProfile ?? "deepseek");
   return {
     command: rawCommand,
     profile,
@@ -117,8 +123,12 @@ export async function companionLongRunV3Main(
     options.runId,
   );
 
-  if (options.profile === "deepseek") {
-    await assertPaidDeepSeekRunReady(workspaceRoot, process.env);
+  if (options.profile !== "fixture") {
+    await assertPaidLongRunV3ProfileReady(
+      workspaceRoot,
+      options.profile,
+      process.env,
+    );
   }
 
   console.log(`Long-run artifacts: ${artifactDirectory}`);
@@ -143,33 +153,34 @@ export function assertLongRunV3EngineeringGatePassed(result: {
   }
 }
 
-export async function assertPaidDeepSeekRunReady(
+export async function assertPaidLongRunV3ProfileReady(
   root: string,
+  requestedProfile: CompanionLongRunV3RealProfile,
   environment: Readonly<NodeJS.ProcessEnv>,
 ): Promise<void> {
   if (environment["RUN_PAID_LONGRUN"] !== "1") {
     throw new Error(
-      "Paid DeepSeek long-run is disabled. Set RUN_PAID_LONGRUN=1 to authorize real provider calls.",
+      `Paid ${requestedProfile} v3 long-run is disabled. Set RUN_PAID_LONGRUN=1 to authorize real provider calls.`,
     );
   }
 
-  const profile = readLongRunV2ProfileConfig("deepseek", environment);
+  const profile = readLongRunV2ProfileConfig(requestedProfile, environment);
   if (!profile.apiKeyPresent) {
     throw new Error(
-      `DeepSeek API key is missing (${profile.apiKeyEnvironment}).`,
+      `${requestedProfile} API key is missing (${profile.apiKeyEnvironment}).`,
     );
   }
 
   const git = await readGitFingerprint(root);
-  if (git.dirty) {
+  if (git.dirty && environment["RUN_PAID_LONGRUN_ALLOW_DIRTY"] !== "1") {
     throw new Error(
-      "Real v3 long-run requires a clean Git worktree. Commit the reviewed implementation before starting or resuming paid calls.",
+      "Real v3 long-run requires a clean Git worktree. For an explicitly exploratory local validation of the current patch, set RUN_PAID_LONGRUN_ALLOW_DIRTY=1; the dirty patch hash will be frozen in the run manifest.",
     );
   }
 }
 
 export function suggestedRunId(
-  profile: "fixture" | "deepseek",
+  profile: "fixture" | CompanionLongRunV3RealProfile,
   now: Date = new Date(),
 ): string {
   const timestamp = now

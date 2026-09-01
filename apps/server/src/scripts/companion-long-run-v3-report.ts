@@ -378,7 +378,7 @@ export function renderLongRunV3ReportMarkdown(
   summary: LongRunV3RunSummary,
 ): string {
   const lines = [
-    "# ChatPLUS DeepSeek 纯模糊生活长程测试报告",
+    `# ChatPLUS ${summary.manifest.profile} 纯模糊生活长程测试报告`,
     "",
     "## 结论",
     "",

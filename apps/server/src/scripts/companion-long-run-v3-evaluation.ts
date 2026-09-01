@@ -3,7 +3,7 @@ import {
   type CompanionLongRunV3HardGateResult,
 } from "./companion-long-run-v3-assertions.js";
 
-/** Pure scoring and release-classification rules for the DeepSeek v3 run. */
+/** Pure scoring and release-classification rules for a v3 profile run. */
 
 export const COMPANION_LONG_RUN_V3_RUBRIC = [
   { key: "emotion_understanding", weight: 0.2 },

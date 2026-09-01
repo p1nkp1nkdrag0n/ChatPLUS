@@ -25,7 +25,10 @@ import {
 } from "@personasim/contracts";
 
 import type { DatabaseStore } from "../db/store.js";
-import { deriveServerOwnedUserMemoryCandidates } from "./turn-decision-service.js";
+import {
+  deriveServerOwnedContinuityMemoryCandidates,
+  deriveServerOwnedUserMemoryCandidates,
+} from "./turn-decision-service.js";
 
 export type PersistMemoryInput = {
   store: DatabaseStore;
@@ -292,10 +295,16 @@ export function validateMergeAndPersistMemories(
       : catalog.messages.get(input.authoritativeMessageId);
   const serverOwnedCandidates =
     authoritativeMessage?.role === "user"
-      ? deriveServerOwnedUserMemoryCandidates(
-          authoritativeMessage.content,
-          input.nowUtc,
-        )
+      ? [
+          ...deriveServerOwnedUserMemoryCandidates(
+            authoritativeMessage.content,
+            input.nowUtc,
+          ),
+          ...deriveServerOwnedContinuityMemoryCandidates(
+            authoritativeMessage.content,
+            input.nowUtc,
+          ),
+        ]
       : [];
   const candidates = [
     ...serverOwnedCandidates,
@@ -346,10 +355,21 @@ export function validateMergeAndPersistMemories(
     const proposal = toRuntimeProposal(candidate);
     const validation = validateMemoryProposal(proposal);
     if (!validation.accepted || validation.proposal === undefined) continue;
+    // Stable claim slots are ownership boundaries. Similar wording from two
+    // different relationship facets (for example a stop boundary and a later
+    // repair principle) must not collapse into one memory merely because the
+    // generic content similarity heuristic considers them duplicates.
+    const mergeExisting =
+      candidate.claim === undefined
+        ? existing
+        : existing.filter(
+            (memory) =>
+              memory.claim?.subjectKey === candidate.claim?.subjectKey,
+          );
     const merged = mergeMemoryProposal(
       input.agentId,
       validation.proposal,
-      existing,
+      mergeExisting,
       input.nowUtc,
     );
     if (merged === undefined) continue;
@@ -405,6 +425,12 @@ export function validateMergeAndPersistMemories(
 function blocksUnverifiedModelMemoryCandidates(text: string): boolean {
   const normalized = text.normalize("NFKC").replace(/\s+/gu, " ").trim();
   if (!isExplicitUserMemoryStatement(normalized)) return true;
+  // A current-turn accusation is evidence that the user made the statement,
+  // not evidence that the attributed coercion or action ownership is true.
+  // Only the narrow server-owned correction extractor may create a durable
+  // causal record from these turns; model prose must not promote the premise
+  // into an explicit user fact before canonical causality can verify it.
+  if (containsUnverifiedCausalAccusation(normalized)) return true;
   if (/(?:不知道|不清楚|无法确认|没有信息|尚未确认|未确认)/u.test(normalized)) {
     return true;
   }
@@ -416,6 +442,17 @@ function blocksUnverifiedModelMemoryCandidates(text: string): boolean {
       normalized,
     );
   return planning && explicitlyUnfinished;
+}
+
+function containsUnverifiedCausalAccusation(text: string): boolean {
+  return (
+    /(?:你|角色|顾澜).{0,16}(?:逼|强迫|迫使|害得).{0,24}(?:我|用户)?.{0,12}(?:辞职|离职|分手|搬家|转行|放弃|接受|拒绝|决定|选择|行动)/u.test(
+      text,
+    ) ||
+    /(?:你|角色|顾澜).{0,16}(?:替我|代替我).{0,12}(?:决定|选择|行动).{0,24}(?:害得|导致|所以|以后)/u.test(
+      text,
+    )
+  );
 }
 
 type EvidenceCatalog = {
@@ -792,6 +829,17 @@ function hasQualifyingSharedExperienceEvidence(
     return true;
   const temporal = candidate.temporalMetadata ?? candidate.temporal;
   if (temporal?.temporalStatus !== "occurred") return false;
+  if (candidate.reasonCode === "server_owned_relationship_evidence") {
+    return evidence.some((item) => {
+      if (item.sourceType !== "message") return false;
+      const source = catalog.messages.get(item.sourceId);
+      return (
+        source?.role === "user" &&
+        isExplicitUserMemoryStatement(source.content) &&
+        memoryContentGrounded(candidate, item.quote ?? source.content)
+      );
+    });
+  }
   return evidence.some((item) => {
     if (item.sourceType !== "message") return false;
     const source = catalog.messages.get(item.sourceId);

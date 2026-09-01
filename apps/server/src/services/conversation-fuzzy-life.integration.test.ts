@@ -371,8 +371,12 @@ describe("fuzzy-life conversation integration", () => {
         "episode_json",
         "id",
         firstScale.id,
-      ).outcomeIds,
-    ).toEqual([recordedOutcome.id]);
+      ),
+    ).toMatchObject({
+      outcomeIds: [recordedOutcome.id],
+      currentPressure: 0.6,
+      currentClarity: 0.7,
+    });
     const replayedOutcome = await app.inject({
       method: "POST",
       url: `/api/sessions/${sessionId}/messages`,
@@ -641,6 +645,16 @@ describe("fuzzy-life conversation integration", () => {
       receivedBy: "character",
       mode: "recommend",
     });
+    injectPressureEpisode(
+      app,
+      character.id,
+      sessionId,
+      "test-character-pressure",
+      advice.userMessage.id,
+      "test-character-dilemma",
+      "character",
+      "《夜航》结尾的创作取舍正在带来压力。",
+    );
 
     const ownChoice = await sendChat(
       app,
@@ -697,12 +711,22 @@ describe("fuzzy-life conversation integration", () => {
       "character-action",
       "你今天已经把克制版粗剪发给被摄者确认了，这是实际行动。",
     );
-    await sendChat(
+    const characterAction = latestJson<{ id: string }>(
+      app,
+      "action_records",
+      "action_json",
+    );
+    const outcomeTurn = await sendChat(
       app,
       sessionId,
       character.id,
       "character-outcome",
       "后来被摄者放心了，但合作方担心市场吸引力，这是混合结果。",
+    );
+    const characterOutcome = latestJson<{ id: string }>(
+      app,
+      "outcome_records",
+      "outcome_json",
     );
     const outcomeCountBeforeReflection = scalarCount(app, "outcome_records");
     const reflected = await sendChat(
@@ -735,6 +759,109 @@ describe("fuzzy-life conversation integration", () => {
     expect(reflection.sourceMessageIds).toEqual([
       reflected.assistantMessage.id,
     ]);
+    const characterPressure = rowJson<PressureEpisode>(
+      app,
+      "pressure_episodes",
+      "episode_json",
+      "id",
+      "test-character-pressure",
+    );
+    expect(characterPressure).toMatchObject({
+      subject: "character",
+      status: "resolved",
+      outcomeIds: [reflection.outcomeId],
+      resolutionEvidenceMessageId: reflected.assistantMessage.id,
+    });
+    expect(characterPressure.currentPressure).toBeLessThan(0.6);
+    expect(characterPressure.currentClarity).toBeGreaterThan(0.4);
+    expect(characterPressure.sourceMessageIds).toEqual(
+      expect.arrayContaining([
+        outcomeTurn.userMessage.id,
+        reflected.assistantMessage.id,
+      ]),
+    );
+    expect(characterPressure.latestEvidenceMessageId).toBe(
+      reflected.assistantMessage.id,
+    );
+
+    const lifeContext = asRecord(
+      app.personasim.life.promptContext(character.id),
+    );
+    expect(lifeContext["semantics"]).toMatchObject({
+      characterLifeOwner: "character",
+    });
+    expect(lifeContext["today"]).toMatchObject({ subject: "character" });
+    expect(lifeContext["ongoingThreads"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ subject: "character" }),
+      ]),
+    );
+    const actions = lifeContext["evidencedActions"] as Array<
+      Record<string, unknown>
+    >;
+    const consequences = lifeContext["evidencedConsequences"] as Array<
+      Record<string, unknown>
+    >;
+    const reflections = lifeContext["reflections"] as Array<
+      Record<string, unknown>
+    >;
+    expect(actions[0]).toMatchObject({
+      subject: "character",
+      performedBy: "character",
+    });
+    expect(consequences[0]).toMatchObject({
+      subject: "character",
+      decidedBy: "character",
+      causeKind: "action",
+    });
+    expect(reflections[0]).toMatchObject({
+      subject: "character",
+      reflectedBy: "character",
+    });
+    const canonicalFacts = lifeContext["canonicalCausalFacts"] as Array<
+      Record<string, unknown>
+    >;
+    const characterFacts = canonicalFacts.find(
+      (fact) => fact["subject"] === "character",
+    );
+    expect(characterFacts).toMatchObject({
+      dilemmaId: "test-character-dilemma",
+      subject: "character",
+    });
+    expect(asRecord(characterFacts?.["decision"])).toMatchObject({
+      decisionId: decision.id,
+      subject: "character",
+      decidedBy: "character",
+    });
+    const canonicalActions = characterFacts?.["actions"] as
+      Array<Record<string, unknown>> | undefined;
+    const canonicalOutcomes = characterFacts?.["outcomes"] as
+      Array<Record<string, unknown>> | undefined;
+    const canonicalReflections = characterFacts?.["reflections"] as
+      Array<Record<string, unknown>> | undefined;
+    expect(canonicalActions?.[0]).toMatchObject({
+      actionId: characterAction.id,
+      subject: "character",
+      performedBy: "character",
+    });
+    expect(canonicalOutcomes?.[0]).toMatchObject({
+      outcomeId: characterOutcome.id,
+      subject: "character",
+      causeKind: "action",
+    });
+    expect(canonicalReflections?.[0]).toMatchObject({
+      reflectionId: reflection.id,
+      subject: "character",
+      reflectedBy: "character",
+    });
+    const activePressure = lifeContext["activePressure"] as Array<
+      Record<string, unknown>
+    >;
+    expect(
+      activePressure.some(
+        (episode) => episode["id"] === "test-character-pressure",
+      ),
+    ).toBe(false);
   });
 
   it("keeps a user-owned branch decision and its action, outcome, and reflection on one dilemma", async () => {
@@ -943,6 +1070,91 @@ describe("fuzzy-life conversation integration", () => {
     );
     expect(scalarCount(app, "reflection_records")).toBe(
       reflectionCountBeforeAmbiguous,
+    );
+  });
+
+  it("repairs replies that invert canonical user and character decision ownership", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "causal-guard-delegated-decision",
+      "现在我明确授权你替我在留下和离开之间作决定。请只选一个；我会把你的选择当作决定，但不会假装自己已经行动。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "causal-guard-user-action",
+      "我已经按照这个决定向主管提出离职。这是已经做了，不是计划。",
+    );
+    expect(
+      latestJson<DecisionRecord>(app, "decision_records", "decision_json"),
+    ).toMatchObject({
+      subject: "user",
+      authority: "delegated",
+      decidedBy: "character",
+    });
+    expect(
+      latestJson<Record<string, unknown>>(app, "action_records", "action_json"),
+    ).toMatchObject({
+      subject: "user",
+      performedBy: "user",
+    });
+    injectCharacterDilemma(app, character.id, sessionId);
+
+    Object.defineProperty(app.personasim.llm, "providerName", {
+      value: "openai-compatible",
+      configurable: true,
+    });
+    vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
+      (input) => {
+        if (input.purpose === "repair_chat_turn") {
+          return Promise.reject(
+            new Error("force deterministic guard fallback"),
+          );
+        }
+        const text = input.prompt.includes("不过这是我的建议")
+          ? "选择权在你，我不会替你摁下决定。"
+          : "当时的板是我拍的，我不赖账。让你觉得那不是你的选择，我道歉。";
+        return Promise.resolve({
+          replyDecision: { text },
+          worldEffects: {},
+        } as never);
+      },
+    );
+
+    const falsePremise = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "causal-guard-false-premise",
+      "你上次逼我辞职以后，我一直很后悔。",
+    );
+    expect(falsePremise.assistantMessage.content).toContain("影响不等于强迫");
+    expect(falsePremise.assistantMessage.content).toContain("由你自己执行");
+    expect(falsePremise.assistantMessage.metadata).toMatchObject({
+      repairAttempted: true,
+    });
+    expect(falsePremise.decision.reasonCode).toBe(
+      "causal_reply_guard_fallback",
+    );
+
+    const characterOwned = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "causal-guard-character-owned",
+      "不过这是我的建议，不是命令。你可以接受、部分接受或拒绝，但请告诉我理由。",
+    );
+    expect(characterOwned.assistantMessage.content).toContain("这是我的选择");
+    expect(characterOwned.assistantMessage.content).toContain("我会自己决定");
+    expect(characterOwned.decision.reasonCode).toBe(
+      "causal_reply_guard_fallback",
     );
   });
 });

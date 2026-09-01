@@ -29,6 +29,13 @@ import type { Database } from "../db/connection.js";
 
 type JsonRow = Record<string, unknown>;
 
+export class LifeThreadRevisionConflictError extends Error {
+  constructor(readonly threadId: string) {
+    super(`Life thread revision conflict: ${threadId}`);
+    this.name = "LifeThreadRevisionConflictError";
+  }
+}
+
 /**
  * SQLite projection for the fuzzy-life domain. Every table stores a complete,
  * schema-validated JSON document; scalar columns exist only for constraints
@@ -214,6 +221,15 @@ export class LifeRepository {
     );
   }
 
+  findThreadById(id: string): LifeThread | undefined {
+    return parseOptional(
+      this.database
+        .prepare("SELECT thread_json AS json FROM life_threads WHERE id = ?")
+        .get(id),
+      LifeThreadSchema,
+    );
+  }
+
   listActiveThreads(agentId: string, limit = 8): LifeThread[] {
     return parseRows(
       this.database
@@ -223,6 +239,19 @@ export class LifeRepository {
            ORDER BY updated_at_utc DESC LIMIT ?`,
         )
         .all(agentId, limit),
+      LifeThreadSchema,
+    );
+  }
+
+  listAllActiveThreads(agentId: string): LifeThread[] {
+    return parseRows(
+      this.database
+        .prepare(
+          `SELECT thread_json AS json FROM life_threads
+           WHERE agent_id = ? AND status = 'active'
+           ORDER BY updated_at_utc DESC, id`,
+        )
+        .all(agentId),
       LifeThreadSchema,
     );
   }
@@ -265,6 +294,40 @@ export class LifeRepository {
           value.updatedAtUtc,
         ).changes > 0
     );
+  }
+
+  updateThread(thread: LifeThread, expectedRevision: number): void {
+    const value = LifeThreadSchema.parse(thread);
+    const result = this.database
+      .prepare(
+        `UPDATE life_threads SET
+           status = ?, current_stage = ?, progress_note = ?,
+           next_step_hint = ?, last_advanced_local_date = ?,
+           closed_local_date = ?, source_message_ids_json = ?,
+           parent_thread_id = ?, revision = ?, schema_version = ?,
+           thread_json = ?, updated_at_utc = ?
+         WHERE id = ? AND agent_id = ? AND revision = ?`,
+      )
+      .run(
+        value.status,
+        value.currentStage,
+        value.progressNote ?? null,
+        value.nextStepHint ?? null,
+        value.lastAdvancedLocalDate ?? null,
+        value.closedLocalDate ?? null,
+        JSON.stringify(value.sourceMessageIds),
+        value.parentThreadId ?? null,
+        value.revision,
+        value.schemaVersion,
+        JSON.stringify(value),
+        value.updatedAtUtc,
+        value.id,
+        value.agentId,
+        expectedRevision,
+      );
+    if (result.changes !== 1) {
+      throw new LifeThreadRevisionConflictError(value.id);
+    }
   }
 
   findLifeOutcomeForIntent(intentId: string): LifeOutcome | undefined {

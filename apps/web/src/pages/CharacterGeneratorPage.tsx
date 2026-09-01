@@ -14,12 +14,15 @@ const DEFAULT_TIMEZONE =
 interface GeneratorForm {
   name: string;
   worldSetting: string;
+  storyEra: string;
+  storyAnchorYear: string;
   workOrRole: string;
   traits: [string, string, string];
   coreContradiction: string;
   primaryGoal: string;
   initialRelationship: string;
   dialogueStyle: string;
+  characterBrief: string;
   tier: SimulationTier;
   timezone: string;
 }
@@ -27,12 +30,15 @@ interface GeneratorForm {
 const INITIAL_FORM: GeneratorForm = {
   name: "",
   worldSetting: "当代现实世界",
+  storyEra: "",
+  storyAnchorYear: "",
   workOrRole: "",
   traits: ["", "", ""],
   coreContradiction: "",
   primaryGoal: "",
   initialRelationship: "刚认识、愿意保持礼貌的朋友",
   dialogueStyle: "自然、克制，像即时通讯中的真实对话",
+  characterBrief: "",
   tier: "high_fidelity",
   timezone: DEFAULT_TIMEZONE,
 };
@@ -120,6 +126,33 @@ export default function CharacterGeneratorPage() {
                 onChange={(event) => update("worldSetting", event.target.value)}
               />
             </label>
+            <div className="field-grid field-grid--two">
+              <label className="field">
+                <span>故事当前年份（可选）</span>
+                <input
+                  type="number"
+                  min={1000}
+                  max={9999}
+                  value={form.storyAnchorYear}
+                  onChange={(event) =>
+                    update("storyAnchorYear", event.target.value)
+                  }
+                  placeholder="例如：1951"
+                />
+              </label>
+              <label className="field">
+                <span>时代说明（可选）</span>
+                <input
+                  maxLength={240}
+                  value={form.storyEra}
+                  onChange={(event) => update("storyEra", event.target.value)}
+                  placeholder="例如：战后重建初期的明斯克"
+                />
+              </label>
+            </div>
+            <small>
+              只知道年份即可；具体月日由系统作为运行时刻度生成，不会被当作作者提供的角色事实。
+            </small>
           </div>
 
           <div className="form-section">
@@ -208,6 +241,21 @@ export default function CharacterGeneratorPage() {
                 }
               />
             </label>
+            <label className="field">
+              <span>详细角色素材（可选）</span>
+              <textarea
+                maxLength={20000}
+                rows={10}
+                value={form.characterBrief}
+                onChange={(event) =>
+                  update("characterBrief", event.target.value)
+                }
+                placeholder="可粘贴人物生平、重要经历、公开与私下的关系差异、语言或翻译规则、希望避免的表达套路，以及故事所处的年份。编译器会归纳而不是逐句照搬。"
+              />
+              <small>
+                冲突事实会保留为待确认项；外貌会保存，但不会压过人物的选择方式、关系行为和人生主线。
+              </small>
+            </label>
           </div>
         </section>
 
@@ -238,7 +286,7 @@ export default function CharacterGeneratorPage() {
                 selected={form.tier === "high_fidelity"}
                 onSelect={() => update("tier", "high_fidelity")}
                 title="拟真模拟"
-                description="完整日常模拟，并可基于经历主动开口。"
+                description="完整的模糊生活、关系、记忆与人生主线模拟。"
               />
             </div>
             <label className="field field--compact">

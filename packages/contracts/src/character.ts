@@ -28,6 +28,16 @@ export const ScheduleRigiditySchema = z.enum([
 export type ScheduleRigidity = z.infer<typeof ScheduleRigiditySchema>;
 
 const SourceRefsSchema = z.array(EntityIdSchema).max(32);
+const CharacterLocalDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a local calendar date")
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  }, "Expected a valid local calendar date");
 
 export const TraitRuleSchema = z
   .object({
@@ -71,6 +81,20 @@ export const ContradictionRuleSchema = z
   .strict();
 export type ContradictionRule = z.infer<typeof ContradictionRuleSchema>;
 
+export const CharacterGoalMilestoneSchema = z
+  .object({
+    id: EntityIdSchema,
+    /** Calendar days elapsed since the life thread was created. */
+    afterDays: z.number().int().min(0).max(3_650),
+    title: z.string().trim().min(1).max(160),
+    focus: z.string().trim().min(1).max(1_000),
+    nextStepHint: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+export type CharacterGoalMilestone = z.infer<
+  typeof CharacterGoalMilestoneSchema
+>;
+
 export const CharacterGoalSchema = z
   .object({
     id: EntityIdSchema,
@@ -80,8 +104,35 @@ export const CharacterGoalSchema = z
     progress: UnitIntervalSchema,
     origin: FieldOriginSchema,
     sourceRefs: SourceRefsSchema,
+    /**
+     * A creation-time plan advanced by elapsed character-local calendar days.
+     * It is optional so older persisted CharacterSpecs remain readable.
+     */
+    milestones: z.array(CharacterGoalMilestoneSchema).min(2).max(12).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((goal, context) => {
+    if (goal.milestones === undefined) return;
+    if (goal.milestones[0]?.afterDays !== 0) {
+      context.addIssue({
+        code: "custom",
+        message: "The first goal milestone must start at day 0",
+        path: ["milestones", 0, "afterDays"],
+      });
+    }
+    for (let index = 1; index < goal.milestones.length; index += 1) {
+      if (
+        goal.milestones[index]!.afterDays <=
+        goal.milestones[index - 1]!.afterDays
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Goal milestone day offsets must increase strictly",
+          path: ["milestones", index, "afterDays"],
+        });
+      }
+    }
+  });
 export type CharacterGoal = z.infer<typeof CharacterGoalSchema>;
 
 export const PreferenceRuleSchema = z
@@ -122,6 +173,40 @@ export const RoutineRuleSchema = z
   .strict();
 export type RoutineRule = z.infer<typeof RoutineRuleSchema>;
 
+export const CharacterTemporalFrameSchema = z.discriminatedUnion("mode", [
+  z
+    .object({
+      mode: z.literal("realtime"),
+      eraLabel: z.string().trim().min(1).max(240).optional(),
+      knowledgeCutoff: z.string().trim().min(1).max(240).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("anchored_story"),
+      eraLabel: z.string().trim().min(1).max(240),
+      storyAnchorLocalDate: CharacterLocalDateSchema,
+      /** Precision supplied by the author; the full date may be operational. */
+      anchorPrecision: z.enum(["year", "month", "day"]).optional(),
+      /** Server-owned instant from which elapsed story time is projected. */
+      systemAnchorUtc: UtcDateTimeSchema.optional(),
+      knowledgeCutoff: z.string().trim().min(1).max(240).optional(),
+    })
+    .strict(),
+]);
+export type CharacterTemporalFrame = z.infer<
+  typeof CharacterTemporalFrameSchema
+>;
+
+export const CharacterAppearanceSchema = z
+  .object({
+    summary: z.string().trim().min(1).max(2_000),
+    distinctiveFeatures: z.array(z.string().trim().min(1).max(240)).max(20),
+    presentationNotes: z.array(z.string().trim().min(1).max(240)).max(20),
+  })
+  .strict();
+export type CharacterAppearance = z.infer<typeof CharacterAppearanceSchema>;
+
 export const CharacterIdentitySchema = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -129,9 +214,24 @@ export const CharacterIdentitySchema = z
     worldSetting: z.string().trim().min(1).max(4_000),
     selfDescription: z.string().trim().min(1).max(2_000),
     timezone: IanaTimezoneSchema,
+    temporalFrame: CharacterTemporalFrameSchema.optional(),
+    appearance: CharacterAppearanceSchema.optional(),
   })
   .strict();
 export type CharacterIdentity = z.infer<typeof CharacterIdentitySchema>;
+
+export const BiographyEntrySchema = z
+  .object({
+    id: EntityIdSchema,
+    period: z.string().trim().min(1).max(240),
+    event: z.string().trim().min(1).max(1_000),
+    lastingImpact: z.string().trim().min(1).max(1_000).optional(),
+    importance: UnitIntervalSchema,
+    origin: FieldOriginSchema,
+    sourceRefs: SourceRefsSchema,
+  })
+  .strict();
+export type BiographyEntry = z.infer<typeof BiographyEntrySchema>;
 
 export const CharacterPersonaSchema = z
   .object({
@@ -141,9 +241,23 @@ export const CharacterPersonaSchema = z
     goals: z.array(CharacterGoalSchema).min(1).max(20),
     preferences: z.array(PreferenceRuleSchema).max(40),
     boundaries: z.array(BoundaryRuleSchema).max(30),
+    biography: z.array(BiographyEntrySchema).max(40).optional(),
   })
   .strict();
 export type CharacterPersona = z.infer<typeof CharacterPersonaSchema>;
+
+export const DialogueRuleSchema = z
+  .object({
+    id: EntityIdSchema,
+    kind: z.enum(["language", "format", "register", "length", "avoidance"]),
+    instruction: z.string().trim().min(1).max(1_000),
+    enforcement: z.enum(["hard", "soft"]),
+    conditions: z.array(z.string().trim().min(1).max(240)).max(20),
+    origin: FieldOriginSchema,
+    sourceRefs: SourceRefsSchema,
+  })
+  .strict();
+export type DialogueRule = z.infer<typeof DialogueRuleSchema>;
 
 export const DialogueStyleSchema = z
   .object({
@@ -160,9 +274,34 @@ export const DialogueStyleSchema = z
     greetingPatterns: z.array(z.string().trim().min(1).max(500)).max(20),
     refusalPatterns: z.array(z.string().trim().min(1).max(500)).max(20),
     comfortingPatterns: z.array(z.string().trim().min(1).max(500)).max(20),
+    /** Author wording is kept verbatim; numeric style fields are its projection. */
+    authorGuidance: z.string().trim().min(1).max(2_000).optional(),
+    understoodLanguages: z
+      .array(z.string().trim().min(1).max(80))
+      .max(20)
+      .optional(),
+    spokenLanguages: z
+      .array(z.string().trim().min(1).max(80))
+      .max(20)
+      .optional(),
+    rules: z.array(DialogueRuleSchema).max(30).optional(),
   })
   .strict();
 export type DialogueStyle = z.infer<typeof DialogueStyleSchema>;
+
+export const RelationshipBehaviorModeSchema = z
+  .object({
+    id: EntityIdSchema,
+    conditions: z.array(z.string().trim().min(1).max(240)).min(1).max(20),
+    behavior: z.string().trim().min(1).max(1_000),
+    disclosurePattern: z.string().trim().min(1).max(1_000).optional(),
+    origin: FieldOriginSchema,
+    sourceRefs: SourceRefsSchema,
+  })
+  .strict();
+export type RelationshipBehaviorMode = z.infer<
+  typeof RelationshipBehaviorModeSchema
+>;
 
 export const InitialUserRelationshipSchema = z
   .object({
@@ -171,6 +310,12 @@ export const InitialUserRelationshipSchema = z
     initialTrust: UnitIntervalSchema,
     addressTerms: z.array(z.string().trim().min(1).max(80)).max(20),
     sharedContext: z.string().trim().max(2_000),
+    behaviorModes: z.array(RelationshipBehaviorModeSchema).max(20).optional(),
+    tensions: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
+    affectionPatterns: z
+      .array(z.string().trim().min(1).max(500))
+      .max(20)
+      .optional(),
   })
   .strict();
 export type InitialUserRelationship = z.infer<
@@ -280,6 +425,9 @@ export const CharacterSpecSchema = z
       spec.persona.goals,
       spec.persona.preferences,
       spec.persona.boundaries,
+      spec.persona.biography ?? [],
+      spec.dialogue.rules ?? [],
+      spec.userRelationship.behaviorModes ?? [],
       spec.routines,
     ];
     for (const group of ruleGroups) {
@@ -291,6 +439,17 @@ export const CharacterSpecSchema = z
           });
         }
         ruleIds.add(rule.id);
+      }
+    }
+    for (const goal of spec.persona.goals) {
+      for (const milestone of goal.milestones ?? []) {
+        if (ruleIds.has(milestone.id)) {
+          context.addIssue({
+            code: "custom",
+            message: `Duplicate rule id: ${milestone.id}`,
+          });
+        }
+        ruleIds.add(milestone.id);
       }
     }
   });
@@ -306,6 +465,9 @@ export const OriginalCharacterInputSchema = z
     mainGoal: z.string().trim().min(1).max(160),
     initialRelationship: z.string().trim().min(1).max(120),
     dialogueStyle: z.string().trim().min(1).max(500),
+    characterBrief: z.string().trim().min(1).max(20_000).optional(),
+    storyEra: z.string().trim().min(1).max(240).optional(),
+    storyAnchorYear: z.number().int().min(1000).max(9999).optional(),
     tier: SimulationTierSchema,
     timezone: IanaTimezoneSchema.default("UTC"),
   })

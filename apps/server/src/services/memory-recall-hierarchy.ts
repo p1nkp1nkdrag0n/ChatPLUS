@@ -264,6 +264,44 @@ export function inspectContinuityRecall(
   }
   if (
     input.requireDurableEvidence === true &&
+    isRelationshipBoundaryIntent(query.query)
+  ) {
+    const boundarySelection = prepareRelationshipBoundaryRecall({
+      store,
+      input,
+      query: withoutTimeRange(effectiveQuery),
+      candidateLimit,
+      maxEvidence,
+      candidates: basicCandidates,
+    });
+    if (boundarySelection !== undefined) {
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: boundarySelection.prepared,
+        result: boundarySelection.result,
+        finalTier: "basic_memory",
+        tierByMemoryId: tierMap(boundarySelection.candidates),
+        temporalResolution: temporal.resolution,
+      });
+    }
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: basicPrepared,
+      result: abstainResult(
+        "relationship_boundary_evidence_not_found",
+        basicResult.score,
+      ),
+      finalTier: "none",
+      tierByMemoryId: tierMap(basicCandidates),
+      temporalResolution: temporal.resolution,
+    });
+  }
+  if (
+    input.requireDurableEvidence === true &&
     (isConflictRepairIntent(query.query) ||
       isRelationshipHistoryIntent(query.query))
   ) {
@@ -1512,7 +1550,12 @@ function prepareRelationshipConflictRepairRecall(input: {
     | undefined;
   for (const conflict of conflicts) {
     for (const repair of repairs) {
-      if (conflict.memory.id === repair.memory.id) continue;
+      if (
+        conflict.memory.id === repair.memory.id ||
+        !relationshipCandidatesShareEpisode(conflict, repair)
+      ) {
+        continue;
+      }
       const candidates = [conflict, repair];
       const prepared = prepareCandidates(
         input.store,
@@ -1554,9 +1597,66 @@ function prepareRelationshipConflictRepairRecall(input: {
   };
 }
 
+function prepareRelationshipBoundaryRecall(input: {
+  store: DatabaseStore;
+  input: AgentMemoryRecallInput;
+  query: MemoryRecallQuery;
+  candidateLimit: number;
+  maxEvidence: number;
+  candidates: readonly HierarchyCandidate[];
+}): PreparedTierSelection | undefined {
+  const candidates = input.candidates.filter(
+    (candidate) =>
+      candidate.memory.status === "active" &&
+      candidate.memory.supersededById === undefined &&
+      candidate.memory.mergedIntoId === undefined &&
+      isRelationshipBoundaryCandidate(candidate) &&
+      hasUserMessageEvidence(input.store, input.input.agentId, candidate),
+  );
+  if (candidates.length === 0) return undefined;
+  // The intent and the typed boundary tag establish semantic scope. Lowering
+  // only this bounded selection avoids weakening unknown-fact abstention for
+  // unrelated durable-memory queries.
+  const threshold = input.query.minimumScore ?? 0.3;
+  const prepared = prepareCandidates(
+    input.store,
+    input.input.agentId,
+    input.query,
+    input.candidateLimit,
+    input.maxEvidence,
+    threshold,
+    candidates,
+  );
+  const result = evaluateTier(prepared, input.input.nowUtc, "basic_memory");
+  if (result.abstained) return undefined;
+  return { prepared, result, candidates };
+}
+
+function isRelationshipBoundaryCandidate(
+  candidate: HierarchyCandidate,
+): boolean {
+  const tags = normalizedMemoryTags(candidate);
+  if (
+    tags.has("relationshipboundary") ||
+    tags.has("stoptopic") ||
+    tags.has("boundary")
+  ) {
+    return true;
+  }
+  const text = candidate.memory.content.normalize("NFKC");
+  return /(?:关系边界|停止讨论|说停时先停止|不想继续.{0,8}话题)/u.test(text);
+}
+
 function isRelationshipConflictCandidate(
   candidate: HierarchyCandidate,
 ): boolean {
+  const tags = normalizedMemoryTags(candidate);
+  if (
+    tags.has("relationshipconflict") ||
+    (tags.has("relationshipevent") && tags.has("conflict"))
+  ) {
+    return !isRelationshipRepairCandidate(candidate);
+  }
   const text = [candidate.memory.content, ...candidate.memory.tags].join(" ");
   const describesConflict =
     /(?:关系分歧|冲突|不舒服|误解|越界)|\b(?:conflict|rupture|overclaim)\b/iu.test(
@@ -1566,10 +1666,63 @@ function isRelationshipConflictCandidate(
 }
 
 function isRelationshipRepairCandidate(candidate: HierarchyCandidate): boolean {
+  const tags = normalizedMemoryTags(candidate);
+  if (
+    tags.has("relationshiprepair") ||
+    (tags.has("relationshipevent") && tags.has("repair"))
+  ) {
+    return true;
+  }
   const text = [candidate.memory.content, ...candidate.memory.tags].join(" ");
   return /(?:关系修复|道歉|说清责任|尊重边界|和好)|\b(?:repair|apology|reconcile)\b/iu.test(
     text,
   );
+}
+
+function normalizedMemoryTags(candidate: HierarchyCandidate): Set<string> {
+  return new Set(
+    candidate.memory.tags.map((tag) =>
+      tag
+        .normalize("NFKC")
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ""),
+    ),
+  );
+}
+
+function relationshipCandidatesShareEpisode(
+  left: HierarchyCandidate,
+  right: HierarchyCandidate,
+): boolean {
+  const leftEpisodes = relationshipEpisodeKeys(left);
+  const rightEpisodes = relationshipEpisodeKeys(right);
+  // Legacy records had no episode key. Retain their prior pairing behavior,
+  // while never joining two differently typed episodes.
+  if (leftEpisodes.size === 0 || rightEpisodes.size === 0) return true;
+  return [...leftEpisodes].some((episode) => rightEpisodes.has(episode));
+}
+
+function relationshipEpisodeKeys(candidate: HierarchyCandidate): Set<string> {
+  const episodes = new Set<string>();
+  for (const tag of candidate.memory.tags) {
+    const normalized = tag
+      .normalize("NFKC")
+      .replace(/\s+/gu, " ")
+      .trim()
+      .toLocaleLowerCase();
+    const episode = normalized.match(/^episode(?:[:\s]+)(.+)$/u)?.[1];
+    if (episode !== undefined) {
+      episodes.add(episode.replace(/[^\p{L}\p{N}]+/gu, ""));
+    }
+  }
+  const claimKey = candidate.memory.claim?.subjectKey
+    .normalize("NFKC")
+    .toLocaleLowerCase();
+  const claimEpisode = claimKey?.match(/^relationship:episode:([^:]+)/u)?.[1];
+  if (claimEpisode !== undefined) {
+    episodes.add(claimEpisode.replace(/[^\p{L}\p{N}]+/gu, ""));
+  }
+  return episodes;
 }
 
 function isGroundedSharedRelationshipCandidate(
@@ -1623,6 +1776,18 @@ function hasUserMessageEvidence(
 function isRelationshipHistoryIntent(query: string): boolean {
   const normalized = query.normalize("NFKC").replace(/\s+/gu, " ").trim();
   return /(?:关系).{0,16}(?:积累|经历)|具体经历/u.test(normalized);
+}
+
+function isRelationshipBoundaryIntent(query: string): boolean {
+  const normalized = query.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  return (
+    /(?:要求|说过|提过|定过).{0,16}(?:停止|停下|不再|别再|不想继续).{0,16}(?:哪个|什么|哪一).{0,8}(?:话题|事情)/u.test(
+      normalized,
+    ) ||
+    /(?:停止|停下|不再|别再|不想继续).{0,16}(?:哪个|什么|哪一).{0,8}(?:话题|事情)/u.test(
+      normalized,
+    )
+  );
 }
 
 function isConflictRepairIntent(query: string): boolean {

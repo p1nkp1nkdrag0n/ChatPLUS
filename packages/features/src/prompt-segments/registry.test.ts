@@ -146,8 +146,11 @@ describe("PromptSegmentRegistry", () => {
         }),
       ]);
 
-    const truncated = createRegistry().render({}, { maxInputTokens: 8 });
+    const truncated = createRegistry().render({}, { maxInputTokens: 13 });
     expect(truncated.prompt).toContain("STRUCTURED_JSON");
+    expect(() => {
+      JSON.parse(truncated.prompt.split("STRUCTURED_JSON\n")[1]!);
+    }).not.toThrow();
     expect(
       truncated.trace.segments.find((item) => item.id === "02_structured"),
     ).toMatchObject({ included: true, truncated: true });
@@ -178,6 +181,31 @@ describe("PromptSegmentRegistry", () => {
       estimatedTokens: 10,
       truncated: true,
     });
+  });
+
+  it("compacts labeled JSON structurally instead of slicing it mid-token", () => {
+    const registry = new PromptSegmentRegistry<TestContext>([
+      segment({
+        id: "01_structured",
+        content: `CORE_PERSONA_JSON\n${JSON.stringify({
+          traits: Array.from({ length: 10 }, (_, index) => ({
+            name: `trait-${index}`,
+            description: "x".repeat(1_000),
+          })),
+          dialogue: { hardRule: "each reply includes a translation" },
+          relationship: { privateBehavior: "more open in private" },
+        })}`,
+        tokenBudget: 180,
+        required: true,
+      }),
+    ]);
+
+    const result = registry.render({});
+    const serialized = result.prompt.split("CORE_PERSONA_JSON\n")[1]!;
+    const parsed = JSON.parse(serialized) as Record<string, unknown>;
+    expect(parsed).toHaveProperty("dialogue");
+    expect(parsed).toHaveProperty("relationship");
+    expect(result.trace.segments[0]).toMatchObject({ truncated: true });
   });
 
   it("drops an atomic optional segment when its own token budget is exceeded", () => {

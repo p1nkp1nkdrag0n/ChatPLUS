@@ -121,11 +121,205 @@ describe("assembleChatPrompt registry integration", () => {
     ]);
   });
 
+  it("projects long character rules as structured behavior instead of truncated JSON strings", () => {
+    const input = baseInput();
+    const result = assembleChatPrompt({
+      ...input,
+      character: {
+        ...input.character,
+        persona: {
+          ...input.character.persona,
+          traits: [
+            {
+              id: "trait-observant",
+              name: "克制而敏锐",
+              description:
+                "她会先观察对方真正担心的部分，再决定是否追问；公开场合通常维持从容，私下才允许自己承认不安。".repeat(
+                  3,
+                ),
+              strength: 0.86,
+              triggers: ["公开场合", "对方显得不安", "需要作出取舍"],
+              exceptions: ["亲近的人明确希望她直接表达时"],
+            },
+          ],
+          biography: [
+            {
+              period: "战争结束后",
+              event: "回到故乡参与档案重建",
+              lastingImpact: "重视可核实的事实，也很少夸耀自己的经历",
+              importance: 0.9,
+            },
+          ],
+        },
+        dialogue: {
+          ...input.character.dialogue,
+          authorGuidance: "通常使用俄语，每个消息单元后附一行中文翻译。",
+          rules: [
+            {
+              kind: "format",
+              instruction: "每段俄语后紧跟中文翻译",
+              enforcement: "hard",
+              conditions: ["普通对话"],
+            },
+          ],
+        },
+        userRelationship: {
+          relationshipType: "共同生活两年的师生",
+          initialCloseness: 0.58,
+          initialTrust: 0.7,
+          behaviorModes: [
+            {
+              conditions: ["公开场合"],
+              behavior: "保持普通同事与师生距离",
+            },
+            {
+              conditions: ["私下独处"],
+              behavior: "放松部分防备，以行动表达关心",
+            },
+          ],
+        },
+      },
+    });
+
+    const core = promptSegmentJson(result.system, "CORE_PERSONA_JSON") as {
+      traits: unknown[];
+      biography: unknown[];
+      dialogue: { rules: unknown[] };
+      relationshipModel: { behaviorModes: unknown[] };
+    };
+    expect(typeof core.traits[0]).toBe("object");
+    expect(core.traits[0]).toMatchObject({
+      name: "克制而敏锐",
+      triggers: ["公开场合", "对方显得不安", "需要作出取舍"],
+      exceptions: ["亲近的人明确希望她直接表达时"],
+    });
+    expect(core.biography[0]).toMatchObject({
+      lastingImpact: "重视可核实的事实，也很少夸耀自己的经历",
+    });
+    expect(core.dialogue.rules[0]).toMatchObject({
+      kind: "format",
+      enforcement: "hard",
+    });
+    expect(core.relationshipModel.behaviorModes).toHaveLength(2);
+    expect(result.system).toContain(
+      "Express traits through what the character notices",
+    );
+  });
+
+  it("keeps language and relationship rules in valid JSON for a maximum-rich persona", () => {
+    const input = baseInput();
+    const long = "具体情境中的可观察选择与例外。".repeat(80);
+    const result = assembleChatPrompt({
+      ...input,
+      maxInputTokens: 24_000,
+      character: {
+        ...input.character,
+        persona: {
+          ...input.character.persona,
+          traits: Array.from({ length: 10 }, (_, index) => ({
+            id: `trait-${index}`,
+            name: `性格-${index}`,
+            description: long,
+            strength: 0.8,
+            triggers: Array.from({ length: 8 }, () => long),
+            exceptions: Array.from({ length: 8 }, () => long),
+          })),
+          biography: Array.from({ length: 8 }, (_, index) => ({
+            id: `bio-${index}`,
+            period: `时期-${index}`,
+            event: long,
+            lastingImpact: long,
+            importance: 0.8,
+          })),
+        },
+        dialogue: {
+          ...input.character.dialogue,
+          authorGuidance: "俄语正文之后必须另起一行给出中文翻译。",
+          rules: [
+            {
+              kind: "format",
+              instruction: "每个俄语消息单元后必须紧跟中文翻译。",
+              enforcement: "hard",
+              conditions: ["所有普通对话"],
+            },
+          ],
+        },
+        userRelationship: {
+          relationshipType: "长期相处的师生",
+          initialCloseness: 0.6,
+          initialTrust: 0.7,
+          behaviorModes: [
+            { conditions: ["公开场合"], behavior: "维持克制的师生距离" },
+            { conditions: ["私下独处"], behavior: "允许更柔软的表达" },
+          ],
+        },
+      },
+    });
+
+    const core = promptSegmentJson(result.system, "CORE_PERSONA_JSON") as {
+      dialogue: { rules: unknown[] };
+      relationshipModel: { behaviorModes: unknown[] };
+    };
+    expect(core.dialogue.rules).toHaveLength(1);
+    expect(core.relationshipModel.behaviorModes).toHaveLength(2);
+    expect(result.system).not.toContain('"_truncated":true');
+  });
+
+  it("uses an anchored story clock as current time without leaking the host year", () => {
+    const input = baseInput();
+    const result = assembleChatPrompt({
+      ...input,
+      character: {
+        ...input.character,
+        identity: {
+          ...input.character.identity,
+          worldSetting: "1951 年的苏联明斯克",
+          temporalFrame: {
+            mode: "anchored_story",
+            eraLabel: "1951 年战后明斯克",
+            storyAnchorLocalDate: "1951-09-01",
+            systemAnchorUtc: NOW,
+            knowledgeCutoff: "1951-09-01",
+          },
+        },
+      },
+      nowUtc: "2026-08-23T12:00:00.000Z",
+    });
+
+    const currentTime = promptSegmentJson(result.prompt, "CURRENT_TIME_JSON");
+    expect(JSON.stringify(currentTime)).toContain("1951-09-03");
+    expect(JSON.stringify(currentTime)).not.toContain("2026");
+    expect(result.system + result.prompt).not.toContain("2026");
+    expect(result.prompt).toContain("CharacterLocal");
+  });
+
   it("uses fuzzy life context and permits decisive delegated guidance without exact schedule context", () => {
     const input = baseInput();
     const result = assembleChatPrompt({
       ...input,
       lifePlanningMode: "fuzzy",
+      character: {
+        ...input.character,
+        routines: [
+          {
+            id: "legacy-routine",
+            title: "精确晨间安排",
+            preferredStartLocal: "07:30",
+            preferredDurationMinutes: 30,
+            rigidity: "committed",
+          },
+        ],
+        schedulePolicy: {
+          enabled: false,
+          horizonHours: 72,
+          sleepWindow: { startLocal: "23:00", endLocal: "07:00" },
+          maxCommittedHoursPerDay: 12,
+        },
+        proactivePolicy: {
+          enabled: false,
+          quietHours: { startLocal: "23:00", endLocal: "08:00" },
+        },
+      },
       userMessage: "我要不要辞职？你直接替我做最后决定。",
       lifeContext: {
         today: {
@@ -173,8 +367,25 @@ describe("assembleChatPrompt registry integration", () => {
     expect(result.prompt).toContain("梳理职业方向");
     expect(result.prompt).not.toContain("CURRENT_ACTIVITY_JSON\n");
     expect(result.prompt).not.toContain("FUTURE_SCHEDULE_JSON\n");
+    const corePersona = promptSegmentJson(
+      result.system,
+      "CORE_PERSONA_JSON",
+    ) as Record<string, unknown>;
+    expect(corePersona).not.toHaveProperty("routines");
+    expect(corePersona).not.toHaveProperty("schedulePolicy");
+    expect(corePersona).not.toHaveProperty("proactivePolicy");
+    expect(result.system).not.toContain("preferredStartLocal");
+    expect(result.system).not.toContain("preferredDurationMinutes");
+    expect(result.system).not.toContain("sleepWindow");
+    expect(result.system).not.toContain("quietHours");
     expect(result.system).toContain("choose one concrete direction");
     expect(result.system).toContain("我的决定：<direction>");
+    expect(result.system).toContain(
+      "subject=character means the character owns that dilemma",
+    );
+    expect(result.system).toContain(
+      "Acknowledge emotion without rewriting canonical causality",
+    );
     expect(result.system).toContain(
       "direct recommendations and explicitly delegated decisions are allowed",
     );

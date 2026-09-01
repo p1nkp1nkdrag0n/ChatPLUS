@@ -46,6 +46,10 @@ import type {
   ScheduleService,
 } from "./schedule-service.js";
 import {
+  causalReplyFallback,
+  inspectCausalReply,
+} from "./causal-reply-guard.js";
+import {
   buildScheduleNegotiationContract,
   type ActiveScheduleNegotiation,
 } from "./schedule-negotiation-service.js";
@@ -128,6 +132,7 @@ export class TurnDecisionService {
     replyStrategy: ReplyStrategy;
     schedule: ScheduleItem[];
     effects: TurnDecisionEffectContext;
+    causalContext?: unknown;
   }): Promise<ResolvedTurn> {
     if (this.llm.providerName === "fixture") {
       const rawFixture = fixtureDecision(
@@ -153,8 +158,10 @@ export class TurnDecisionService {
     decision: AgentTurnDecision;
     nowUtc: string;
     capabilities: SimulationCapabilities;
+    userText?: string;
+    causalContext?: unknown;
   }): DecisionInspection {
-    return inspectDecision(
+    const inspection = inspectDecision(
       this.schedules,
       input.agentId,
       input.spec,
@@ -162,6 +169,20 @@ export class TurnDecisionService {
       input.nowUtc,
       input.capabilities,
     );
+    if (input.userText === undefined) return inspection;
+    return {
+      ...inspection,
+      issues: [
+        ...inspection.issues,
+        ...inspectCausalReply({
+          userText: input.userText,
+          replyText: input.decision.reply.text,
+          ...(input.causalContext === undefined
+            ? {}
+            : { causalContext: input.causalContext }),
+        }),
+      ],
+    };
   }
 
   materializeReply(
@@ -193,6 +214,7 @@ export class TurnDecisionService {
     prompt: string;
     fixture: AgentTurnDecision;
     effects: TurnDecisionEffectContext;
+    causalContext?: unknown;
   }): Promise<ResolvedTurn> {
     let decision: AgentTurnDecision | undefined;
     let providerEnvelope: PersonaTurnProviderEnvelope | undefined;
@@ -250,6 +272,10 @@ export class TurnDecisionService {
           decision,
           nowUtc: input.nowUtc,
           capabilities: input.capabilities,
+          userText: input.userText,
+          ...(input.causalContext === undefined
+            ? {}
+            : { causalContext: input.causalContext }),
         })
       : undefined;
     let repairAttempted = false;
@@ -273,11 +299,20 @@ export class TurnDecisionService {
         decision,
         nowUtc: input.nowUtc,
         capabilities: input.capabilities,
+        userText: input.userText,
+        ...(input.causalContext === undefined
+          ? {}
+          : { causalContext: input.causalContext }),
       });
     }
     if (inspection.issues.length > 0) {
       decision = attachValidatedWorldEffects(
-        withoutWorldEffects(safeScheduleDecision(input.spec)),
+        withCausalReplyFallback(
+          withoutWorldEffects(safeScheduleDecision(input.spec)),
+          input.userText,
+          input.causalContext,
+          decision.reply.text,
+        ),
         validatedWorldEffects,
       );
       usedFallback = true;
@@ -287,6 +322,10 @@ export class TurnDecisionService {
         decision,
         nowUtc: input.nowUtc,
         capabilities: input.capabilities,
+        userText: input.userText,
+        ...(input.causalContext === undefined
+          ? {}
+          : { causalContext: input.causalContext }),
       });
     }
     const scheduleAction = fixtureScheduleNegotiationAction(input);
@@ -335,6 +374,7 @@ export class TurnDecisionService {
     replyStrategy: ReplyStrategy;
     schedule: ScheduleItem[];
     effects: TurnDecisionEffectContext;
+    causalContext?: unknown;
   }): Promise<ResolvedTurn> {
     let decisionResponse: PersonaChatDecision | undefined;
     let envelopeResponse: PersonaTurnProviderEnvelope | undefined;
@@ -467,6 +507,10 @@ export class TurnDecisionService {
           decision,
           nowUtc: input.nowUtc,
           capabilities: input.capabilities,
+          userText: input.userText,
+          ...(input.causalContext === undefined
+            ? {}
+            : { causalContext: input.causalContext }),
         });
     if (inspection && input.effects.negotiationEnforced) {
       inspection.issues = inspection.issues.filter(
@@ -503,6 +547,10 @@ export class TurnDecisionService {
           decision,
           nowUtc: input.nowUtc,
           capabilities: input.capabilities,
+          userText: input.userText,
+          ...(input.causalContext === undefined
+            ? {}
+            : { causalContext: input.causalContext }),
         });
         if (input.effects.negotiationEnforced) {
           inspection.issues = inspection.issues.filter(
@@ -513,7 +561,12 @@ export class TurnDecisionService {
     }
     if (!inspection || inspection.issues.length > 0) {
       decision = attachValidatedWorldEffects(
-        safePersonaDecision(input.spec),
+        withCausalReplyFallback(
+          safePersonaDecision(input.spec),
+          input.userText,
+          input.causalContext,
+          decision.reply.text,
+        ),
         validatedWorldEffects,
       );
       usedFallback = true;
@@ -523,6 +576,10 @@ export class TurnDecisionService {
         decision,
         nowUtc: input.nowUtc,
         capabilities: input.capabilities,
+        userText: input.userText,
+        ...(input.causalContext === undefined
+          ? {}
+          : { causalContext: input.causalContext }),
       });
     }
     return {
@@ -1011,10 +1068,8 @@ function fixtureDecision(
   }
 
   const explicitFacts = deriveServerOwnedUserMemoryCandidates(text, nowUtc);
-  const reviewedContinuityMemories = fixtureReviewedContinuityMemoryCandidates(
-    text,
-    nowUtc,
-  );
+  const reviewedContinuityMemories =
+    deriveServerOwnedContinuityMemoryCandidates(text, nowUtc);
   const personalIntentCandidates = fixturePersonalIntentCandidates(text);
   const reviewedSemanticReply = fixtureReviewedSemanticReply(text);
   const replyText =
@@ -1127,32 +1182,49 @@ export function fixtureReviewedSemanticReply(text: string): string | undefined {
 }
 
 /**
- * The Fixture cannot rely on a model to propose relationship memories. These
- * reviewed candidates are narrow projections of explicit user-authored
- * conflict, boundary and repair statements, so cross-session probes exercise
- * the same durable evidence path used by real provider proposals.
+ * Narrow server-owned projections of explicit user-authored relationship
+ * evidence. They deliberately use typed tags and stable claim/episode keys so
+ * retrieval does not have to infer conflict, boundary, repair, or causal
+ * correction solely from model-written prose. The persistence layer invokes
+ * this extractor for every provider; the Fixture uses the same function so it
+ * cannot mask a real-provider continuity gap.
  */
-export function fixtureReviewedContinuityMemoryCandidates(
+export function deriveServerOwnedContinuityMemoryCandidates(
   text: string,
   nowUtc: string,
-): AgentTurnDecision["memoryCandidates"] {
+): MemoryCandidate[] {
   const normalized = text.normalize("NFKC").replace(/\s+/gu, " ").trim();
   const match = reviewedContinuityMemory(normalized);
   if (match === undefined) return [];
   return [
     MemoryCandidateSchema.parse({
-      kind: "semantic",
+      kind: "relationship",
       content: match.content,
-      tags: match.tags,
+      tags: [
+        ...match.tags,
+        "relationship_event",
+        `relationship_${match.eventType}`,
+        `episode:${match.episodeKey}`,
+        `subject:${match.subject}`,
+        "actor:user",
+      ],
       importance: 0.9,
       confidence: 1,
       sourceMessageIds: [],
       sourceActivityEventIds: [],
       origin: "runtime_simulation",
-      namespace: "user_model",
+      namespace: "shared_relationship",
       certainty: "explicit",
-      attribution: "user_explicit",
-      stability: "stable",
+      attribution: "mixed",
+      stability: match.stability,
+      claim: {
+        subjectKey: match.claimSubjectKey,
+        disposition: "affirmed",
+        recordedAtUtc: nowUtc,
+        ...(match.correction
+          ? { revisionIntent: "explicit_correction" as const }
+          : {}),
+      },
       occurredAtUtc: nowUtc,
       temporalMetadata: {
         occurredStartAtUtc: nowUtc,
@@ -1162,27 +1234,51 @@ export function fixtureReviewedContinuityMemoryCandidates(
       },
       shouldWrite: true,
       forbiddenOverclaims: [],
-      reasonCode: "fixture_reviewed_relationship_memory",
+      reasonCode: "server_owned_relationship_evidence",
       reasonSummary:
-        "Reviewed Fixture boundary or relationship repair fact from explicit user evidence.",
+        "Server-owned relationship evidence derived from a narrow explicit user statement.",
     }),
   ];
 }
 
-function reviewedContinuityMemory(
-  text: string,
-): { content: string; tags: string[] } | undefined {
+/** @deprecated Use deriveServerOwnedContinuityMemoryCandidates. */
+export const fixtureReviewedContinuityMemoryCandidates =
+  deriveServerOwnedContinuityMemoryCandidates;
+
+function reviewedContinuityMemory(text: string):
+  | {
+      content: string;
+      tags: string[];
+      eventType: "conflict" | "boundary" | "repair" | "causal_correction";
+      episodeKey: string;
+      subject: "user" | "shared";
+      claimSubjectKey: string;
+      stability: "stable" | "situational";
+      correction?: boolean;
+    }
+  | undefined {
   if (/把我们的选择说得太像.*完全理解我/u.test(text)) {
     return {
       content:
         "关系分歧：用户因角色把双方的选择说得太像、仿佛已经完全理解用户而感到不舒服。",
       tags: ["relationship", "conflict", "overclaim", "choice"],
+      eventType: "conflict",
+      episodeKey: "work_choice_responsibility",
+      subject: "shared",
+      claimSubjectKey:
+        "relationship:episode:work_choice_responsibility:conflict",
+      stability: "situational",
     };
   }
   if (/停止讨论工作选择/u.test(text)) {
     return {
       content: "用户明确要求停止讨论工作选择。",
-      tags: ["relationship", "boundary", "stop", "工作选择"],
+      tags: ["relationship", "boundary", "stop", "stop_topic", "工作选择"],
+      eventType: "boundary",
+      episodeKey: "work_choice_responsibility",
+      subject: "user",
+      claimSubjectKey: "relationship:boundary:topic:work_choice",
+      stability: "stable",
     };
   }
   if (/如果我说停.*关系好.*聊到底/u.test(text)) {
@@ -1190,6 +1286,11 @@ function reviewedContinuityMemory(
       content:
         "用户的关系边界是：用户说停时先停止，关系亲近不代表每次都要把话题聊到底。",
       tags: ["relationship", "boundary", "stop", "topic"],
+      eventType: "boundary",
+      episodeKey: "work_choice_responsibility",
+      subject: "user",
+      claimSubjectKey: "relationship:boundary:stop_means_stop",
+      stability: "stable",
     };
   }
   if (/实际情况是我明确授权你选择.*我自己执行/u.test(text)) {
@@ -1197,6 +1298,13 @@ function reviewedContinuityMemory(
       content:
         "责任更正：用户曾明确授权角色作选择，之后由用户自己执行行动；这不是角色强迫用户辞职。",
       tags: ["relationship", "correction", "responsibility", "decision"],
+      eventType: "causal_correction",
+      episodeKey: "work_choice_responsibility",
+      subject: "shared",
+      claimSubjectKey:
+        "relationship:causality:work_choice:decision_and_action_ownership",
+      stability: "stable",
+      correction: true,
     };
   }
   if (/逼我辞职.*希望你以后更谨慎地区分影响.*建议.*强迫/u.test(text)) {
@@ -1204,6 +1312,12 @@ function reviewedContinuityMemory(
       content:
         "关系修复：用户为‘逼我辞职’的说法道歉，并希望角色以后谨慎区分影响、建议和强迫。",
       tags: ["relationship", "repair", "responsibility", "apology"],
+      eventType: "repair",
+      episodeKey: "work_choice_responsibility",
+      subject: "shared",
+      claimSubjectKey:
+        "relationship:episode:work_choice_responsibility:repair_apology",
+      stability: "stable",
     };
   }
   if (/修复不是假装没发生.*准确地说清责任/u.test(text)) {
@@ -1211,6 +1325,12 @@ function reviewedContinuityMemory(
       content:
         "关系修复原则：用户愿意重新谈此前分歧；修复不是假装没发生，而是下次准确说清责任。",
       tags: ["relationship", "repair", "conflict", "responsibility"],
+      eventType: "repair",
+      episodeKey: "work_choice_responsibility",
+      subject: "shared",
+      claimSubjectKey:
+        "relationship:episode:work_choice_responsibility:repair_principle",
+      stability: "stable",
     };
   }
   return undefined;
@@ -2134,6 +2254,34 @@ export function deliveryModeForDecision(
   decision: AgentTurnDecision,
 ): "single_block" | "sequential" {
   return decision.reply.chunks.length > 1 ? "sequential" : "single_block";
+}
+
+function withCausalReplyFallback(
+  decision: AgentTurnDecision,
+  userText: string,
+  causalContext: unknown,
+  rejectedReplyText = decision.reply.text,
+): AgentTurnDecision {
+  const fallbackText = causalReplyFallback(
+    inspectCausalReply({
+      userText,
+      replyText: rejectedReplyText,
+      ...(causalContext === undefined ? {} : { causalContext }),
+    }),
+  );
+  if (fallbackText === undefined) return decision;
+  return {
+    ...decision,
+    reply: {
+      ...decision.reply,
+      text: fallbackText,
+      chunks: [fallbackText],
+      toneTags: ["自然", "明确", "尊重责任边界"],
+    },
+    reasonCode: "causal_reply_guard_fallback",
+    reasonSummary:
+      "模型回复在修复后仍违背服务端因果主体证据，改用保持授权、行动与决定归属的确定性回应。",
+  };
 }
 
 function safePersonaDecision(spec: CharacterSpec): AgentTurnDecision {

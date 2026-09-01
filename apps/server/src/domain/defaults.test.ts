@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { OriginalCharacterInput } from "./schemas.js";
 import {
   buildOriginalDraft,
+  buildTimeBasedGoalMilestones,
   initialRelationshipPreset,
   initialRuntimeState,
 } from "./defaults.js";
@@ -21,6 +22,55 @@ const BASE_INPUT: OriginalCharacterInput = {
 };
 
 describe("initial relationship defaults", () => {
+  it("builds deterministic time milestones while retaining legacy routine compatibility", () => {
+    const draft = buildOriginalDraft({
+      ...BASE_INPUT,
+      characterBrief: "公开场合保持克制，私下更柔软；主要通过行动表达关心。",
+    });
+
+    expect(draft.dialogue.authorGuidance).toBe("自然简洁");
+    expect(
+      draft.persona.goals[0]?.milestones?.map((item) => item.afterDays),
+    ).toEqual([0, 14, 45, 90, 180]);
+    expect(draft.persona.boundaries).toHaveLength(2);
+    expect(draft.routines.map((routine) => routine.title)).toEqual([
+      "晨间整理",
+      "早餐",
+      "主要工作",
+      "午餐与休息",
+      "晚间自习",
+      "睡眠",
+    ]);
+    expect(draft.sources[0]?.excerpt).toContain("公开场合保持克制");
+  });
+
+  it("anchors an era-only brief without pretending its operational day was authored", () => {
+    const draft = buildOriginalDraft({
+      ...BASE_INPUT,
+      worldSetting: "时代背景为1951年的苏联明斯克",
+      characterBrief: "角色在战后参与档案重建。",
+    });
+
+    expect(draft.identity.temporalFrame).toMatchObject({
+      mode: "anchored_story",
+      eraLabel: "1951 年的故事世界",
+      storyAnchorLocalDate: "1951-01-01",
+      anchorPrecision: "year",
+    });
+  });
+
+  it("uses bounded stable milestone ids for maximum-length legacy goal ids", () => {
+    const milestones = buildTimeBasedGoalMilestones(
+      "g".repeat(128),
+      "完成作品",
+    );
+
+    expect(milestones.every((milestone) => milestone.id.length <= 128)).toBe(
+      true,
+    );
+    expect(new Set(milestones.map((milestone) => milestone.id)).size).toBe(5);
+  });
+
   it("starts a new or imported-style contact at an acquaintance baseline", () => {
     const draft = buildOriginalDraft(BASE_INPUT);
     const state = initialRuntimeState(

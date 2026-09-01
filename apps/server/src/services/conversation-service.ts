@@ -279,6 +279,9 @@ export class ConversationService {
       capabilities,
       providerName: this.llm.providerName,
     });
+    const lifeContext = fuzzyLifeEnabled
+      ? this.fuzzyLife!.promptContext(input.agentId, nowUtc)
+      : undefined;
     const assembledPrompt = assembleChatPrompt({
       character: spec,
       state: toFeatureState(state),
@@ -312,11 +315,7 @@ export class ConversationService {
       ...(this.options.lifePlanningMode === undefined
         ? {}
         : { lifePlanningMode: this.options.lifePlanningMode }),
-      ...(fuzzyLifeEnabled
-        ? {
-            lifeContext: this.fuzzyLife!.promptContext(input.agentId, nowUtc),
-          }
-        : {}),
+      ...(lifeContext === undefined ? {} : { lifeContext }),
       decisionMode: effects.scheduleNegotiationEligible
         ? this.options.scheduleNegotiationMode === "shadow"
           ? "schedule_negotiation_shadow"
@@ -336,6 +335,7 @@ export class ConversationService {
       capabilities,
       system: assembledPrompt.system,
       prompt: assembledPrompt.prompt,
+      ...(lifeContext === undefined ? {} : { causalContext: lifeContext }),
       replyStrategy: assembledPrompt.replyStrategy,
       schedule,
       effects,

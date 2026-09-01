@@ -349,6 +349,7 @@ function emptySnapshot(): LongRunV3Snapshot {
     scheduleItems: [],
     tableCounts: {},
     durableSha256: "f".repeat(64),
+    auditSha256: "a".repeat(64),
   };
 }
 

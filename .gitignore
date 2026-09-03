@@ -33,3 +33,6 @@ Thumbs.db
 # Local unresolved issues and investigation notes.
 /docs/issue/
 
+# Local-only planning drafts.
+/docs/plans/ChatPLUS_书信与关系纪念物系统分阶段实施计划书_v1.0.md
+

@@ -1512,6 +1512,7 @@ async function createRealProviderTestApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "legacy",
     selfInitiatedPlanningMode: "off",
     liveWorldEffectsMode,

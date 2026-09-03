@@ -258,6 +258,7 @@ export function projectTimelineEvents(
       ...(schedule === undefined ? {} : { title: schedule.title }),
       summary: event.summary,
       occurredAtUtc: event.occurredAtUtc,
+      provenance: "life_simulation",
       ...lineage,
       ...(schedule?.correlationId === undefined
         ? {}
@@ -268,16 +269,15 @@ export function projectTimelineEvents(
     });
   });
   const canonicalDomainEvents = input.domainEvents.map((event) => {
-    const lineage = completeLineage(
-      lineageFromDomainEvent(event, indexes),
-      indexes,
-    );
+    const directLineage = lineageFromDomainEvent(event, indexes);
+    const lineage = completeLineage(directLineage, indexes);
     return ApiTimelineEventSchema.parse({
       id: event.id,
       type: event.eventType.slice(0, 80),
       title: DOMAIN_EVENT_TITLES[event.eventType] ?? event.eventType,
       summary: summarizeDomainEvent(event),
       occurredAtUtc: event.recordedAtUtc,
+      provenance: timelineProvenance(event, directLineage),
       ...lineage,
       ...(event.correlationId === null
         ? {}
@@ -447,7 +447,16 @@ function lineageFromDomainEvent(
     indexes.candidateById,
   );
   const messageId = firstExisting(
-    payloadIds(payload, ["messageId", "assistantMessageId", "userMessageId"]),
+    payloadIds(payload, [
+      "messageId",
+      "assistantMessageId",
+      "userMessageId",
+      "sourceMessageId",
+      "sourceMessageIds",
+      "latestEvidenceMessageId",
+      "authorizedByMessageId",
+      "sourceEvidenceIds",
+    ]),
     indexes.messageById,
   );
   return {
@@ -458,6 +467,24 @@ function lineageFromDomainEvent(
     ...(proactiveCandidateId === undefined ? {} : { proactiveCandidateId }),
     ...(messageId === undefined ? {} : { messageId }),
   };
+}
+
+function timelineProvenance(
+  event: ApiDomainEvent,
+  lineage: Lineage,
+): ApiTimelineEvent["provenance"] {
+  if (lineage.messageId !== undefined) return "conversation";
+  if (event.eventType.startsWith("character.")) return "character_spec";
+  if (
+    event.eventType.startsWith("life.") ||
+    event.eventType.startsWith("simulation.") ||
+    event.eventType.startsWith("schedule.") ||
+    event.eventType.startsWith("personal_intent.") ||
+    event.eventType.startsWith("self_plan.")
+  ) {
+    return "life_simulation";
+  }
+  return "system";
 }
 
 function completeLineage(seed: Lineage, indexes: ProjectionIndexes): Lineage {

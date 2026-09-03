@@ -20,8 +20,13 @@ import { DateTime } from "luxon";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
 import type { ChatMessage, ChatSession, RuntimeState } from "../api/types";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
+import { LifeContextOverview } from "../components/LifeContextOverview";
 import { StatusMeter } from "../components/StatusMeter";
 import { TierLabel } from "../components/TierLabel";
+import {
+  agentOverviewQueryKey,
+  primeAgentOverview,
+} from "../hooks/agentEventQueryKeys";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
 import { formatLocalTime } from "../lib/date";
 import {
@@ -53,7 +58,11 @@ export default function ChatPage() {
 
   const activationQuery = useQuery({
     queryKey: ["agent-activation", characterId],
-    queryFn: () => api.agents.activate(characterId!),
+    queryFn: async () => {
+      const snapshot = await api.agents.activate(characterId!);
+      primeAgentOverview(queryClient, characterId!, snapshot);
+      return snapshot;
+    },
     enabled: Boolean(characterId),
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -77,12 +86,15 @@ export default function ChatPage() {
     ? unwrapList<ChatMessage>(messagesQuery.data, "messages")
     : [];
 
-  const stateQuery = useQuery({
-    queryKey: ["agent", characterId, "state"],
-    queryFn: () => api.agents.state(characterId!),
-    enabled: Boolean(characterId),
+  const overviewQuery = useQuery({
+    queryKey: agentOverviewQueryKey(characterId!),
+    queryFn: () => api.agents.overview(characterId!),
+    enabled: Boolean(characterId && activationQuery.data),
+    staleTime: Number.POSITIVE_INFINITY,
   });
-  const state = stateQuery.data ?? activationQuery.data?.state;
+  const state = overviewQuery.data?.state ?? activationQuery.data?.state;
+  const lifeContext =
+    overviewQuery.data?.lifeContext ?? activationQuery.data?.lifeContext;
 
   const sendMutation = useMutation({
     mutationFn: (message: string) =>
@@ -117,7 +129,7 @@ export default function ChatPage() {
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["messages", characterId] }),
         queryClient.invalidateQueries({
-          queryKey: ["agent", characterId, "state"],
+          queryKey: agentOverviewQueryKey(characterId!),
         }),
       ]);
     },
@@ -325,6 +337,12 @@ export default function ChatPage() {
       {railOpen && showRail ? (
         <aside className="chat-rail">
           {state ? <StateOverview state={state} /> : null}
+          {lifeContext ? (
+            <LifeContextOverview
+              value={lifeContext}
+              timelineHref={`/characters/${character.id}/timeline`}
+            />
+          ) : null}
         </aside>
       ) : null}
     </div>
@@ -469,12 +487,51 @@ export function MessageBubble({
           <span />
         </div>
       ) : null}
+      {message.role === "assistant" && message.memoryRecall ? (
+        <MemoryContextSummary value={message.memoryRecall} />
+      ) : null}
       {proactive ? (
         <button className="message-origin-link" type="button">
           <MessageCircleMore size={14} /> 查看触发经历
         </button>
       ) : null}
     </div>
+  );
+}
+
+function MemoryContextSummary({
+  value,
+}: {
+  value: NonNullable<ChatMessage["memoryRecall"]>;
+}) {
+  const evidenceCount = value.selectedEvidenceIds.length;
+  const usedForReply = value.promptStrategy === "evidence_selected";
+  return (
+    <details className="message-memory-context">
+      <summary>
+        <BookOpen size={13} aria-hidden="true" />
+        {value.abstained
+          ? "本轮没有引用记忆"
+          : `本轮记忆依据 · ${evidenceCount} 条证据`}
+      </summary>
+      <p>
+        {value.abstained
+          ? "没有找到同时满足相关性和证据要求的记忆，因此回复没有补入未经验证的旧信息。"
+          : `${usedForReply ? "已用于回复" : "仅作对照评估"}：${memoryRecallModeLabel(value.recallMode)}，相关度 ${Math.round(value.score * 100)}%。系统只选择有来源且与当前话题最相关的记忆。`}
+      </p>
+    </details>
+  );
+}
+
+function memoryRecallModeLabel(value: string): string {
+  return (
+    {
+      event_card: "可追溯经历",
+      verbatim_quote: "对话原文",
+      date_digest: "日期摘要",
+      basic_memory: "基础记忆",
+      none: "无可用来源",
+    }[value] ?? "已验证记忆"
   );
 }
 

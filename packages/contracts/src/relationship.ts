@@ -6,6 +6,10 @@ import {
   UtcDateTimeSchema,
 } from "./primitives.js";
 
+/**
+ * Synthetic counterpart used by the explicitly single-user local Demo.
+ * This is a domain subject identifier, not an authenticated account id.
+ */
 export const LOCAL_USER_ID = "local-user" as const;
 
 export const RelationshipStateSchema = z

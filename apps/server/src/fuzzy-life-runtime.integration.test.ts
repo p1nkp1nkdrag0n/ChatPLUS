@@ -44,6 +44,7 @@ describe("fuzzy life runtime routing", () => {
 
   it("publishes and activates fuzzy life without creating exact schedule rows", async () => {
     const draft = app.personasim.characters.createDemoCharacter();
+    expect(draft.schedulePolicy.enabled).toBe(false);
     const published = await app.inject({
       method: "POST",
       url: `/api/characters/${draft.id}/publish`,
@@ -51,9 +52,11 @@ describe("fuzzy life runtime routing", () => {
 
     expect(published.statusCode).toBe(200);
     const publishedBody = published.json<{
+      character: { schedulePolicy: { enabled: boolean } };
       schedule: unknown[];
       lifeContext: { authority: string };
     }>();
+    expect(publishedBody.character.schedulePolicy.enabled).toBe(false);
     expect(publishedBody.schedule).toEqual([]);
     expect(publishedBody.lifeContext.authority).toBe(
       "server_persisted_fuzzy_life",
@@ -73,12 +76,20 @@ describe("fuzzy life runtime routing", () => {
     });
     expect(activated.statusCode).toBe(200);
     const snapshot = activated.json<{
-      capabilities: { schedule: boolean };
+      capabilities: {
+        fuzzyLife: boolean;
+        legacyExactSchedule: boolean;
+        schedule: boolean;
+      };
       schedule: unknown[];
       currentActivity?: unknown;
       lifeContext: { semantics: { characterTimePrecision: string } };
     }>();
-    expect(snapshot.capabilities.schedule).toBe(false);
+    expect(snapshot.capabilities).toMatchObject({
+      fuzzyLife: true,
+      legacyExactSchedule: false,
+      schedule: false,
+    });
     expect(snapshot.schedule).toEqual([]);
     expect(snapshot.currentActivity).toBeUndefined();
     expect(snapshot.lifeContext.semantics.characterTimePrecision).toBe(
@@ -91,6 +102,7 @@ describe("fuzzy life runtime routing", () => {
     });
     expect(schedule.statusCode).toBe(200);
     expect(schedule.json()).toMatchObject({
+      dataModel: "fuzzy_life",
       items: [],
       retired: true,
       replacement: "fuzzy_life_context",
@@ -147,6 +159,60 @@ describe("fuzzy life runtime routing", () => {
         .prepare("SELECT COUNT(*) AS count FROM daily_life_contexts")
         .get(),
     ).toEqual({ count: 1 });
+  });
+
+  it("refuses to settle migrated exact rows inside a fuzzy runtime", async () => {
+    const draft = app.personasim.characters.createDemoCharacter();
+    const publishedResponse = await app.inject({
+      method: "POST",
+      url: `/api/characters/${draft.id}/publish`,
+    });
+    expect(publishedResponse.statusCode).toBe(200);
+
+    const store = app.personasim.store;
+    const published = store.getCharacterSpec(draft.id);
+    if (published === undefined) throw new Error("Missing published character");
+    const migrated = {
+      ...published,
+      schedulePolicy: { ...published.schedulePolicy, enabled: true },
+    };
+    // Simulate data written by an older exact-schedule build. The runtime
+    // mode, rather than a stale persisted flag, must be authoritative.
+    store.replaceVersion(migrated);
+    store.updateCharacterHead(migrated);
+    store.insertScheduleItem({
+      id: "migrated-planned-schedule",
+      agentId: draft.id,
+      title: "旧版待结算安排",
+      description: "迁移前遗留的精确时间行。",
+      category: "work",
+      startAtUtc: "2026-09-01T02:00:00.000Z",
+      endAtUtc: "2026-09-01T03:00:00.000Z",
+      timezone: "Asia/Shanghai",
+      status: "planned",
+      rigidity: "committed",
+      priority: 0.8,
+      source: "initial_plan",
+      adherenceProbability: 1,
+      narrativeImportance: 0.8,
+      shareable: true,
+      stateEffects: { energy: -0.1 },
+      revision: 0,
+      createdAtUtc: START_UTC,
+      updatedAtUtc: START_UTC,
+    });
+
+    const result = await app.personasim.settlements.settle(draft.id, {
+      toUtc: "2026-09-01T04:00:00.000Z",
+    });
+
+    expect(result.alreadySettled).toBe(true);
+    expect(result.activityEvents).toEqual([]);
+    expect(result.updatedScheduleItems).toEqual([]);
+    expect(store.getScheduleItem("migrated-planned-schedule")?.status).toBe(
+      "planned",
+    );
+    expect(store.listActivityEvents(draft.id)).toEqual([]);
   });
 
   it("keeps migrated exact schedules and their lineage out of the fuzzy timeline", async () => {
@@ -252,6 +318,7 @@ describe("fuzzy life runtime routing", () => {
     expect(actualActivity).toMatchObject({
       summary: "一项生活活动已经真实完成。",
       activityEventId: "real-activity-from-legacy-schedule",
+      provenance: "life_simulation",
     });
     expect(actualActivity).not.toHaveProperty("title");
     expect(actualActivity).not.toHaveProperty("scheduleItemId");

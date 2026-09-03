@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../api/client";
+import { primeAgentOverview } from "../hooks/agentEventQueryKeys";
 import { useAgentEvents } from "../hooks/useAgentEvents";
 import {
   readActiveCharacter,
@@ -57,7 +58,11 @@ export function AppShell() {
   useEffect(() => subscribeActiveCharacter(setActiveCharacterId), []);
   const activationQuery = useQuery({
     queryKey: ["agent-activation", activeCharacterId],
-    queryFn: () => api.agents.activate(activeCharacterId!),
+    queryFn: async () => {
+      const snapshot = await api.agents.activate(activeCharacterId!);
+      primeAgentOverview(queryClient, activeCharacterId!, snapshot);
+      return snapshot;
+    },
     enabled: Boolean(activeCharacterId),
     staleTime: Number.POSITIVE_INFINITY,
   });

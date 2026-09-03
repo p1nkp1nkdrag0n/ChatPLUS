@@ -553,6 +553,7 @@ async function createTestApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    lifePlanningMode: "legacy_exact",
     chatEffectsMode: "gated",
     scheduleNegotiationMode,
     selfInitiatedPlanningMode: "off",

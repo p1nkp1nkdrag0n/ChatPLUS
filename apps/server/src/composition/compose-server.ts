@@ -11,6 +11,7 @@ import type { RouteServices } from "../http/routes.js";
 import type { Clock } from "../runtime/clock.js";
 import type { HourlyScheduler } from "../runtime/hourly-scheduler.js";
 import type { LlmServiceObservationOptions } from "../services/llm-service.js";
+import type { FixtureTurnBehavior } from "../services/turn-decision-service.js";
 import { resolveServerBundle, type ServerSimulationBundle } from "./bundles.js";
 import {
   createKernelLogger,
@@ -51,6 +52,7 @@ export interface ComposeServerOptions {
   readonly database?: Database;
   readonly clock?: Clock;
   readonly llmObservation?: LlmServiceObservationOptions;
+  readonly fixtureTurnBehavior?: FixtureTurnBehavior;
 }
 
 export interface ServerKernelHandle {
@@ -88,6 +90,9 @@ export async function composeServer(
     ...(options.llmObservation === undefined
       ? {}
       : { llmObservation: options.llmObservation }),
+    ...(options.fixtureTurnBehavior === undefined
+      ? {}
+      : { fixtureTurnBehavior: options.fixtureTurnBehavior }),
   });
   await runtime.activatePlugins(plugins);
 

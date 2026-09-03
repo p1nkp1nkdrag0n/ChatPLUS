@@ -61,4 +61,29 @@ describe("MessageBubble initial rendering", () => {
     expect(markup).not.toContain("Iam still here");
     expect(markup).not.toContain("正在输入下一条消息");
   });
+
+  it("shows a user-facing explanation for persisted recall evidence", () => {
+    const markup = renderMessage(
+      {
+        ...message,
+        memoryRecall: {
+          rolloutMode: "enforced",
+          promptStrategy: "evidence_selected",
+          legacyPromptMemoryIds: [],
+          promptMemoryIds: ["memory-1"],
+          selectedMemoryIds: ["memory-1"],
+          selectedEvidenceIds: ["evidence-1"],
+          rejectedMemoryIds: ["memory-2"],
+          recallMode: "verbatim_quote",
+          score: 0.86,
+          abstained: false,
+          durationMs: 3,
+        },
+      },
+      false,
+    );
+
+    expect(markup).toContain("本轮记忆依据 · 1 条证据");
+    expect(markup).toContain("已用于回复：对话原文，相关度 86%");
+  });
 });

@@ -1,12 +1,21 @@
 import type {
+  CharacterKnowledge,
+  DialogueStyle,
   EvidenceBundle,
+  FuzzyLifePromptContext,
+  InitialUserRelationship,
   JsonValue,
   Memory,
   MemoryEvidence,
+  MemoryRecallRuntimeDiagnostic,
   MemoryNamespace,
   MemoryRecallQuery,
   MemoryRecallResult,
+  ProactivePolicy,
   RetrievalScoreBreakdown,
+  RoutineRule,
+  SchedulePolicy,
+  TimelineProvenance,
 } from "@personasim/contracts";
 
 export type SimulationTier = "lightweight" | "daily" | "high_fidelity";
@@ -89,12 +98,12 @@ export interface CharacterSpec {
     preferences: Array<Record<string, unknown>>;
     boundaries: Array<Record<string, unknown>>;
   };
-  dialogue: Record<string, unknown>;
-  userRelationship: Record<string, unknown>;
-  routines: Array<Record<string, unknown>>;
-  schedulePolicy: Record<string, unknown> & { enabled?: boolean };
-  proactivePolicy: Record<string, unknown> & { enabled?: boolean };
-  knowledge: Record<string, unknown>;
+  dialogue: DialogueStyle;
+  userRelationship: InitialUserRelationship;
+  routines: RoutineRule[];
+  schedulePolicy: SchedulePolicy;
+  proactivePolicy: ProactivePolicy;
+  knowledge: CharacterKnowledge;
   sources: Array<Record<string, unknown>>;
   lockedPaths: string[];
   createdAtUtc: string;
@@ -127,6 +136,23 @@ export interface RuntimeState {
     recentInteractionValence: number;
   };
   revision: number;
+}
+
+export type FuzzyLifeContext = FuzzyLifePromptContext;
+
+export interface AgentSnapshot {
+  capabilities: {
+    fuzzyLife: boolean;
+    legacyExactSchedule: boolean;
+    /** @deprecated Compatibility alias for legacyExactSchedule. */
+    schedule: boolean;
+  };
+  state: RuntimeState;
+  schedule: ScheduleItem[];
+  serverTimeUtc: string;
+  lifeContext?: FuzzyLifeContext;
+  proactiveMessage?: ChatMessage;
+  warnings?: string[];
 }
 
 export type ScheduleStatus =
@@ -171,6 +197,8 @@ export interface ChatMessage {
   deliveryMode?: "single_block" | "sequential";
   kind?: "normal" | "proactive" | "fallback";
   triggerEventId?: string | null;
+  /** Persisted, user-safe explanation of the memory context used this turn. */
+  memoryRecall?: MemoryRecallRuntimeDiagnostic;
   createdAtUtc: string;
 }
 
@@ -180,6 +208,7 @@ export interface TimelineEvent {
   title: string;
   summary: string;
   occurredAtUtc: string;
+  provenance: TimelineProvenance;
   scheduleItemId?: string;
   activityEventId?: string;
   memoryId?: string;

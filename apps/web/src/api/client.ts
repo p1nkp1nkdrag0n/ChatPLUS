@@ -1,5 +1,6 @@
 import type { MemoryRecallPreviewResponse } from "@personasim/contracts";
 import type {
+  AgentSnapshot,
   AppSettings,
   CharacterDetail,
   CharacterSpec,
@@ -79,6 +80,10 @@ export const api = {
     const value = await request<Record<string, unknown>>("/api/health");
     return {
       ok: value.ok === true || value.status === "ok",
+      deploymentMode:
+        value.deploymentMode === "local_single_user"
+          ? "local_single_user"
+          : "unknown",
       nowUtc: stringValue(
         value.nowUtc ?? value.serverTimeUtc,
         new Date().toISOString(),
@@ -210,13 +215,11 @@ export const api = {
   },
   agents: {
     activate: (agentId: string) =>
-      request<{
-        state: RuntimeState;
-        schedule: ScheduleItem[];
-        serverTimeUtc: string;
-        proactiveMessage?: ChatMessage;
-        warnings?: string[];
-      }>(`/api/agents/${agentId}/activate`, { method: "POST" }),
+      request<AgentSnapshot>(`/api/agents/${agentId}/activate`, {
+        method: "POST",
+      }),
+    overview: (agentId: string) =>
+      request<AgentSnapshot>(`/api/agents/${agentId}/overview`),
     state: async (agentId: string) => {
       const value = await request<RuntimeState | { state: RuntimeState }>(
         `/api/agents/${agentId}/state`,
@@ -224,7 +227,15 @@ export const api = {
       return "state" in value ? value.state : value;
     },
     schedule: (agentId: string, fromUtc: string, toUtc: string) =>
-      request<{ items: ScheduleItem[] } | ScheduleItem[]>(
+      request<
+        | {
+            dataModel: "fuzzy_life" | "legacy_exact_schedule";
+            items: ScheduleItem[];
+            retired?: boolean;
+            replacement?: "fuzzy_life_context";
+          }
+        | ScheduleItem[]
+      >(
         `/api/agents/${agentId}/schedule?fromUtc=${encodeURIComponent(fromUtc)}&toUtc=${encodeURIComponent(toUtc)}`,
       ),
     timeline: async (agentId: string) => {
@@ -390,6 +401,7 @@ export function unwrapCharacter(
 
 function normalizeMessage(row: Record<string, unknown>): ChatMessage {
   const metadata = recordValue(row.metadata);
+  const memoryRecall = normalizeMemoryRecall(metadata.memoryRecall);
   const rawChunks = Array.isArray(row.chunks)
     ? row.chunks
     : Array.isArray(metadata.chunks)
@@ -430,7 +442,57 @@ function normalizeMessage(row: Record<string, unknown>): ChatMessage {
     triggerEventId: nullableString(
       row.triggerEventId ?? row.triggerActivityEventId,
     ),
+    ...(memoryRecall === undefined ? {} : { memoryRecall }),
     createdAtUtc: stringValue(row.createdAtUtc, new Date().toISOString()),
+  };
+}
+
+function normalizeMemoryRecall(
+  value: unknown,
+): ChatMessage["memoryRecall"] | undefined {
+  const candidate = recordValue(value);
+  const rolloutMode = candidate.rolloutMode;
+  const promptStrategy = candidate.promptStrategy;
+  const recallMode = candidate.recallMode;
+  if (
+    (rolloutMode !== "legacy" &&
+      rolloutMode !== "shadow" &&
+      rolloutMode !== "enforced") ||
+    (promptStrategy !== "legacy_active" &&
+      promptStrategy !== "evidence_selected") ||
+    (recallMode !== "event_card" &&
+      recallMode !== "verbatim_quote" &&
+      recallMode !== "date_digest" &&
+      recallMode !== "basic_memory" &&
+      recallMode !== "none") ||
+    typeof candidate.abstained !== "boolean" ||
+    typeof candidate.score !== "number" ||
+    typeof candidate.durationMs !== "number"
+  ) {
+    return undefined;
+  }
+  const stringIds = (input: unknown): string[] =>
+    Array.isArray(input)
+      ? input.filter(
+          (item): item is string =>
+            typeof item === "string" && item.trim().length > 0,
+        )
+      : [];
+  return {
+    rolloutMode,
+    promptStrategy,
+    legacyPromptMemoryIds: stringIds(candidate.legacyPromptMemoryIds),
+    promptMemoryIds: stringIds(candidate.promptMemoryIds),
+    selectedMemoryIds: stringIds(candidate.selectedMemoryIds),
+    selectedEvidenceIds: stringIds(candidate.selectedEvidenceIds),
+    rejectedMemoryIds: stringIds(candidate.rejectedMemoryIds),
+    recallMode,
+    score: Math.max(0, Math.min(1, candidate.score)),
+    abstained: candidate.abstained,
+    ...(typeof candidate.abstentionReason === "string"
+      ? { abstentionReason: candidate.abstentionReason }
+      : {}),
+    durationMs: Math.max(0, candidate.durationMs),
   };
 }
 
@@ -526,6 +588,7 @@ function normalizeCanonicalTimelineEvent(
     title: stringValue(event.title, activityTitle(event.type)),
     summary: stringValue(event.summary),
     occurredAtUtc: stringValue(event.occurredAtUtc, new Date().toISOString()),
+    provenance: timelineProvenance(event.provenance),
     ...timelineLineageIds(event),
     ...(typeof event.source === "string" ? { source: event.source } : {}),
     ...(typeof event.correlationId === "string"
@@ -548,6 +611,7 @@ function normalizeLegacyActivityEvent(
     title: activityTitle(event.eventType),
     summary: stringValue(event.summary),
     occurredAtUtc: stringValue(event.occurredAtUtc, new Date().toISOString()),
+    provenance: "life_simulation",
     ...timelineLineageIds({ ...event, activityEventId: id }),
     ...(typeof event.source === "string" ? { source: event.source } : {}),
     metadata: recordValue(event),
@@ -566,6 +630,7 @@ function normalizeLegacyDomainEvent(
       event.recordedAtUtc ?? event.occurredAtUtc,
       new Date().toISOString(),
     ),
+    provenance: "system",
     ...timelineLineageIds(event),
     ...(typeof event.correlationId === "string"
       ? { correlationId: event.correlationId }
@@ -575,6 +640,14 @@ function normalizeLegacyDomainEvent(
       : {}),
     metadata: recordValue(event),
   };
+}
+
+function timelineProvenance(value: unknown): TimelineEvent["provenance"] {
+  return value === "conversation" ||
+    value === "life_simulation" ||
+    value === "character_spec"
+    ? value
+    : "system";
 }
 
 function timelineLineageIds(

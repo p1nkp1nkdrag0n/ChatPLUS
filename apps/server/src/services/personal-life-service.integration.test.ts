@@ -396,7 +396,7 @@ function createHarness(
     store,
     clock,
   );
-  const schedules = new ScheduleService(store, clock, llm);
+  const schedules = new ScheduleService(store, clock, llm, "legacy_exact");
   const planner = new SelfPlanningService(schedules, clock, plannerMode);
   return {
     database,

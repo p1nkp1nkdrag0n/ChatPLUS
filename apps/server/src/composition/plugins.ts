@@ -49,7 +49,10 @@ import { ProactiveDeliveryService } from "../services/proactive-delivery-service
 import { ProactiveGenerationRepository } from "../services/proactive-generation-repository.js";
 import { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import { TurnCommitService } from "../services/turn-commit-service.js";
-import { TurnDecisionService } from "../services/turn-decision-service.js";
+import {
+  TurnDecisionService,
+  type FixtureTurnBehavior,
+} from "../services/turn-decision-service.js";
 import { WorldEffectService } from "../services/world-effect-service.js";
 import { SseHub } from "../sse/hub.js";
 import type { ServerSimulationBundle } from "./bundles.js";
@@ -111,6 +114,7 @@ export interface ServerPluginOptions {
   readonly database?: Database;
   readonly clock?: Clock;
   readonly llmObservation?: LlmServiceObservationOptions;
+  readonly fixtureTurnBehavior?: FixtureTurnBehavior;
 }
 
 export function createServerPlugins(
@@ -119,7 +123,7 @@ export function createServerPlugins(
   return [
     createBundlePlugin(options.bundle),
     createInfrastructurePlugin(options),
-    createDomainPlugin(options.bundle.pluginId),
+    createDomainPlugin(options.bundle.pluginId, options.fixtureTurnBehavior),
     createSchedulerPlugin(),
   ];
 }
@@ -226,6 +230,7 @@ function createInfrastructurePlugin(
 
 function createDomainPlugin(
   bundlePluginId: string,
+  fixtureTurnBehavior?: FixtureTurnBehavior,
 ): KernelPlugin<ServerKernelEvents> {
   return {
     manifest: {
@@ -270,8 +275,18 @@ function createDomainPlugin(
       const sse = context.services.resolve(SSE_HUB_TOKEN);
       const config = context.services.resolve(SERVER_CONFIG_TOKEN);
       const actors = context.services.resolve(ACTOR_QUEUE_TOKEN);
-      const characters = new CharacterService(store, clock, llm);
-      const schedules = new ScheduleService(store, clock, llm);
+      const characters = new CharacterService(
+        store,
+        clock,
+        llm,
+        config.lifePlanningMode,
+      );
+      const schedules = new ScheduleService(
+        store,
+        clock,
+        llm,
+        config.lifePlanningMode,
+      );
       const personalIntents = new PersonalIntentService(store, clock);
       const selfPlanning = new SelfPlanningService(
         schedules,
@@ -352,6 +367,7 @@ function createDomainPlugin(
         {
           continuityIndex,
         },
+        config.lifePlanningMode,
       );
       const proactiveDeliveryRef: {
         current?: ProactiveDeliveryService;
@@ -384,6 +400,7 @@ function createDomainPlugin(
         scheduleNegotiationMode: config.scheduleNegotiationMode,
         memoryRecallMode: config.memoryRecallMode,
         conversationRetention: config.conversationRetention,
+        ...(fixtureTurnBehavior === undefined ? {} : { fixtureTurnBehavior }),
       };
       const replyRepairs = new ReplyRepairService(llm);
       const turnDecisions = new TurnDecisionService(

@@ -182,6 +182,7 @@ async function createTestApp(): Promise<{
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    lifePlanningMode: "legacy_exact",
     llm: {
       provider: "fixture",
       baseUrl: "https://example.invalid",

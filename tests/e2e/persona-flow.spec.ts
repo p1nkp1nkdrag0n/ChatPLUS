@@ -93,11 +93,83 @@ test.describe("PersonaSim fixture flow", () => {
     await expect(page.getByText(/好啊|晚会|具体时间/).last()).toBeVisible({
       timeout: 30_000,
     });
+    await expect(
+      page.getByText(/本轮没有引用记忆|本轮记忆依据/).last(),
+    ).toBeVisible();
     const expandRail = page.getByRole("button", { name: "展开状态栏" });
     if (await expandRail.isVisible()) await expandRail.click();
     const rail = page.locator(".chat-rail");
     await expect(rail.getByText("状态概览")).toBeVisible();
     await expect(rail.getByText("压力", { exact: true })).toBeVisible();
+    await expect(rail.getByRole("heading", { name: "生活脉络" })).toBeVisible();
+    await expect(rail.getByText("正在推进", { exact: true })).toBeVisible();
+  });
+
+  test("edits structured character settings and persists a schema-valid draft", async ({
+    page,
+    request,
+  }) => {
+    const draft = await createDraftCharacter(
+      request,
+      `Editor QA ${test.info().project.name}-${Date.now()}`,
+    );
+    await page.goto(`/characters/${draft.id}/edit`);
+
+    await page.getByRole("button", { name: "语言风格", exact: true }).click();
+    await page.getByLabel("主要语言").fill("简体中文");
+
+    await page.getByRole("button", { name: "关系", exact: true }).click();
+    await page.getByLabel("关系类型").fill("相互信赖的老朋友");
+
+    await page.getByRole("button", { name: "知识与边界", exact: true }).click();
+    await page.getByRole("button", { name: "添加一条确定事实" }).click();
+    await page
+      .getByRole("textbox", { name: /确定知道 \d+/ })
+      .last()
+      .fill("每周三会去社区图书馆。");
+
+    await page.getByRole("button", { name: "生活策略", exact: true }).click();
+    await page.getByRole("button", { name: "添加规律" }).click();
+    await page
+      .getByRole("textbox", { name: /生活规律 \d+ 名称/ })
+      .last()
+      .fill("周末散步");
+    const legacySettings = page.getByText(
+      "旧版精确日程兼容（fuzzy 产品模式不启用）",
+      { exact: true },
+    );
+    await expect(legacySettings).toBeVisible();
+    await expect(page.getByText("启用旧版精确排程")).toBeHidden();
+    const pausedProactive = page.getByText(
+      "主动联系（当前暂停，发布时保持关闭）",
+      { exact: true },
+    );
+    await expect(pausedProactive).toBeVisible();
+    await pausedProactive.click();
+    await expect(
+      page.getByRole("checkbox", { name: "当前不可启用" }),
+    ).toBeDisabled();
+
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().endsWith(`/api/characters/${draft.id}/draft`),
+    );
+    await page.getByTestId("publish-character").click();
+    expect((await saved).ok()).toBe(true);
+    await expect(page).toHaveURL(`/characters/${draft.id}/chat`, {
+      timeout: 30_000,
+    });
+
+    await page.goto(`/characters/${draft.id}/edit`);
+    await page.getByRole("button", { name: "语言风格", exact: true }).click();
+    await expect(page.getByLabel("主要语言")).toHaveValue("简体中文");
+    await page.getByRole("button", { name: "关系", exact: true }).click();
+    await expect(page.getByLabel("关系类型")).toHaveValue("相互信赖的老朋友");
+    await page.getByRole("button", { name: "生活策略", exact: true }).click();
+    await expect(
+      page.getByRole("textbox", { name: /生活规律 \d+ 名称/ }).last(),
+    ).toHaveValue("周末散步");
   });
 
   test("import form rejects an unsupported file extension client-side", async ({
@@ -210,6 +282,9 @@ test.describe("PersonaSim fixture flow", () => {
     await expect(eventLedger.locator("li").first()).toBeVisible({
       timeout: 30_000,
     });
+    await expect(
+      eventLedger.locator(".timeline-source-badge").first(),
+    ).toBeVisible();
     await expect(eventLedger).not.toContainText("ScheduleItem");
     await expect(eventLedger).not.toContainText("schedule.");
     await expect(
@@ -231,6 +306,19 @@ async function createPublishedCharacter(
   request: APIRequestContext,
   name: string,
 ): Promise<string> {
+  const generated = await createDraftCharacter(request, name);
+  const publishedResponse = await request.post(
+    `/api/characters/${generated.id}/publish`,
+    { data: { expectedVersion: generated.version } },
+  );
+  expect(publishedResponse.ok()).toBe(true);
+  return generated.id;
+}
+
+async function createDraftCharacter(
+  request: APIRequestContext,
+  name: string,
+): Promise<{ id: string; version: number }> {
   const generatedResponse = await request.post("/api/characters/generate", {
     data: {
       name,
@@ -249,12 +337,7 @@ async function createPublishedCharacter(
   const generated = (await generatedResponse.json()) as {
     character: { id: string; version: number };
   };
-  const publishedResponse = await request.post(
-    `/api/characters/${generated.character.id}/publish`,
-    { data: { expectedVersion: generated.character.version } },
-  );
-  expect(publishedResponse.ok()).toBe(true);
-  return generated.character.id;
+  return generated.character;
 }
 
 async function setActiveCharacter(

@@ -12,7 +12,10 @@ import {
 } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
-import { capabilitiesForTier } from "../domain/capabilities.js";
+import {
+  capabilitiesForTier,
+  type LifePlanningMode,
+} from "../domain/capabilities.js";
 import { toFeatureScheduleItems } from "../domain/feature-adapters.js";
 import { ApiError, notFound } from "../domain/errors.js";
 import { createEntityId } from "../domain/id.js";
@@ -100,6 +103,7 @@ export class ScheduleService {
     private readonly store: DatabaseStore,
     private readonly clock: Clock,
     private readonly llm: LlmService,
+    private readonly lifePlanningMode: LifePlanningMode = "fuzzy",
   ) {}
 
   list(agentId: string, fromUtc?: string, toUtc?: string): ScheduleItem[] {
@@ -124,7 +128,8 @@ export class ScheduleService {
     const nowUtc = this.clock.nowUtc();
     if (
       spec.status !== "published" ||
-      !capabilitiesForTier(spec.tier).schedule ||
+      this.lifePlanningMode !== "legacy_exact" ||
+      !capabilitiesForTier(spec.tier).legacyExactSchedule ||
       !spec.schedulePolicy.enabled
     ) {
       return {
@@ -337,7 +342,8 @@ export class ScheduleService {
     | { valid: false; errors: Array<{ code: string; message: string }> } {
     if (effects.length === 0) return { valid: true };
     if (
-      !capabilitiesForTier(spec.tier).schedule ||
+      this.lifePlanningMode !== "legacy_exact" ||
+      !capabilitiesForTier(spec.tier).legacyExactSchedule ||
       !spec.schedulePolicy.enabled
     ) {
       return {
@@ -406,7 +412,8 @@ export class ScheduleService {
         });
       }
       if (
-        !capabilitiesForTier(spec.tier).schedule ||
+        this.lifePlanningMode !== "legacy_exact" ||
+        !capabilitiesForTier(spec.tier).legacyExactSchedule ||
         !spec.schedulePolicy.enabled
       ) {
         return bundleFailure("schedule_disabled", existing, {

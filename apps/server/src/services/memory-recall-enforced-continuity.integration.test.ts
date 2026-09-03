@@ -4,6 +4,7 @@ import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
+import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
 import { companionLongRunV3Manifest } from "../scenarios/companion-long-run-v3-manifest.js";
 
 const NOW = "2026-09-01T01:00:00.000Z";
@@ -114,7 +115,7 @@ describe("enforced durable continuity recall", () => {
       )
       .all(
         harness.agentId,
-        "user_fact:notebook:storage",
+        "user_fact:item:notes:storage",
         "user_fact:person:许宁:destination",
       ) as Array<{
       content: string;
@@ -385,6 +386,7 @@ async function createHarness(): Promise<Harness> {
     seedDemo: false,
     startScheduler: false,
     logger: false,
+    fixtureTurnBehavior: companionLongRunV3FixtureBehavior,
   });
   const generated = await app.inject({
     method: "POST",

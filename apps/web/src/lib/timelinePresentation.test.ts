@@ -9,6 +9,7 @@ const BASE_EVENT: TimelineEvent = {
   title: "周六 20:00 在精确日程中安排的约会",
   summary: "两个人完成了一次值得记住的活动。",
   occurredAtUtc: "2026-09-01T12:00:00.000Z",
+  provenance: "life_simulation",
 };
 
 describe("timeline event presentation", () => {

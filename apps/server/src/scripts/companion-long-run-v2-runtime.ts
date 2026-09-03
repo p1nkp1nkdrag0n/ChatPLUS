@@ -11,6 +11,7 @@ import type { ServerConfig } from "../config.js";
 import { openDatabase, type Database } from "../db/connection.js";
 import type { DatabaseStore } from "../db/store.js";
 import { FakeClock } from "../runtime/clock.js";
+import type { FixtureTurnBehavior } from "../services/turn-decision-service.js";
 import type {
   LongRunSessionKey,
   ScenarioAction,
@@ -47,6 +48,7 @@ export interface LongRunRuntimeOptions {
   startAtUtc: string;
   initialSessionId: string;
   observer?: LongRunV2Observer;
+  fixtureTurnBehavior?: FixtureTurnBehavior;
 }
 
 export class LongRunV2Runtime {
@@ -107,6 +109,9 @@ export class LongRunV2Runtime {
           onMetric: this.observer.onMetric,
           onLogicalCall: this.observer.onLogicalCall,
         },
+        ...(this.options.fixtureTurnBehavior === undefined
+          ? {}
+          : { fixtureTurnBehavior: this.options.fixtureTurnBehavior }),
       });
     } finally {
       globalThis.fetch = previousGlobalFetch;

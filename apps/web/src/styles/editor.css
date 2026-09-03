@@ -323,6 +323,317 @@ input[type="range"] {
   background: var(--accent);
 }
 
+.structured-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 860px;
+  margin-bottom: 22px;
+}
+
+.structured-editor-grid--compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.structured-editor-grid--routine {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  max-width: none;
+  margin-bottom: 0;
+}
+
+.structured-editor-wide {
+  max-width: 860px;
+  margin-bottom: 24px;
+}
+
+.structured-editor-wide textarea,
+.structured-card textarea,
+.editable-string-list textarea {
+  resize: vertical;
+}
+
+.range-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 10px 24px;
+  max-width: 860px;
+  margin: 4px 0 24px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.range-settings--single {
+  grid-template-columns: 1fr;
+  margin-top: 16px;
+  padding: 12px;
+}
+
+.range-setting {
+  display: grid;
+  grid-template-columns: minmax(82px, auto) 1fr 38px;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.range-setting output {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-align: right;
+}
+
+.number-setting > span:last-child {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.number-setting small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.structured-list-columns,
+.knowledge-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  max-width: 860px;
+  margin: 6px 0 30px;
+}
+
+.knowledge-editor-grid {
+  grid-template-columns: 1fr;
+}
+
+.editable-string-list {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.editable-string-list__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.editable-string-list__heading h3 {
+  font-size: 11px;
+}
+
+.editable-string-list__heading p,
+.editable-string-list__heading > span,
+.structured-empty,
+.policy-panel__heading p,
+.compatibility-settings p {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.editable-string-list__items {
+  display: grid;
+  gap: 7px;
+}
+
+.editable-string-list__items > div {
+  display: grid;
+  grid-template-columns: 1fr 28px;
+  align-items: start;
+  gap: 5px;
+}
+
+.editable-string-list__items input,
+.editable-string-list__items textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.editable-string-list__items button,
+.structured-card__toolbar button {
+  display: inline-flex;
+  width: 28px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.editable-string-list__items button:hover,
+.structured-card__toolbar button:hover {
+  color: var(--accent);
+}
+
+.editable-string-list__add {
+  margin-top: 9px;
+}
+
+.structured-rule-section {
+  max-width: 920px;
+  margin: 20px 0 34px;
+}
+
+.structured-empty {
+  padding: 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.structured-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.structured-card {
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.structured-card__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.structured-card__toolbar strong {
+  margin-right: auto;
+  font-size: 10px;
+}
+
+.structured-card__toolbar select {
+  min-height: 30px;
+  padding: 0 24px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.policy-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 920px;
+}
+
+.policy-panel {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.paused-policy-panel {
+  grid-column: 1 / -1;
+  order: 1;
+}
+
+.legacy-policy-panel {
+  grid-column: 1 / -1;
+  order: 2;
+}
+
+.legacy-policy-panel > summary,
+.paused-policy-panel > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.legacy-policy-panel[open] > summary,
+.paused-policy-panel[open] > summary {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.policy-panel__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.policy-panel__heading h3 {
+  font-size: 12px;
+}
+
+.switch-field {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.switch-field input {
+  accent-color: var(--accent);
+}
+
+.policy-panel .structured-editor-grid,
+.policy-panel .editable-string-list {
+  margin-bottom: 16px;
+}
+
+.policy-panel .structured-editor-grid--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compatibility-settings {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.compatibility-settings summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.compatibility-settings p {
+  margin: 8px 0;
+}
+
+.compatibility-settings__extension {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
 .provenance-inspector {
   position: sticky;
   top: 0;

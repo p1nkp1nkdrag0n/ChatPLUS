@@ -101,7 +101,7 @@ export class PersonalLifeService {
     if (!character || !state) throw notFound("Character");
     if (
       character.status !== "published" ||
-      !capabilitiesForTier(character.tier).schedule ||
+      !capabilitiesForTier(character.tier).legacyExactSchedule ||
       !character.schedulePolicy.enabled
     ) {
       return {

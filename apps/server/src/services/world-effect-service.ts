@@ -45,7 +45,7 @@ export type ChatTurnDecisionPath =
 
 export interface WorldEffectServiceOptions {
   chatEffectsMode?: "off" | "gated";
-  scheduleNegotiationMode?: "legacy" | "shadow" | "enforced";
+  scheduleNegotiationMode?: "off" | "legacy" | "shadow" | "enforced";
 }
 
 export interface TurnProposalRejection {
@@ -144,16 +144,16 @@ export class WorldEffectService {
     providerName: string;
   }): TurnDecisionEffectContext {
     const scheduleNegotiationEligible =
-      this.options.scheduleNegotiationMode !== undefined &&
-      this.options.scheduleNegotiationMode !== "legacy" &&
+      (this.options.scheduleNegotiationMode === "shadow" ||
+        this.options.scheduleNegotiationMode === "enforced") &&
       this.options.chatEffectsMode !== "off" &&
-      input.capabilities.schedule &&
+      input.capabilities.legacyExactSchedule &&
       input.spec.tier === "high_fidelity" &&
       input.spec.schedulePolicy.enabled;
     const negotiationEnforced =
       this.options.scheduleNegotiationMode === "enforced" &&
       this.options.chatEffectsMode !== "off" &&
-      input.capabilities.schedule &&
+      input.capabilities.legacyExactSchedule &&
       input.spec.tier === "high_fidelity" &&
       input.spec.schedulePolicy.enabled;
     const activeNegotiation = scheduleNegotiationEligible
@@ -162,7 +162,7 @@ export class WorldEffectService {
     const effectsEligible =
       !negotiationEnforced &&
       this.options.chatEffectsMode !== "off" &&
-      input.capabilities.schedule &&
+      input.capabilities.legacyExactSchedule &&
       input.spec.tier === "high_fidelity" &&
       input.spec.schedulePolicy.enabled &&
       hasScheduleIntent(input.userText);

@@ -458,6 +458,10 @@
   overflow-wrap: anywhere;
 }
 
+.event-ledger__more {
+  margin-top: 16px;
+}
+
 .settings-document {
   max-width: 880px;
   margin: 0 auto;

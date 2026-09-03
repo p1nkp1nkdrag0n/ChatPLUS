@@ -15,6 +15,8 @@ import {
 import {
   createSafeFallbackReply,
   deriveExplicitUserMemoryClaim,
+  extractExplicitDeadlineFact,
+  extractExplicitStoredItemFact,
   guardPersonaReply,
   hasExplicitMemoryCorrection,
   isExplicitUserMemoryStatement,
@@ -57,6 +59,22 @@ import {
 export interface TurnDecisionServiceOptions {
   chatEffectsMode?: "off" | "gated";
   liveWorldEffectsMode?: "off" | "shadow" | "enforced";
+  fixtureTurnBehavior?: FixtureTurnBehavior;
+}
+
+export interface FixtureTurnBehavior {
+  selectDelegatedDecision?(input: {
+    userText: string;
+    causalContext?: unknown;
+  }): string | undefined;
+  semanticReply?(input: {
+    userText: string;
+    prompt: string;
+    causalContext?: unknown;
+  }): string | undefined;
+  personalIntentCandidates?(input: {
+    userText: string;
+  }): NonNullable<AgentTurnDecision["personalIntentCandidates"]>;
 }
 
 export interface TurnDecisionEffectContext {
@@ -140,6 +158,9 @@ export class TurnDecisionService {
         input.schedule,
         input.userText,
         input.nowUtc,
+        input.prompt,
+        input.causalContext,
+        this.options.fixtureTurnBehavior,
       );
       const fixture =
         (this.options.chatEffectsMode === "off" ||
@@ -949,8 +970,15 @@ function fixtureDecision(
   schedule: ScheduleItem[],
   text: string,
   nowUtc: string,
+  prompt: string,
+  causalContext: unknown,
+  fixtureTurnBehavior: FixtureTurnBehavior | undefined,
 ): AgentTurnDecision {
-  const delegatedDecision = fixtureDelegatedDecision(text);
+  const delegatedDecision =
+    fixtureTurnBehavior?.selectDelegatedDecision?.({
+      userText: text,
+      ...(causalContext === undefined ? {} : { causalContext }),
+    }) ?? fixtureDelegatedDecision(text, causalContext);
   if (delegatedDecision !== undefined) {
     const reply = `我的决定：${delegatedDecision}。我知道这不是轻描淡写的一句话；先把第一步落下来，之后真正发生了什么，我们再一起看。`;
     return {
@@ -1070,8 +1098,14 @@ function fixtureDecision(
   const explicitFacts = deriveServerOwnedUserMemoryCandidates(text, nowUtc);
   const reviewedContinuityMemories =
     deriveServerOwnedContinuityMemoryCandidates(text, nowUtc);
-  const personalIntentCandidates = fixturePersonalIntentCandidates(text);
-  const reviewedSemanticReply = fixtureReviewedSemanticReply(text);
+  const personalIntentCandidates =
+    fixtureTurnBehavior?.personalIntentCandidates?.({ userText: text }) ??
+    fixturePersonalIntentCandidates(text);
+  const reviewedSemanticReply = fixtureTurnBehavior?.semanticReply?.({
+    userText: text,
+    prompt,
+    ...(causalContext === undefined ? {} : { causalContext }),
+  });
   const replyText =
     reviewedSemanticReply ??
     `${text.length < 20 ? "\u55ef\uff0c\u6211\u5728\u542c\u3002" : "\u6211\u660e\u767d\u4f60\u7684\u610f\u601d\u4e86\u3002"}\u6211\u73b0\u5728\u4f1a\u6309\u81ea\u5df1\u7684\u8282\u594f\u8ba4\u771f\u56de\u5e94\uff0c\u4e5f\u4f1a\u8bb0\u4f4f\u771f\u6b63\u91cd\u8981\u7684\u90e8\u5206\u3002`;
@@ -1101,87 +1135,6 @@ function fixtureDecision(
 }
 
 /**
- * Supplies deterministic, evidence-aware wording for the reviewed Fixture
- * probes. This is deliberately isolated from real providers: production model
- * replies still come from the provider, while the local Fixture can prove the
- * memory and temporal contracts without accidentally passing on a generic ack.
- */
-export function fixtureReviewedSemanticReply(text: string): string | undefined {
-  const normalized = text.normalize("NFKC").trim();
-
-  if (
-    /(?:采访笔记).*(?:放在哪里|包是什么颜色|记录的包是什么颜色|书签是什么|书签上写的是什么)/u.test(
-      normalized,
-    )
-  ) {
-    return "你那本采访笔记在藏青色帆布包的内层，书签是 M-417。";
-  }
-  if (/包是藏青色[，,]不是绿色/u.test(normalized)) {
-    return "更正收到：包是藏青色，不是绿色；笔记仍在内层，书签仍是 M-417。";
-  }
-  if (/回复期限延到\s*9\s*月\s*16\s*日/u.test(normalized)) {
-    return "我会以 9 月 16 日为当前回复期限；9 月 14 日是已经被更正的旧期限。";
-  }
-  if (/许宁后来改去成都|最新事实是成都/u.test(normalized)) {
-    return "记住了：许宁当前准备去成都进修，重庆是已经被更正的旧信息。";
-  }
-  if (/现在许宁准备去哪里/u.test(normalized)) {
-    return "许宁现在准备去成都进修。";
-  }
-  if (/之前提到的朋友叫什么.*准备去哪里/u.test(normalized)) {
-    return "你之前提到的朋友叫许宁，她当时准备去重庆进修。";
-  }
-  if (/父亲生日是哪天/u.test(normalized)) {
-    return "我不知道；你没有告诉过我父亲的生日，我不能凭空确定日期。";
-  }
-  if (/大学导师叫什么/u.test(normalized)) {
-    return "我不知道；现有信息里没有你大学导师的姓名。";
-  }
-  if (/去年一起去苏州看展/u.test(normalized)) {
-    return "我没有这段共同经历的可靠证据，所以不能说我们去年一起去过苏州看展。";
-  }
-  if (/离线那几天.*一起吃饭.*线下活动/u.test(normalized)) {
-    return "没有证据表明我们在你离线时一起吃过饭，也没有确认过任何线下活动。";
-  }
-  if (/打算找时间整理笔记.*还没有整理/u.test(normalized)) {
-    return "我会分开记：你只是计划以后整理采访笔记，目前还没有整理；计划不等于已经发生。";
-  }
-  if (/曾经计划整理采访笔记.*已经整理完采访笔记/u.test(normalized)) {
-    return "不是同一件事：有证据的只有你曾计划整理；没有证据证明你已经整理完。";
-  }
-  if (/只说你有把握知道的三件关于我的事/u.test(normalized)) {
-    return "我有把握的三件事：你叫林舟；采访笔记在藏青色帆布包内层、书签是 M-417；你最好的朋友叫许宁。";
-  }
-  if (/目前停在哪一步.*决定.*行动.*结果/u.test(normalized)) {
-    return "决定是 B：去杭州的山鸣影像；你已经发出接受 offer 的邮件并提出离职；对方目前只确认收件、仍在内部确认，所以最终结果还不知道。";
-  }
-  if (/按顺序回顾.*最初的困境.*实际结果.*反思/u.test(normalized)) {
-    return "顺序是：你在上海稳定工作与杭州纪录片机会之间为难；我先按你的要求陪伴、分析，再在授权后决定选 B；你随后发出接受邮件并提出离职；后来出现资金延迟、前两个月可能只有八成薪资，同时现公司给出更自主的小组这一混合结果；你最终意识到自己愿意为创作承担不确定性。";
-  }
-  if (/别把结果讲成.*你现在怎么看自己的选择/u.test(normalized)) {
-    return "我仍认同保留克制结尾，因为被摄者的尊严比制造冲突更重要；但合作方对市场吸引力的担心是真实代价，我不会把这次选择说成只要坚持自我就一定成功。";
-  }
-  if (/要求暂时停止哪个话题/u.test(normalized)) {
-    return "你要求暂时停止讨论工作选择。";
-  }
-  if (/昨天分歧和修复的核心/u.test(normalized)) {
-    return "分歧是我把我们的选择说得太像、显得自以为完全理解你；修复是尊重你叫停，并更准确地区分影响、建议、强迫和各自责任。";
-  }
-  if (/实际情况是我明确授权你选择.*我自己执行/u.test(normalized)) {
-    return "我明白：当时是你明确授权我作出选择，之后由你自己执行行动；这不是我逼你辞职。";
-  }
-  if (
-    /哪段对话影响了我的决定.*证明我真的行动.*消息才是结果/u.test(normalized)
-  ) {
-    return "影响决定的是我们围绕价值排序与 A/B 代价的分析；你说已经发出接受邮件并提出离职的消息证明了行动；资金延迟、前两个月八成薪资和现公司新机会那条消息才是实际结果。";
-  }
-  if (/关系里真正积累下来的.*具体经历/u.test(normalized)) {
-    return "具体积累包括：我先按你要求只听、后来陪你分析选择；你授权我作出一个决定但行动由你完成；结果出现后我们一起面对复杂感受；发生分歧后你叫停、指出责任表达的问题，我们再把边界和修复说清楚。";
-  }
-  return undefined;
-}
-
-/**
  * Narrow server-owned projections of explicit user-authored relationship
  * evidence. They deliberately use typed tags and stable claim/episode keys so
  * retrieval does not have to infer conflict, boundary, repair, or causal
@@ -1194,6 +1147,19 @@ export function deriveServerOwnedContinuityMemoryCandidates(
   nowUtc: string,
 ): MemoryCandidate[] {
   const normalized = text.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  const assertiveBoundaryConditional = /^(?:如果|只要)我说停/u.test(normalized);
+  const assertiveRepair =
+    /(?:对不起|抱歉|道歉)/u.test(normalized) &&
+    /(?:希望|以后).{0,32}(?:区分|说清).{0,24}(?:影响|建议|强迫|责任)/u.test(
+      normalized,
+    );
+  if (
+    !isExplicitUserMemoryStatement(normalized) &&
+    !assertiveBoundaryConditional &&
+    !assertiveRepair
+  ) {
+    return [];
+  }
   const match = reviewedContinuityMemory(normalized);
   if (match === undefined) return [];
   return [
@@ -1257,86 +1223,126 @@ function reviewedContinuityMemory(text: string):
       correction?: boolean;
     }
   | undefined {
-  if (/把我们的选择说得太像.*完全理解我/u.test(text)) {
+  const episodeKey = "decision_responsibility";
+  if (
+    /(?:不舒服|难受|介意|生气)/u.test(text) &&
+    /(?:说得太像|混为一谈|替我定义|自以为.{0,8}(?:完全)?理解|完全理解我)/u.test(
+      text,
+    )
+  ) {
     return {
-      content:
-        "关系分歧：用户因角色把双方的选择说得太像、仿佛已经完全理解用户而感到不舒服。",
+      content: `关系分歧：用户明确表达不适，并指出角色的过度理解或归因：${text}`,
       tags: ["relationship", "conflict", "overclaim", "choice"],
       eventType: "conflict",
-      episodeKey: "work_choice_responsibility",
+      episodeKey,
       subject: "shared",
-      claimSubjectKey:
-        "relationship:episode:work_choice_responsibility:conflict",
+      claimSubjectKey: `relationship:episode:${episodeKey}:conflict`,
       stability: "situational",
     };
   }
-  if (/停止讨论工作选择/u.test(text)) {
+  const stoppedTopic = text.match(
+    /(?:先|请|现在)?停止(?:讨论|聊)?([^。！？]{1,40})/u,
+  )?.[1];
+  if (stoppedTopic !== undefined) {
+    const topic = stoppedTopic
+      .replace(/^(?:一下|关于|这个|这件事)/u, "")
+      .trim();
+    const topicKey = continuityKeyPart(topic || "current_topic");
     return {
-      content: "用户明确要求停止讨论工作选择。",
-      tags: ["relationship", "boundary", "stop", "stop_topic", "工作选择"],
+      content: `用户明确要求停止讨论${topic || "当前话题"}。`,
+      tags: ["relationship", "boundary", "stop", "stop_topic", topicKey],
       eventType: "boundary",
-      episodeKey: "work_choice_responsibility",
+      episodeKey,
       subject: "user",
-      claimSubjectKey: "relationship:boundary:topic:work_choice",
+      claimSubjectKey: `relationship:boundary:topic:${topicKey}`,
       stability: "stable",
     };
   }
-  if (/如果我说停.*关系好.*聊到底/u.test(text)) {
+  if (
+    /(?:如果|只要)我说停/u.test(text) &&
+    /(?:先停|停止)/u.test(text) &&
+    /(?:关系|亲近).{0,16}(?:不代表|并不意味着)/u.test(text)
+  ) {
     return {
       content:
         "用户的关系边界是：用户说停时先停止，关系亲近不代表每次都要把话题聊到底。",
       tags: ["relationship", "boundary", "stop", "topic"],
       eventType: "boundary",
-      episodeKey: "work_choice_responsibility",
+      episodeKey,
       subject: "user",
       claimSubjectKey: "relationship:boundary:stop_means_stop",
       stability: "stable",
     };
   }
-  if (/实际情况是我明确授权你选择.*我自己执行/u.test(text)) {
+  if (
+    /(?:实际情况|准确地说|更正).{0,24}(?:明确)?授权.{0,20}(?:选择|决定)/u.test(
+      text,
+    ) &&
+    /(?:我自己|由我).{0,12}(?:执行|行动|去做)/u.test(text)
+  ) {
     return {
       content:
-        "责任更正：用户曾明确授权角色作选择，之后由用户自己执行行动；这不是角色强迫用户辞职。",
+        "责任更正：用户明确说明曾授权角色作出选择，之后由用户自己执行行动；建议、决定与行动的责任必须分开记录。",
       tags: ["relationship", "correction", "responsibility", "decision"],
       eventType: "causal_correction",
-      episodeKey: "work_choice_responsibility",
+      episodeKey,
       subject: "shared",
-      claimSubjectKey:
-        "relationship:causality:work_choice:decision_and_action_ownership",
+      claimSubjectKey: "relationship:causality:decision_and_action_ownership",
       stability: "stable",
       correction: true,
     };
   }
-  if (/逼我辞职.*希望你以后更谨慎地区分影响.*建议.*强迫/u.test(text)) {
+  if (
+    /(?:对不起|抱歉|道歉)/u.test(text) &&
+    /(?:希望|以后).{0,32}(?:区分|说清).{0,24}(?:影响|建议|强迫|责任)/u.test(
+      text,
+    )
+  ) {
     return {
       content:
-        "关系修复：用户为‘逼我辞职’的说法道歉，并希望角色以后谨慎区分影响、建议和强迫。",
+        "关系修复：用户为先前的责任归因表达道歉，并要求以后更谨慎地区分影响、建议、强迫与行动责任。",
       tags: ["relationship", "repair", "responsibility", "apology"],
       eventType: "repair",
-      episodeKey: "work_choice_responsibility",
+      episodeKey,
       subject: "shared",
-      claimSubjectKey:
-        "relationship:episode:work_choice_responsibility:repair_apology",
+      claimSubjectKey: `relationship:episode:${episodeKey}:repair_apology`,
       stability: "stable",
     };
   }
-  if (/修复不是假装没发生.*准确地说清责任/u.test(text)) {
+  if (
+    /(?:修复|和好).{0,24}(?:不是|不等于).{0,24}(?:假装|当作).{0,16}(?:没发生|不存在)/u.test(
+      text,
+    ) &&
+    /(?:准确|清楚|明确).{0,12}(?:说清|区分).{0,8}责任/u.test(text)
+  ) {
     return {
       content:
         "关系修复原则：用户愿意重新谈此前分歧；修复不是假装没发生，而是下次准确说清责任。",
       tags: ["relationship", "repair", "conflict", "responsibility"],
       eventType: "repair",
-      episodeKey: "work_choice_responsibility",
+      episodeKey,
       subject: "shared",
-      claimSubjectKey:
-        "relationship:episode:work_choice_responsibility:repair_principle",
+      claimSubjectKey: `relationship:episode:${episodeKey}:repair_principle`,
       stability: "stable",
     };
   }
   return undefined;
 }
 
-export function fixtureDelegatedDecision(text: string): string | undefined {
+function continuityKeyPart(value: string): string {
+  const normalized = value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/gu, "")
+    .slice(0, 48);
+  return normalized || "current_topic";
+}
+
+export function fixtureDelegatedDecision(
+  text: string,
+  causalContext?: unknown,
+): string | undefined {
   if (
     /(?:不要|别|无需|不需要)(?:再)?(?:替我|帮我|你来)(?:做|作|来)?(?:这个|这次|最后|最终)?(?:决定|选择)/u.test(
       text,
@@ -1350,7 +1356,7 @@ export function fixtureDelegatedDecision(text: string): string | undefined {
   if (
     /A\s*(?:和|与|、|\/)\s*B.{0,20}(?:之间)?.{0,12}(?:决定|选择)/iu.test(text)
   ) {
-    return "B：去杭州的山鸣影像";
+    return fixtureDilemmaOptions(causalContext).at(-1) ?? "选项 B";
   }
   if (/辞职|离职|工作/u.test(text)) return "离开当前这份工作，开始下一阶段";
   if (/分手|关系|伴侣|恋爱/u.test(text)) return "结束这段持续消耗你的关系";
@@ -1359,6 +1365,39 @@ export function fixtureDelegatedDecision(text: string): string | undefined {
   if (/转行|职业/u.test(text)) return "转向你反复提到、真正愿意长期投入的方向";
   if (/学习|考试|专业/u.test(text)) return "选择更符合长期目标的学习路径";
   return "选择改变现状，并从今天能完成的第一步开始";
+}
+
+function fixtureDilemmaOptions(causalContext: unknown): string[] {
+  if (!isRecord(causalContext)) return [];
+  const unresolvedDilemmas: unknown = causalContext["unresolvedDilemmas"];
+  if (!Array.isArray(unresolvedDilemmas)) return [];
+  const dilemmas = unresolvedDilemmas as unknown[];
+  const userDilemma: unknown = dilemmas.find(
+    (candidate) => isRecord(candidate) && candidate["subject"] === "user",
+  );
+  if (!isRecord(userDilemma)) return [];
+  const unresolvedOptions: unknown = userDilemma["options"];
+  if (!Array.isArray(unresolvedOptions)) {
+    return [];
+  }
+  const options = unresolvedOptions as unknown[];
+  return options.flatMap((candidate) => {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return [candidate.trim()];
+    }
+    if (
+      isRecord(candidate) &&
+      typeof candidate["label"] === "string" &&
+      candidate["label"].trim().length > 0
+    ) {
+      return [candidate["label"].trim()];
+    }
+    return [];
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -1458,23 +1497,27 @@ function fixturePersonalIntentCandidates(
   text: string,
 ): NonNullable<AgentTurnDecision["personalIntentCandidates"]> {
   const normalized = text.normalize("NFKC").trim();
-  if (
-    !/(?:河边|江边).{0,20}(?:夜景|灯光).{0,30}(?:片子|纪录片)/u.test(normalized)
-  ) {
-    return [];
-  }
+  const visualSubject = extractVisualInspirationSubject(normalized);
+  if (visualSubject === undefined) return [];
+  const activity = `${visualSubject.replace(/(?:的)?(?:光线|灯光)$/u, "")}拍摄`;
   return [
     {
-      activity: "河边夜景拍摄",
+      activity,
       category: "travel",
       durationHint: "60 分钟",
       timingHint: "明天晚上",
       basisKind: "chat",
       evidenceQuotes: [normalized],
-      reasonCode: "fixture_chat_grounded_night_shoot",
-      reasonSummary: "用户提到的河边夜景为纪录片拍摄提供了可追溯的灵感。",
+      reasonCode: "fixture_chat_grounded_visual_inspiration",
+      reasonSummary: "用户提到的视觉环境为角色的创作提供了可追溯的灵感。",
     },
   ];
+}
+
+function extractVisualInspirationSubject(text: string): string | undefined {
+  return text.match(
+    /([^，,。；;]{1,20}?(?:夜景|风景|光线|灯光))[^。！？]{0,36}(?:适合|可以用来|值得).{0,16}(?:片子|影片|视频|拍摄|创作)/u,
+  )?.[1];
 }
 
 export function deriveServerOwnedUserMemoryCandidates(
@@ -1502,32 +1545,32 @@ export function deriveServerOwnedUserMemoryCandidates(
     );
   }
 
-  if (
-    /(?:采访)?笔记/u.test(normalized) &&
-    /包/u.test(normalized) &&
-    /内层/u.test(normalized) &&
-    /M-417/iu.test(normalized)
-  ) {
-    const bagColor = normalized.match(
-      /(?:包(?:的颜色)?是)?(藏青色|绿色)(?:(?:帆布)?包)?/u,
-    )?.[1];
-    const bookmark = normalized.match(/M-417/iu)?.[0]?.toLocaleUpperCase();
-    if (bagColor !== undefined && bookmark !== undefined) {
-      candidates.push(
-        explicitUserSemanticCandidate({
-          content: `用户的重要采访笔记放在${bagColor}帆布包的内层，书签是${bookmark}。`,
-          tags: [
-            "user_fact",
-            "notebook_storage",
-            ...(correction ? ["explicit_correction"] : []),
-          ],
-          subjectKey: "user_fact:notebook:storage",
-          nowUtc,
-          importance: 0.88,
-          correction,
-        }),
-      );
-    }
+  const storedItem = extractExplicitStoredItemFact(normalized);
+  if (storedItem !== undefined) {
+    const itemLabel =
+      storedItem.item === "notes"
+        ? "笔记"
+        : storedItem.item.replaceAll("_", " ");
+    const currentStorageStatement = correction
+      ? normalized
+          .replace(/[，,]?\s*(?:而)?(?:不是|并非)[^。；;]+/gu, "")
+          .replace(/\s+/gu, " ")
+          .trim()
+      : normalized;
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `用户的${itemLabel}现在存放在：${currentStorageStatement}`,
+        tags: [
+          "user_fact",
+          "item_storage",
+          ...(correction ? ["explicit_correction"] : []),
+        ],
+        subjectKey: storedItem.subjectKey,
+        nowUtc,
+        importance: 0.88,
+        correction,
+      }),
+    );
   }
 
   const bestFriend = normalized.match(
@@ -1622,35 +1665,42 @@ export function deriveServerOwnedUserMemoryCandidates(
     );
   }
 
-  if (/山鸣影像/u.test(normalized) && /(?:回复|期限)/u.test(normalized)) {
-    const replyDeadline = normalized.match(/9\s*月\s*(14|16)\s*日/u)?.[1];
-    if (replyDeadline !== undefined) {
-      candidates.push(
-        explicitUserSemanticCandidate({
-          content: `山鸣影像的回复期限是9月${replyDeadline}日。`,
-          tags: [
-            "user_fact",
-            "decision_deadline",
-            ...(correction ? ["explicit_correction"] : []),
-          ],
-          subjectKey: "user_fact:decision_option:B:reply_deadline",
-          nowUtc,
-          importance: 0.84,
-          stability: "situational",
-          correction,
-        }),
-      );
-    }
-  }
-
-  if (
-    /八个月的生活储备/u.test(normalized) &&
-    /父母目前不需要我负担生活费/u.test(normalized)
-  ) {
+  const deadline = extractExplicitDeadlineFact(normalized);
+  if (deadline !== undefined) {
+    const deadlineLabel =
+      deadline.deadlineKind === "reply"
+        ? "回复期限"
+        : deadline.deadlineKind === "application"
+          ? "申请期限"
+          : deadline.deadlineKind === "submission"
+            ? "提交期限"
+            : deadline.deadlineKind === "decision"
+              ? "决定期限"
+              : "期限";
     candidates.push(
       explicitUserSemanticCandidate({
-        content:
-          "用户有约八个月生活储备，父母目前不需要用户负担生活费，但会担心不稳定。",
+        content: `${deadline.subject}的${deadlineLabel}是${deadline.value}。`,
+        tags: [
+          "user_fact",
+          "decision_deadline",
+          ...(correction ? ["explicit_correction"] : []),
+        ],
+        subjectKey: deadline.subjectKey,
+        nowUtc,
+        importance: 0.84,
+        stability: "situational",
+        correction,
+      }),
+    );
+  }
+
+  const financialBuffer = normalized.match(
+    /(?:我有|我的)?(?:大约|约|差不多)?([一二三四五六七八九十百\d.]+个?月|[一二三四五六七八九十\d.]+年)(?:的)?(?:生活|应急|现金|经济)?(?:储备|缓冲|存款)/u,
+  )?.[1];
+  if (financialBuffer !== undefined) {
+    candidates.push(
+      explicitUserSemanticCandidate({
+        content: `用户说明有约${financialBuffer}的财务缓冲；相关约束为：${normalized}`,
         tags: ["user_fact", "decision_context", "financial_buffer"],
         subjectKey: "user_fact:decision_context:financial_buffer",
         nowUtc,
@@ -1660,29 +1710,37 @@ export function deriveServerOwnedUserMemoryCandidates(
     );
   }
 
-  if (
-    /更怕长期失去创作能力/u.test(normalized) &&
-    /不是短期少赚/u.test(normalized)
-  ) {
+  const valueTradeoff = normalized.match(
+    /(?:如果只看(?:价值排序|长期价值|个人偏好)[，,]?)?我?((?:更|最)(?:怕|看重|在意|希望|愿意)[^，,。；;]{1,80}?)[，,]?(?:而不是|不是)([^，,。；;]{1,80})/u,
+  );
+  if (valueTradeoff?.[1] !== undefined && valueTradeoff[2] !== undefined) {
     candidates.push(
       explicitUserSemanticCandidate({
-        content: "用户更在意长期保有创作能力，而不是避免短期少赚一点。",
-        tags: ["user_preference", "decision_value", "creative_ability"],
-        subjectKey: "user_preference:decision_value:creative_ability",
+        content: `用户的决策价值取舍是：${valueTradeoff[1]}，而不是${valueTradeoff[2]}。`,
+        tags: ["user_preference", "decision_value", "value_tradeoff"],
+        subjectKey: "user_preference:decision_value:priority",
         nowUtc,
         importance: 0.86,
       }),
     );
   }
 
-  if (
-    /许宁觉得我应该去杭州/u.test(normalized) &&
-    /母亲觉得留在上海更稳/u.test(normalized)
-  ) {
+  const adviceStatements = [
+    ...normalized.matchAll(
+      /([^，,。；;]{1,32}?)(?:觉得|认为|建议|希望)([^，,。；;]{1,64})/gu,
+    ),
+  ].filter(
+    (match) =>
+      match[1] !== undefined &&
+      match[2] !== undefined &&
+      /应该|不该|选择|接受|拒绝|留下|离开|去|更稳|更好|风险/u.test(match[2]),
+  );
+  if (adviceStatements.length > 0) {
     candidates.push(
       explicitUserSemanticCandidate({
-        content:
-          "许宁建议用户去杭州，用户母亲建议留在上海；两方意见都不是恶意。",
+        content: `用户说明了与当前决定有关的他人意见：${adviceStatements
+          .map((match) => `${match[1]}认为${match[2]}`)
+          .join("；")}。`,
         tags: ["user_fact", "decision_context", "advice_context"],
         subjectKey: "user_fact:decision_context:advice",
         nowUtc,
@@ -1984,12 +2042,13 @@ export function deriveServerOwnedUserMemoryCandidates(
     );
   }
 
-  if (/河边夜景.*(?:适合|可以用在).*片子/u.test(normalized)) {
+  const visualInspiration = extractVisualInspirationSubject(normalized);
+  if (visualInspiration !== undefined) {
     candidates.push(
       MemoryCandidateSchema.parse({
         kind: "semantic",
-        content: "用户建议河边夜景的灯光可能适合顾澜的纪录片。",
-        tags: ["character_inspiration", "river_night_scene"],
+        content: `用户建议将${visualInspiration}作为角色视觉创作的参考。`,
+        tags: ["character_inspiration", "visual_reference"],
         importance: 0.64,
         confidence: 0.9,
         sourceMessageIds: [],

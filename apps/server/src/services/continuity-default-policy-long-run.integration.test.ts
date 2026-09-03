@@ -334,6 +334,9 @@ async function openTrackedApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    // This P1 fixture still asserts the retired settlement projection. Keep it
+    // as an explicit migration regression instead of relying on test defaults.
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "enforced",
     selfInitiatedPlanningMode: "enforced",
     liveWorldEffectsMode: "enforced",

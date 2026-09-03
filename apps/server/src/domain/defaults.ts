@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { LOCAL_USER_ID } from "@personasim/contracts";
+
 import type {
   CharacterDraft,
   ImportedCharacterInput,
@@ -392,7 +394,7 @@ export function initialRuntimeState(
     focus: 0.7,
     sleepDebtMinutes: 0,
     relationship: {
-      userId: "local-user",
+      userId: LOCAL_USER_ID,
       closeness: draft.userRelationship.initialCloseness,
       trust: draft.userRelationship.initialTrust,
       familiarity: Math.max(

@@ -51,13 +51,18 @@ recurring commitments are added after the create path is stable.
 
 ## Rollout and rollback
 
-`SCHEDULE_NEGOTIATION_MODE` has three modes:
+`SCHEDULE_NEGOTIATION_MODE` now accepts four compatibility modes:
 
+- `off`: product default; no exact-schedule chat writer is active.
 - `legacy`: current model-effect path.
 - `shadow`: evaluate structured actions and write diagnostics while preserving
   the legacy writer; the new path does not write schedule or negotiation
   state.
 - `enforced`: the negotiation path exclusively owns schedule changes.
+
+All non-`off` values require `LIFE_PLANNING_MODE=legacy_exact`. Configuration
+normalizes them to `off` in fuzzy-life mode, so this historical workflow cannot
+silently become a second product world model.
 
 A turn selects exactly one writer. Legacy effects and server commands are
 never applied together. Database migrations are additive, so rollback means

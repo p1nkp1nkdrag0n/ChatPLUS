@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   deriveExplicitUserMemoryClaim,
+  extractExplicitDeadlineFact,
+  extractExplicitStoredItemFact,
   hasExplicitMemoryCorrection,
 } from "./memory-claim.js";
 import {
@@ -101,15 +103,15 @@ describe("verified user memory claim derivation", () => {
     ).toBe(true);
   });
 
-  it("maps the v3 notebook, deadline, and destination corrections to stable slots", () => {
+  it("maps item, deadline, and destination corrections to generic stable slots", () => {
     const cases = [
       [
         "我刚才说错了，包是藏青色，不是绿色。笔记仍在内层，书签还是 M-417。",
-        "user_fact:notebook:storage",
+        "user_fact:item:notes:storage",
       ],
       [
         "更正一个事实：山鸣影像后来把回复期限延到 9 月 16 日，不是 9 月 14 日。",
-        "user_fact:decision_option:B:reply_deadline",
+        "user_fact:deadline:山鸣影像:reply",
       ],
       [
         "更正另一件事：许宁后来改去成都进修，不去重庆了。",
@@ -123,6 +125,47 @@ describe("verified user memory claim derivation", () => {
         deriveExplicitUserMemoryClaim({ category: "user_fact", evidenceText }),
       ).toEqual({ subjectKey, disposition: "affirmed" });
     }
+  });
+
+  it("derives storage and deadline identity from unrelated domain language", () => {
+    expect(
+      extractExplicitStoredItemFact("护照放在书桌右侧抽屉。"),
+    ).toMatchObject({
+      item: "护照",
+      subjectKey: "user_fact:item:护照:storage",
+    });
+    expect(
+      extractExplicitStoredItemFact(
+        "更正：护照放在玄关柜第二层，不在书桌右侧抽屉。",
+      ),
+    ).toMatchObject({
+      item: "护照",
+      subjectKey: "user_fact:item:护照:storage",
+    });
+    expect(
+      extractExplicitStoredItemFact(
+        "我准备留在这座城市，也建议朋友去另一个团队。",
+      ),
+    ).toBeUndefined();
+
+    expect(
+      extractExplicitDeadlineFact("清岚工作室的申请截止是 10 月 5 日。"),
+    ).toEqual({
+      subject: "清岚工作室",
+      deadlineKind: "application",
+      value: "10月5日",
+      subjectKey: "user_fact:deadline:清岚工作室:application",
+    });
+    expect(
+      extractExplicitDeadlineFact(
+        "更正：清岚工作室的申请截止改到 10 月 8 日，不是 10 月 5 日。",
+      ),
+    ).toEqual({
+      subject: "清岚工作室",
+      deadlineKind: "application",
+      value: "10月8日",
+      subjectKey: "user_fact:deadline:清岚工作室:application",
+    });
   });
 
   it("uses candidate content to select a supported fact from compound evidence", () => {

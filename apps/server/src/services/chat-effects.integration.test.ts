@@ -293,6 +293,7 @@ async function createEffectsTestApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    lifePlanningMode: "legacy_exact",
     chatEffectsMode: overrides.chatEffectsMode ?? "gated",
     scheduleNegotiationMode: "legacy",
     llm: {

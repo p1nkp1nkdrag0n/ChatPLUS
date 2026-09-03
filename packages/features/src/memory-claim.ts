@@ -7,6 +7,18 @@ export interface DerivedExplicitUserMemoryClaim {
   disposition: "affirmed" | "negated";
 }
 
+export interface ExplicitDeadlineFact {
+  subject: string;
+  deadlineKind: "reply" | "application" | "submission" | "decision" | "general";
+  value: string;
+  subjectKey: string;
+}
+
+export interface ExplicitStoredItemFact {
+  item: string;
+  subjectKey: string;
+}
+
 const CORRECTION_PREFIX =
   /^(?:(?:更正(?:一下|一个事实|另一件事)?|纠正|修正|更新(?:一下)?|改(?:正|一下)|补充更正)|(?:我|前面|刚才|之前)?(?:刚才|之前|前面)?说错了|correction|update|i\s+(?:was|got\s+that)\s+wrong)\s*[:：,，。.!！-]?\s*/iu;
 const EXPLICIT_REPLACEMENT =
@@ -95,24 +107,12 @@ type ClaimParser = (text: string) => DerivedExplicitUserMemoryClaim | undefined;
 
 const FACT_PARSERS: readonly ClaimParser[] = [
   (text) => {
-    if (
-      /(?:采访)?笔记/u.test(text) &&
-      /(?:帆布)?包/u.test(text) &&
-      /(?:内层|书签|M-417)/iu.test(text)
-    ) {
-      return claim("user_fact:notebook:storage");
-    }
-    return undefined;
+    const storedItem = extractExplicitStoredItemFact(text);
+    return storedItem === undefined ? undefined : claim(storedItem.subjectKey);
   },
   (text) => {
-    if (
-      /山鸣影像/u.test(text) &&
-      /(?:回复期限|期限|前回复)/u.test(text) &&
-      /9\s*月\s*(?:14|16)\s*日/u.test(text)
-    ) {
-      return claim("user_fact:decision_option:B:reply_deadline");
-    }
-    return undefined;
+    const deadline = extractExplicitDeadlineFact(text);
+    return deadline === undefined ? undefined : claim(deadline.subjectKey);
   },
   (text) => {
     const bestFriend = text.match(
@@ -195,6 +195,63 @@ const FACT_PARSERS: readonly ClaimParser[] = [
       : claim(`user_fact:user:${keyPart(attribute[1])}`);
   },
 ];
+
+/**
+ * Derives a stable slot for an explicitly stated deadline without knowing any
+ * scenario entity, option label, or date in advance.
+ */
+export function extractExplicitDeadlineFact(
+  sourceText: string,
+): ExplicitDeadlineFact | undefined {
+  const text = stripTerminalPunctuation(
+    stripCorrectionPrefix(sourceText.normalize("NFKC").trim()),
+  );
+  const deadlineKind = inferDeadlineKind(text);
+  if (deadlineKind === undefined) return undefined;
+  const value = currentDeadlineValue(text);
+  if (value === undefined) return undefined;
+  const subject = deadlineSubject(text);
+  if (subject === undefined) return undefined;
+  return {
+    subject,
+    deadlineKind,
+    value,
+    subjectKey: `user_fact:deadline:${keyPart(subject)}:${deadlineKind}`,
+  };
+}
+
+/**
+ * Recognizes an item-storage fact at the level needed for claim identity. The
+ * stored content remains the user's evidence; this function never assumes a
+ * particular item, container, color, compartment, or marker value.
+ */
+export function extractExplicitStoredItemFact(
+  sourceText: string,
+): ExplicitStoredItemFact | undefined {
+  const text = stripTerminalPunctuation(
+    stripCorrectionPrefix(sourceText.normalize("NFKC").trim()),
+  );
+  if (
+    !/(?:放|收|存|搁|保存|保管).{0,8}(?:在|于)|(?:仍|还|依然).{0,8}(?:在|于)|(?:位置|存放处)(?:是|为)/u.test(
+      text,
+    )
+  ) {
+    return undefined;
+  }
+  const direct = text.match(
+    /(?:^|[，,。；;])(?:我(?:有|的))?(?:一[本份个把串件])?(?:重要的?)?([^，,。；;]{1,24}?)(?:[，,]?\s*)?(?:一直|仍|还|依然)?(?:放|收|存|搁|保存|保管|在)(?:在|于)?[^，,。；;]+/u,
+  )?.[1];
+  const fallback = text.match(
+    /(?:^|[，,。；;])([^，,。；;]{1,16}?)(?:的)?(?:位置|存放处)(?:是|为)[^，,。；;]+/u,
+  )?.[1];
+  const rawItem = (direct ?? fallback)?.trim();
+  if (rawItem === undefined || rawItem.length === 0) return undefined;
+  const item = /笔记/u.test(rawItem) ? "notes" : keyPart(rawItem);
+  return {
+    item,
+    subjectKey: `user_fact:item:${item}:storage`,
+  };
+}
 
 function parseClaims(
   text: string,
@@ -288,6 +345,61 @@ function stripMemoryInstructionPrefix(text: string): string {
 
 function stripTerminalPunctuation(text: string): string {
   return text.replace(/[。.!！;；,，]+$/gu, "").trim();
+}
+
+function inferDeadlineKind(
+  text: string,
+): ExplicitDeadlineFact["deadlineKind"] | undefined {
+  if (/(?:回复期限|期限.{0,8}回复|前回复)/u.test(text)) return "reply";
+  if (/(?:申请期限|申请截止|报名期限|报名截止)/u.test(text)) {
+    return "application";
+  }
+  if (/(?:提交期限|提交截止|交付期限|交付截止)/u.test(text)) {
+    return "submission";
+  }
+  if (/(?:决定期限|决定截止|作出决定.{0,8}前)/u.test(text)) {
+    return "decision";
+  }
+  return /期限|截止(?:日|时间)?/u.test(text) ? "general" : undefined;
+}
+
+function currentDeadlineValue(text: string): string | undefined {
+  const value =
+    text.match(
+      /(?:延(?:期)?(?:到|至)|推迟(?:到|至)|提前(?:到|至)|改(?:成|为|到)|调整(?:成|为|到)|更新(?:成|为)|现在(?:是|为)|最新(?:是|为)|而是|应(?:为|该是)|应该是)\s*((?:\d{1,4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|(?:今天|明天|后天|下周[一二三四五六日天]?))/u,
+    )?.[1] ??
+    text.match(
+      /((?:\d{1,4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|(?:今天|明天|后天|下周[一二三四五六日天]?))/u,
+    )?.[1];
+  return value?.replace(/\s+/gu, "").trim();
+}
+
+function deadlineSubject(text: string): string | undefined {
+  const direct = text.match(
+    /(?:^|[，,。；;:：])\s*([\p{L}\p{N}·_-]{2,40}?)(?:后来)?(?:把|的)(?:回复|申请|报名|提交|交付|决定)?(?:期限|截止)/u,
+  )?.[1];
+  if (direct !== undefined) return cleanDeadlineSubject(direct);
+
+  const optionSubject = text.match(
+    /选项\s*([A-Z])\s*(?:是|为|[:：])\s*(?:去|加入|接受|选择|留在)?(?:[\p{Script=Han}A-Za-z0-9·_-]{1,16}的)?([\p{Script=Han}A-Za-z0-9·_-]{2,40})(?=[，,。；;])/u,
+  );
+  if (optionSubject?.[2] !== undefined) {
+    return cleanDeadlineSubject(optionSubject[2]);
+  }
+
+  const possessive = text.match(
+    /([\p{L}\p{N}·_-]{2,40}?)(?:的)(?:回复|申请|报名|提交|交付|决定)?(?:期限|截止)/u,
+  )?.[1];
+  if (possessive !== undefined) return cleanDeadlineSubject(possessive);
+  const optionKey = optionSubject?.[1];
+  return optionKey === undefined ? undefined : `option_${optionKey}`;
+}
+
+function cleanDeadlineSubject(value: string): string {
+  return value
+    .replace(/^(?:更正|纠正|修正|更新)(?:一下|一个事实|另一件事)?[:：]?/u, "")
+    .replace(/^(?:对方|该方)$/u, "counterparty")
+    .trim();
 }
 
 function keyPart(value: string): string {

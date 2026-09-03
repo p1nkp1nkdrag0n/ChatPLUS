@@ -3730,10 +3730,13 @@ async function createNegotiationTestApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    lifePlanningMode: "legacy_exact",
     chatEffectsMode: options.chatEffectsMode ?? "gated",
     scheduleNegotiationMode: options.mode ?? "enforced",
     selfInitiatedPlanningMode: "off",
     liveWorldEffectsMode: options.liveWorldEffectsMode ?? "shadow",
+    memoryRecallMode: "legacy",
+    autobiographyMode: "off",
     llm: {
       provider,
       baseUrl: "https://example.invalid",

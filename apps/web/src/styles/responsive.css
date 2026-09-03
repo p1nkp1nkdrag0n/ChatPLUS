@@ -114,6 +114,10 @@
     padding-right: 28px;
   }
 
+  .policy-panels {
+    grid-template-columns: 1fr;
+  }
+
   .provenance-inspector {
     display: none;
   }
@@ -297,6 +301,21 @@
   .goal-row__priority,
   .goal-row p {
     grid-column: 2;
+  }
+
+  .structured-editor-grid,
+  .structured-editor-grid--compact,
+  .structured-editor-grid--routine,
+  .structured-list-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .range-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .structured-card {
+    padding: 13px;
   }
 
   .chat-header {

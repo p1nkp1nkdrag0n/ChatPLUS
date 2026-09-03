@@ -84,6 +84,7 @@ describe("shared API transport contracts", () => {
     );
 
     expect(published.character.id).toBe(agentId);
+    expect(published.character.schedulePolicy.enabled).toBe(true);
     expect(published.schedule.length).toBeGreaterThan(0);
 
     const activated = parseResponse(
@@ -95,6 +96,11 @@ describe("shared API transport contracts", () => {
       ActivateAgentResponseSchema,
     );
     expect(activated.agentId).toBe(agentId);
+    expect(activated.capabilities).toMatchObject({
+      fuzzyLife: false,
+      legacyExactSchedule: true,
+      schedule: true,
+    });
 
     const schedule = parseResponse(
       await app.inject({
@@ -105,9 +111,11 @@ describe("shared API transport contracts", () => {
       AgentScheduleResponseSchema,
     );
     if (schedule.retired === true) {
+      expect(schedule.dataModel).toBe("fuzzy_life");
       expect(schedule.items).toEqual([]);
       expect(schedule.replacement).toBe("fuzzy_life_context");
     } else {
+      expect(schedule.dataModel).toBe("legacy_exact_schedule");
       expect(schedule.items.length).toBeGreaterThan(0);
     }
 
@@ -167,7 +175,7 @@ describe("shared API transport contracts", () => {
     );
     expect(messages.messages).toHaveLength(2);
 
-    parseResponse(
+    const timeline = parseResponse(
       await app.inject({
         method: "GET",
         url: `/api/agents/${agentId}/timeline?limit=100`,
@@ -175,6 +183,11 @@ describe("shared API transport contracts", () => {
       200,
       TimelineResponseSchema,
     );
+    expect(
+      timeline.events.find(
+        (event) => event.type === "conversation.turn_committed",
+      ),
+    ).toMatchObject({ provenance: "conversation" });
 
     const memories = parseResponse(
       await app.inject({
@@ -369,6 +382,7 @@ describe("shared API transport contracts", () => {
       ...expectedLineage,
       title: originalScheduleItem.title,
       source: "self_initiated",
+      provenance: "life_simulation",
     });
     expect(timeline.scheduleItems.map((item) => item.id)).toContain(
       scheduleItemId,
@@ -376,7 +390,10 @@ describe("shared API transport contracts", () => {
     const committedPlan = timeline.events.find(
       (event) => event.type === "self_plan.committed",
     );
-    expect(committedPlan).toMatchObject(expectedLineage);
+    expect(committedPlan).toMatchObject({
+      ...expectedLineage,
+      provenance: "life_simulation",
+    });
     expect(committedPlan).not.toHaveProperty("selfPlanId");
     expect(new Set(timeline.events.map((event) => event.id)).size).toBe(
       timeline.events.length,

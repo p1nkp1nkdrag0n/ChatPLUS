@@ -1333,6 +1333,7 @@ describe("PersonaSim server integration", () => {
       clockMode: "fake",
       seedDemo: true,
       developerRoutes: true,
+      lifePlanningMode: "legacy_exact",
       scheduleNegotiationMode: "legacy",
       llm: {
         provider: "fixture",
@@ -1371,6 +1372,7 @@ async function createTestApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "legacy",
     ...(liveWorldEffectsMode === undefined ? {} : { liveWorldEffectsMode }),
     llm: {

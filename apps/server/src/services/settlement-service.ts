@@ -7,7 +7,10 @@ import {
 } from "@personasim/features";
 
 import type { DatabaseStore, StoredActivityEvent } from "../db/store.js";
-import { capabilitiesForTier } from "../domain/capabilities.js";
+import {
+  capabilitiesForTier,
+  type LifePlanningMode,
+} from "../domain/capabilities.js";
 import {
   toFeatureScheduleItems,
   toFeatureState,
@@ -60,6 +63,7 @@ export class SettlementService {
     private readonly options: {
       continuityIndex?: ContinuityIndexService;
     } = {},
+    private readonly lifePlanningMode: LifePlanningMode = "fuzzy",
   ) {}
 
   async settle(
@@ -72,7 +76,11 @@ export class SettlementService {
     if (!spec || !state || !cursor) throw notFound("Character");
     const toUtc = canonicalUtc(input.toUtc ?? this.clock.nowUtc());
     const capabilities = capabilitiesForTier(spec.tier);
-    if (spec.status !== "published" || !capabilities.offlineSettlement) {
+    if (
+      this.lifePlanningMode !== "legacy_exact" ||
+      spec.status !== "published" ||
+      !capabilities.offlineSettlement
+    ) {
       return {
         agentId,
         fromUtc: cursor.lastSettledAtUtc,
@@ -360,7 +368,11 @@ export class SettlementService {
     const result = await this.settle(agentId, input);
     const spec = this.store.getCharacterSpec(agentId);
     if (!spec) throw notFound("Character");
-    if (spec.status === "published" && capabilitiesForTier(spec.tier).schedule)
+    if (
+      this.lifePlanningMode === "legacy_exact" &&
+      spec.status === "published" &&
+      capabilitiesForTier(spec.tier).legacyExactSchedule
+    )
       await this.schedules.ensure72Hours(agentId);
     return result;
   }

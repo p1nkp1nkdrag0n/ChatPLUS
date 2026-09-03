@@ -6,11 +6,13 @@ import { ZodError } from "zod";
 import { composeServer, type ServerKernelHandle } from "./composition/index.js";
 import { readConfig, type ServerConfig } from "./config.js";
 import type { Database } from "./db/connection.js";
+import { assertLocalDemoNetworkBoundary } from "./deployment-boundary.js";
 import { ApiError } from "./domain/errors.js";
 import { registerRoutes, type RouteServices } from "./http/routes.js";
 import type { Clock } from "./runtime/clock.js";
 import type { HourlyScheduler } from "./runtime/hourly-scheduler.js";
 import type { LlmServiceObservationOptions } from "./services/llm-service.js";
+import type { FixtureTurnBehavior } from "./services/turn-decision-service.js";
 
 export type BuildAppOptions = {
   config?: ServerConfig;
@@ -20,6 +22,7 @@ export type BuildAppOptions = {
   startScheduler?: boolean;
   logger?: boolean;
   llmObservation?: LlmServiceObservationOptions;
+  fixtureTurnBehavior?: FixtureTurnBehavior;
 };
 
 export type PersonaSimApp = FastifyInstance & {
@@ -39,6 +42,7 @@ export async function buildApp(
   options: BuildAppOptions = {},
 ): Promise<PersonaSimApp> {
   const config = options.config ?? readConfig();
+  assertLocalDemoNetworkBoundary(config);
   const app = Fastify({
     logger: options.logger === false ? false : { level: config.logLevel },
     bodyLimit: JSON_BODY_LIMIT_BYTES,
@@ -52,6 +56,9 @@ export async function buildApp(
     ...(options.llmObservation === undefined
       ? {}
       : { llmObservation: options.llmObservation }),
+    ...(options.fixtureTurnBehavior === undefined
+      ? {}
+      : { fixtureTurnBehavior: options.fixtureTurnBehavior }),
   });
   const services = composition.routeServices;
   const { scheduler } = composition;

@@ -15,6 +15,7 @@ import { buildApp, type PersonaSimApp } from "../app.js";
 import type { ServerConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
+import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
 import {
   LONG_RUN_V3_GENERATED_BASELINE_VERSION,
   readCompanionLongRunV3BaselineProjection,
@@ -137,6 +138,9 @@ export async function createLongRunV3CharacterBaseline(
           onMetric: observer.onMetric,
           onLogicalCall: observer.onLogicalCall,
         },
+        ...(input.config.llm.provider === "fixture"
+          ? { fixtureTurnBehavior: companionLongRunV3FixtureBehavior }
+          : {}),
       });
     } finally {
       globalThis.fetch = previousFetch;

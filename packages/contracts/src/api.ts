@@ -9,6 +9,7 @@ import {
   OriginalCharacterInputSchema,
 } from "./character.js";
 import { PersonaChatDeliveryModeSchema } from "./llm.js";
+import { FuzzyLifePromptContextSchema } from "./fuzzy-life-context.js";
 import {
   ReasoningEffortSchema,
   ReasoningRequestFormatSchema,
@@ -139,7 +140,7 @@ export const PublishCharacterResponseSchema = z
   .object({
     character: CharacterSpecSchema,
     schedule: z.array(ScheduleItemSchema).max(200),
-    lifeContext: z.record(z.string(), z.unknown()).optional(),
+    lifeContext: FuzzyLifePromptContextSchema.optional(),
   })
   .strict();
 export type PublishCharacterResponse = z.infer<
@@ -211,6 +212,9 @@ export type AgentActivationSettlement = z.infer<
 
 export const AgentCapabilitiesSchema = z
   .object({
+    fuzzyLife: z.boolean(),
+    legacyExactSchedule: z.boolean(),
+    /** @deprecated Compatibility alias for legacyExactSchedule. */
     schedule: z.boolean(),
     offlineSettlement: z.boolean(),
     dynamicState: z.boolean(),
@@ -247,7 +251,7 @@ export const ActivateAgentResponseSchema = z
     characterLocalTime: z.string().trim().min(1).max(64),
     currentActivity: ScheduleItemSchema.optional(),
     schedule: z.array(ScheduleItemSchema).max(300),
-    lifeContext: z.record(z.string(), z.unknown()).optional(),
+    lifeContext: FuzzyLifePromptContextSchema.optional(),
     settlement: AgentActivationSettlementSchema.optional(),
     proactiveMessage: ApiStoredMessageSchema.optional(),
   })
@@ -256,11 +260,12 @@ export type ActivateAgentResponse = z.infer<typeof ActivateAgentResponseSchema>;
 
 export const AgentScheduleResponseSchema = z
   .object({
+    dataModel: z.enum(["fuzzy_life", "legacy_exact_schedule"]),
     items: z.array(ScheduleItemSchema).max(1_000),
     serverTimeUtc: UtcDateTimeSchema,
     retired: z.boolean().optional(),
     replacement: z.literal("fuzzy_life_context").optional(),
-    lifeContext: z.record(z.string(), z.unknown()).optional(),
+    lifeContext: FuzzyLifePromptContextSchema.optional(),
   })
   .strict();
 export type AgentScheduleResponse = z.infer<typeof AgentScheduleResponseSchema>;
@@ -329,6 +334,14 @@ export const TimelineQuerySchema = z
   .strict();
 export type TimelineQuery = z.input<typeof TimelineQuerySchema>;
 
+export const TimelineProvenanceSchema = z.enum([
+  "conversation",
+  "life_simulation",
+  "character_spec",
+  "system",
+]);
+export type TimelineProvenance = z.infer<typeof TimelineProvenanceSchema>;
+
 export const ApiTimelineEventSchema = z
   .object({
     id: EntityIdSchema,
@@ -336,6 +349,7 @@ export const ApiTimelineEventSchema = z
     title: z.string().trim().min(1).max(160).optional(),
     summary: z.string().trim().min(1).max(1_000),
     occurredAtUtc: UtcDateTimeSchema,
+    provenance: TimelineProvenanceSchema,
     scheduleItemId: EntityIdSchema.optional(),
     activityEventId: EntityIdSchema.optional(),
     memoryId: EntityIdSchema.optional(),
@@ -428,6 +442,7 @@ export type UpdateSettingsResponse = z.infer<
 export const HealthResponseSchema = z
   .object({
     status: z.literal("ok"),
+    deploymentMode: z.literal("local_single_user"),
     serverTimeUtc: UtcDateTimeSchema,
     profile: z.string().trim().min(1).max(120),
     llmProvider: z.enum(["fixture", "openai-compatible"]),

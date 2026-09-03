@@ -12,7 +12,7 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CharacterSpecSchema } from "@personasim/contracts";
 import { useNavigate, useParams } from "react-router-dom";
@@ -25,6 +25,8 @@ import type {
 } from "../api/types";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { TierLabel } from "../components/TierLabel";
+import { ensureUserEditSource } from "../components/character-editor/source";
+import type { SelectedField } from "../components/character-editor/types";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
 import { formatLocalDateTime } from "../lib/date";
 
@@ -34,18 +36,33 @@ const TABS = [
   ["dialogue", "语言风格"],
   ["relationship", "关系"],
   ["knowledge", "知识与边界"],
+  ["life", "生活策略"],
   ["json", "高级 JSON"],
   ["versions", "版本历史"],
 ] as const;
 
 type EditorTab = (typeof TABS)[number][0];
 
-interface SelectedField {
-  path: string;
-  label: string;
-  provenance?: Partial<ProvenanceRule>;
-  excerpt?: string;
-}
+const DialogueEditor = lazy(() =>
+  import("../components/character-editor/DialogueEditor").then((module) => ({
+    default: module.DialogueEditor,
+  })),
+);
+const RelationshipEditor = lazy(() =>
+  import("../components/character-editor/RelationshipEditor").then(
+    (module) => ({ default: module.RelationshipEditor }),
+  ),
+);
+const KnowledgeEditor = lazy(() =>
+  import("../components/character-editor/KnowledgeEditor").then((module) => ({
+    default: module.KnowledgeEditor,
+  })),
+);
+const LifePolicyEditor = lazy(() =>
+  import("../components/character-editor/LifePolicyEditor").then((module) => ({
+    default: module.LifePolicyEditor,
+  })),
+);
 
 export default function CharacterEditorPage() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -250,36 +267,36 @@ export default function CharacterEditorPage() {
               onToggleLock={toggleLock}
             />
           ) : null}
-          {tab === "dialogue" ? (
-            <JsonSectionEditor
-              title="语言风格"
-              description="控制表达温度、直接程度、长度与常见模式。"
-              value={spec.dialogue}
-              onChange={(value) =>
-                setAtRoot("dialogue", value as Record<string, unknown>)
-              }
-            />
-          ) : null}
-          {tab === "relationship" ? (
-            <JsonSectionEditor
-              title="关系"
-              description="角色如何称呼你，以及信任和亲密度的起点。"
-              value={spec.userRelationship}
-              onChange={(value) =>
-                setAtRoot("userRelationship", value as Record<string, unknown>)
-              }
-            />
-          ) : null}
-          {tab === "knowledge" ? (
-            <JsonSectionEditor
-              title="知识与边界"
-              description="明确角色知道、不确定和不应获得的元知识。"
-              value={spec.knowledge}
-              onChange={(value) =>
-                setAtRoot("knowledge", value as CharacterSpec["knowledge"])
-              }
-            />
-          ) : null}
+          <Suspense fallback={<LoadingBlock label="正在打开编辑表单…" />}>
+            {tab === "dialogue" ? (
+              <DialogueEditor
+                spec={spec}
+                onChange={setSpec}
+                onSelect={setSelected}
+              />
+            ) : null}
+            {tab === "relationship" ? (
+              <RelationshipEditor
+                spec={spec}
+                onChange={setSpec}
+                onSelect={setSelected}
+              />
+            ) : null}
+            {tab === "knowledge" ? (
+              <KnowledgeEditor
+                spec={spec}
+                onChange={setSpec}
+                onSelect={setSelected}
+              />
+            ) : null}
+            {tab === "life" ? (
+              <LifePolicyEditor
+                spec={spec}
+                onChange={setSpec}
+                onSelect={setSelected}
+              />
+            ) : null}
+          </Suspense>
           {tab === "json" ? (
             <section className="json-editor">
               <div className="editor-section-title">
@@ -704,58 +721,6 @@ function PersonaEditor({
   );
 }
 
-function JsonSectionEditor({
-  title,
-  description,
-  value,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  value: unknown;
-  onChange: (value: Record<string, unknown> | unknown[]) => void;
-}) {
-  const [text, setText] = useState(() => JSON.stringify(value, null, 2));
-  const [error, setError] = useState<string>();
-  useEffect(() => setText(JSON.stringify(value, null, 2)), [value]);
-  return (
-    <section className="json-section-editor">
-      <div className="editor-section-title">
-        <div>
-          <h2>{title}</h2>
-          <p>{description}</p>
-        </div>
-        <button
-          className="button button--quiet"
-          type="button"
-          onClick={() => {
-            try {
-              const parsed = JSON.parse(text) as
-                Record<string, unknown> | unknown[];
-              setError(undefined);
-              onChange(parsed);
-            } catch (parseError) {
-              setError(
-                parseError instanceof Error
-                  ? parseError.message
-                  : "JSON 无法解析",
-              );
-            }
-          }}
-        >
-          应用本节
-        </button>
-      </div>
-      <textarea
-        spellCheck={false}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-      />
-      {error ? <p className="field-error">{error}</p> : null}
-    </section>
-  );
-}
-
 function ProvenanceInspector({
   selected,
   spec,
@@ -850,31 +815,6 @@ function ProvenanceInspector({
       </button>
     </aside>
   );
-}
-
-function ensureUserEditSource(spec: CharacterSpec): {
-  id: string;
-  sources: CharacterSpec["sources"];
-} {
-  const existing = spec.sources.find(
-    (source) =>
-      source.sourceType === "user_spec" && typeof source.id === "string",
-  );
-  if (existing && typeof existing.id === "string") {
-    return { id: existing.id, sources: spec.sources };
-  }
-  const id = crypto.randomUUID();
-  return {
-    id,
-    sources: [
-      ...spec.sources,
-      {
-        id,
-        sourceType: "user_spec",
-        label: "角色编辑器手工设定",
-      },
-    ],
-  };
 }
 
 function originLabel(origin: ProvenanceRule["origin"] | undefined): string {

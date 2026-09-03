@@ -15,6 +15,7 @@ import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { LifeRepository } from "../repositories/life-repository.js";
 import { FakeClock } from "../runtime/clock.js";
+import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 
 const START_UTC = "2026-09-01T01:00:00.000Z";
@@ -106,6 +107,82 @@ describe("fuzzy-life conversation integration", () => {
     expect(replay.statusCode, replay.body).toBe(200);
     expect(jsonBody<ChatTurnResult>(replay).idempotentReplay).toBe(true);
     expect(scalarCount(app, "decision_records")).toBe(1);
+  });
+
+  it("does not create a dilemma from unbound scenario-like context or corrections", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unbound-advice-context",
+      "许宁觉得我应该去杭州；我母亲觉得留在上海更稳。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unbound-deadline-correction",
+      "更正一个事实：山鸣影像把期限延到 9 月 16 日，不是 9 月 14 日。",
+    );
+
+    expect(scalarCount(app, "dilemma_episodes")).toBe(0);
+  });
+
+  it("does not attach unrelated context or corrections to the only open dilemma", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-open-option-a",
+      "选项 A 是继续当前的编辑工作，收入稳定，但成长较慢。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-open-option-b",
+      "选项 B 是加入清岚工作室，项目更喜欢，但合同只签一年。",
+    );
+    const before = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    );
+    const eventCountBefore = dilemmaEvidenceEventCount(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-open-walk",
+      "我觉得今天应该去散步，这样对身体更好。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-open-dentist",
+      "更正：牙医预约改到周五，不是周四。",
+    );
+
+    expect(
+      rowJson<DilemmaEpisode>(
+        app,
+        "dilemma_episodes",
+        "episode_json",
+        "id",
+        before.id,
+      ),
+    ).toEqual(before);
+    expect(dilemmaEvidenceEventCount(app, character.id)).toBe(eventCountBefore);
   });
 
   it("keeps one pressure episode, honors support-mode negation, and builds the canonical A/B dilemma", async () => {
@@ -1189,6 +1266,7 @@ async function createTestApp(): Promise<PersonaSimApp> {
     seedDemo: false,
     startScheduler: false,
     logger: false,
+    fixtureTurnBehavior: companionLongRunV3FixtureBehavior,
   });
 }
 
@@ -1242,6 +1320,19 @@ function scalarCount(app: PersonaSimApp, table: string): number {
   const row = app.personasim.store.database
     .prepare(`SELECT COUNT(*) AS count FROM ${table}`)
     .get() as { count: number };
+  return row.count;
+}
+
+function dilemmaEvidenceEventCount(
+  app: PersonaSimApp,
+  agentId: string,
+): number {
+  const row = app.personasim.store.database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM domain_events
+       WHERE agent_id = ? AND event_type LIKE 'life.dilemma_%'`,
+    )
+    .get(agentId) as { count: number };
   return row.count;
 }
 

@@ -8,7 +8,7 @@ import { projectCharacterTime } from "@personasim/features";
 
 import type { ServerConfig } from "../config.js";
 import type { DatabaseStore } from "../db/store.js";
-import { capabilitiesForTier } from "../domain/capabilities.js";
+import { capabilitiesForRuntime } from "../domain/capabilities.js";
 import { ApiError, notFound } from "../domain/errors.js";
 import {
   chatMessageInputSchema,
@@ -102,6 +102,7 @@ export function registerRoutes(
 
   app.get("/api/health", () => ({
     status: "ok",
+    deploymentMode: "local_single_user",
     serverTimeUtc: clock.nowUtc(),
     profile: config.profile,
     llmProvider: llm.providerName,
@@ -236,11 +237,10 @@ export function registerRoutes(
     const activated = await actors.runExclusive(id, async () => {
       const spec = store.getCharacterSpec(id);
       if (!spec) throw notFound("Character");
-      const tierCapabilities = capabilitiesForTier(spec.tier);
-      const capabilities =
-        config.lifePlanningMode === "fuzzy"
-          ? { ...tierCapabilities, schedule: false }
-          : tierCapabilities;
+      const capabilities = capabilitiesForRuntime(
+        spec.tier,
+        config.lifePlanningMode,
+      );
       if (
         capabilities.proactiveDialogue &&
         store.listSessions(id).length === 0
@@ -288,6 +288,7 @@ export function registerRoutes(
     if (config.lifePlanningMode === "fuzzy") {
       if (!store.getCharacterSummary(id)) throw notFound("Character");
       return {
+        dataModel: "fuzzy_life" as const,
         items: [],
         serverTimeUtc: clock.nowUtc(),
         retired: true,
@@ -296,6 +297,7 @@ export function registerRoutes(
       };
     }
     return {
+      dataModel: "legacy_exact_schedule" as const,
       items: schedules.list(id, range.fromUtc, range.toUtc),
       serverTimeUtc: clock.nowUtc(),
     };
@@ -717,20 +719,18 @@ function buildAgentSnapshot(
   const state = services.store.getRuntimeState(id);
   const cursor = services.store.getCursor(id);
   if (!spec || !state || !cursor) throw notFound("Character");
-  const tierCapabilities = capabilitiesForTier(spec.tier);
-  const capabilities =
-    services.config.lifePlanningMode === "fuzzy"
-      ? { ...tierCapabilities, schedule: false }
-      : tierCapabilities;
+  const capabilities = capabilitiesForRuntime(
+    spec.tier,
+    services.config.lifePlanningMode,
+  );
   const nowUtc = services.clock.nowUtc();
   const next24Utc = DateTime.fromISO(nowUtc)
     .plus({ hours: 24 })
     .toUTC()
     .toISO()!;
-  const schedule =
-    services.config.lifePlanningMode === "legacy_exact" && capabilities.schedule
-      ? services.store.listSchedule(id, { fromUtc: nowUtc, toUtc: next24Utc })
-      : [];
+  const schedule = capabilities.legacyExactSchedule
+    ? services.store.listSchedule(id, { fromUtc: nowUtc, toUtc: next24Utc })
+    : [];
   const currentActivity = schedule.find(
     (item) =>
       compareUtc(item.startAtUtc, nowUtc) <= 0 &&

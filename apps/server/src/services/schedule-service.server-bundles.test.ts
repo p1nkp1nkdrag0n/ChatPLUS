@@ -82,7 +82,10 @@ function draft(
   };
 }
 
-function harness(initial: readonly ScheduleItem[] = []) {
+function harness(
+  initial: readonly ScheduleItem[] = [],
+  lifePlanningMode: "fuzzy" | "legacy_exact" = "legacy_exact",
+) {
   const items = structuredClone(initial) as ScheduleItem[];
   let transactionCalls = 0;
   const store = {
@@ -107,6 +110,7 @@ function harness(initial: readonly ScheduleItem[] = []) {
     store,
     new FakeClock(NOW),
     {} as LlmService,
+    lifePlanningMode,
   );
   return {
     service,
@@ -116,6 +120,23 @@ function harness(initial: readonly ScheduleItem[] = []) {
 }
 
 describe("ScheduleService server-owned bundles", () => {
+  it("fails closed in fuzzy mode even when migrated policy data is enabled", () => {
+    const test = harness([], "fuzzy");
+    const result = test.service.applySelfPlanBundle(AGENT_ID, {
+      intentId: "intent-from-migrated-character",
+      activity: draft("2026-06-01T10:00:00.000Z", "2026-06-01T11:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "schedule_disabled",
+      createdItems: [],
+      updatedItems: [],
+      changedItems: [],
+    });
+    expect(test.items()).toEqual([]);
+  });
+
   it("owns source and persistence metadata for a self-initiated create", () => {
     const test = harness();
     const bundle: SelfPlanBundle = {

@@ -12,6 +12,8 @@ import {
 import { config as loadEnv } from "dotenv";
 import { z } from "zod";
 
+import { assertLocalDemoNetworkBoundary } from "./deployment-boundary.js";
+
 const workspaceRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../..",
@@ -253,14 +255,14 @@ const envSchema = z.object({
   CHAT_EFFECTS_MODE: z.enum(["off", "gated"]).default("gated"),
   LIFE_PLANNING_MODE: z.enum(["fuzzy", "legacy_exact"]).optional(),
   SCHEDULE_NEGOTIATION_MODE: z
-    .enum(["legacy", "shadow", "enforced"])
-    .default("legacy"),
+    .enum(["off", "legacy", "shadow", "enforced"])
+    .default("off"),
   SELF_INITIATED_PLANNING: z.enum(["off", "shadow", "enforced"]).default("off"),
   LIVE_WORLD_EFFECTS: z.enum(["off", "shadow", "enforced"]).default("enforced"),
   MEMORY_RECALL_MODE: z
     .enum(["legacy", "shadow", "enforced"])
-    .default("legacy"),
-  AUTOBIOGRAPHY_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
+    .default("enforced"),
+  AUTOBIOGRAPHY_MODE: z.enum(["off", "shadow", "enforced"]).default("enforced"),
 });
 
 export type ServerConfig = {
@@ -289,7 +291,7 @@ export type ServerConfig = {
   developerRoutes: boolean;
   chatEffectsMode: "off" | "gated";
   lifePlanningMode: "fuzzy" | "legacy_exact";
-  scheduleNegotiationMode: "legacy" | "shadow" | "enforced";
+  scheduleNegotiationMode: "off" | "legacy" | "shadow" | "enforced";
   selfInitiatedPlanningMode: "off" | "shadow" | "enforced";
   liveWorldEffectsMode: "off" | "shadow" | "enforced";
   memoryRecallMode: "legacy" | "shadow" | "enforced";
@@ -364,14 +366,10 @@ export function readConfig(
     seedDemo: env.SEED_DEMO,
     developerRoutes: env.NODE_ENV !== "production",
     chatEffectsMode: env.CHAT_EFFECTS_MODE,
-    // Product runs use the fuzzy life model. The exact scheduler remains
-    // available only to the existing isolated regression suite while the old
-    // persistence format is kept readable during migration.
-    lifePlanningMode:
-      env.LIFE_PLANNING_MODE ??
-      ((overrides.nodeEnv ?? env.NODE_ENV) === "test"
-        ? "legacy_exact"
-        : "fuzzy"),
+    // Fuzzy life is the product model in every environment. Tests covering
+    // the historical exact scheduler opt into legacy_exact explicitly, so an
+    // unqualified test server exercises the same defaults as the local Demo.
+    lifePlanningMode: env.LIFE_PLANNING_MODE ?? "fuzzy",
     scheduleNegotiationMode: env.SCHEDULE_NEGOTIATION_MODE,
     selfInitiatedPlanningMode: env.SELF_INITIATED_PLANNING,
     liveWorldEffectsMode: env.LIVE_WORLD_EFFECTS,
@@ -384,10 +382,24 @@ export function readConfig(
     ...overrides,
     llm: { ...base.llm, ...overrides.llm },
   };
-  return {
-    ...merged,
+  // Exact schedule negotiation and autonomous exact planning are
+  // compatibility paths, not sub-modes of fuzzy life. Normalize contradictory
+  // legacy flags here so local .env files and callers cannot reactivate an old
+  // writer while the product reports the fuzzy model.
+  const normalized =
+    merged.lifePlanningMode === "fuzzy"
+      ? {
+          ...merged,
+          scheduleNegotiationMode: "off" as const,
+          selfInitiatedPlanningMode: "off" as const,
+        }
+      : merged;
+  const config = {
+    ...normalized,
     conversationRetention: ConversationRetentionPolicySchema.parse(
-      merged.conversationRetention,
+      normalized.conversationRetention,
     ),
   };
+  assertLocalDemoNetworkBoundary(config);
+  return config;
 }

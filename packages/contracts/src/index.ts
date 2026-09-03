@@ -6,6 +6,7 @@ export * from "./checkpoint.js";
 export * from "./event-card.js";
 export * from "./events.js";
 export * from "./follow-up.js";
+export * from "./fuzzy-life-context.js";
 export * from "./llm.js";
 export * from "./llm-capability.js";
 export * from "./life.js";

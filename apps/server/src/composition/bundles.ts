@@ -1,7 +1,7 @@
 import type { SimulationTier } from "@personasim/contracts";
 
 export interface ServerSimulationCapabilities {
-  readonly schedulePlanning: boolean;
+  readonly legacyExactSchedulePlanning: boolean;
   readonly offlineSettlement: boolean;
   readonly hourlySettlement: boolean;
   readonly proactiveDialogue: boolean;
@@ -18,7 +18,7 @@ const BUNDLES: Readonly<Record<SimulationTier, ServerSimulationBundle>> = {
     id: "lightweight",
     pluginId: "server.bundle.lightweight",
     capabilities: Object.freeze({
-      schedulePlanning: false,
+      legacyExactSchedulePlanning: false,
       offlineSettlement: false,
       hourlySettlement: false,
       proactiveDialogue: false,
@@ -28,7 +28,7 @@ const BUNDLES: Readonly<Record<SimulationTier, ServerSimulationBundle>> = {
     id: "daily",
     pluginId: "server.bundle.daily",
     capabilities: Object.freeze({
-      schedulePlanning: true,
+      legacyExactSchedulePlanning: true,
       offlineSettlement: true,
       hourlySettlement: true,
       proactiveDialogue: false,
@@ -38,7 +38,7 @@ const BUNDLES: Readonly<Record<SimulationTier, ServerSimulationBundle>> = {
     id: "high_fidelity",
     pluginId: "server.bundle.high-fidelity",
     capabilities: Object.freeze({
-      schedulePlanning: true,
+      legacyExactSchedulePlanning: true,
       offlineSettlement: true,
       hourlySettlement: true,
       proactiveDialogue: false,

@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { companionLongRunV3Manifest } from "../scenarios/companion-long-run-v3-manifest.js";
 import {
+  companionLongRunV3DelegatedDecision,
+  companionLongRunV3ReviewedSemanticReply,
+} from "../scenarios/companion-long-run-v3-fixture.js";
+import {
   deriveServerOwnedContinuityMemoryCandidates,
   deriveServerOwnedUserMemoryCandidates,
-  fixtureDelegatedDecision,
   fixtureReviewedContinuityMemoryCandidates,
-  fixtureReviewedSemanticReply,
 } from "./turn-decision-service.js";
 
 const NOW = "2026-09-01T01:00:00.000Z";
@@ -15,7 +17,7 @@ describe("server-owned deterministic user memory extraction", () => {
   it("extracts every reviewed v3 durable fact with stable claim identities", () => {
     const expected = new Map<number, readonly string[]>([
       [12, ["user_fact:user:name"]],
-      [13, ["user_fact:notebook:storage"]],
+      [13, ["user_fact:item:notes:storage"]],
       [
         15,
         ["user_fact:relationship:许宁", "user_fact:person:许宁:destination"],
@@ -25,13 +27,10 @@ describe("server-owned deterministic user memory extraction", () => {
       [37, ["user_fact:decision_option:A"]],
       [
         38,
-        [
-          "user_fact:decision_option:B",
-          "user_fact:decision_option:B:reply_deadline",
-        ],
+        ["user_fact:decision_option:B", "user_fact:deadline:山鸣影像:reply"],
       ],
       [39, ["user_fact:decision_context:financial_buffer"]],
-      [40, ["user_preference:decision_value:creative_ability"]],
+      [40, ["user_preference:decision_value:priority"]],
       [41, ["user_fact:decision_context:advice"]],
     ]);
 
@@ -59,8 +58,8 @@ describe("server-owned deterministic user memory extraction", () => {
 
   it("keeps corrected claims in the same slot and marks them explicit", () => {
     const cases = [
-      [13, 14, "user_fact:notebook:storage", "藏青色"],
-      [38, 42, "user_fact:decision_option:B:reply_deadline", "9月16日"],
+      [13, 14, "user_fact:item:notes:storage", "藏青色"],
+      [38, 42, "user_fact:deadline:山鸣影像:reply", "9月16日"],
       [15, 99, "user_fact:person:许宁:destination", "成都"],
     ] as const;
 
@@ -101,8 +100,10 @@ describe("server-owned deterministic user memory extraction", () => {
   });
 
   it("keeps the fixture A/B delegation unique without treating a negated delegation as authorization", () => {
-    expect(fixtureDelegatedDecision(manifestText(33))).toBeUndefined();
-    expect(fixtureDelegatedDecision(manifestText(48))).toBe(
+    expect(
+      companionLongRunV3DelegatedDecision(manifestText(33)),
+    ).toBeUndefined();
+    expect(companionLongRunV3DelegatedDecision(manifestText(48))).toBe(
       "B：去杭州的山鸣影像",
     );
   });
@@ -185,7 +186,7 @@ describe("server-owned deterministic user memory extraction", () => {
         expect.arrayContaining([
           "relationship_event",
           "actor:user",
-          "episode:work_choice_responsibility",
+          "episode:decision_responsibility",
         ]),
       );
       expect(candidates[0]?.tags, `T${candidateNumber}`).toEqual(
@@ -235,7 +236,9 @@ function manifestText(candidateNumber: number): string {
 }
 
 function reply(candidateNumber: number): string {
-  const value = fixtureReviewedSemanticReply(manifestText(candidateNumber));
+  const value = companionLongRunV3ReviewedSemanticReply(
+    manifestText(candidateNumber),
+  );
   if (value === undefined) {
     throw new Error(`T${candidateNumber} did not receive a reviewed reply.`);
   }

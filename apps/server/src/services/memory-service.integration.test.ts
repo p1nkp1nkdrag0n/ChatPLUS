@@ -274,14 +274,14 @@ describe("memory service evidence integration", () => {
       {
         initialTurn: 13,
         correctionTurn: 14,
-        subjectKey: "user_fact:notebook:storage",
+        subjectKey: "user_fact:item:notes:storage",
         oldFragment: "绿色",
         newFragment: "藏青色",
       },
       {
         initialTurn: 38,
         correctionTurn: 42,
-        subjectKey: "user_fact:decision_option:B:reply_deadline",
+        subjectKey: "user_fact:deadline:山鸣影像:reply",
         oldFragment: "9月14日",
         newFragment: "9月16日",
       },
@@ -449,10 +449,9 @@ describe("memory service evidence integration", () => {
       certainty: "explicit",
       attribution: "mixed",
       content:
-        "责任更正：用户曾明确授权角色作选择，之后由用户自己执行行动；这不是角色强迫用户辞职。",
+        "责任更正：用户明确说明曾授权角色作出选择，之后由用户自己执行行动；建议、决定与行动的责任必须分开记录。",
       claim: {
-        subjectKey:
-          "relationship:causality:work_choice:decision_and_action_ownership",
+        subjectKey: "relationship:causality:decision_and_action_ownership",
         disposition: "affirmed",
         revisionIntent: "explicit_correction",
       },
@@ -460,7 +459,7 @@ describe("memory service evidence integration", () => {
     expect(corrected[0]?.tags).toEqual(
       expect.arrayContaining([
         "relationship causal correction",
-        "episode work choice responsibility",
+        "episode decision responsibility",
         "subject shared",
         "actor user",
       ]),

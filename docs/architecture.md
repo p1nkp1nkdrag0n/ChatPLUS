@@ -61,6 +61,31 @@ Each arrow requires evidence. Discussion is not a decision, a decision is not an
 - `apps/server`: Fastify routes, SQLite migrations/repositories, transactions, life progression and SSE.
 - `apps/web`: React Router application and TanStack Query cache; no schedule rail or future-72-hours surface.
 
+Within server persistence, `DatabaseStore` remains a compatibility facade for
+older callers, while exact schedule items, simulation cursors, schedule
+negotiations and activity-event projections are isolated in
+`LegacyScheduleStore`. New fuzzy-life work belongs in focused repositories and
+must not add another exact-calendar responsibility to the core store. The
+legacy schedule and settlement writers also receive the runtime planning mode
+and fail closed unless it is explicitly `legacy_exact`, including when migrated
+character data still has an old schedule policy enabled.
+
+The service layer follows the same boundary: character compilation, local clock
+projection and draft editing are separate from `CharacterService`; turn audit,
+publication and response assembly are separate from `TurnCommitService`; and
+deterministic daily-life planning helpers are separate from
+`FuzzyLifeService`. The facade services retain their existing public APIs, while
+new behavior belongs in the focused module that owns that responsibility.
+
+## Deployment boundary
+
+This repository is an unauthenticated, single-user local Demo. Configuration
+validation rejects non-loopback `HOST` values and non-loopback `WEB_ORIGIN`
+entries, so the absence of accounts, authorization and tenant isolation cannot
+be bypassed accidentally with a network-binding environment override. Moving
+beyond the local machine requires an explicit architecture change that adds
+identity, authorization, per-user data ownership and deployment security first.
+
 ## Concurrency and transactions
 
 All mutations for one character run through `ActorQueue.runExclusive(agentId, task)`. Different characters may progress concurrently. Model/network calls are never held inside a SQLite transaction. Once a proposal is available, a short transaction persists every mutually dependent projection and audit event.

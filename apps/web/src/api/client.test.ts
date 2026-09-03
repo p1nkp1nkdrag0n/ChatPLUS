@@ -220,6 +220,19 @@ describe("web API normalization", () => {
               metadata: {
                 deliveryMode: "sequential",
                 chunks: ["先说第一句。", "再说第二句。"],
+                memoryRecall: {
+                  rolloutMode: "enforced",
+                  promptStrategy: "evidence_selected",
+                  legacyPromptMemoryIds: [],
+                  promptMemoryIds: ["memory-1"],
+                  selectedMemoryIds: ["memory-1"],
+                  selectedEvidenceIds: ["evidence-1"],
+                  rejectedMemoryIds: [],
+                  recallMode: "verbatim_quote",
+                  score: 0.91,
+                  abstained: false,
+                  durationMs: 2,
+                },
               },
               createdAtUtc: "2026-08-16T08:00:00.000Z",
             },
@@ -239,6 +252,14 @@ describe("web API normalization", () => {
       text: "先说第一句。\n再说第二句。",
       deliveryMode: "sequential",
       chunks: ["先说第一句。", "再说第二句。"],
+      memoryRecall: {
+        promptStrategy: "evidence_selected",
+        selectedMemoryIds: ["memory-1"],
+        selectedEvidenceIds: ["evidence-1"],
+        recallMode: "verbatim_quote",
+        score: 0.91,
+        abstained: false,
+      },
     });
   });
 

@@ -1,4 +1,5 @@
 import {
+  LOCAL_USER_ID,
   MemoryCandidateSchema,
   PersonalIntentCandidateSchema,
   RelationshipDeltaSchema,
@@ -475,7 +476,7 @@ export function validateWorldEffects(
       const parsed = RelationshipDeltaSchema.parse(sanitized);
       const clamped = applyRelationshipDelta(
         {
-          userId: "local-user",
+          userId: LOCAL_USER_ID,
           closeness: 0.5,
           trust: 0.5,
           familiarity: 0.5,

@@ -341,6 +341,14 @@ export const SchedulePolicySchema = z
   .strict();
 export type SchedulePolicy = z.infer<typeof SchedulePolicySchema>;
 
+/**
+ * Canonical name for the legacy 72-hour exact-schedule policy. The persisted
+ * CharacterSpec key remains `schedulePolicy` so older character versions stay
+ * readable; fuzzy-life authoring keeps its `enabled` value false.
+ */
+export const LegacyExactSchedulePolicySchema = SchedulePolicySchema;
+export type LegacyExactSchedulePolicy = SchedulePolicy;
+
 export const ProactivePolicySchema = z
   .object({
     enabled: z.boolean(),

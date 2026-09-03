@@ -33,6 +33,7 @@ import type {
   LongRunV3SessionKey,
   ScenarioAction,
 } from "../scenarios/companion-long-run-v3-types.js";
+import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
 import {
   COMPANION_LONG_RUN_V3_SHARED_END_AT_UTC,
   companionLongRunV3Manifest,
@@ -180,6 +181,9 @@ export class LongRunV3Runtime {
       config: options.config,
       startAtUtc: options.startAtUtc,
       initialSessionId: options.initialSessionId,
+      ...(options.config.llm.provider === "fixture"
+        ? { fixtureTurnBehavior: companionLongRunV3FixtureBehavior }
+        : {}),
       ...(options.observer === undefined ? {} : { observer: options.observer }),
     });
     this.observer = this.inner.observer;

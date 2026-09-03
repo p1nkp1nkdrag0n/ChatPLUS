@@ -528,6 +528,7 @@ async function openTrackedApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
+    lifePlanningMode: "legacy_exact",
     scheduleNegotiationMode: "legacy",
     selfInitiatedPlanningMode: "enforced",
     liveWorldEffectsMode: "enforced",

@@ -38,15 +38,32 @@ describe("server configuration", () => {
     });
   });
 
-  it("retires exact schedule negotiation by default", () => {
-    const previous = process.env["SCHEDULE_NEGOTIATION_MODE"];
-    delete process.env["SCHEDULE_NEGOTIATION_MODE"];
+  it("uses fuzzy life and promoted continuity defaults in every environment", () => {
+    const names = [
+      "LIFE_PLANNING_MODE",
+      "SCHEDULE_NEGOTIATION_MODE",
+      "SELF_INITIATED_PLANNING",
+      "MEMORY_RECALL_MODE",
+      "AUTOBIOGRAPHY_MODE",
+    ] as const;
+    const previous = new Map(names.map((name) => [name, process.env[name]]));
+    for (const name of names) delete process.env[name];
     try {
-      expect(readConfig().scheduleNegotiationMode).toBe("legacy");
+      for (const nodeEnv of ["development", "test"] as const) {
+        expect(readConfig({ nodeEnv })).toMatchObject({
+          lifePlanningMode: "fuzzy",
+          scheduleNegotiationMode: "off",
+          selfInitiatedPlanningMode: "off",
+          memoryRecallMode: "enforced",
+          autobiographyMode: "enforced",
+        });
+      }
     } finally {
-      if (previous === undefined)
-        delete process.env["SCHEDULE_NEGOTIATION_MODE"];
-      else process.env["SCHEDULE_NEGOTIATION_MODE"] = previous;
+      for (const name of names) {
+        const value = previous.get(name);
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 
@@ -75,13 +92,19 @@ describe("server configuration", () => {
     }
   });
 
-  it("allows explicit experiment overrides for both core loops", () => {
+  it("allows legacy exact-schedule overrides only in legacy_exact mode", () => {
     const previousPlanning = process.env["SELF_INITIATED_PLANNING"];
     const previousWorldEffects = process.env["LIVE_WORLD_EFFECTS"];
+    const previousLifeMode = process.env["LIFE_PLANNING_MODE"];
+    const previousNegotiation = process.env["SCHEDULE_NEGOTIATION_MODE"];
+    process.env["LIFE_PLANNING_MODE"] = "legacy_exact";
+    process.env["SCHEDULE_NEGOTIATION_MODE"] = "shadow";
     process.env["SELF_INITIATED_PLANNING"] = "shadow";
     process.env["LIVE_WORLD_EFFECTS"] = "off";
     try {
       const config = readConfig();
+      expect(config.lifePlanningMode).toBe("legacy_exact");
+      expect(config.scheduleNegotiationMode).toBe("shadow");
       expect(config.selfInitiatedPlanningMode).toBe("shadow");
       expect(config.liveWorldEffectsMode).toBe("off");
     } finally {
@@ -91,7 +114,27 @@ describe("server configuration", () => {
       if (previousWorldEffects === undefined)
         delete process.env["LIVE_WORLD_EFFECTS"];
       else process.env["LIVE_WORLD_EFFECTS"] = previousWorldEffects;
+      if (previousLifeMode === undefined)
+        delete process.env["LIFE_PLANNING_MODE"];
+      else process.env["LIFE_PLANNING_MODE"] = previousLifeMode;
+      if (previousNegotiation === undefined)
+        delete process.env["SCHEDULE_NEGOTIATION_MODE"];
+      else process.env["SCHEDULE_NEGOTIATION_MODE"] = previousNegotiation;
     }
+  });
+
+  it("normalizes contradictory exact-schedule flags out of fuzzy mode", () => {
+    expect(
+      readConfig({
+        lifePlanningMode: "fuzzy",
+        scheduleNegotiationMode: "enforced",
+        selfInitiatedPlanningMode: "enforced",
+      }),
+    ).toMatchObject({
+      lifePlanningMode: "fuzzy",
+      scheduleNegotiationMode: "off",
+      selfInitiatedPlanningMode: "off",
+    });
   });
 
   it("rejects an invalid conversation retention boundary", () => {
@@ -295,5 +338,40 @@ describe("server configuration", () => {
     });
 
     expect(config.llm.baseUrl).toBe("http://127.0.0.1:4567/v1");
+  });
+
+  it.each(["0.0.0.0", "192.168.1.20", "example.com"])(
+    "rejects a non-loopback server host for the unauthenticated local Demo: %s",
+    (host) => {
+      expect(() => readConfig({ host })).toThrowError(
+        /HOST must be a loopback address/u,
+      );
+    },
+  );
+
+  it.each([
+    "https://example.com",
+    "http://192.168.1.20:5173",
+    "not-an-origin",
+    "http://localhost:5173,https://example.com",
+  ])(
+    "rejects a non-loopback browser origin for the unauthenticated local Demo: %s",
+    (webOrigin) => {
+      expect(() => readConfig({ webOrigin })).toThrowError(
+        /WEB_ORIGIN must contain only loopback origins/u,
+      );
+    },
+  );
+
+  it("accepts explicit IPv4 and IPv6 loopback configuration", () => {
+    expect(
+      readConfig({
+        host: "::1",
+        webOrigin: "http://127.0.0.2:5173, https://[::1]:5173",
+      }),
+    ).toMatchObject({
+      host: "::1",
+      webOrigin: "http://127.0.0.2:5173, https://[::1]:5173",
+    });
   });
 });

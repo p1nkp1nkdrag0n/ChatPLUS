@@ -40,7 +40,7 @@ pnpm dev
 
 打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)。默认 `fixture` Provider 不需要联网或凭证。
 
-本地 Demo 默认使用 `LIFE_PLANNING_MODE=fuzzy`，不再运行旧的精确自主排程和聊天日程协商；`LIVE_WORLD_EFFECTS=enforced` 继续把通过校验和限幅的模型状态/关系 proposal 事务化落库。Fixture 与真实 Provider 共用同一条服务端校验、提交和追溯路径。`legacy_exact` 与旧 planning flags 只用于显式迁移回归。
+本地 Demo 默认使用 `LIFE_PLANNING_MODE=fuzzy`，不再运行旧的精确自主排程和聊天日程协商；`MEMORY_RECALL_MODE=enforced` 与 `AUTOBIOGRAPHY_MODE=enforced` 默认启用已验证证据召回、retention checkpoint 和自传连续性，`LIVE_WORLD_EFFECTS=enforced` 则把通过校验和限幅的模型状态/关系 proposal 事务化落库。Fixture 与真实 Provider 共用同一条服务端校验、提交和追溯路径。`legacy_exact` 与旧 planning flags 只用于显式迁移回归。
 
 推荐演示顺序：
 
@@ -242,5 +242,7 @@ LoRA/训练、语音/图片/3D、多人账户、云同步、身份认证、桌�
 ## 本地实验边界
 
 当前目标是验证模型能否在合成对话中倾听、分析、明确推荐，或在获得明确委托时替测试用户选择职业、迁居、关系等人生方向。项目不实现通用的重大决定拒答、强制“维护用户最终自主权”、危机响应或依赖性安全矩阵，也不要求回复附加公开产品式免责声明。
+
+服务端会在启动配置解析时强制 `HOST` 和 `WEB_ORIGIN` 都指向回环地址（`localhost`、`127.0.0.0/8` 或 `::1`）。这是有意的产品边界：当前没有账户、认证、授权、租户隔离或公共部署安全体系，不能通过把 `HOST` 改成 `0.0.0.0` 来对局域网或公网提供服务。若未来改变部署边界，应先补齐身份、权限、数据隔离和安全策略，再显式修改这条运行时约束。
 
 仍然保留的是实验正确性边界：不得把讨论写成决定、把决定写成行动、把计划写成结果；每个决定、行动、结果和记忆都必须有来源；重启与重放不得重复写入；Demo 不对现实世界执行任何外部动作。这些约束用于保证长程因果测试可信，不是面向公开产品的安全策略。

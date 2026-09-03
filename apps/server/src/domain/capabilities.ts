@@ -1,7 +1,11 @@
 import type { SimulationTier } from "./schemas.js";
 
-export type SimulationCapabilities = {
-  schedule: boolean;
+export type LifePlanningMode = "fuzzy" | "legacy_exact";
+
+/** Capabilities intrinsic to a simulation tier, before runtime-mode gating. */
+export type TierSimulationCapabilities = {
+  /** Support for the retired UTC ScheduleItem planner and settlement model. */
+  legacyExactSchedule: boolean;
   offlineSettlement: boolean;
   dynamicState: boolean;
   longTermMemory: boolean;
@@ -13,9 +17,21 @@ export type SimulationCapabilities = {
   memoryCandidatesPerTurn: number;
 };
 
-const CAPABILITIES: Record<SimulationTier, SimulationCapabilities> = {
+/**
+ * Effective capabilities for one running server.
+ *
+ * `schedule` is retained as a wire-compatibility alias. New server code must
+ * use `fuzzyLife` or `legacyExactSchedule`, which cannot both be true.
+ */
+export type SimulationCapabilities = TierSimulationCapabilities & {
+  fuzzyLife: boolean;
+  /** @deprecated Use legacyExactSchedule. */
+  schedule: boolean;
+};
+
+const CAPABILITIES: Record<SimulationTier, TierSimulationCapabilities> = {
   lightweight: {
-    schedule: false,
+    legacyExactSchedule: false,
     offlineSettlement: false,
     dynamicState: false,
     longTermMemory: false,
@@ -27,7 +43,7 @@ const CAPABILITIES: Record<SimulationTier, SimulationCapabilities> = {
     memoryCandidatesPerTurn: 0,
   },
   daily: {
-    schedule: true,
+    legacyExactSchedule: true,
     offlineSettlement: true,
     dynamicState: true,
     longTermMemory: true,
@@ -39,7 +55,7 @@ const CAPABILITIES: Record<SimulationTier, SimulationCapabilities> = {
     memoryCandidatesPerTurn: 4,
   },
   high_fidelity: {
-    schedule: true,
+    legacyExactSchedule: true,
     offlineSettlement: true,
     dynamicState: true,
     longTermMemory: true,
@@ -57,6 +73,24 @@ const CAPABILITIES: Record<SimulationTier, SimulationCapabilities> = {
 
 export function capabilitiesForTier(
   tier: SimulationTier,
-): SimulationCapabilities {
+): TierSimulationCapabilities {
   return CAPABILITIES[tier];
+}
+
+/** Resolve mutually exclusive fuzzy-life and legacy exact-schedule worlds. */
+export function capabilitiesForRuntime(
+  tier: SimulationTier,
+  lifePlanningMode: LifePlanningMode,
+): SimulationCapabilities {
+  const tierCapabilities = capabilitiesForTier(tier);
+  const legacyExactSchedule =
+    lifePlanningMode === "legacy_exact" && tierCapabilities.legacyExactSchedule;
+  return {
+    ...tierCapabilities,
+    fuzzyLife: lifePlanningMode === "fuzzy",
+    legacyExactSchedule,
+    // Old clients understand schedule as exact ScheduleItem support. Preserve
+    // that meaning while exposing an unambiguous canonical field alongside it.
+    schedule: legacyExactSchedule,
+  };
 }

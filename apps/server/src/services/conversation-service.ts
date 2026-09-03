@@ -12,7 +12,7 @@ import type {
   StoredMessage,
   StoredSession,
 } from "../db/store.js";
-import { capabilitiesForTier } from "../domain/capabilities.js";
+import { capabilitiesForRuntime } from "../domain/capabilities.js";
 import { ApiError, notFound } from "../domain/errors.js";
 import { createEntityId } from "../domain/id.js";
 import { chatMessageInputSchema } from "../domain/schemas.js";
@@ -48,7 +48,7 @@ export type ChatTurnResult = CommittedChatTurnResult;
 
 export interface ConversationServiceOptions {
   chatEffectsMode?: "off" | "gated";
-  scheduleNegotiationMode?: "legacy" | "shadow" | "enforced";
+  scheduleNegotiationMode?: "off" | "legacy" | "shadow" | "enforced";
   liveWorldEffectsMode?: "off" | "shadow" | "enforced";
   memoryRecallMode?: "legacy" | "shadow" | "enforced";
   lifePlanningMode?: "fuzzy" | "legacy_exact";
@@ -197,11 +197,11 @@ export class ConversationService {
     });
     const userMessageId = createEntityId("message");
     const assistantMessageId = createEntityId("message");
-    const tierCapabilities = capabilitiesForTier(spec.tier);
-    const capabilities = fuzzyLifeEnabled
-      ? { ...tierCapabilities, schedule: false }
-      : tierCapabilities;
-    const schedule = capabilities.schedule
+    const capabilities = capabilitiesForRuntime(
+      spec.tier,
+      fuzzyLifeEnabled ? "fuzzy" : "legacy_exact",
+    );
+    const schedule = capabilities.legacyExactSchedule
       ? this.store.listSchedule(input.agentId, {
           fromUtc: nowUtc,
           toUtc: DateTime.fromISO(nowUtc).plus({ hours: 72 }).toUTC().toISO()!,

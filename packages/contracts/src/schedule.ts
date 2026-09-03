@@ -86,6 +86,13 @@ export const ScheduleItemDraftSchema = z
   });
 export type ScheduleItemDraft = z.infer<typeof ScheduleItemDraftSchema>;
 
+/**
+ * Unambiguous name for the retired exact-UTC planning contract. The shorter
+ * ScheduleItemDraft name remains exported for persisted-data compatibility.
+ */
+export const LegacyExactScheduleItemDraftSchema = ScheduleItemDraftSchema;
+export type LegacyExactScheduleItemDraft = ScheduleItemDraft;
+
 export const ScheduleItemSchema = z
   .object({
     id: EntityIdSchema,
@@ -121,6 +128,13 @@ export const ScheduleItemSchema = z
     }
   });
 export type ScheduleItem = z.infer<typeof ScheduleItemSchema>;
+
+/**
+ * Unambiguous name for historical exact-UTC schedule rows. Fuzzy life facts
+ * use the life contracts and must not be materialized through this schema.
+ */
+export const LegacyExactScheduleItemSchema = ScheduleItemSchema;
+export type LegacyExactScheduleItem = ScheduleItem;
 
 const ProposalReasonShape = {
   reasonCode: ReasonCodeSchema,

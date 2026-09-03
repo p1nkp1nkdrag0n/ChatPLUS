@@ -1,69 +1,38 @@
-import {
-  MemoryRecallRuntimeDiagnosticSchema,
-  type MemoryRecallRuntimeDiagnostic,
-} from "@personasim/contracts";
-
 import type { DatabaseStore, StoredMessage } from "../db/store.js";
-import type { SimulationCapabilities } from "../domain/capabilities.js";
 import { ApiError, notFound } from "../domain/errors.js";
-import type {
-  CharacterSpec,
-  RuntimeState,
-  ScheduleItem,
-} from "../domain/schemas.js";
-import {
-  RetrievalRunRepository,
-  type CreateRetrievalRunInput,
-} from "../repositories/retrieval-run-repository.js";
+import type { ScheduleItem } from "../domain/schemas.js";
+import { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
 import type { SseHub } from "../sse/hub.js";
-import type {
-  ConversationContextService,
-  PreparedConversationContext,
-} from "./conversation-context-service.js";
+import type { ConversationContextService } from "./conversation-context-service.js";
 import type {
   ConversationLifeImpact,
   FuzzyLifeService,
 } from "./fuzzy-life-service.js";
-import type { MemoryRecallPreview } from "./memory-recall-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
 import type { PersonalIntentService } from "./personal-intent-service.js";
 import type { ScheduleService } from "./schedule-service.js";
-import { SCHEDULE_NEGOTIATION_POLICY_VERSION } from "./schedule-negotiation-service.js";
+import { deliveryModeForDecision } from "./turn-decision-service.js";
+import { TurnCommitAuditWriter } from "./turn-commit-audit-writer.js";
+import { TurnCommitPublisher } from "./turn-commit-publisher.js";
 import {
-  deliveryModeForDecision,
-  type ResolvedTurn,
-} from "./turn-decision-service.js";
+  assertIdempotentTurnMatches,
+  replayTurnResult,
+} from "./turn-commit-result.js";
 import type {
-  PreparedWorldEffectTurn,
-  TurnProposalRejection,
-} from "./world-effect-service.js";
+  ChatTurnCommand,
+  ChatTurnResult,
+  TurnCommitInput,
+  TurnCommitServiceOptions,
+} from "./turn-commit-types.js";
+import type { TurnProposalRejection } from "./world-effect-service.js";
 
-export interface TurnCommitServiceOptions {
-  scheduleNegotiationMode?: "legacy" | "shadow" | "enforced";
-  lifePlanningMode?: "fuzzy" | "legacy_exact";
-}
-
-export interface ChatTurnCommand {
-  agentId: string;
-  clientMessageId: string;
-  text: string;
-}
-
-export type ChatTurnResult = {
-  idempotentReplay: boolean;
-  userMessage: StoredMessage;
-  assistantMessage: StoredMessage;
-  scheduleChanges: ScheduleItem[];
-  state: RuntimeState;
-  memoryRecall?: MemoryRecallRuntimeDiagnostic;
-  decision: {
-    reasonCode: string;
-    reasonSummary: string;
-    toneTags: string[];
-    deliveryMode: "single_block" | "sequential";
-    chunks: string[];
-  };
-};
+export { buildMemoryRecallDiagnostic } from "./turn-commit-result.js";
+export type {
+  ChatTurnCommand,
+  ChatTurnResult,
+  TurnCommitInput,
+  TurnCommitServiceOptions,
+} from "./turn-commit-types.js";
 
 /**
  * Owns the single durable chat transaction plus post-commit continuity and SSE
@@ -71,17 +40,21 @@ export type ChatTurnResult = {
  */
 export class TurnCommitService {
   private readonly retrievalRuns: RetrievalRunRepository;
+  private readonly audits: TurnCommitAuditWriter;
+  private readonly publisher: TurnCommitPublisher;
 
   constructor(
     private readonly store: DatabaseStore,
     private readonly schedules: ScheduleService,
     private readonly personalIntents: PersonalIntentService,
-    private readonly sse: SseHub,
+    sse: SseHub,
     private readonly contexts?: ConversationContextService,
     private readonly options: TurnCommitServiceOptions = {},
     private readonly fuzzyLife?: FuzzyLifeService,
   ) {
     this.retrievalRuns = new RetrievalRunRepository(store.database);
+    this.audits = new TurnCommitAuditWriter(store, options);
+    this.publisher = new TurnCommitPublisher(sse);
   }
 
   replay(input: {
@@ -91,24 +64,10 @@ export class TurnCommitService {
     assertIdempotentTurnMatches(input.turn.userMessage, input.command.text);
     const state = this.store.getRuntimeState(input.command.agentId);
     if (!state) throw notFound("Character state");
-    return replayResult(input.turn, state);
+    return replayTurnResult(input.turn, state);
   }
 
-  async commit(input: {
-    sessionId: string;
-    command: ChatTurnCommand;
-    spec: CharacterSpec;
-    nowUtc: string;
-    userMessageId: string;
-    retrievalRun?: CreateRetrievalRunInput;
-    assistantMessageId: string;
-    capabilities: SimulationCapabilities;
-    recallDiagnostic?: MemoryRecallRuntimeDiagnostic;
-    promptSegmentTrace: unknown;
-    preparedContext?: PreparedConversationContext;
-    turn: ResolvedTurn;
-    world: PreparedWorldEffectTurn;
-  }): Promise<ChatTurnResult> {
+  async commit(input: TurnCommitInput): Promise<ChatTurnResult> {
     const userMessage: StoredMessage = {
       id: input.userMessageId,
       sessionId: input.sessionId,
@@ -215,7 +174,7 @@ export class TurnCommitService {
             sourceMessageId: userMessage.id,
           });
         }
-        this.persistRecallAudit(input, userMessage);
+        this.audits.persistRecallAudit(input, userMessage);
         personalIntentIds = fuzzyLifeEnabled
           ? []
           : this.persistPersonalIntents(
@@ -223,15 +182,19 @@ export class TurnCommitService {
               userMessage,
               input.world.proposalRejections,
             );
-        this.persistWorldEffectsAudit(input, userMessage);
+        this.audits.persistWorldEffectsAudit(input, userMessage);
         if (!fuzzyLifeEnabled) {
-          this.persistNegotiation(input, userMessage);
+          this.audits.persistNegotiation(input, userMessage);
           scheduleChanges = this.schedules.applyValidatedEffects(
             input.command.agentId,
             effectsToApply,
             input.nowUtc,
           );
-          this.persistScheduleCommand(input, userMessage, scheduleChanges);
+          this.audits.persistScheduleCommand(
+            input,
+            userMessage,
+            scheduleChanges,
+          );
         }
         for (const rejection of input.world.proposalRejections) {
           this.store.insertRejectedProposal({
@@ -287,37 +250,22 @@ export class TurnCommitService {
             correlationId: input.command.clientMessageId,
           });
         }
-        if (
-          !this.store.insertDomainEvent({
-            agentId: input.command.agentId,
-            streamType: "conversation",
-            streamId: input.sessionId,
-            streamVersion: input.world.nextState.revision,
-            eventType: "conversation.turn_committed",
-            recordedAtUtc: input.nowUtc,
-            payload: {
-              userMessageId: userMessage.id,
-              assistantMessageId: assistantMessage.id,
-              scheduleItemIds: scheduleChanges.map((item) => item.id),
-              memoryIds,
-              reasonCode: input.world.decision.reasonCode,
-              personalIntentIds,
-              ...(lifeImpact === undefined ? {} : { lifeImpact }),
-            },
-            correlationId: input.command.clientMessageId,
-            causationId: userMessage.id,
-            idempotencyKey: `chat:${input.sessionId}:${input.command.clientMessageId}`,
-          })
-        ) {
-          throw new Error("Conversation turn audit event was not inserted");
-        }
+        this.audits.persistConversationTurn({
+          turn: input,
+          userMessage,
+          assistantMessage,
+          scheduleChanges,
+          memoryIds,
+          personalIntentIds,
+          ...(lifeImpact === undefined ? {} : { lifeImpact }),
+        });
       });
     } catch (error) {
       if (error instanceof DuplicateTurnError) {
         const stored = error.turn;
         if (!stored.assistantMessage) throw error;
         assertIdempotentTurnMatches(stored.userMessage, input.command.text);
-        return replayResult(
+        return replayTurnResult(
           {
             userMessage: stored.userMessage,
             assistantMessage: stored.assistantMessage,
@@ -335,7 +283,7 @@ export class TurnCommitService {
       assistantMessage,
       memoryIds,
     });
-    this.publish({
+    this.publisher.publish({
       ...input,
       assistantMessage,
       scheduleChanges,
@@ -359,31 +307,8 @@ export class TurnCommitService {
     };
   }
 
-  private persistRecallAudit(
-    input: Parameters<TurnCommitService["commit"]>[0],
-    userMessage: StoredMessage,
-  ): void {
-    if (input.recallDiagnostic === undefined) return;
-    if (
-      !this.store.insertDomainEvent({
-        agentId: input.command.agentId,
-        streamType: "memory_recall",
-        streamId: input.sessionId,
-        streamVersion: input.world.nextState.revision,
-        eventType: "memory.recall_evaluated",
-        recordedAtUtc: input.nowUtc,
-        payload: input.recallDiagnostic,
-        correlationId: input.command.clientMessageId,
-        causationId: userMessage.id,
-        idempotencyKey: `memory-recall:${input.sessionId}:${input.command.clientMessageId}`,
-      })
-    ) {
-      throw new Error("Memory recall audit event was not inserted");
-    }
-  }
-
   private persistPersonalIntents(
-    input: Parameters<TurnCommitService["commit"]>[0],
+    input: TurnCommitInput,
     userMessage: StoredMessage,
     proposalRejections: TurnProposalRejection[],
   ): string[] {
@@ -418,235 +343,8 @@ export class TurnCommitService {
     return [...new Set(ids)];
   }
 
-  private persistWorldEffectsAudit(
-    input: Parameters<TurnCommitService["commit"]>[0],
-    userMessage: StoredMessage,
-  ): void {
-    const accepted = input.world.effectTrace.accepted;
-    const acceptedModelEffects =
-      input.turn.worldEffectsAudit?.validation.effects;
-    if (
-      !this.store.insertDomainEvent({
-        agentId: input.command.agentId,
-        streamType: "world_effects",
-        streamId: input.sessionId,
-        streamVersion: input.world.nextState.revision,
-        eventType:
-          input.world.effectTrace.mode === "shadow"
-            ? "conversation.world_effects_shadow_evaluated"
-            : "conversation.world_effects_committed",
-        recordedAtUtc: input.nowUtc,
-        effectiveAtUtc:
-          input.world.effectTrace.actual.after.relationship
-            .lastInteractionAtUtc ??
-          input.world.effectTrace.actual.after.asOfUtc,
-        payload: {
-          schemaVersion: input.world.effectTrace.schemaVersion,
-          mode: input.world.effectTrace.mode,
-          interactionStatus: "committed",
-          llmProposalStatus:
-            input.world.effectTrace.mode === "enforced"
-              ? "committed"
-              : input.world.effectTrace.mode,
-          source: input.world.effectTrace.sources,
-          expectedStateRevision: input.world.effectTrace.expectedStateRevision,
-          proposed: input.world.effectTrace.proposed,
-          acceptedDelta: {
-            ...(accepted.stateDelta === undefined
-              ? {}
-              : { stateDelta: accepted.stateDelta }),
-            ...(accepted.relationshipDelta === undefined
-              ? {}
-              : { relationshipDelta: accepted.relationshipDelta }),
-          },
-          // Preserve the compact rollout-era summary for existing timeline
-          // consumers while retaining the numeric accepted deltas above.
-          accepted: {
-            stateDelta: accepted.stateDelta !== undefined,
-            relationshipDelta: accepted.relationshipDelta !== undefined,
-            memoryCandidateCount:
-              acceptedModelEffects?.memoryCandidates.length ?? 0,
-            personalIntentCandidateCount:
-              input.world.decision.personalIntentCandidates?.length ?? 0,
-          },
-          applied: input.world.effectTrace.actual.applied,
-          before: input.world.effectTrace.actual.before,
-          after: input.world.effectTrace.actual.after,
-          relationship: {
-            baselineDelta:
-              input.world.effectTrace.actual.relationship.baselineDelta,
-            proposedDelta:
-              input.world.effectTrace.actual.relationship.proposedDelta,
-            acceptedProposalDelta:
-              input.world.effectTrace.actual.relationship.acceptedProposalDelta,
-            appliedProposalDelta:
-              input.world.effectTrace.actual.relationship.appliedProposalDelta,
-            dailyUsageApplied: input.world.effectTrace.actual.dailyUsageApplied,
-            dailyUsageBefore: input.world.effectTrace.actual.dailyUsageBefore,
-            dailyUsageAfter: input.world.effectTrace.actual.dailyUsageAfter,
-            capabilityScale: input.capabilities.relationshipDeltaScale,
-            limitsApplied:
-              input.world.effectTrace.actual.relationship.limitsApplied,
-            valence: input.world.effectTrace.actual.relationship.valence,
-          },
-          ...(input.world.effectTrace.wouldApply === undefined
-            ? {}
-            : { wouldApply: input.world.effectTrace.wouldApply }),
-          rejections:
-            input.turn.worldEffectsAudit?.validation.rejections.map(
-              (rejection) => ({
-                effect: rejection.effect,
-                ...(rejection.index === undefined
-                  ? {}
-                  : { index: rejection.index }),
-                ...(rejection.field === undefined
-                  ? {}
-                  : { field: rejection.field }),
-                reasonCode: rejection.reasonCode,
-                reasonSummary: rejection.reasonSummary,
-                raw: rejection.raw,
-              }),
-            ) ?? [],
-          rejectionCodes: input.world.effectTrace.rejectionCodes,
-          limitsApplied: input.world.effectTrace.validationLimitsApplied,
-        },
-        correlationId: input.command.clientMessageId,
-        causationId: userMessage.id,
-        idempotencyKey: `world-effects:${input.sessionId}:${input.command.clientMessageId}`,
-      })
-    ) {
-      throw new Error("World-effects audit event was not inserted");
-    }
-  }
-
-  private persistNegotiation(
-    input: Parameters<TurnCommitService["commit"]>[0],
-    userMessage: StoredMessage,
-  ): void {
-    const plan = input.world.negotiationPlan;
-    if (
-      this.options.scheduleNegotiationMode === "enforced" &&
-      plan !== undefined
-    ) {
-      for (const update of plan.updates) {
-        if (
-          plan.expectedActive?.id === update.id &&
-          !this.store.compareAndSetScheduleNegotiation(update, {
-            status: plan.expectedActive.status,
-            offerVersion: plan.expectedActive.offerVersion,
-          })
-        ) {
-          throw new ApiError(
-            409,
-            "stale_schedule_negotiation",
-            "The schedule offer changed before it could be committed.",
-          );
-        }
-        if (plan.expectedActive?.id !== update.id) {
-          this.store.upsertScheduleNegotiation(update);
-        }
-      }
-      if (plan.transition === undefined) return;
-      const latest = plan.updates.at(-1);
-      if (
-        !this.store.insertDomainEvent({
-          agentId: input.command.agentId,
-          streamType: "schedule_negotiation",
-          streamId: latest?.id ?? input.sessionId,
-          streamVersion: latest?.offerVersion ?? 0,
-          eventType: `schedule.negotiation_${plan.transition.reason}`,
-          recordedAtUtc: input.nowUtc,
-          payload: {
-            actionKind: plan.actionKind,
-            transition: plan.transition,
-            negotiationId: latest?.id,
-            offerVersion: latest?.offerVersion,
-          },
-          correlationId: input.command.clientMessageId,
-          causationId: userMessage.id,
-          idempotencyKey: `schedule-negotiation:${input.sessionId}:${input.command.clientMessageId}`,
-        })
-      ) {
-        throw new Error("Schedule negotiation audit event was not inserted");
-      }
-      return;
-    }
-    if (
-      this.options.scheduleNegotiationMode !== "shadow" ||
-      plan === undefined
-    ) {
-      return;
-    }
-    if (
-      !this.store.insertDomainEvent({
-        agentId: input.command.agentId,
-        streamType: "schedule_negotiation_shadow",
-        streamId: input.sessionId,
-        streamVersion: input.world.nextState.revision,
-        eventType: "schedule.negotiation_shadow_evaluated",
-        recordedAtUtc: input.nowUtc,
-        payload: {
-          actionKind: plan.actionKind,
-          wouldCommit: plan.effect !== undefined,
-          rejectionCodes: plan.rejections.map(
-            (rejection) => rejection.reasonCode,
-          ),
-        },
-        correlationId: input.command.clientMessageId,
-        causationId: userMessage.id,
-        idempotencyKey: `schedule-negotiation-shadow:${input.sessionId}:${input.command.clientMessageId}`,
-      })
-    ) {
-      throw new Error("Schedule negotiation shadow event was not inserted");
-    }
-  }
-
-  private persistScheduleCommand(
-    input: Parameters<TurnCommitService["commit"]>[0],
-    userMessage: StoredMessage,
-    scheduleChanges: ScheduleItem[],
-  ): void {
-    const plan = input.world.negotiationPlan;
-    if (
-      this.options.scheduleNegotiationMode !== "enforced" ||
-      scheduleChanges.length === 0 ||
-      plan?.effect === undefined
-    ) {
-      return;
-    }
-    const negotiation = plan.updates.at(-1);
-    if (
-      !this.store.insertDomainEvent({
-        agentId: input.command.agentId,
-        streamType: "schedule",
-        streamId: input.command.agentId,
-        streamVersion: Math.max(
-          ...scheduleChanges.map((item) => item.revision),
-        ),
-        eventType: "schedule.command_committed",
-        recordedAtUtc: input.nowUtc,
-        effectiveAtUtc: scheduleChanges[0]!.startAtUtc,
-        payload: {
-          negotiationId: negotiation?.id,
-          offerVersion: negotiation?.offerVersion,
-          operation: "create",
-          changedItemIds: scheduleChanges.map((item) => item.id),
-          policyVersion:
-            typeof negotiation?.record["policyVersion"] === "number"
-              ? negotiation.record["policyVersion"]
-              : SCHEDULE_NEGOTIATION_POLICY_VERSION,
-        },
-        correlationId: input.command.clientMessageId,
-        causationId: userMessage.id,
-        idempotencyKey: `schedule-command:${negotiation?.id}:${negotiation?.offerVersion}`,
-      })
-    ) {
-      throw new Error("Schedule command audit event was not inserted");
-    }
-  }
-
   private async commitContinuity(
-    input: Parameters<TurnCommitService["commit"]>[0] & {
+    input: TurnCommitInput & {
       userMessage: StoredMessage;
       assistantMessage: StoredMessage;
       memoryIds: string[];
@@ -694,37 +392,6 @@ export class TurnCommitService {
       });
     }
   }
-
-  private publish(input: {
-    command: ChatTurnCommand;
-    nowUtc: string;
-    assistantMessage: StoredMessage;
-    scheduleChanges: ScheduleItem[];
-    world: PreparedWorldEffectTurn;
-  }): void {
-    this.sse.publish({
-      type: "message.created",
-      agentId: input.command.agentId,
-      occurredAtUtc: input.nowUtc,
-      data: input.assistantMessage,
-    });
-    if (input.scheduleChanges.length > 0) {
-      this.sse.publish({
-        type: "schedule.updated",
-        agentId: input.command.agentId,
-        occurredAtUtc: input.nowUtc,
-        data: input.scheduleChanges,
-      });
-    }
-    if (input.world.stateChanged) {
-      this.sse.publish({
-        type: "state.updated",
-        agentId: input.command.agentId,
-        occurredAtUtc: input.nowUtc,
-        data: input.world.nextState,
-      });
-    }
-  }
 }
 
 class DuplicateTurnError extends Error {
@@ -752,138 +419,4 @@ function isRecoverableChatIntentRejection(error: unknown): error is ApiError {
     error.statusCode === 422 &&
     RECOVERABLE_CHAT_INTENT_REJECTION_CODES.has(error.code)
   );
-}
-
-function assertIdempotentTurnMatches(
-  storedUserMessage: StoredMessage,
-  requestedText: string,
-): void {
-  if (storedUserMessage.content === requestedText) return;
-  throw new ApiError(
-    409,
-    "idempotency_key_reused",
-    "The client message id was already used with different content.",
-  );
-}
-
-function replayResult(
-  turn: { userMessage: StoredMessage; assistantMessage: StoredMessage },
-  state: RuntimeState,
-): ChatTurnResult {
-  const memoryRecall = readMemoryRecallDiagnostic(
-    turn.assistantMessage.metadata,
-  );
-  return {
-    idempotentReplay: true,
-    userMessage: turn.userMessage,
-    assistantMessage: turn.assistantMessage,
-    scheduleChanges: [],
-    state,
-    ...(memoryRecall === undefined ? {} : { memoryRecall }),
-    decision: {
-      reasonCode: metadataText(
-        turn.assistantMessage.metadata,
-        "reasonCode",
-        "idempotent_replay",
-      ),
-      reasonSummary: metadataText(
-        turn.assistantMessage.metadata,
-        "reasonSummary",
-        "Replayed stored turn.",
-      ),
-      toneTags: Array.isArray(turn.assistantMessage.metadata.toneTags)
-        ? (turn.assistantMessage.metadata.toneTags as string[])
-        : [],
-      deliveryMode: metadataDeliveryMode(turn.assistantMessage.metadata),
-      chunks: metadataChunks(
-        turn.assistantMessage.metadata,
-        turn.assistantMessage.content,
-      ),
-    },
-  };
-}
-
-export function buildMemoryRecallDiagnostic(
-  mode: "legacy" | "shadow" | "enforced",
-  legacyMemories: readonly { id: string }[],
-  promptMemories: readonly { id: string }[],
-  preview: MemoryRecallPreview,
-): MemoryRecallRuntimeDiagnostic {
-  const result = preview.result;
-  return MemoryRecallRuntimeDiagnosticSchema.parse({
-    rolloutMode: mode,
-    promptStrategy: mode === "enforced" ? "evidence_selected" : "legacy_active",
-    legacyPromptMemoryIds: legacyMemories
-      .slice(0, 12)
-      .map((memory) => memory.id),
-    promptMemoryIds: promptMemories.slice(0, 12).map((memory) => memory.id),
-    selectedMemoryIds: result.selectedMemoryIds,
-    selectedEvidenceIds: result.selectedEvidenceIds,
-    rejectedMemoryIds: preview.candidates
-      .filter((candidate) => !candidate.selected)
-      .map((candidate) => candidate.memoryId),
-    recallMode: result.mode,
-    score: result.score,
-    abstained: result.abstained,
-    ...(result.abstained ? { abstentionReason: result.abstentionReason } : {}),
-    durationMs: preview.timing.durationMs,
-  });
-}
-
-function readMemoryRecallDiagnostic(
-  metadata: Record<string, unknown>,
-): MemoryRecallRuntimeDiagnostic | undefined {
-  const parsed = MemoryRecallRuntimeDiagnosticSchema.safeParse(
-    metadata.memoryRecall,
-  );
-  return parsed.success ? parsed.data : undefined;
-}
-
-function optionalText(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
-  if (
-    typeof value === "number" ||
-    typeof value === "bigint" ||
-    typeof value === "boolean"
-  ) {
-    return String(value);
-  }
-  return undefined;
-}
-
-function metadataText(
-  metadata: Record<string, unknown>,
-  key: string,
-  fallback: string,
-): string {
-  return optionalText(metadata[key]) ?? fallback;
-}
-
-function metadataChunks(
-  metadata: Record<string, unknown>,
-  fallbackText?: string,
-): string[] {
-  const value = metadata.chunks;
-  const chunks = Array.isArray(value)
-    ? value.filter(
-        (chunk): chunk is string =>
-          typeof chunk === "string" && chunk.trim().length > 0,
-      )
-    : [];
-  if (chunks.length > 0) return chunks;
-  return fallbackText === undefined || fallbackText.trim() === ""
-    ? []
-    : [fallbackText];
-}
-
-function metadataDeliveryMode(
-  metadata: Record<string, unknown>,
-): "single_block" | "sequential" {
-  if (
-    metadata.deliveryMode === "single_block" ||
-    metadata.deliveryMode === "sequential"
-  ) {
-    return metadata.deliveryMode;
-  }
-  return metadataChunks(metadata).length > 1 ? "sequential" : "single_block";
 }

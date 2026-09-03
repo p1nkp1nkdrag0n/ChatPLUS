@@ -54,6 +54,7 @@ export default function TimelinePage() {
   const initialId =
     params.characterId ?? readActiveCharacter() ?? characters[0]?.id;
   const [selectedId, setSelectedId] = useState<string | undefined>(initialId);
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const agentId = params.characterId ?? selectedId ?? characters[0]?.id;
   const characterQuery = useQuery({
     queryKey: ["character", agentId],
@@ -77,6 +78,7 @@ export default function TimelinePage() {
   const events = eventsQuery.data
     ? unwrapList<TimelineEvent>(eventsQuery.data, "events")
     : [];
+  const visibleEvents = showAllEvents ? events : events.slice(0, 12);
   const timezone = character?.identity.timezone ?? "Asia/Shanghai";
 
   if (charactersQuery.isPending)
@@ -159,7 +161,7 @@ export default function TimelinePage() {
         {eventsQuery.isPending ? <LoadingBlock label="读取事件…" /> : null}
         {eventsQuery.isError ? <ErrorBlock error={eventsQuery.error} /> : null}
         <ol>
-          {events.slice(0, 12).map((event) => (
+          {visibleEvents.map((event) => (
             <li key={event.id}>
               <span className="event-ledger__node">
                 <Sparkles size={13} />
@@ -167,6 +169,9 @@ export default function TimelinePage() {
               <div>
                 <div className="event-ledger__title-row">
                   <strong>{timelineEventTitle(event)}</strong>
+                  <span className="timeline-source-badge">
+                    {timelineSourceLabel(event.provenance)}
+                  </span>
                 </div>
                 <p>{event.summary}</p>
                 <time>
@@ -185,6 +190,18 @@ export default function TimelinePage() {
             </li>
           ))}
         </ol>
+        {events.length > 12 ? (
+          <button
+            className="button button--quiet event-ledger__more"
+            type="button"
+            aria-expanded={showAllEvents}
+            onClick={() => setShowAllEvents((current) => !current)}
+          >
+            {showAllEvents
+              ? "收起到最近 12 条"
+              : `显示全部 ${events.length} 条`}
+          </button>
+        ) : null}
         {!eventsQuery.isPending && events.length === 0 ? (
           <p className="event-ledger__empty">
             <Clock3 size={16} /> 尚未产生可追溯的共同经历。
@@ -192,5 +209,16 @@ export default function TimelinePage() {
         ) : null}
       </section>
     </div>
+  );
+}
+
+function timelineSourceLabel(source: string): string {
+  return (
+    {
+      conversation: "对话证据",
+      life_simulation: "生活演进",
+      character_spec: "角色设定",
+      system: "系统记录",
+    }[source] ?? source.replaceAll("_", " ")
   );
 }

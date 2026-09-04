@@ -14,6 +14,7 @@ import type { CharacterSummary } from "../api/types";
 import {
   EnvelopePanel,
   LetterPaper,
+  ReplyGenerationStatus,
   TransitProgress,
 } from "../components/correspondence/CorrespondencePrimitives";
 import { EmptyState, ErrorBlock, LoadingBlock } from "../components/Feedback";
@@ -29,6 +30,7 @@ import {
   type MailboxFilter,
 } from "../lib/correspondence";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
+import { useReplyGenerationRetry } from "../hooks/useReplyGenerationRetry";
 
 const FILTERS: Array<{ value: MailboxFilter; label: string }> = [
   { value: "all", label: "全部" },
@@ -92,6 +94,11 @@ export default function CorrespondenceMailboxPage() {
   const selectedLetter =
     letters.find((letter) => letter.id === requestedLetterId) ?? letters[0];
   const compose = composeAvailability(mailbox);
+  const openThread = mailbox?.threads.find(
+    (thread) => thread.status === "open",
+  );
+  const replyState = openThread?.replyState;
+  const replyRetry = useReplyGenerationRetry(characterId, replyState);
   const modeResolved = !settingsQuery.isPending && !settingsQuery.isError;
   const canCompose = settingsQuery.data?.correspondenceMode === "enforced";
 
@@ -154,9 +161,18 @@ export default function CorrespondenceMailboxPage() {
               className="button button--primary correspondence-compose-link"
               type="button"
               disabled
-              title="这一轮往来仍在途中"
+              title={
+                replyState?.kind === "failed"
+                  ? "这封回信暂时没有写成"
+                  : replyState?.kind === "retry_scheduled"
+                    ? "回信已安排重新尝试"
+                    : replyState?.kind === "waiting"
+                      ? "正在等待回信"
+                      : "这一轮往来仍在途中"
+              }
             >
-              <PenLine size={17} aria-hidden="true" /> 写一封信
+              <PenLine size={17} aria-hidden="true" />
+              {replyState?.kind === "failed" ? "回信待处理" : "等待回信"}
             </button>
           ) : (
             <Link
@@ -196,6 +212,20 @@ export default function CorrespondenceMailboxPage() {
 
       {pending ? <LoadingBlock label="正在整理书信…" /> : null}
       {error ? <ErrorBlock error={error} /> : null}
+
+      {!pending && !error && replyState ? (
+        <div className="mailbox-reply-generation">
+          <ReplyGenerationStatus
+            state={replyState}
+            correspondent={character?.identity.name ?? "角色"}
+            isPending={replyRetry.isPending}
+            {...(replyRetry.safeErrorMessage === undefined
+              ? {}
+              : { safeErrorMessage: replyRetry.safeErrorMessage })}
+            onRetry={replyRetry.retry}
+          />
+        </div>
+      ) : null}
 
       {!pending && !error && letters.length === 0 ? (
         <div

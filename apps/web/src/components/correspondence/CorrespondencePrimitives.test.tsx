@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
+  CorrespondenceReplyState,
   LetterSummaryResponse,
   OpenLetterResponse,
 } from "@personasim/contracts";
@@ -8,6 +9,7 @@ import {
   EnvelopePanel,
   OpenedLetterPaper,
   PaperSelector,
+  ReplyGenerationStatus,
   TransitProgress,
 } from "./CorrespondencePrimitives";
 
@@ -107,5 +109,86 @@ describe("correspondence visual primitives", () => {
     expect(markup).toContain('role="progressbar"');
     expect(markup).toContain("预计抵达");
     expect(markup).not.toContain("秒");
+  });
+
+  it("renders waiting and scheduled reply generation as non-actionable facts", () => {
+    const waiting = renderToStaticMarkup(
+      <ReplyGenerationStatus
+        state={{ kind: "waiting", incomingLetterId: "incoming-1" }}
+        correspondent="林枫"
+        isPending={false}
+        onRetry={vi.fn()}
+      />,
+    );
+    const scheduled = renderToStaticMarkup(
+      <ReplyGenerationStatus
+        state={{ kind: "retry_scheduled", incomingLetterId: "incoming-1" }}
+        correspondent="林枫"
+        isPending={false}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(waiting).toContain("正在认真准备回信");
+    expect(scheduled).toContain("已安排重新尝试");
+    expect(waiting).not.toContain("<button");
+    expect(scheduled).not.toContain("<button");
+  });
+
+  it("only offers recovery for the safe retryable failed state", () => {
+    const unavailable = renderToStaticMarkup(
+      <ReplyGenerationStatus
+        state={{
+          kind: "failed",
+          incomingLetterId: "incoming-1",
+          canRetry: false,
+        }}
+        correspondent="林枫"
+        isPending={false}
+        onRetry={vi.fn()}
+      />,
+    );
+    const retryable = renderToStaticMarkup(
+      <ReplyGenerationStatus
+        state={{
+          kind: "failed",
+          incomingLetterId: "incoming-1",
+          canRetry: true,
+        }}
+        correspondent="林枫"
+        isPending={false}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(unavailable).toContain("当前暂时无法重新尝试");
+    expect(unavailable).not.toContain("<button");
+    expect(retryable).toContain("重新尝试回信");
+    expect(retryable.match(/<button/g)).toHaveLength(1);
+  });
+
+  it("disables recovery while pending and ignores non-contract state fields", () => {
+    const unsafeState = {
+      kind: "failed",
+      incomingLetterId: "incoming-1",
+      canRetry: true,
+      providerError: "SENTINEL_PRIVATE_PROVIDER_ERROR",
+      taskId: "SENTINEL_PRIVATE_TASK_ID",
+    } as CorrespondenceReplyState;
+    const markup = renderToStaticMarkup(
+      <ReplyGenerationStatus
+        state={unsafeState}
+        correspondent="林枫"
+        isPending
+        safeErrorMessage="未能确认这次请求，请稍后再次尝试。"
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(markup).toMatch(/<button[^>]*disabled=""/);
+    expect(markup).toContain("正在重新请求");
+    expect(markup).toContain("未能确认这次请求");
+    expect(markup).not.toContain("SENTINEL_PRIVATE_PROVIDER_ERROR");
+    expect(markup).not.toContain("SENTINEL_PRIVATE_TASK_ID");
   });
 });

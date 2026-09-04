@@ -99,6 +99,60 @@ describe("correspondence API client", () => {
     expect(fetchMock.mock.calls[4]?.[1]?.body).toBe("{}");
   });
 
+  it("uses the strict asynchronous reply-recovery contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          incomingLetterId: "incoming-1",
+          replayed: false,
+        },
+        202,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      api.letters.retryReplyGeneration("incoming:1", {
+        clientRequestId: "reply-retry:request-1",
+      }),
+    ).resolves.toEqual({
+      incomingLetterId: "incoming-1",
+      replayed: false,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/letters/incoming%3A1/reply-generation/retry",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          clientRequestId: "reply-retry:request-1",
+        }),
+      }),
+    );
+  });
+
+  it("rejects internal recovery fields from an ordinary reply-recovery response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            incomingLetterId: "incoming-1",
+            replayed: false,
+            generationEpoch: 2,
+            taskId: "PRIVATE_TASK_ID",
+          },
+          202,
+        ),
+      ),
+    );
+
+    await expect(
+      api.letters.retryReplyGeneration("incoming-1", {
+        clientRequestId: "reply-retry:request-1",
+      }),
+    ).rejects.toThrow();
+  });
+
   it("never returns full opened reply plaintext from the cache-safe detail method", async () => {
     vi.stubGlobal(
       "fetch",

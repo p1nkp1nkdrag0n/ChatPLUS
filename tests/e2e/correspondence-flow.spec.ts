@@ -294,6 +294,204 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     expect(download.suggestedFilename()).toMatch(/\.png$/u);
     expect(await download.failure()).toBeNull();
   });
+
+  test("recovers an ambiguous failed-reply request through the safe projection", async ({
+    page,
+    request,
+  }) => {
+    const suffix = `${test.info().project.name}-${Date.now()}`;
+    const agentId = await createPublishedHighFidelityCharacter(
+      request,
+      `恢复旅人·${test.info().project.name === "chromium" ? "桌面" : "移动"}`,
+    );
+    await rememberCharacter(page, agentId);
+    const createdResponse = await request.post(
+      `/api/agents/${agentId}/letters`,
+      {
+        data: {
+          clientRequestId: `recovery-create:${suffix}`,
+          subject: "等待一封迟到的回信",
+          body: "这封信用于验证失败后的安全恢复入口。",
+        },
+      },
+    );
+    expect(createdResponse.ok()).toBe(true);
+    const created = (await createdResponse.json()) as {
+      letter: { id: string; threadId: string };
+    };
+    const incomingLetterId = created.letter.id;
+    const threadId = created.letter.threadId;
+    const sealedResponse = await request.post(
+      `/api/letters/${incomingLetterId}/seal`,
+      { data: { clientRequestId: `recovery-seal:${suffix}` } },
+    );
+    expect(sealedResponse.ok()).toBe(true);
+
+    let replyState: "failed" | "retry_scheduled" = "failed";
+    let retryCalls = 0;
+    const retryPayloads: Array<{ clientRequestId: string }> = [];
+    let releaseRetryResponse: (() => void) | undefined;
+    const retryResponseGate = new Promise<void>((resolve) => {
+      releaseRetryResponse = resolve;
+    });
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await page.route(
+      `**/api/agents/${agentId}/correspondence*`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            threads: [
+              {
+                id: threadId,
+                agentId,
+                status: "open",
+                rootLetterId: incomingLetterId,
+                latestLetterId: incomingLetterId,
+                replyState:
+                  replyState === "failed"
+                    ? {
+                        kind: "failed",
+                        incomingLetterId,
+                        canRetry: true,
+                      }
+                    : { kind: "retry_scheduled", incomingLetterId },
+              },
+            ],
+            letters: [
+              {
+                id: incomingLetterId,
+                threadId,
+                direction: "user_to_agent",
+                status: "read",
+                authoredDisplayDate: "2026-09-20",
+                dispatchedAtUtc: "2026-09-15T04:00:00.000Z",
+                arrivalDueAtUtc: "2026-09-20T04:00:00.000Z",
+                progress: 1,
+                postmark: "上海 · 2026-09-15",
+                canOpen: false,
+                canEdit: false,
+                previewText: "这封信用于验证失败后的安全恢复入口。",
+              },
+            ],
+            serverTimeUtc: "2026-09-20T04:00:00.000Z",
+          }),
+        });
+      },
+    );
+    await page.route(
+      `**/api/letters/${incomingLetterId}/reply-generation/retry`,
+      async (route) => {
+        retryCalls += 1;
+        retryPayloads.push(
+          route.request().postDataJSON() as { clientRequestId: string },
+        );
+        if (retryCalls === 1) {
+          await retryResponseGate;
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({
+              error: {
+                code: "reply_retry_transport_failed",
+                message: "SENTINEL_PRIVATE_PROVIDER_FAILURE",
+              },
+            }),
+          });
+          return;
+        }
+        if (retryCalls === 2) {
+          await route.fulfill({
+            status: 202,
+            contentType: "application/json",
+            body: JSON.stringify({ incomingLetterId, replayed: true }),
+          });
+          return;
+        }
+        replyState = "retry_scheduled";
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify({ incomingLetterId, replayed: false }),
+        });
+      },
+    );
+
+    await page.goto(`/characters/${agentId}/correspondence`);
+    await expect(
+      page.getByText("这封回信暂时没有写成", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "回信待处理" }),
+    ).toBeDisabled();
+
+    await page.goto(
+      `/letters/${incomingLetterId}?agentId=${encodeURIComponent(agentId)}`,
+    );
+    await expect(
+      page.getByText("这封回信暂时没有写成", { exact: true }),
+    ).toBeVisible();
+
+    await page.goto(
+      `/correspondence/threads/${threadId}?agentId=${encodeURIComponent(agentId)}`,
+    );
+    const retryButton = page.getByRole("button", { name: /重新/u });
+    await expect(retryButton).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath("failed-reply-recovery.png"),
+      fullPage: true,
+    });
+
+    await retryButton.click();
+    await expect(retryButton).toBeDisabled();
+    await expect(retryButton).toContainText("正在重新请求");
+    await retryButton.click({ force: true });
+    expect(retryCalls).toBe(1);
+    expect(retryPayloads[0]).toEqual({
+      clientRequestId: expect.stringMatching(/^letter-reply-retry:/u),
+    });
+
+    releaseRetryResponse?.();
+    await expect(
+      page.getByText("未能确认这次请求，请稍后再次尝试。", { exact: true }),
+    ).toBeVisible();
+    expect(await page.content()).not.toContain(
+      "SENTINEL_PRIVATE_PROVIDER_FAILURE",
+    );
+    await retryButton.click();
+
+    await expect(
+      page.getByText("已安排重新尝试", { exact: true }),
+    ).toBeVisible();
+    await expect(retryButton).toHaveCount(0);
+    expect(retryCalls).toBe(3);
+    expect(retryPayloads[1]?.clientRequestId).toBe(
+      retryPayloads[0]?.clientRequestId,
+    );
+    expect(retryPayloads[2]?.clientRequestId).toMatch(/^letter-reply-retry:/u);
+    expect(retryPayloads[2]?.clientRequestId).not.toBe(
+      retryPayloads[0]?.clientRequestId,
+    );
+    const scheduledMarkup = await page.content();
+    for (const payload of retryPayloads) {
+      expect(scheduledMarkup).not.toContain(payload.clientRequestId);
+    }
+    await page.screenshot({
+      path: test.info().outputPath("scheduled-reply-recovery.png"),
+      fullPage: true,
+    });
+    expect(consoleErrors).toEqual([
+      expect.stringMatching(/503 \(Service Unavailable\)/u),
+    ]);
+    expect(pageErrors).toEqual([]);
+  });
 });
 
 async function createPublishedHighFidelityCharacter(

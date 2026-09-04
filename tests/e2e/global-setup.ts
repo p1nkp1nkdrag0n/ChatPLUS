@@ -8,7 +8,7 @@ import { buildApp } from "../../apps/server/src/app.js";
 import { readConfig } from "../../apps/server/src/config.js";
 import { FakeClock } from "../../apps/server/src/runtime/clock.js";
 
-const API_PORT = 3001;
+const API_PORT = Number(process.env["CHATPLUS_E2E_API_PORT"] ?? "3001");
 // Keep E2E isolated from Vite's development port. On Windows, 5173 can fall
 // inside a Hyper-V/WSL excluded range and fail with EACCES before tests start.
 const WEB_PORT = Number(process.env["CHATPLUS_E2E_WEB_PORT"] ?? "43173");
@@ -74,7 +74,17 @@ export default async function globalSetup() {
     web = await createServer({
       root: resolve("apps/web"),
       configFile: resolve("apps/web/vite.config.ts"),
-      server: { host: "127.0.0.1", port: WEB_PORT, strictPort: true },
+      server: {
+        host: "127.0.0.1",
+        port: WEB_PORT,
+        strictPort: true,
+        proxy: {
+          "/api": {
+            target: `http://127.0.0.1:${API_PORT}`,
+            changeOrigin: false,
+          },
+        },
+      },
     });
     await web.listen();
 

@@ -3,7 +3,9 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, unwrapCharacter } from "../api/client";
+import { ReplyGenerationStatus } from "../components/correspondence/CorrespondencePrimitives";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
+import { useReplyGenerationRetry } from "../hooks/useReplyGenerationRetry";
 import {
   correspondenceQueryKeys,
   composeAvailability,
@@ -44,6 +46,7 @@ export default function CorrespondenceThreadPage() {
     ? findThreadLetters(mailboxQuery.data, threadId)
     : [];
   const compose = composeAvailability(mailboxQuery.data);
+  const replyRetry = useReplyGenerationRetry(agentId, thread?.replyState);
 
   if (mailboxQuery.isPending || characterQuery.isPending) {
     return <LoadingBlock label="正在整理往来…" fullPage />;
@@ -82,6 +85,20 @@ export default function CorrespondenceThreadPage() {
           </Link>
         ) : null}
       </header>
+
+      {thread?.replyState ? (
+        <div className="thread-reply-generation">
+          <ReplyGenerationStatus
+            state={thread.replyState}
+            correspondent={correspondent}
+            isPending={replyRetry.isPending}
+            {...(replyRetry.safeErrorMessage === undefined
+              ? {}
+              : { safeErrorMessage: replyRetry.safeErrorMessage })}
+            onRetry={replyRetry.retry}
+          />
+        </div>
+      ) : null}
 
       <main className="thread-exchanges">
         {letters.map((letter) => {

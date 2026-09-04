@@ -16,6 +16,7 @@ import {
   ExchangeTimeline,
   LetterPaper,
   OpenedLetterPaper,
+  ReplyGenerationStatus,
   TransitProgress,
 } from "../components/correspondence/CorrespondencePrimitives";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
@@ -33,6 +34,7 @@ import {
 } from "../lib/activeCharacter";
 import { openLetterForMountedReader } from "../lib/correspondenceMutations";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
+import { useReplyGenerationRetry } from "../hooks/useReplyGenerationRetry";
 
 export default function LetterDetailPage() {
   const { letterId = "" } = useParams();
@@ -76,11 +78,21 @@ export default function LetterDetailPage() {
   const correspondent = character?.identity.name ?? "角色";
   const detail = detailQuery.data;
   const letter = detail?.letter;
+  const thread =
+    letter === undefined
+      ? undefined
+      : mailboxQuery.data?.threads.find((item) => item.id === letter.threadId);
+  const projectedReplyState = thread?.replyState;
+  const replyState =
+    projectedReplyState?.incomingLetterId === letter?.id
+      ? projectedReplyState
+      : undefined;
   const threadLetters =
     letter && mailboxQuery.data
       ? findThreadLetters(mailboxQuery.data, letter.threadId)
       : [];
   const canCompose = settingsQuery.data?.correspondenceMode === "enforced";
+  const replyRetry = useReplyGenerationRetry(agentId, replyState);
 
   const openLetter = useCallback(async () => {
     if (!letterId || openPending) return;
@@ -182,6 +194,20 @@ export default function LetterDetailPage() {
               authoredDate={letter.authoredDisplayDate}
               readingMode={readingMode}
             />
+          ) : null}
+
+          {replyState ? (
+            <div className="letter-reply-generation">
+              <ReplyGenerationStatus
+                state={replyState}
+                correspondent={correspondent}
+                isPending={replyRetry.isPending}
+                {...(replyRetry.safeErrorMessage === undefined
+                  ? {}
+                  : { safeErrorMessage: replyRetry.safeErrorMessage })}
+                onRetry={replyRetry.retry}
+              />
+            </div>
           ) : null}
 
           {letter.dispatchedAtUtc &&

@@ -7,12 +7,14 @@ import {
   OpenLetterResponseSchema,
   RelationshipArchivePageResponseSchema,
   RelationshipShareProjectionSchema,
+  RetryLetterReplyGenerationResponseSchema,
   type CorrespondenceMailboxQuery,
   type CreateLetterDraftRequest,
   type KeepsakeListQuery,
   type MemoryRecallPreviewResponse,
   type RelationshipArchiveEntryId,
   type RelationshipArchiveFilter,
+  type RetryLetterReplyGenerationRequest,
   type SealLetterRequest,
   type ShareComposerSelection,
   type UpdateLetterDraftRequest,
@@ -416,6 +418,16 @@ export const api = {
         await request<unknown>(
           `/api/letters/${encodeURIComponent(letterId)}/open`,
           { method: "POST", body: body({}) },
+        ),
+      ),
+    retryReplyGeneration: async (
+      letterId: string,
+      input: RetryLetterReplyGenerationRequest,
+    ) =>
+      RetryLetterReplyGenerationResponseSchema.parse(
+        await request<unknown>(
+          `/api/letters/${encodeURIComponent(letterId)}/reply-generation/retry`,
+          { method: "POST", body: body(input) },
         ),
       ),
   },

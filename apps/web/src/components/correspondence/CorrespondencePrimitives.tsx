@@ -1,5 +1,16 @@
-import { Archive, Check, Eye, LockKeyhole, Mail, Send } from "lucide-react";
+import {
+  Archive,
+  Check,
+  Clock3,
+  Eye,
+  LockKeyhole,
+  Mail,
+  RefreshCw,
+  Send,
+  TriangleAlert,
+} from "lucide-react";
 import type {
+  CorrespondenceReplyState,
   LetterSummaryResponse,
   OpenLetterResponse,
 } from "@personasim/contracts";
@@ -240,6 +251,79 @@ export function TransitProgress({
           <time>{transit.arrivalLabel ?? "日期待定"}</time>
         </li>
       </ol>
+    </section>
+  );
+}
+
+export function ReplyGenerationStatus({
+  state,
+  correspondent,
+  isPending,
+  safeErrorMessage,
+  onRetry,
+}: {
+  state: CorrespondenceReplyState;
+  correspondent: string;
+  isPending: boolean;
+  safeErrorMessage?: string;
+  onRetry: () => void;
+}) {
+  const Icon =
+    state.kind === "failed"
+      ? TriangleAlert
+      : state.kind === "retry_scheduled"
+        ? RefreshCw
+        : Clock3;
+  const title =
+    state.kind === "failed"
+      ? "这封回信暂时没有写成"
+      : state.kind === "retry_scheduled"
+        ? "已安排重新尝试"
+        : `${correspondent} 正在认真准备回信`;
+  const description =
+    state.kind === "failed"
+      ? state.canRetry
+        ? "你的来信已经安全保存。重新尝试不会重复寄信，也不会改动原信。"
+        : "你的来信已经安全保存，但当前暂时无法重新尝试，请稍后再看。"
+      : state.kind === "retry_scheduled"
+        ? "恢复请求已经收到，系统会沿用原来的信件上下文重新准备。"
+        : `${correspondent} 已经收到你的信，回信完成后会按原定路程寄回。`;
+  const canRetry = state.kind === "failed" && state.canRetry;
+
+  return (
+    <section
+      className={`reply-generation-status reply-generation-status--${state.kind}`}
+      role="status"
+      aria-live="polite"
+      aria-busy={isPending || undefined}
+    >
+      <span className="reply-generation-status__icon" aria-hidden="true">
+        <Icon size={20} />
+      </span>
+      <div className="reply-generation-status__content">
+        <strong>{title}</strong>
+        <p>{description}</p>
+        {safeErrorMessage ? (
+          <p className="reply-generation-status__error" role="alert">
+            {safeErrorMessage}
+          </p>
+        ) : null}
+      </div>
+      {canRetry ? (
+        <button
+          className="button button--secondary reply-generation-status__action"
+          type="button"
+          disabled={isPending}
+          onClick={onRetry}
+        >
+          <RefreshCw
+            size={16}
+            className={isPending ? "spin" : undefined}
+            aria-hidden="true"
+          />
+          {isPending ? "正在重新请求…" : "重新尝试回信"}
+        </button>
+      ) : null}
     </section>
   );
 }

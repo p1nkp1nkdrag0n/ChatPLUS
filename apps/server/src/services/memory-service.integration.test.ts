@@ -146,6 +146,37 @@ describe("memory service evidence integration", () => {
     ]);
   });
 
+  it("keeps the complete authoritative user quote over a model-proposed excerpt", () => {
+    const [persisted] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          evidence: [
+            {
+              sourceType: "message",
+              sourceId: MESSAGE_ID,
+              quote: "I am vegetarian.",
+              recordedAtUtc: NOW,
+            },
+          ],
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 1,
+      authoritativeMessageId: MESSAGE_ID,
+    });
+
+    expect(persisted).toBeDefined();
+    expect(readMemoryEvidence(store, [persisted?.id ?? "missing"])).toEqual([
+      expect.objectContaining({
+        sourceType: "message",
+        sourceId: MESSAGE_ID,
+        quote: "I am vegetarian and prefer simple meals.",
+      }),
+    ]);
+  });
+
   it("structures and supersedes an explicit correction to a short user fact", () => {
     const firstMessageId = "message-memory-xiaolin-old";
     insertMessage(database, firstMessageId, "user", "小林是我大学同学");

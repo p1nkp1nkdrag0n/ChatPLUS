@@ -726,9 +726,19 @@ function collectVerifiedEvidence(
     const supportingText = requestedQuote ?? source.content;
     if (!memoryContentGrounded(candidate, supportingText)) return;
 
-    const quote = (requestedQuote ?? source.content).trim().slice(0, 2_000);
+    const completeQuote = source.content.trim().slice(0, 2_000);
+    const quote = requestedQuote?.trim().slice(0, 2_000) ?? completeQuote;
     if (quote.length === 0) return;
-    result.set(`message:${sourceId}`, {
+    const evidenceKey = `message:${sourceId}`;
+    const existing = result.get(evidenceKey);
+    if (
+      existing?.quote !== undefined &&
+      normalizedEvidenceText(existing.quote) ===
+        normalizedEvidenceText(completeQuote)
+    ) {
+      return;
+    }
+    result.set(evidenceKey, {
       sourceType: "message",
       sourceId,
       quote,
@@ -779,12 +789,19 @@ function collectVerifiedEvidence(
 }
 
 function groundedQuote(source: string, quote: string): boolean {
-  const normalize = (value: string): string =>
-    value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase();
-  const normalizedQuote = normalize(quote);
+  const normalizedQuote = normalizedEvidenceText(quote);
   return (
-    normalizedQuote.length > 0 && normalize(source).includes(normalizedQuote)
+    normalizedQuote.length > 0 &&
+    normalizedEvidenceText(source).includes(normalizedQuote)
   );
+}
+
+function normalizedEvidenceText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase();
 }
 
 function isSharedExperienceCandidate(candidate: MemoryCandidate): boolean {

@@ -1,7 +1,10 @@
 import type { LetterGenerationSnapshot } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
 
-import { buildLetterReplyPrompt } from "./letter-prompt.js";
+import {
+  buildLetterReplyPrompt,
+  deriveAllowedLetterReplyReferenceIds,
+} from "./letter-prompt.js";
 import { deriveLetterStrategy } from "./letter-strategy.js";
 
 const ARRIVAL = "2026-09-08T12:00:00.000Z";
@@ -90,6 +93,15 @@ describe("buildLetterReplyPrompt", () => {
     expect(built.prompt).toContain("雨夜票根");
     expect(built.prompt).not.toContain(PROCESSED);
     expect(built.prompt).not.toContain("future-evidence-from-september-9");
+
+    const parsed = JSON.parse(built.prompt) as Record<string, unknown>;
+    expect(parsed["ALLOWED_REFERENCED_EVIDENCE_IDS"]).toEqual([
+      ...snapshot.evidenceIds,
+      snapshot.incomingLetterId,
+    ]);
+    expect(
+      (parsed["SNAPSHOT_EVIDENCE"] as Record<string, unknown>)["evidenceIds"],
+    ).toEqual(snapshot.evidenceIds);
   });
 
   it("serializes stable named prompt sections and keeps strategy non-factual", () => {
@@ -105,6 +117,7 @@ describe("buildLetterReplyPrompt", () => {
     const parsed = JSON.parse(built.prompt) as Record<string, unknown>;
 
     expect(Object.keys(parsed)).toEqual([
+      "ALLOWED_REFERENCED_EVIDENCE_IDS",
       "ARRIVAL_TIME_AND_POSTMARK",
       "CHARACTER_SPEC_COMPACT",
       "LETTER_ARRIVAL_EFFECTIVE_TIME",
@@ -117,5 +130,32 @@ describe("buildLetterReplyPrompt", () => {
       "USER_LETTER",
     ]);
     expect(parsed["LETTER_STRATEGY"]).not.toHaveProperty("facts");
+  });
+
+  it("derives the current letter reference without duplicating snapshot evidence", () => {
+    expect(deriveAllowedLetterReplyReferenceIds(snapshot)).toEqual([
+      ...snapshot.evidenceIds,
+      snapshot.incomingLetterId,
+    ]);
+    expect(
+      deriveAllowedLetterReplyReferenceIds({
+        incomingLetterId: "letter-incoming-1",
+        evidenceIds: ["evidence-1", "letter-incoming-1"],
+      }),
+    ).toEqual(["evidence-1", "letter-incoming-1"]);
+  });
+
+  it("fails closed when the prompt letter does not match the snapshot", () => {
+    expect(() =>
+      buildLetterReplyPrompt({
+        snapshot,
+        incomingLetter: {
+          id: "letter-different",
+          body: "这不是快照对应的信。",
+          contentHash: "c".repeat(64),
+        },
+        strategy: deriveLetterStrategy("这不是快照对应的信。"),
+      }),
+    ).toThrow("Incoming letter must match the immutable arrival snapshot");
   });
 });

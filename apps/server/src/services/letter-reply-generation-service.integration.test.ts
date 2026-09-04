@@ -183,6 +183,29 @@ describe("LetterReplyGenerationService", () => {
     });
   });
 
+  it("allows a reply to cite the immutable incoming letter and snapshot evidence", async () => {
+    const seeded = seedReadyGeneration(repository);
+    const model = new ScriptedLetterReplyModel(() => ({
+      ...proposal,
+      referencedEvidenceIds: [seeded.incoming.id, "evidence-before-arrival"],
+    }));
+    const encryptor = new FixtureEncryptor();
+    const { catchUp } = createGenerationHarness(model, encryptor);
+
+    const result = await catchUp.catchUpAgent(AGENT_ID, PROCESSED);
+
+    expect(result.completedTaskIds).toEqual([seeded.task.id]);
+    expect(
+      repository.getGenerationRunForEpoch(seeded.incoming.id, 0),
+    ).toMatchObject({
+      status: "committed",
+      attempt: 1,
+      snapshotId: seeded.snapshot.id,
+    });
+    expect(encryptor.encryptReply).toHaveBeenCalledOnce();
+    expect(countReplies(database)).toBe(1);
+  });
+
   it("notifies one best-effort post-commit hook without allowing its failure to undo the reply", async () => {
     const seeded = seedReadyGeneration(repository);
     const model = new ScriptedLetterReplyModel(() => proposal);
@@ -238,7 +261,10 @@ describe("LetterReplyGenerationService", () => {
         error.code = "network_timeout";
         throw error;
       }
-      return proposal;
+      return {
+        ...proposal,
+        referencedEvidenceIds: [seeded.incoming.id],
+      };
     });
     const encryptor = new FixtureEncryptor();
     const { catchUp } = createGenerationHarness(model, encryptor);
@@ -344,7 +370,7 @@ describe("LetterReplyGenerationService", () => {
     const seeded = seedReadyGeneration(repository);
     const model = new ScriptedLetterReplyModel(() => ({
       ...proposal,
-      referencedEvidenceIds: ["evidence-after-arrival"],
+      referencedEvidenceIds: [seeded.incoming.id, "evidence-after-arrival"],
     }));
     const encryptor = new FixtureEncryptor();
     const { catchUp } = createGenerationHarness(model, encryptor);

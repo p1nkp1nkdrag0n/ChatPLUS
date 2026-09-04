@@ -771,11 +771,25 @@ function letterReplyFixture(request: LLMRequest): JsonValue {
   const body = stringValue(userLetter["body"], "谢谢你的来信。")
     .trim()
     .slice(0, 1_500);
-  const evidenceIds = Array.isArray(snapshotEvidence["evidenceIds"])
+  const snapshotEvidenceIds = Array.isArray(snapshotEvidence["evidenceIds"])
     ? snapshotEvidence["evidenceIds"].filter(
         (value): value is string => typeof value === "string",
       )
     : [];
+  const allowedReferenceIds = Array.isArray(
+    prompt["ALLOWED_REFERENCED_EVIDENCE_IDS"],
+  )
+    ? prompt["ALLOWED_REFERENCED_EVIDENCE_IDS"].filter(
+        (value): value is string => typeof value === "string",
+      )
+    : snapshotEvidenceIds;
+  const incomingLetterId =
+    typeof userLetter["id"] === "string" ? userLetter["id"] : undefined;
+  const referencedEvidenceIds =
+    incomingLetterId !== undefined &&
+    allowedReferenceIds.includes(incomingLetterId)
+      ? [incomingLetterId]
+      : allowedReferenceIds.slice(0, 2_000);
   return {
     subject: `回复：${subject}`.slice(0, 240),
     salutation: "亲爱的朋友：",
@@ -785,7 +799,7 @@ function letterReplyFixture(request: LLMRequest): JsonValue {
     ],
     closing: "顺颂安好",
     signature: "回信人",
-    referencedEvidenceIds: evidenceIds,
+    referencedEvidenceIds,
   };
 }
 

@@ -124,6 +124,15 @@ character section the application freezes an immutable snapshot containing:
 - prior correspondence already knowable to the character; and
 - the incoming user letter as a separate medium-scoped input.
 
+The snapshot evidence IDs continue to describe only the frozen contextual
+evidence and do not absorb the incoming letter ID. At prompt and validation
+time the application derives one reply-reference allowlist as
+`snapshot.evidenceIds ∪ { snapshot.incomingLetterId }`. This lets the model
+cite the letter it is directly answering without mutating the snapshot or its
+hash, while every unrelated or future ID still fails closed. Prompt assembly
+and post-model validation must use the same derivation so their evidence
+contracts cannot drift apart.
+
 Planned activity is not an occurred result. Advice is not a decision, a
 decision is not an action, and an action is not an outcome. Snapshot canonical
 JSON receives a SHA-256 hash. Every automatic retry and every later manual

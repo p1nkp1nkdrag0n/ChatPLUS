@@ -17,7 +17,15 @@ describe("Fixture LLM letter reply purpose contract", () => {
       payload: {
         prompt: JSON.stringify({
           SNAPSHOT_EVIDENCE: { evidenceIds: ["evidence-arrival-1"] },
-          USER_LETTER: { subject: "九月来信", body: "我快要出发了。" },
+          ALLOWED_REFERENCED_EVIDENCE_IDS: [
+            "evidence-arrival-1",
+            "letter-incoming-1",
+          ],
+          USER_LETTER: {
+            id: "letter-incoming-1",
+            subject: "九月来信",
+            body: "我快要出发了。",
+          },
         }),
       },
     });
@@ -26,7 +34,7 @@ describe("Fixture LLM letter reply purpose contract", () => {
     expect(proposal).toMatchObject({
       subject: "回复：九月来信",
       salutation: "亲爱的朋友：",
-      referencedEvidenceIds: ["evidence-arrival-1"],
+      referencedEvidenceIds: ["letter-incoming-1"],
     });
     expect(proposal.paragraphs).toHaveLength(2);
   });

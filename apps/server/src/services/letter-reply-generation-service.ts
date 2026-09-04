@@ -20,6 +20,7 @@ import {
   canonicalLetterContent,
   canonicalLetterGenerationSnapshot,
   canonicalLetterReplyContent,
+  deriveAllowedLetterReplyReferenceIds,
   deriveLetterStrategy,
   type LetterReplyPrompt,
 } from "@personasim/features";
@@ -415,7 +416,9 @@ export class LetterReplyGenerationService {
       });
       const proposal = LetterReplyProposalSchema.parse(generated);
       const resultHash = sha256(canonicalCorrespondenceJson(proposal));
-      const allowedEvidenceIds = new Set(prepared.snapshot.evidenceIds);
+      const allowedEvidenceIds = new Set(
+        deriveAllowedLetterReplyReferenceIds(prepared.snapshot),
+      );
       if (
         proposal.referencedEvidenceIds.some(
           (evidenceId) => !allowedEvidenceIds.has(evidenceId),

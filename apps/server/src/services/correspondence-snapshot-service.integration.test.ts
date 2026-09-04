@@ -163,6 +163,7 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
         "message-before-arrival",
       ]),
     );
+    expect(snapshot!.evidenceIds).not.toContain(outboundTask.entityId);
 
     const replyTask = repository.getTaskByIdempotencyKey(
       `letter-reply-run:${outboundTask.entityId}:v1`,

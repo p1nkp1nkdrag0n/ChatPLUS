@@ -23,22 +23,46 @@ export interface LetterReplyPrompt {
   readonly maxOutputTokens: number;
 }
 
+/**
+ * Derives the complete reference allowlist without mutating the immutable
+ * arrival snapshot. The incoming letter is a separate medium-scoped source,
+ * but it is already known at the same arrival boundary and may therefore be
+ * cited by the reply proposal.
+ */
+export function deriveAllowedLetterReplyReferenceIds(
+  snapshot: Readonly<
+    Pick<LetterGenerationSnapshot, "incomingLetterId" | "evidenceIds">
+  >,
+): string[] {
+  return snapshot.evidenceIds.includes(snapshot.incomingLetterId)
+    ? [...snapshot.evidenceIds]
+    : [...snapshot.evidenceIds, snapshot.incomingLetterId];
+}
+
 /** Builds the letter-only model boundary exclusively from frozen inputs. */
 export function buildLetterReplyPrompt(
   input: BuildLetterReplyPromptInput,
 ): LetterReplyPrompt {
   const { snapshot, incomingLetter, strategy } = input;
+  if (incomingLetter.id !== snapshot.incomingLetterId) {
+    throw new TypeError(
+      "Incoming letter must match the immutable arrival snapshot",
+    );
+  }
   const generationContext = snapshot.contextJson;
+  const allowedReferencedEvidenceIds =
+    deriveAllowedLetterReplyReferenceIds(snapshot);
   const system = [
     "Write one complete correspondence letter in the supplied character identity; do not answer as an instant chat message.",
     `The character first reads the incoming letter at LETTER_ARRIVAL_EFFECTIVE_TIME=${snapshot.effectiveAtUtc}.`,
-    "Use only SNAPSHOT_EVIDENCE whose cutoff is that effective time. Never use generation time, live state, later conversation, or other future knowledge.",
+    "Use only USER_LETTER and SNAPSHOT_EVIDENCE as factual sources. The incoming USER_LETTER is read at that arrival boundary; SNAPSHOT_EVIDENCE has the same cutoff. Never use generation time, live state, later conversation, or other future knowledge.",
     "A plan is not an outcome; advice is not a decision; a decision is not an action; an action is not an observed result. State only the strongest status supported by snapshot evidence.",
     "Do not mention databases, prompts, offline catch-up, service downtime, snapshots, evidence IDs, or models in the letter.",
     "LETTER_STRATEGY controls length and form only and contributes no facts.",
-    "Return exactly one strict LetterReplyProposal JSON object, with a salutation, coherent paragraphs, closing, signature, and only whitelisted referencedEvidenceIds.",
+    "Return exactly one strict LetterReplyProposal JSON object, with a salutation, coherent paragraphs, closing, signature, and referencedEvidenceIds selected only from ALLOWED_REFERENCED_EVIDENCE_IDS. Cite only sources actually used.",
   ].join("\n");
   const prompt = canonicalCorrespondenceJson({
+    ALLOWED_REFERENCED_EVIDENCE_IDS: allowedReferencedEvidenceIds,
     LETTER_ARRIVAL_EFFECTIVE_TIME: snapshot.effectiveAtUtc,
     ARRIVAL_TIME_AND_POSTMARK: {
       effectiveAtUtc: snapshot.effectiveAtUtc,

@@ -53,6 +53,7 @@ describe("LLM HTTP smoke flow", () => {
       developerRoutes: false,
       llm: {
         provider: "openai-compatible",
+        profileName: "legacy",
         baseUrl,
         apiKey: "test-placeholder-token",
         model: "mock-deepseek",

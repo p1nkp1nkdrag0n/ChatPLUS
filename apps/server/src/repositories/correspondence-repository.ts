@@ -1580,6 +1580,33 @@ export class CorrespondenceRepository {
     return row === undefined ? undefined : mapRun(row);
   }
 
+  findReplyToLetter(
+    incomingLetterId: string,
+  ): LetterWithEncryptedBody | undefined {
+    assertEntityId(incomingLetterId, "incomingLetterId");
+    const row = this.database
+      .prepare(
+        `SELECT * FROM letters
+         WHERE reply_to_letter_id = ? AND direction = 'agent_to_user'`,
+      )
+      .get(incomingLetterId) as LetterRow | undefined;
+    return row === undefined ? undefined : mapLetter(row);
+  }
+
+  findLatestGenerationTask(incomingLetterId: string): TemporalTask | undefined {
+    assertEntityId(incomingLetterId, "incomingLetterId");
+    const row = this.database
+      .prepare(
+        `SELECT * FROM temporal_tasks
+         WHERE entity_id = ?
+           AND kind IN ('letter.reply_generation', 'letter.generation_retry')
+         ORDER BY rowid DESC
+         LIMIT 1`,
+      )
+      .get(incomingLetterId) as TaskRow | undefined;
+    return row === undefined ? undefined : mapTask(row);
+  }
+
   createTemporalTask(input: CreateTemporalTaskInput): TemporalTask {
     if (input.id !== undefined) assertEntityId(input.id, "taskId");
     assertEntityId(input.agentId, "agentId");

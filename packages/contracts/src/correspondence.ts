@@ -927,6 +927,37 @@ export const LetterSummaryResponseSchema = z
   });
 export type LetterSummaryResponse = z.infer<typeof LetterSummaryResponseSchema>;
 
+/**
+ * Safe product projection for the one active correspondence turn. It exposes
+ * only whether a reply is still being prepared, has been explicitly
+ * rescheduled, or needs intervention. Task/run identifiers and provider error
+ * details remain confined to the developer inspector.
+ */
+export const CorrespondenceReplyStateSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("waiting"),
+      incomingLetterId: EntityIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("retry_scheduled"),
+      incomingLetterId: EntityIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("failed"),
+      incomingLetterId: EntityIdSchema,
+      canRetry: z.boolean(),
+    })
+    .strict(),
+]);
+export type CorrespondenceReplyState = z.infer<
+  typeof CorrespondenceReplyStateSchema
+>;
+
 export const CorrespondenceThreadSummaryResponseSchema = z
   .object({
     id: EntityIdSchema,
@@ -934,8 +965,26 @@ export const CorrespondenceThreadSummaryResponseSchema = z
     status: CorrespondenceThreadStatusSchema,
     rootLetterId: EntityIdSchema.optional(),
     latestLetterId: EntityIdSchema.optional(),
+    replyState: CorrespondenceReplyStateSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((thread, context) => {
+    if (thread.replyState === undefined) return;
+    if (thread.status !== "open") {
+      context.addIssue({
+        code: "custom",
+        message: "Only an open correspondence thread can expose replyState",
+        path: ["replyState"],
+      });
+    }
+    if (thread.latestLetterId !== thread.replyState.incomingLetterId) {
+      context.addIssue({
+        code: "custom",
+        message: "replyState must describe the latest incoming letter",
+        path: ["replyState", "incomingLetterId"],
+      });
+    }
+  });
 export type CorrespondenceThreadSummaryResponse = z.infer<
   typeof CorrespondenceThreadSummaryResponseSchema
 >;

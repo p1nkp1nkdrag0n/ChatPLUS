@@ -757,6 +757,29 @@ describe("correspondence HTTP lifecycle", () => {
       .get(firstIncomingId) as { id: string } | undefined;
     expect(firstReply).toBeDefined();
 
+    const repository = app.personasim.correspondenceRepository;
+    const currentThread = repository.findOpenThread(firstAgentId);
+    expect(currentThread?.latestLetterId).toBe(firstReply!.id);
+    const listThreadsByIds = repository.listThreadsByIds.bind(repository);
+    vi.spyOn(repository, "listThreadsByIds").mockImplementationOnce(
+      (agentId, threadIds) =>
+        listThreadsByIds(agentId, threadIds).map((thread) =>
+          thread.id === currentThread!.id
+            ? { ...thread, latestLetterId: firstIncomingId }
+            : thread,
+        ),
+    );
+    const staleThreadMailbox = await app.inject({
+      method: "GET",
+      url: `/api/agents/${firstAgentId}/correspondence`,
+    });
+    expect(staleThreadMailbox.statusCode).toBe(200);
+    expect(
+      staleThreadMailbox
+        .json<CorrespondenceMailboxResponse>()
+        .threads.find((thread) => thread.id === currentThread!.id),
+    ).not.toHaveProperty("replyState");
+
     const prematureOpen = await app.inject({
       method: "POST",
       url: `/api/letters/${firstReply!.id}/open`,
@@ -814,6 +837,22 @@ describe("correspondence HTTP lifecycle", () => {
     expect(developerTasks.body).not.toMatch(
       /PRIVATE-RETRY-SOURCE|claimToken|payload|idempotencyKey/iu,
     );
+    const retryingMailbox = await app.inject({
+      method: "GET",
+      url: `/api/agents/${secondAgentId}/correspondence`,
+    });
+    expect(retryingMailbox.statusCode).toBe(200);
+    expect(
+      retryingMailbox
+        .json<CorrespondenceMailboxResponse>()
+        .threads.find((thread) => thread.status === "open")?.replyState,
+    ).toEqual({
+      kind: "waiting",
+      incomingLetterId: secondIncomingId,
+    });
+    expect(retryingMailbox.body).not.toMatch(
+      /simulated provider outage|letter_reply_model_failed|taskId|runId|snapshotId/iu,
+    );
 
     publishSpy.mockClear();
     clock.setUtc(SEPTEMBER_15);
@@ -841,6 +880,118 @@ describe("correspondence HTTP lifecycle", () => {
       ),
     ).toBe(true);
   }, 30_000);
+
+  it("projects a terminal reply failure without leaking task or model details", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-correspondence-failed-"));
+    const databasePath = join(directory, "correspondence.db");
+    const clock = new FakeClock(SEPTEMBER_3);
+    app = await startApp(databasePath, "enforced", clock, []);
+    const agentId = await createPublishedAgent(app);
+    const incomingLetterId = await createAndSealLetter(
+      app,
+      agentId,
+      "terminal-reply-failure",
+      "PRIVATE-FAILED-LETTER-BODY",
+    );
+    vi.spyOn(app.personasim.llm, "generateObject").mockResolvedValueOnce({
+      subject: "不会提交的回信",
+      salutation: "你好。",
+      paragraphs: ["这份输出必须被证据边界拒绝。"],
+      closing: "祝安。",
+      signature: "Correspondent",
+      referencedEvidenceIds: ["future-evidence-private-id"],
+    });
+
+    clock.setUtc(SEPTEMBER_9);
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const mailbox = response.json<CorrespondenceMailboxResponse>();
+    expect(mailbox.threads).toEqual([
+      expect.objectContaining({
+        agentId,
+        status: "open",
+        latestLetterId: incomingLetterId,
+        replyState: {
+          kind: "failed",
+          incomingLetterId,
+          canRetry: true,
+        },
+      }),
+    ]);
+    expect(response.body).not.toMatch(
+      /future-evidence-private-id|letter_reply_evidence_out_of_scope|taskId|runId|snapshotId|provider|model|claimToken|idempotencyKey|ciphertext|authTag|resultHash/iu,
+    );
+    const failedTask =
+      app.personasim.correspondenceRepository.findLatestGenerationTask(
+        incomingLetterId,
+      );
+    expect(failedTask).toMatchObject({
+      status: "dead_letter",
+      lastErrorCode: "letter_reply_evidence_out_of_scope",
+    });
+
+    const foreignAgentId = await createPublishedAgent(app);
+    const foreignTask =
+      app.personasim.correspondenceRepository.createTemporalTask({
+        id: "foreign-agent-generation-task",
+        agentId: foreignAgentId,
+        kind: "letter.generation_retry",
+        entityId: incomingLetterId,
+        dueAtUtc: SEPTEMBER_9,
+        priority: 20,
+        idempotencyKey: `foreign-agent-generation:${incomingLetterId}`,
+        payload: failedTask!.payload,
+        createdAtUtc: SEPTEMBER_9,
+      });
+    app.personasim.correspondenceRepository.claimDueTask({
+      taskId: foreignTask.id,
+      agentId: foreignAgentId,
+      nowUtc: SEPTEMBER_9,
+      leaseExpiresAtUtc: SEPTEMBER_10,
+      claimToken: "foreign-agent-generation-claim",
+    });
+    app.personasim.correspondenceRepository.retryTask({
+      taskId: foreignTask.id,
+      claimToken: "foreign-agent-generation-claim",
+      errorCode: "foreign_agent_task",
+      nowUtc: SEPTEMBER_9,
+      retryable: false,
+    });
+    const foreignTaskResponse = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+    expect(
+      foreignTaskResponse
+        .json<CorrespondenceMailboxResponse>()
+        .threads.find((thread) => thread.status === "open")?.replyState,
+    ).toEqual({
+      kind: "failed",
+      incomingLetterId,
+      canRetry: false,
+    });
+
+    await app.close();
+    app = undefined;
+    app = await startApp(databasePath, "off", clock, []);
+    const pausedResponse = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+    expect(
+      pausedResponse
+        .json<CorrespondenceMailboxResponse>()
+        .threads.find((thread) => thread.status === "open")?.replyState,
+    ).toEqual({
+      kind: "failed",
+      incomingLetterId,
+      canRetry: false,
+    });
+  });
 });
 
 async function createPublishedAgent(app: PersonaSimApp): Promise<string> {

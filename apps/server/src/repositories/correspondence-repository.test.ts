@@ -367,6 +367,10 @@ describe("CorrespondenceRepository", () => {
       reply: { id: committed.reply.id },
       task: { id: committed.task.id },
     });
+    expect(repository.findReplyToLetter(incoming.id)).toEqual(committed.reply);
+    expect(repository.findReplyToLetter("letter-without-reply")).toBe(
+      undefined,
+    );
     const nextTurnDraft = {
       id: "letter-next-turn",
       threadId: incoming.threadId,
@@ -856,6 +860,48 @@ describe("CorrespondenceRepository", () => {
         }),
       "idempotency_conflict",
     );
+  });
+
+  it("finds the newest append-only generation task for an incoming letter", () => {
+    const incoming = createReadIncoming(repository);
+    const initial = repository.createTemporalTask({
+      id: "task-generation-initial",
+      agentId: AGENT_ID,
+      kind: "letter.reply_generation",
+      entityId: incoming.id,
+      dueAtUtc: T1,
+      priority: 20,
+      idempotencyKey: `letter-reply-run:${incoming.id}:v1`,
+      payload: {
+        incomingLetterId: incoming.id,
+        snapshotId: "snapshot-generation",
+        generationEpoch: 0,
+      },
+      createdAtUtc: T1,
+    });
+    const retry = repository.createTemporalTask({
+      id: "task-generation-retry",
+      agentId: AGENT_ID,
+      kind: "letter.generation_retry",
+      entityId: incoming.id,
+      dueAtUtc: T0,
+      priority: 20,
+      idempotencyKey: `letter-generation-retry:${incoming.id}:epoch-1`,
+      payload: {
+        incomingLetterId: incoming.id,
+        snapshotId: "snapshot-generation",
+        generationEpoch: 1,
+      },
+      // A clock rollback can make the append-only retry look older by time;
+      // insertion order, rather than timestamps, determines the current task.
+      createdAtUtc: T0,
+    });
+
+    expect(repository.findLatestGenerationTask(incoming.id)).toEqual(retry);
+    expect(
+      repository.findLatestGenerationTask("letter-without-generation"),
+    ).toBe(undefined);
+    expect(initial.id).not.toBe(retry.id);
   });
 });
 

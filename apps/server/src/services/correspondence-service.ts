@@ -7,6 +7,7 @@ import {
   CreateLetterDraftRequestSchema,
   EntityIdSchema,
   LetterDetailResponseSchema,
+  LetterReplyGenerationTaskPayloadSchema,
   LetterSummaryResponseSchema,
   OpenLetterResponseSchema,
   SealLetterRequestSchema,
@@ -14,6 +15,7 @@ import {
   UtcDateTimeSchema,
   type CorrespondenceMailboxQuery,
   type CorrespondenceMailboxResponse,
+  type CorrespondenceReplyState,
   type CorrespondenceThread,
   type CreateLetterDraftRequest,
   type Letter,
@@ -349,7 +351,7 @@ export class CorrespondenceService {
     if (openThread !== undefined) threadIds.add(openThread.id);
     const threads = this.repository
       .listThreadsByIds(agentId, [...threadIds])
-      .map((thread) => projectThread(thread));
+      .map((thread) => this.projectThread(thread));
     const letters = page.items.map((letter) =>
       this.projectLetterSummary(
         letter,
@@ -580,6 +582,111 @@ export class CorrespondenceService {
     });
   }
 
+  private projectThread(
+    thread: Readonly<CorrespondenceThread>,
+  ): ReturnType<typeof CorrespondenceThreadSummaryResponseSchema.parse> {
+    const replyState = this.projectReplyState(thread);
+    return CorrespondenceThreadSummaryResponseSchema.parse({
+      id: thread.id,
+      agentId: thread.agentId,
+      status: thread.status,
+      ...(thread.rootLetterId === undefined
+        ? {}
+        : { rootLetterId: thread.rootLetterId }),
+      ...(thread.latestLetterId === undefined
+        ? {}
+        : { latestLetterId: thread.latestLetterId }),
+      ...(replyState === undefined ? {} : { replyState }),
+    });
+  }
+
+  private projectReplyState(
+    thread: Readonly<CorrespondenceThread>,
+  ): CorrespondenceReplyState | undefined {
+    if (thread.status !== "open" || thread.latestLetterId === undefined) {
+      return undefined;
+    }
+    const incoming = this.repository.getLetter(thread.latestLetterId);
+    if (
+      incoming === undefined ||
+      incoming.agentId !== thread.agentId ||
+      incoming.direction !== "user_to_agent" ||
+      incoming.status !== "read"
+    ) {
+      return undefined;
+    }
+
+    const task = this.repository.findLatestGenerationTask(incoming.id);
+    if (task === undefined || task.status === "completed") {
+      // The thread was read before the task. A resident/hosted worker may have
+      // committed the reply and completed the task between those reads, so
+      // confirm the durable outcome after observing the terminal task state.
+      if (
+        this.repository.findCommittedRun(incoming.id) !== undefined ||
+        this.repository.findReplyToLetter(incoming.id) !== undefined
+      ) {
+        return undefined;
+      }
+      return {
+        kind: "failed",
+        incomingLetterId: incoming.id,
+        canRetry: false,
+      };
+    }
+    if (task.agentId !== incoming.agentId) {
+      return {
+        kind: "failed",
+        incomingLetterId: incoming.id,
+        canRetry: false,
+      };
+    }
+    if (task.status !== "dead_letter") {
+      return {
+        kind:
+          task.kind === "letter.generation_retry"
+            ? "retry_scheduled"
+            : "waiting",
+        incomingLetterId: incoming.id,
+      };
+    }
+
+    const payload = LetterReplyGenerationTaskPayloadSchema.safeParse(
+      task.payload,
+    );
+    const run = payload.success
+      ? this.repository.getGenerationRunForEpoch(
+          incoming.id,
+          payload.data.generationEpoch,
+        )
+      : undefined;
+    const snapshot =
+      run === undefined
+        ? undefined
+        : this.repository.getSnapshot(run.snapshotId);
+    if (
+      this.repository.findCommittedRun(incoming.id) !== undefined ||
+      this.repository.findReplyToLetter(incoming.id) !== undefined
+    ) {
+      return undefined;
+    }
+    const canRetry =
+      this.#mode === "enforced" &&
+      payload.success &&
+      payload.data.incomingLetterId === incoming.id &&
+      run?.status === "failed" &&
+      run.agentId === incoming.agentId &&
+      run.snapshotId === payload.data.snapshotId &&
+      snapshot?.id === payload.data.snapshotId &&
+      snapshot.agentId === incoming.agentId &&
+      snapshot.incomingLetterId === incoming.id &&
+      task.agentId === incoming.agentId;
+    return {
+      kind: "failed",
+      incomingLetterId: incoming.id,
+      canRetry,
+    };
+  }
+
   private decryptOpenedReply(
     letter: LetterWithEncryptedBody,
   ): LetterReplyProposal {
@@ -758,22 +865,6 @@ interface MailboxCursor {
   readonly agentId: string;
   readonly createdAtUtc: string;
   readonly rowId: number;
-}
-
-function projectThread(
-  thread: Readonly<CorrespondenceThread>,
-): ReturnType<typeof CorrespondenceThreadSummaryResponseSchema.parse> {
-  return CorrespondenceThreadSummaryResponseSchema.parse({
-    id: thread.id,
-    agentId: thread.agentId,
-    status: thread.status,
-    ...(thread.rootLetterId === undefined
-      ? {}
-      : { rootLetterId: thread.rootLetterId }),
-    ...(thread.latestLetterId === undefined
-      ? {}
-      : { latestLetterId: thread.latestLetterId }),
-  });
 }
 
 function encodeMailboxCursor(cursor: MailboxCursor): string {

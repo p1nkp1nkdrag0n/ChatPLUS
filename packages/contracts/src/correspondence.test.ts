@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CorrespondenceMailboxQuerySchema,
   CorrespondenceMailboxResponseSchema,
+  CorrespondenceReplyStateSchema,
   CorrespondenceThreadSchema,
   CorrespondenceThreadSummaryResponseSchema,
   CreateLetterDraftRequestSchema,
@@ -543,6 +544,79 @@ describe("correspondence contracts", () => {
       LetterSummaryResponseSchema.safeParse({
         ...summary,
         ciphertext: "YWJjZA==",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("projects reply preparation without exposing temporal-task internals", () => {
+    expect(
+      CorrespondenceReplyStateSchema.parse({
+        kind: "waiting",
+        incomingLetterId: "letter-incoming",
+      }),
+    ).toEqual({
+      kind: "waiting",
+      incomingLetterId: "letter-incoming",
+    });
+    expect(
+      CorrespondenceReplyStateSchema.parse({
+        kind: "retry_scheduled",
+        incomingLetterId: "letter-incoming",
+      }),
+    ).toEqual({
+      kind: "retry_scheduled",
+      incomingLetterId: "letter-incoming",
+    });
+    expect(
+      CorrespondenceReplyStateSchema.parse({
+        kind: "failed",
+        incomingLetterId: "letter-incoming",
+        canRetry: true,
+      }),
+    ).toEqual({
+      kind: "failed",
+      incomingLetterId: "letter-incoming",
+      canRetry: true,
+    });
+    expect(
+      CorrespondenceReplyStateSchema.safeParse({
+        kind: "failed",
+        incomingLetterId: "letter-incoming",
+        canRetry: true,
+        taskId: "task-private",
+        errorCode: "provider-private-error",
+      }).success,
+    ).toBe(false);
+    expect(
+      CorrespondenceReplyStateSchema.safeParse({
+        kind: "retry_scheduled",
+        incomingLetterId: "letter-incoming",
+        canRetry: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      CorrespondenceThreadSummaryResponseSchema.safeParse({
+        id: "thread-1",
+        agentId: "agent-1",
+        status: "closed",
+        latestLetterId: "letter-incoming",
+        replyState: {
+          kind: "failed",
+          incomingLetterId: "letter-incoming",
+          canRetry: false,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      CorrespondenceThreadSummaryResponseSchema.safeParse({
+        id: "thread-1",
+        agentId: "agent-1",
+        status: "open",
+        latestLetterId: "letter-other",
+        replyState: {
+          kind: "waiting",
+          incomingLetterId: "letter-incoming",
+        },
       }).success,
     ).toBe(false);
   });

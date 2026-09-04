@@ -17,6 +17,7 @@ import {
 } from "./companion-long-run-v3.js";
 import {
   assertionBackedHardGateOutcome,
+  assertLongRunV3BigModelProfileReady,
   assertLongRunV3DeepSeekProfileExpectation,
   artifactBranchForScope,
   buildLongRunV3ServerConfig,
@@ -379,6 +380,27 @@ describe("companion long-run v3 runner pure helpers", () => {
         mutation.field,
       ).toThrow(new RegExp(mutation.field, "u"));
     }
+  });
+
+  it("requires low reasoning in both the BigModel runtime and recorded profile", () => {
+    const config = reviewedBigModelServerConfig("bigmodel-run.sqlite");
+    const profileConfig = reviewedBigModelProfileConfig(config);
+
+    expect(() =>
+      assertLongRunV3BigModelProfileReady(config, profileConfig),
+    ).not.toThrow();
+
+    const runtimeMismatch = structuredClone(config);
+    runtimeMismatch.llm.capabilities!.reasoningEffort = "max";
+    expect(() =>
+      assertLongRunV3BigModelProfileReady(runtimeMismatch, profileConfig),
+    ).toThrow(/reasoningEffort=max/u);
+
+    const manifestMismatch = structuredClone(profileConfig);
+    manifestMismatch.reasoningEffort = "max";
+    expect(() =>
+      assertLongRunV3BigModelProfileReady(config, manifestMismatch),
+    ).toThrow(/manifestProfile\.reasoningEffort=max/u);
   });
 
   it("maps shared and fork scopes to their immutable artifact branches", () => {
@@ -795,7 +817,7 @@ function fakeBigModelEnvironment(): NodeJS.ProcessEnv {
     LLM_PROFILE_BIGMODEL_TIMEOUT_MS: "300000",
     LLM_PROFILE_BIGMODEL_MAX_RETRIES: "1",
     LLM_PROFILE_BIGMODEL_STRUCTURED_OUTPUT_MODE: "json_object",
-    LLM_PROFILE_BIGMODEL_REASONING_EFFORT: "max",
+    LLM_PROFILE_BIGMODEL_REASONING_EFFORT: "low",
     LLM_PROFILE_BIGMODEL_REASONING_FORMAT:
       "openai_reasoning_effort_with_thinking",
     LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL: "false",
@@ -871,6 +893,39 @@ function reviewedDeepSeekProfileConfig(
     maxOutputTokens: 32_768,
     repairMaxOutputTokens: 16_384,
     apiKeyEnvironment: "OPENAI_COMPATIBLE_API_KEY",
+    apiKeyPresent: true,
+  };
+}
+
+function reviewedBigModelServerConfig(databasePath: string): ServerConfig {
+  const config = baseServerConfig(databasePath);
+  config.llm.profileName = "bigmodel";
+  config.llm.baseUrl = "https://open.bigmodel.cn/api/paas/v4";
+  config.llm.model = "glm-5.3-flash";
+  config.llm.maxRetries = 1;
+  config.llm.capabilities!.reasoningEffort = "low";
+  config.llm.capabilities!.maxContextTokens = 1_000_000;
+  return config;
+}
+
+function reviewedBigModelProfileConfig(
+  config: ServerConfig,
+): Parameters<typeof assertLongRunV3BigModelProfileReady>[1] {
+  return {
+    provider: "openai-compatible",
+    profileName: "bigmodel",
+    baseOrigin: "https://open.bigmodel.cn",
+    baseUrl: config.llm.baseUrl,
+    requestedModel: "glm-5.3-flash",
+    timeoutMs: 300_000,
+    maxRetries: 1,
+    reasoningEffort: "low",
+    reasoningRequestFormat: "openai_reasoning_effort_with_thinking",
+    structuredOutputMode: "json_object",
+    maxContextTokens: 1_000_000,
+    maxOutputTokens: 32_768,
+    repairMaxOutputTokens: 16_384,
+    apiKeyEnvironment: "LLM_PROFILE_BIGMODEL_API_KEY",
     apiKeyPresent: true,
   };
 }

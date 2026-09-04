@@ -103,7 +103,7 @@ LLM_PROFILE_BIGMODEL_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 LLM_PROFILE_BIGMODEL_MODEL=glm-5.3-flash
 LLM_PROFILE_BIGMODEL_API_KEY=在本机填写智谱密钥
 LLM_PROFILE_BIGMODEL_STRUCTURED_OUTPUT_MODE=json_object
-LLM_PROFILE_BIGMODEL_REASONING_EFFORT=max
+LLM_PROFILE_BIGMODEL_REASONING_EFFORT=low
 LLM_PROFILE_BIGMODEL_REASONING_FORMAT=openai_reasoning_effort_with_thinking
 LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL=false
 LLM_PROFILE_BIGMODEL_MAX_OUTPUT_TOKENS=32768
@@ -125,7 +125,7 @@ pnpm test:llm:smoke:bigmodel
 
 另外三套晚照云档案固定使用 [`grok-4.6`](https://docs.x.ai/developers/models/grok-4.6)、[`gemini-3.7-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash) 和 [`gpt-5.6-sol`](https://developers.openai.com/api/docs/models/gpt-5.6-sol)。网关会按密钥分组开放模型，因此最终可用 ID 仍以每个密钥调用 `/v1/models` 的结果为准。
 
-每套档案都通过 `LLM_PROFILE_<NAME>_REASONING_EFFORT` 独立调节思考深度。Claude Opus 4.6、Grok 4.6、Gemini 3.7 Flash 与 GPT-5.6 Sol 均设为 `medium`；[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash) 和兼容旧配置的 [DeepSeek V4 Flash](https://api-docs.deepseek.com/guides/thinking_mode/) 均设为各自最高档 `max`。`REASONING_FORMAT` 是请求适配方式：Claude 使用 `output_config.effort`，Grok/Gemini/GPT 使用 `reasoning_effort`，GLM/DeepSeek 还会显式发送 `thinking: { type: "enabled" }`；GLM-5.3-Flash 不支持关闭思考。通常只需修改 `REASONING_EFFORT`，不要改动格式字段。
+每套档案都通过 `LLM_PROFILE_<NAME>_REASONING_EFFORT` 独立调节思考深度。Claude Opus 4.6、Grok 4.6、Gemini 3.7 Flash 与 GPT-5.6 Sol 均设为 `medium`；当前真实长程验收使用的 [GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash) 档案设为 `low`，兼容旧配置的 [DeepSeek V4 Flash](https://api-docs.deepseek.com/guides/thinking_mode/) 仍设为 `max`。`REASONING_FORMAT` 是请求适配方式：Claude 使用 `output_config.effort`，Grok/Gemini/GPT 使用 `reasoning_effort`，GLM/DeepSeek 还会显式发送 `thinking: { type: "enabled" }`；GLM-5.3-Flash 不支持关闭思考。通常只需修改 `REASONING_EFFORT`，不要改动格式字段。
 
 聊天主决策会申请最多 24,576 个输出 token，回复修复会申请最多 16,384 个；这些预算同时覆盖隐藏思考与最终结构化 JSON。每次请求仍会被对应 Profile 的 `MAX_OUTPUT_TOKENS` 和 Provider 的 64K 传输硬上限共同截断。示例配置将六套 Profile 的能力上限设为 32,768，以避免 `high`/`max` 思考在原 2,000–2,800 token 预算内耗尽；如果供应商明确声明更低上限，应把该 Profile 改为真实上限。提高输出上限会占用上下文窗口，因此旧式 DeepSeek 配置同时显式声明 `OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS=131072`，不得把输出上限配置为大于或等于上下文上限。
 

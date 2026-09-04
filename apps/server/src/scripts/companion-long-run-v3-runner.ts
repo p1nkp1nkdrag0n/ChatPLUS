@@ -726,8 +726,13 @@ export function assertLongRunV3BigModelProfileReady(
     },
     {
       field: "reasoningEffort",
-      passed: capabilities?.reasoningEffort === "max",
+      passed: capabilities?.reasoningEffort === "low",
       actual: capabilities?.reasoningEffort,
+    },
+    {
+      field: "manifestProfile.reasoningEffort",
+      passed: profileConfig.reasoningEffort === "low",
+      actual: profileConfig.reasoningEffort,
     },
     {
       field: "reasoningRequestFormat",

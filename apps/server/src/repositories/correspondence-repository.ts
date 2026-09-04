@@ -7,6 +7,7 @@ import {
   IanaTimezoneSchema,
   LetterGenerationRunSchema,
   LetterGenerationSnapshotSchema,
+  LetterReplyGenerationTaskPayloadSchema,
   LetterDirectionSchema,
   LetterSchema,
   ReasonCodeSchema,
@@ -61,6 +62,9 @@ export type CorrespondenceRepositoryErrorCode =
   | "immutable_letter"
   | "invalid_state"
   | "idempotency_conflict"
+  | "generation_not_retryable"
+  | "reply_already_committed"
+  | "reply_retry_in_progress"
   | "claim_conflict"
   | "lease_expired"
   | "invariant_violation";
@@ -256,6 +260,21 @@ export interface RetryTaskInput {
   retryable?: boolean;
 }
 
+export interface EnqueueReplyGenerationRetryInput {
+  incomingLetterId: string;
+  clientRequestId: string;
+  requestedAtUtc: string;
+  source?: "local_user" | "developer_operator";
+}
+
+export interface EnqueueReplyGenerationRetryResult {
+  incomingLetterId: string;
+  generationEpoch: number;
+  snapshotId: string;
+  task: TemporalTask;
+  replayed: boolean;
+}
+
 interface ThreadRow {
   id: string;
   agent_id: string;
@@ -356,6 +375,20 @@ interface TaskRow {
   created_at_utc: string;
   updated_at_utc: string;
   completed_at_utc: string | null;
+}
+
+interface ReplyRetryRequestRow {
+  id: string;
+  agent_id: string;
+  incoming_letter_id: string;
+  request_hash: string;
+  generation_epoch: number;
+  snapshot_id: string;
+  previous_task_id: string;
+  previous_run_id: string;
+  task_id: string;
+  source: "local_user" | "developer_operator";
+  requested_at_utc: string;
 }
 
 export class CorrespondenceRepository {
@@ -1607,6 +1640,324 @@ export class CorrespondenceRepository {
     return row === undefined ? undefined : mapTask(row);
   }
 
+  enqueueReplyGenerationRetry(
+    input: EnqueueReplyGenerationRetryInput,
+  ): EnqueueReplyGenerationRetryResult {
+    assertEntityId(input.incomingLetterId, "incomingLetterId");
+    assertEntityId(input.clientRequestId, "clientRequestId");
+    assertUtc(input.requestedAtUtc, "requestedAtUtc");
+    const source = input.source ?? "local_user";
+    if (source !== "local_user" && source !== "developer_operator") {
+      throw domainError("invariant_violation", "Reply retry source is invalid");
+    }
+    const requestHash = replyRetryRequestHash(input.clientRequestId);
+    const transaction = this.database.transaction(
+      (): EnqueueReplyGenerationRetryResult => {
+        const incoming = this.requireLetter(input.incomingLetterId);
+        const replay = this.findReplyRetryRequestRow(
+          incoming.agentId,
+          requestHash,
+        );
+        if (replay !== undefined) {
+          if (replay.incoming_letter_id !== incoming.id) {
+            throw domainError(
+              "idempotency_conflict",
+              "Reply retry request was already used for another letter",
+            );
+          }
+          const task = this.requireTask(replay.task_id);
+          const payload = LetterReplyGenerationTaskPayloadSchema.safeParse(
+            task.payload,
+          );
+          if (
+            replay.agent_id !== incoming.agentId ||
+            replay.request_hash !== requestHash ||
+            task.agentId !== incoming.agentId ||
+            task.kind !== "letter.generation_retry" ||
+            task.entityId !== incoming.id ||
+            !payload.success ||
+            payload.data.incomingLetterId !== incoming.id ||
+            payload.data.snapshotId !== replay.snapshot_id ||
+            payload.data.generationEpoch !== replay.generation_epoch
+          ) {
+            throw domainError(
+              "idempotency_conflict",
+              "Reply retry request does not match its recorded task",
+            );
+          }
+          return {
+            incomingLetterId: incoming.id,
+            generationEpoch: replay.generation_epoch,
+            snapshotId: replay.snapshot_id,
+            task,
+            replayed: true,
+          };
+        }
+
+        if (
+          this.findCommittedRun(incoming.id) !== undefined ||
+          this.findReplyToLetter(incoming.id) !== undefined
+        ) {
+          throw domainError(
+            "reply_already_committed",
+            "A reply has already been committed for this incoming letter",
+            { incomingLetterId: incoming.id },
+          );
+        }
+        const thread = this.requireThread(incoming.threadId);
+        if (
+          incoming.direction !== "user_to_agent" ||
+          incoming.status !== "read" ||
+          thread.agentId !== incoming.agentId ||
+          thread.status !== "open" ||
+          thread.latestLetterId !== incoming.id
+        ) {
+          throw domainError(
+            "generation_not_retryable",
+            "Reply generation is not retryable in the current letter state",
+            { incomingLetterId: incoming.id },
+          );
+        }
+
+        const snapshot = this.getSnapshotForIncomingLetter(incoming.id);
+        if (
+          snapshot === undefined ||
+          snapshot.agentId !== incoming.agentId ||
+          snapshot.incomingLetterId !== incoming.id ||
+          snapshot.effectiveAtUtc !== incoming.deliveredEffectiveAtUtc ||
+          snapshot.contextHash !== canonicalSnapshotHash(snapshot)
+        ) {
+          throw domainError(
+            "generation_not_retryable",
+            "Reply generation snapshot is unavailable or invalid",
+            { incomingLetterId: incoming.id },
+          );
+        }
+
+        const generationTasks = (
+          this.database
+            .prepare(
+              `SELECT * FROM temporal_tasks
+               WHERE entity_id = ?
+                 AND kind IN (
+                   'letter.reply_generation', 'letter.generation_retry'
+                 )`,
+            )
+            .all(incoming.id) as TaskRow[]
+        ).map((row) => {
+          const task = mapTask(row);
+          const payload = LetterReplyGenerationTaskPayloadSchema.safeParse(
+            task.payload,
+          );
+          if (
+            task.agentId !== incoming.agentId ||
+            !payload.success ||
+            payload.data.incomingLetterId !== incoming.id ||
+            payload.data.snapshotId !== snapshot.id ||
+            task.maxAttempts !== 3 ||
+            (payload.data.generationEpoch === 0
+              ? task.kind !== "letter.reply_generation"
+              : task.kind !== "letter.generation_retry")
+          ) {
+            throw domainError(
+              "generation_not_retryable",
+              "Generation task history does not match the incoming letter",
+              { incomingLetterId: incoming.id },
+            );
+          }
+          return { task, payload: payload.data };
+        });
+        if (generationTasks.length === 0) {
+          throw domainError(
+            "generation_not_retryable",
+            "No generation task exists for this incoming letter",
+            { incomingLetterId: incoming.id },
+          );
+        }
+        if (
+          generationTasks.some(({ task }) =>
+            ["pending", "claimed", "retryable"].includes(task.status),
+          )
+        ) {
+          throw domainError(
+            "reply_retry_in_progress",
+            "Reply generation is already in progress",
+            { incomingLetterId: incoming.id },
+          );
+        }
+
+        const generationRuns = (
+          this.database
+            .prepare(
+              `SELECT * FROM letter_generation_runs
+               WHERE incoming_letter_id = ?`,
+            )
+            .all(incoming.id) as RunRow[]
+        ).map(mapRun);
+        if (
+          generationRuns.length === 0 ||
+          generationRuns.some(
+            (run) =>
+              run.agentId !== incoming.agentId ||
+              run.snapshotId !== snapshot.id,
+          )
+        ) {
+          throw domainError(
+            "generation_not_retryable",
+            "Generation run history does not match the incoming letter",
+            { incomingLetterId: incoming.id },
+          );
+        }
+
+        const latestTaskEpoch = Math.max(
+          ...generationTasks.map(({ payload }) => payload.generationEpoch),
+        );
+        const latestRunEpoch = Math.max(
+          ...generationRuns.map((run) => run.generationEpoch),
+        );
+        const currentTasks = generationTasks.filter(
+          ({ payload }) => payload.generationEpoch === latestTaskEpoch,
+        );
+        const currentRuns = generationRuns.filter(
+          (run) => run.generationEpoch === latestRunEpoch,
+        );
+        if (
+          latestTaskEpoch !== latestRunEpoch ||
+          currentTasks.length !== 1 ||
+          currentRuns.length !== 1
+        ) {
+          throw domainError(
+            "generation_not_retryable",
+            "Generation history does not have one recoverable current epoch",
+            { incomingLetterId: incoming.id },
+          );
+        }
+        const currentTask = currentTasks[0]!;
+        const previousTask = currentTask.task;
+        const previousRun = currentRuns[0]!;
+        if (
+          previousTask.status !== "dead_letter" ||
+          previousRun.status !== "failed" ||
+          previousRun.snapshotId !== currentTask.payload.snapshotId
+        ) {
+          throw domainError(
+            "generation_not_retryable",
+            "Current reply generation has not reached a recoverable failure",
+            { incomingLetterId: incoming.id },
+          );
+        }
+        const generationEpoch = latestTaskEpoch + 1;
+        if (!Number.isSafeInteger(generationEpoch)) {
+          throw domainError(
+            "generation_not_retryable",
+            "Reply generation epoch cannot be advanced safely",
+            { incomingLetterId: incoming.id },
+          );
+        }
+        assertRevision(generationEpoch, "generationEpoch");
+        const task = this.createTemporalTask({
+          agentId: incoming.agentId,
+          kind: "letter.generation_retry",
+          entityId: incoming.id,
+          dueAtUtc: input.requestedAtUtc,
+          priority: 20,
+          idempotencyKey: `letter-generation-retry:${incoming.id}:epoch-${generationEpoch}`,
+          payload: {
+            incomingLetterId: incoming.id,
+            snapshotId: snapshot.id,
+            generationEpoch,
+          },
+          maxAttempts: 3,
+          createdAtUtc: input.requestedAtUtc,
+        });
+        const requestId = createEntityId("letter_reply_retry_request");
+        const auditPayload = {
+          retryRequestId: requestId,
+          incomingLetterId: incoming.id,
+          generationEpoch,
+          source,
+        };
+        const streamVersionRow = this.database
+          .prepare(
+            `SELECT MAX(stream_version) AS streamVersion
+             FROM domain_events
+             WHERE stream_type = 'correspondence_letter' AND stream_id = ?`,
+          )
+          .get(incoming.id) as { streamVersion: number | null };
+        const currentStreamVersion = streamVersionRow.streamVersion ?? 0;
+        const streamVersion = currentStreamVersion + 1;
+        if (
+          currentStreamVersion < 0 ||
+          !Number.isSafeInteger(currentStreamVersion) ||
+          !Number.isSafeInteger(streamVersion)
+        ) {
+          throw domainError(
+            "generation_not_retryable",
+            "Reply retry audit stream cannot be advanced safely",
+            { incomingLetterId: incoming.id },
+          );
+        }
+        try {
+          this.database
+            .prepare(
+              `INSERT INTO correspondence_reply_retry_requests(
+                 id, agent_id, incoming_letter_id, request_hash,
+                 generation_epoch, snapshot_id, previous_task_id,
+                 previous_run_id, task_id, source, requested_at_utc
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              requestId,
+              incoming.agentId,
+              incoming.id,
+              requestHash,
+              generationEpoch,
+              snapshot.id,
+              previousTask.id,
+              previousRun.id,
+              task.id,
+              source,
+              input.requestedAtUtc,
+            );
+          this.database
+            .prepare(
+              `INSERT INTO domain_events(
+                 id, agent_id, stream_type, stream_id, stream_version,
+                 event_type, recorded_at_utc, effective_at_utc, payload_json,
+                 correlation_id, causation_id, idempotency_key
+               ) VALUES (?, ?, 'correspondence_letter', ?, ?,
+                 'letter.reply_retry_requested', ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              createEntityId("event"),
+              incoming.agentId,
+              incoming.id,
+              streamVersion,
+              input.requestedAtUtc,
+              input.requestedAtUtc,
+              canonicalCorrespondenceJson(auditPayload),
+              incoming.id,
+              previousTask.id,
+              `letter-reply-retry-request:${requestId}`,
+            );
+        } catch (error) {
+          throw translateSqlError(
+            error,
+            "Unable to record the reply retry request",
+          );
+        }
+        return {
+          incomingLetterId: incoming.id,
+          generationEpoch,
+          snapshotId: snapshot.id,
+          task,
+          replayed: false,
+        };
+      },
+    );
+    return transaction.immediate();
+  }
+
   createTemporalTask(input: CreateTemporalTaskInput): TemporalTask {
     if (input.id !== undefined) assertEntityId(input.id, "taskId");
     assertEntityId(input.agentId, "agentId");
@@ -2109,6 +2460,18 @@ export class CorrespondenceRepository {
       .get(idempotencyKey) as TaskRow | undefined;
   }
 
+  private findReplyRetryRequestRow(
+    agentId: string,
+    requestHash: string,
+  ): ReplyRetryRequestRow | undefined {
+    return this.database
+      .prepare(
+        `SELECT * FROM correspondence_reply_retry_requests
+         WHERE agent_id = ? AND request_hash = ?`,
+      )
+      .get(agentId, requestHash) as ReplyRetryRequestRow | undefined;
+  }
+
   private requireTaskByIdempotencyKey(idempotencyKey: string): TemporalTask {
     const task = this.getTaskByIdempotencyKey(idempotencyKey);
     if (task === undefined) {
@@ -2409,6 +2772,27 @@ function stableReplyId(incomingLetterId: string): string {
     .digest("hex")
     .slice(0, 32);
   return `letter_reply_${digest}`;
+}
+
+function replyRetryRequestHash(clientRequestId: string): string {
+  return createHash("sha256")
+    .update("correspondence-reply-retry-request:v1\0", "utf8")
+    .update(clientRequestId, "utf8")
+    .digest("hex");
+}
+
+function canonicalSnapshotHash(
+  snapshot: Readonly<LetterGenerationSnapshot>,
+): string {
+  return createHash("sha256")
+    .update(
+      canonicalLetterGenerationSnapshot({
+        contextJson: snapshot.contextJson,
+        evidenceIds: snapshot.evidenceIds,
+      }),
+      "utf8",
+    )
+    .digest("hex");
 }
 
 function draftCreateRequestHash(input: CreateDraftLetterInput): string {

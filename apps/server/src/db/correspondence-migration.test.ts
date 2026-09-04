@@ -8,11 +8,13 @@ import { runMigrations } from "./migrations.js";
 const NOW = "2026-09-03T12:00:00.000Z";
 const HASH = "a".repeat(64);
 
-describe("018-020 temporal correspondence migrations", () => {
+describe("018-021 temporal correspondence migrations", () => {
   it("applies on an empty database and remains idempotent", () => {
     const database = openDatabase(":memory:");
     try {
-      expect(runMigrations(database).at(-1)).toBe("020_keepsakes.sql");
+      expect(runMigrations(database).at(-1)).toBe(
+        "021_correspondence_reply_recovery.sql",
+      );
       expect(runMigrations(database)).toEqual([]);
       expect(schemaObjects(database, "table")).toEqual(
         expect.arrayContaining([
@@ -22,6 +24,7 @@ describe("018-020 temporal correspondence migrations", () => {
           "letter_generation_runs",
           "temporal_tasks",
           "correspondence_key_metadata",
+          "correspondence_reply_retry_requests",
         ]),
       );
       expect(schemaObjects(database, "trigger")).toEqual(
@@ -37,6 +40,8 @@ describe("018-020 temporal correspondence migrations", () => {
           "correspondence_threads_one_open_agent_idx",
           "letter_generation_runs_one_commit_idx",
           "temporal_tasks_due_idx",
+          "temporal_tasks_entity_kind_status_idx",
+          "temporal_tasks_one_active_reply_generation_idx",
         ]),
       );
     } finally {
@@ -62,6 +67,7 @@ describe("018-020 temporal correspondence migrations", () => {
         "018_temporal_correspondence.sql",
         "019_correspondence_key_metadata.sql",
         "020_keepsakes.sql",
+        "021_correspondence_reply_recovery.sql",
       ]);
       expect(
         database
@@ -174,6 +180,37 @@ describe("018-020 temporal correspondence migrations", () => {
       database.close();
     }
   });
+
+  it("allows only one active reply-generation task per incoming letter", () => {
+    const database = openDatabase(":memory:");
+    try {
+      runMigrations(database);
+      seedAgent(database);
+      insertGenerationTask(database, "generation-initial", "pending", 0);
+      expect(() =>
+        insertGenerationTask(database, "generation-retry-1", "pending", 1),
+      ).toThrow(/UNIQUE/iu);
+
+      database
+        .prepare(
+          `UPDATE temporal_tasks SET status = 'dead_letter', updated_at_utc = ?
+           WHERE id = 'generation-initial'`,
+        )
+        .run(NOW);
+      insertGenerationTask(database, "generation-retry-1", "pending", 1);
+      database
+        .prepare(
+          `UPDATE temporal_tasks SET status = 'dead_letter', updated_at_utc = ?
+           WHERE id = 'generation-retry-1'`,
+        )
+        .run(NOW);
+      expect(() =>
+        insertGenerationTask(database, "generation-retry-2", "pending", 2),
+      ).not.toThrow();
+    } finally {
+      database.close();
+    }
+  });
 });
 
 function applyThrough017(database: Database): void {
@@ -221,6 +258,37 @@ function insertTask(database: Database, id: string): void {
          ?, 10, 'pending', 'letter-arrival:letter-incoming', ?, ?)`,
     )
     .run(id, NOW, NOW, NOW);
+}
+
+function insertGenerationTask(
+  database: Database,
+  id: string,
+  status: "pending" | "dead_letter",
+  generationEpoch: number,
+): void {
+  database
+    .prepare(
+      `INSERT INTO temporal_tasks(
+         id, agent_id, kind, entity_id, due_at_utc, priority, status,
+         idempotency_key, payload_json, created_at_utc, updated_at_utc
+       ) VALUES (?, 'agent-1', ?, 'letter-generation', ?, 20, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      generationEpoch === 0
+        ? "letter.reply_generation"
+        : "letter.generation_retry",
+      NOW,
+      status,
+      `letter-generation:epoch-${generationEpoch}`,
+      JSON.stringify({
+        incomingLetterId: "letter-generation",
+        snapshotId: "snapshot-generation",
+        generationEpoch,
+      }),
+      NOW,
+      NOW,
+    );
 }
 
 function schemaObjects(database: Database, type: string): string[] {

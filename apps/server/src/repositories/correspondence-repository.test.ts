@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+
+import { canonicalLetterGenerationSnapshot } from "@personasim/features";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { openDatabase, type Database } from "../db/connection.js";
@@ -862,6 +865,331 @@ describe("CorrespondenceRepository", () => {
     );
   });
 
+  it("appends idempotent recovery epochs without rewriting failed history", () => {
+    const failure = createRecoverableGenerationFailure(repository);
+    database
+      .prepare(
+        `INSERT INTO domain_events(
+           id, agent_id, stream_type, stream_id, stream_version, event_type,
+           recorded_at_utc, effective_at_utc, payload_json, correlation_id,
+           causation_id, idempotency_key
+         ) VALUES (
+           'event-shadow-observation', ?, 'correspondence_letter', ?, 4,
+           'letter.reply_generation_shadow_observed', ?, ?, '{}', ?, NULL,
+           'letter-reply-shadow:test:v1'
+         )`,
+      )
+      .run(AGENT_ID, failure.incoming.id, T2, T1, failure.incoming.id);
+    const first = repository.enqueueReplyGenerationRetry({
+      incomingLetterId: failure.incoming.id,
+      clientRequestId: "reply-retry-request-one",
+      requestedAtUtc: T3,
+    });
+
+    expect(first).toMatchObject({
+      incomingLetterId: failure.incoming.id,
+      generationEpoch: 1,
+      snapshotId: failure.snapshot.id,
+      replayed: false,
+      task: {
+        kind: "letter.generation_retry",
+        entityId: failure.incoming.id,
+        status: "pending",
+        idempotencyKey: `letter-generation-retry:${failure.incoming.id}:epoch-1`,
+        payload: {
+          incomingLetterId: failure.incoming.id,
+          snapshotId: failure.snapshot.id,
+          generationEpoch: 1,
+        },
+      },
+    });
+    expect(repository.getTask(failure.task.id)).toEqual(failure.task);
+    expect(repository.getGenerationRun(failure.run.id)).toEqual(failure.run);
+
+    const replay = repository.enqueueReplyGenerationRetry({
+      incomingLetterId: failure.incoming.id,
+      clientRequestId: "reply-retry-request-one",
+      requestedAtUtc: T4,
+    });
+    expect(replay).toMatchObject({
+      generationEpoch: 1,
+      replayed: true,
+      task: { id: first.task.id },
+    });
+    expectRepositoryError(
+      () =>
+        repository.enqueueReplyGenerationRetry({
+          incomingLetterId: failure.incoming.id,
+          clientRequestId: "reply-retry-request-two",
+          requestedAtUtc: T3,
+        }),
+      "reply_retry_in_progress",
+    );
+
+    const retryClaimToken = "reply-retry-task-claim-one";
+    expect(
+      repository.claimDueTask({
+        taskId: first.task.id,
+        agentId: AGENT_ID,
+        nowUtc: T3,
+        leaseExpiresAtUtc: T4,
+        claimToken: retryClaimToken,
+      }),
+    ).toMatchObject({ status: "claimed", claimToken: retryClaimToken });
+    const retryRun = repository.claimGenerationRun({
+      incomingLetterId: failure.incoming.id,
+      snapshotId: failure.snapshot.id,
+      snapshotHash: failure.snapshot.contextHash,
+      agentId: AGENT_ID,
+      generationEpoch: 1,
+      claimToken: retryClaimToken,
+      nowUtc: T3,
+      leaseExpiresAtUtc: T4,
+    });
+    const failedRetryRun = repository.retryGenerationRun({
+      runId: retryRun!.id,
+      claimToken: retryClaimToken,
+      generationEpoch: 1,
+      errorCode: "second_terminal_failure",
+      nowUtc: T3,
+      retryable: false,
+    });
+    repository.retryTask({
+      taskId: first.task.id,
+      claimToken: retryClaimToken,
+      errorCode: "second_terminal_failure",
+      nowUtc: T3,
+      retryable: false,
+    });
+
+    const second = repository.enqueueReplyGenerationRetry({
+      incomingLetterId: failure.incoming.id,
+      clientRequestId: "reply-retry-request-two",
+      requestedAtUtc: T4,
+    });
+    expect(second).toMatchObject({
+      generationEpoch: 2,
+      snapshotId: failure.snapshot.id,
+      replayed: false,
+      task: {
+        status: "pending",
+        payload: {
+          incomingLetterId: failure.incoming.id,
+          snapshotId: failure.snapshot.id,
+          generationEpoch: 2,
+        },
+      },
+    });
+    expect(repository.getGenerationRun(failedRetryRun.id)).toEqual(
+      failedRetryRun,
+    );
+    expect(
+      repository.enqueueReplyGenerationRetry({
+        incomingLetterId: failure.incoming.id,
+        clientRequestId: "reply-retry-request-one",
+        requestedAtUtc: T4,
+      }),
+    ).toMatchObject({
+      generationEpoch: 1,
+      replayed: true,
+      task: { id: first.task.id },
+    });
+
+    const requests = database
+      .prepare(
+        `SELECT incoming_letter_id AS incomingLetterId,
+                request_hash AS requestHash,
+                generation_epoch AS generationEpoch,
+                snapshot_id AS snapshotId,
+                previous_task_id AS previousTaskId,
+                previous_run_id AS previousRunId,
+                task_id AS taskId,
+                source
+         FROM correspondence_reply_retry_requests
+         ORDER BY generation_epoch`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toMatchObject({
+      incomingLetterId: failure.incoming.id,
+      generationEpoch: 1,
+      snapshotId: failure.snapshot.id,
+      previousTaskId: failure.task.id,
+      previousRunId: failure.run.id,
+      taskId: first.task.id,
+      source: "local_user",
+    });
+    expect(requests[1]).toMatchObject({
+      generationEpoch: 2,
+      previousTaskId: first.task.id,
+      previousRunId: failedRetryRun.id,
+      taskId: second.task.id,
+    });
+    expect(
+      requests.every((request) =>
+        /^[a-f0-9]{64}$/u.test(String(request.requestHash)),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(requests)).not.toContain("reply-retry-request");
+
+    const events = database
+      .prepare(
+        `SELECT payload_json AS payloadJson,
+                idempotency_key AS idempotencyKey,
+                stream_version AS streamVersion
+         FROM domain_events
+         WHERE event_type = 'letter.reply_retry_requested'
+         ORDER BY stream_version`,
+      )
+      .all() as Array<{
+      payloadJson: string;
+      idempotencyKey: string;
+      streamVersion: number;
+    }>;
+    const eventPayloads = events.map(
+      (event) => JSON.parse(event.payloadJson) as Record<string, unknown>,
+    );
+    expect(
+      eventPayloads.every(
+        (payload) => typeof payload.retryRequestId === "string",
+      ),
+    ).toBe(true);
+    expect(eventPayloads).toEqual([
+      {
+        generationEpoch: 1,
+        incomingLetterId: failure.incoming.id,
+        retryRequestId: eventPayloads[0]!.retryRequestId,
+        source: "local_user",
+      },
+      {
+        generationEpoch: 2,
+        incomingLetterId: failure.incoming.id,
+        retryRequestId: eventPayloads[1]!.retryRequestId,
+        source: "local_user",
+      },
+    ]);
+    expect(
+      events.every(
+        (event, index) =>
+          event.idempotencyKey ===
+          `letter-reply-retry-request:${String(eventPayloads[index]!.retryRequestId)}`,
+      ),
+    ).toBe(true);
+    expect(events.map((event) => event.streamVersion)).toEqual([5, 6]);
+    const streamVersions = database
+      .prepare(
+        `SELECT stream_version AS streamVersion
+         FROM domain_events
+         WHERE stream_type = 'correspondence_letter' AND stream_id = ?
+         ORDER BY stream_version`,
+      )
+      .all(failure.incoming.id) as Array<{ streamVersion: number }>;
+    expect(streamVersions.map((row) => row.streamVersion)).toEqual([4, 5, 6]);
+    expect(new Set(streamVersions.map((row) => row.streamVersion)).size).toBe(
+      streamVersions.length,
+    );
+    for (const request of requests) {
+      expect(JSON.stringify(events)).not.toContain(String(request.requestHash));
+    }
+
+    database
+      .prepare(
+        `INSERT INTO correspondence_threads(
+           id, agent_id, status, created_at_utc, updated_at_utc, closed_at_utc
+         ) VALUES ('thread-other-retry-target', ?, 'closed', ?, ?, ?)`,
+      )
+      .run(AGENT_ID, T3, T3, T3);
+    database
+      .prepare(
+        `INSERT INTO letters(
+           id, thread_id, agent_id, direction, status, body,
+           created_at_utc, updated_at_utc
+         ) VALUES (
+           'letter-other-retry-target', 'thread-other-retry-target', ?,
+           'user_to_agent', 'cancelled',
+           'Another letter', ?, ?
+         )`,
+      )
+      .run(AGENT_ID, T3, T3);
+    expectRepositoryError(
+      () =>
+        repository.enqueueReplyGenerationRetry({
+          incomingLetterId: "letter-other-retry-target",
+          clientRequestId: "reply-retry-request-one",
+          requestedAtUtc: T4,
+        }),
+      "idempotency_conflict",
+    );
+    expect(count(database, "correspondence_reply_retry_requests")).toBe(2);
+
+    database.prepare("DELETE FROM characters WHERE id = ?").run(AGENT_ID);
+    expect(count(database, "correspondence_reply_retry_requests")).toBe(0);
+    expect(count(database, "temporal_tasks")).toBe(0);
+    expect(count(database, "letter_generation_runs")).toBe(0);
+  });
+
+  it("rolls back recovery tasks when their audit event cannot commit", () => {
+    const failure = createRecoverableGenerationFailure(repository);
+    database.exec(`
+      CREATE TRIGGER reject_reply_retry_audit
+      BEFORE INSERT ON domain_events
+      WHEN NEW.event_type = 'letter.reply_retry_requested'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced reply retry audit failure');
+      END;
+    `);
+
+    expect(() =>
+      repository.enqueueReplyGenerationRetry({
+        incomingLetterId: failure.incoming.id,
+        clientRequestId: "reply-retry-rollback",
+        requestedAtUtc: T3,
+      }),
+    ).toThrow(/forced reply retry audit failure/iu);
+    expect(
+      scalar(
+        database,
+        `SELECT COUNT(*) AS count FROM temporal_tasks
+         WHERE kind = 'letter.generation_retry'`,
+      ),
+    ).toBe(0);
+    expect(count(database, "correspondence_reply_retry_requests")).toBe(0);
+  });
+
+  it.each([
+    {
+      caseName: "the initial task uses the retry kind",
+      taskKind: "letter.generation_retry" as const,
+      taskMaxAttempts: 3,
+    },
+    {
+      caseName: "the task changes the three-attempt budget",
+      taskKind: "letter.reply_generation" as const,
+      taskMaxAttempts: 4,
+    },
+  ])("fails closed when $caseName", ({ taskKind, taskMaxAttempts }) => {
+    const failure = createRecoverableGenerationFailure(repository, {
+      taskKind,
+      taskMaxAttempts,
+    });
+    const enqueue = () =>
+      repository.enqueueReplyGenerationRetry({
+        incomingLetterId: failure.incoming.id,
+        clientRequestId: "reply-retry-invalid-history",
+        requestedAtUtc: T3,
+      });
+
+    expectRepositoryError(enqueue, "generation_not_retryable");
+    expect(
+      scalar(
+        database,
+        `SELECT COUNT(*) AS count FROM temporal_tasks
+         WHERE kind = 'letter.generation_retry' AND status = 'pending'`,
+      ),
+    ).toBe(0);
+    expect(count(database, "correspondence_reply_retry_requests")).toBe(0);
+  });
+
   it("finds the newest append-only generation task for an incoming letter", () => {
     const incoming = createReadIncoming(repository);
     const initial = repository.createTemporalTask({
@@ -878,6 +1206,20 @@ describe("CorrespondenceRepository", () => {
         generationEpoch: 0,
       },
       createdAtUtc: T1,
+    });
+    repository.claimDueTask({
+      taskId: initial.id,
+      agentId: AGENT_ID,
+      nowUtc: T1,
+      leaseExpiresAtUtc: T2,
+      claimToken: "initial-generation-claim",
+    });
+    repository.retryTask({
+      taskId: initial.id,
+      claimToken: "initial-generation-claim",
+      errorCode: "terminal_generation_failure",
+      nowUtc: T1,
+      retryable: false,
     });
     const retry = repository.createTemporalTask({
       id: "task-generation-retry",
@@ -904,6 +1246,88 @@ describe("CorrespondenceRepository", () => {
     expect(initial.id).not.toBe(retry.id);
   });
 });
+
+function createRecoverableGenerationFailure(
+  repository: CorrespondenceRepository,
+  options: Readonly<{
+    taskKind?: "letter.reply_generation" | "letter.generation_retry";
+    taskMaxAttempts?: number;
+  }> = {},
+) {
+  const incoming = createReadIncoming(repository);
+  const contextHash = createHash("sha256")
+    .update(
+      canonicalLetterGenerationSnapshot({
+        contextJson: SNAPSHOT_CONTEXT,
+        evidenceIds: ["evidence-before-arrival"],
+      }),
+      "utf8",
+    )
+    .digest("hex");
+  const snapshot = repository.insertSnapshot({
+    id: "snapshot-recoverable-generation",
+    incomingLetterId: incoming.id,
+    agentId: AGENT_ID,
+    effectiveAtUtc: T1,
+    characterVersion: 3,
+    stateRevision: 7,
+    contextJson: SNAPSHOT_CONTEXT,
+    evidenceIds: ["evidence-before-arrival"],
+    contextHash,
+    createdAtUtc: T2,
+  });
+  const task = repository.createTemporalTask({
+    id: "task-recoverable-generation",
+    agentId: AGENT_ID,
+    kind: options.taskKind ?? "letter.reply_generation",
+    entityId: incoming.id,
+    dueAtUtc: T1,
+    priority: 20,
+    idempotencyKey: `letter-reply-generation:${incoming.id}:epoch-0`,
+    payload: {
+      incomingLetterId: incoming.id,
+      snapshotId: snapshot.id,
+      generationEpoch: 0,
+    },
+    maxAttempts: options.taskMaxAttempts ?? 3,
+    createdAtUtc: T2,
+  });
+  const claimToken = "recoverable-generation-claim";
+  repository.claimDueTask({
+    taskId: task.id,
+    agentId: AGENT_ID,
+    nowUtc: T2,
+    leaseExpiresAtUtc: "2026-09-09T02:00:00.000Z",
+    claimToken,
+  });
+  const claimedRun = repository.claimGenerationRun({
+    id: "run-recoverable-generation",
+    incomingLetterId: incoming.id,
+    snapshotId: snapshot.id,
+    snapshotHash: snapshot.contextHash,
+    agentId: AGENT_ID,
+    generationEpoch: 0,
+    claimToken,
+    nowUtc: T2,
+    leaseExpiresAtUtc: "2026-09-09T02:00:00.000Z",
+  });
+  const run = repository.retryGenerationRun({
+    runId: claimedRun!.id,
+    claimToken,
+    generationEpoch: 0,
+    errorCode: "terminal_generation_failure",
+    nowUtc: "2026-09-09T01:01:00.000Z",
+    retryable: false,
+  });
+  const deadTask = repository.retryTask({
+    taskId: task.id,
+    claimToken,
+    errorCode: "terminal_generation_failure",
+    nowUtc: "2026-09-09T01:01:00.000Z",
+    retryable: false,
+  });
+  return { incoming, snapshot, task: deadTask, run };
+}
 
 function createReadIncoming(
   repository: CorrespondenceRepository,

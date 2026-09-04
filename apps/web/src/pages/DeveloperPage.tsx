@@ -4,11 +4,12 @@ import {
   Braces,
   Clock3,
   Database,
+  Hourglass,
   Play,
   RefreshCw,
   TerminalSquare,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { api, unwrapList } from "../api/client";
@@ -41,9 +42,22 @@ export default function DeveloperPage() {
     queryKey: ["developer", "llm-calls"],
     queryFn: api.developer.llmCalls,
   });
+  const temporalTasksQuery = useQuery({
+    queryKey: ["temporal-tasks", activeId],
+    queryFn: () => api.developer.temporalTasks(activeId),
+    enabled: Boolean(activeId),
+  });
   const [clockInput, setClockInput] = useState(() =>
     DateTime.utc().toFormat("yyyy-LL-dd'T'HH:mm"),
   );
+  const serverTimeUtc = snapshotQuery.data?.status.serverTimeUtc;
+  useEffect(() => {
+    if (typeof serverTimeUtc !== "string") return;
+    const serverTime = DateTime.fromISO(serverTimeUtc, { setZone: true });
+    if (serverTime.isValid) {
+      setClockInput(serverTime.toUTC().toFormat("yyyy-LL-dd'T'HH:mm"));
+    }
+  }, [serverTimeUtc]);
   const [advanceMinutes, setAdvanceMinutes] = useState(60);
   const [recallMessage, setRecallMessage] = useState("");
   const [retrievalRunSelection, setRetrievalRunSelection] = useState("");
@@ -76,6 +90,12 @@ export default function DeveloperPage() {
     void Promise.all([
       queryClient.invalidateQueries({ queryKey: ["developer"] }),
       queryClient.invalidateQueries({ queryKey: ["agent", activeId] }),
+      queryClient.invalidateQueries({
+        queryKey: ["temporal-tasks", activeId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["correspondence", activeId],
+      }),
     ]);
   };
   const setClock = useMutation({
@@ -86,7 +106,11 @@ export default function DeveloperPage() {
     onSuccess: refresh,
   });
   const advance = useMutation({
-    mutationFn: () => api.developer.advanceClock(advanceMinutes),
+    mutationFn: (minutes: number) => api.developer.advanceClock(minutes),
+    onSuccess: refresh,
+  });
+  const processLetter = useMutation({
+    mutationFn: (letterId: string) => api.developer.processLetter(letterId),
     onSuccess: refresh,
   });
   const settle = useMutation({
@@ -103,7 +127,8 @@ export default function DeveloperPage() {
       });
     },
   });
-  const mutationError = setClock.error ?? advance.error ?? settle.error;
+  const mutationError =
+    setClock.error ?? advance.error ?? settle.error ?? processLetter.error;
   const snapshotJson = useMemo(
     () => JSON.stringify(snapshotQuery.data ?? {}, null, 2),
     [snapshotQuery.data],
@@ -185,9 +210,23 @@ export default function DeveloperPage() {
               className="button button--quiet"
               type="button"
               disabled={advance.isPending}
-              onClick={() => advance.mutate()}
+              onClick={() => advance.mutate(advanceMinutes)}
             >
               <Play size={15} /> 推进
+            </button>
+          </div>
+          <div className="clock-shortcuts" aria-label="常用时间推进">
+            <button type="button" onClick={() => advance.mutate(4 * 24 * 60)}>
+              +4 天
+            </button>
+            <button type="button" onClick={() => advance.mutate(24 * 60)}>
+              +1 天
+            </button>
+            <button type="button" onClick={() => advance.mutate(5 * 24 * 60)}>
+              +5 天
+            </button>
+            <button type="button" onClick={() => advance.mutate(-24 * 60)}>
+              回拨 1 天
             </button>
           </div>
           <button
@@ -199,6 +238,68 @@ export default function DeveloperPage() {
             <Database size={15} /> 立即结算角色
           </button>
           {mutationError ? <ErrorBlock error={mutationError} /> : null}
+        </section>
+
+        <section className="developer-panel developer-panel--tasks">
+          <div className="developer-panel__heading">
+            <Hourglass size={19} />
+            <div>
+              <h2>书信时间任务</h2>
+              <p>到期时间、租约、重试和错误码；不投影任何信件正文。</p>
+            </div>
+          </div>
+          {temporalTasksQuery.isPending ? (
+            <LoadingBlock label="读取书信任务…" />
+          ) : null}
+          {temporalTasksQuery.isError ? (
+            <ErrorBlock error={temporalTasksQuery.error} />
+          ) : null}
+          <div className="temporal-task-list">
+            {(temporalTasksQuery.data?.tasks ?? []).map((task) => (
+              <article key={task.id}>
+                <header>
+                  <strong>{task.kind}</strong>
+                  <code>{task.status}</code>
+                </header>
+                <dl>
+                  <div>
+                    <dt>due</dt>
+                    <dd>{task.dueAtUtc}</dd>
+                  </div>
+                  <div>
+                    <dt>attempt</dt>
+                    <dd>
+                      {task.attempt} / {task.maxAttempts}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>lease</dt>
+                    <dd>{task.leaseExpiresAtUtc ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>error</dt>
+                    <dd>{task.lastErrorCode ?? "—"}</dd>
+                  </div>
+                </dl>
+                <div className="temporal-task-list__footer">
+                  <code title={task.entityId}>{task.entityId}</code>
+                  {task.status !== "completed" ? (
+                    <button
+                      className="button button--quiet"
+                      type="button"
+                      disabled={processLetter.isPending}
+                      onClick={() => processLetter.mutate(task.entityId)}
+                    >
+                      强制处理
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+            {temporalTasksQuery.data?.tasks.length === 0 ? (
+              <p>当前角色没有书信时间任务。</p>
+            ) : null}
+          </div>
         </section>
 
         <section className="developer-panel developer-panel--snapshot">

@@ -34,6 +34,11 @@ const optionalApiKeyFromEnv = z.preprocess(
     typeof value === "string" && value.trim() === "" ? undefined : value,
   z.string().trim().min(1).optional(),
 );
+const optionalInstanceSecretFromEnv = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().min(1).optional(),
+);
 const falseByDefaultBooleanFromEnv = z
   .enum(["true", "false"])
   .default("false")
@@ -219,6 +224,9 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
   HOST: z.string().default("127.0.0.1"),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
+  SELFHOSTED_REVERSE_PROXY: falseByDefaultBooleanFromEnv,
+  SERVE_WEB: falseByDefaultBooleanFromEnv,
+  WEB_DIST_PATH: z.string().trim().min(1).default("./apps/web/dist"),
   DATABASE_PATH: z.string().default("./data/persona-sim.sqlite"),
   PERSONASIM_PROFILE: z.string().default("development"),
   CLOCK_MODE: z.enum(["system", "fake"]).default("system"),
@@ -263,7 +271,43 @@ const envSchema = z.object({
     .enum(["legacy", "shadow", "enforced"])
     .default("enforced"),
   AUTOBIOGRAPHY_MODE: z.enum(["off", "shadow", "enforced"]).default("enforced"),
+  CORRESPONDENCE_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
+  CORRESPONDENCE_EXECUTION: z
+    .enum(["lazy", "resident", "worker"])
+    .default("lazy"),
+  CORRESPONDENCE_TRANSIT_POLICY: z.enum(["fixed_5d_v1"]).default("fixed_5d_v1"),
+  CORRESPONDENCE_GENERATION_LEASE_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1_800_000),
+  CORRESPONDENCE_MAX_OPEN_THREADS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1)
+    .default(1),
+  KEEPSAKE_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
+  ASSET_STORAGE_PATH: z.string().trim().min(1).default("./data/assets"),
+  INSTANCE_SECRET: optionalInstanceSecretFromEnv,
 });
+
+export type CorrespondenceServerConfig = {
+  correspondenceMode: "off" | "shadow" | "enforced";
+  correspondenceExecution: "lazy" | "resident" | "worker";
+  correspondenceTransitPolicy: "fixed_5d_v1";
+  correspondenceGenerationLeaseMs: number;
+  correspondenceMaxOpenThreads: number;
+  keepsakeMode: "off" | "shadow" | "enforced";
+  assetStoragePath: string;
+  instanceSecret?: string;
+};
+
+export type SelfHostedServerConfig = {
+  selfHostedReverseProxy: boolean;
+  serveWeb: boolean;
+  webDistPath: string;
+};
 
 export type ServerConfig = {
   nodeEnv: "development" | "test" | "production";
@@ -296,11 +340,20 @@ export type ServerConfig = {
   liveWorldEffectsMode: "off" | "shadow" | "enforced";
   memoryRecallMode: "legacy" | "shadow" | "enforced";
   autobiographyMode: "off" | "shadow" | "enforced";
-};
+  // Keep Stage 0 injection source-compatible with historical test/scenario
+  // fixtures. readConfig() returns ResolvedServerConfig with these defaults.
+} & Partial<CorrespondenceServerConfig & SelfHostedServerConfig>;
+
+export type ResolvedServerConfig = Omit<
+  ServerConfig,
+  keyof (CorrespondenceServerConfig & SelfHostedServerConfig)
+> &
+  CorrespondenceServerConfig &
+  SelfHostedServerConfig;
 
 export function readConfig(
   overrides: Partial<ServerConfig> = {},
-): ServerConfig {
+): ResolvedServerConfig {
   const env = envSchema.parse(process.env);
   if (
     env.LLM_ACTIVE_PROFILE !== undefined &&
@@ -315,12 +368,15 @@ export function readConfig(
       ? readLegacyLlmEnvironment()
       : readLiveProfileEnvironment(env.LLM_ACTIVE_PROFILE);
 
-  const base: ServerConfig = {
+  const base: ResolvedServerConfig = {
     nodeEnv: env.NODE_ENV,
     profile: env.PERSONASIM_PROFILE,
     port: env.PORT,
     host: env.HOST,
     webOrigin: env.WEB_ORIGIN,
+    selfHostedReverseProxy: env.SELFHOSTED_REVERSE_PROXY,
+    serveWeb: env.SERVE_WEB,
+    webDistPath: resolve(workspaceRoot, env.WEB_DIST_PATH),
     databasePath: resolve(workspaceRoot, env.DATABASE_PATH),
     clockMode: env.CLOCK_MODE,
     fakeClockStart: env.FAKE_CLOCK_START,
@@ -375,6 +431,16 @@ export function readConfig(
     liveWorldEffectsMode: env.LIVE_WORLD_EFFECTS,
     memoryRecallMode: env.MEMORY_RECALL_MODE,
     autobiographyMode: env.AUTOBIOGRAPHY_MODE,
+    correspondenceMode: env.CORRESPONDENCE_MODE,
+    correspondenceExecution: env.CORRESPONDENCE_EXECUTION,
+    correspondenceTransitPolicy: env.CORRESPONDENCE_TRANSIT_POLICY,
+    correspondenceGenerationLeaseMs: env.CORRESPONDENCE_GENERATION_LEASE_MS,
+    correspondenceMaxOpenThreads: env.CORRESPONDENCE_MAX_OPEN_THREADS,
+    keepsakeMode: env.KEEPSAKE_MODE,
+    assetStoragePath: resolve(workspaceRoot, env.ASSET_STORAGE_PATH),
+    ...(env.INSTANCE_SECRET === undefined
+      ? {}
+      : { instanceSecret: env.INSTANCE_SECRET }),
   };
 
   const merged = {

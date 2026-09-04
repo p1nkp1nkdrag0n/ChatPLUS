@@ -10,6 +10,7 @@ import type { Database } from "../db/connection.js";
 import type { RouteServices } from "../http/routes.js";
 import type { Clock } from "../runtime/clock.js";
 import type { HourlyScheduler } from "../runtime/hourly-scheduler.js";
+import type { TemporalTaskScheduler } from "../runtime/temporal-task-scheduler.js";
 import type { LlmServiceObservationOptions } from "../services/llm-service.js";
 import type { FixtureTurnBehavior } from "../services/turn-decision-service.js";
 import { resolveServerBundle, type ServerSimulationBundle } from "./bundles.js";
@@ -24,17 +25,21 @@ import {
   CALENDAR_SERVICE_TOKEN,
   CHARACTER_SERVICE_TOKEN,
   CHECKPOINT_SERVICE_TOKEN,
+  CORRESPONDENCE_REPOSITORY_TOKEN,
+  CORRESPONDENCE_SERVICE_TOKEN,
   CONVERSATION_SERVICE_TOKEN,
   CONTINUITY_INDEX_SERVICE_TOKEN,
   CONVERSATION_ACTIVITY_TRACKER_TOKEN,
   DATE_DIGEST_SERVICE_TOKEN,
   FOLLOW_UP_SERVICE_TOKEN,
   LIFE_SERVICE_TOKEN,
+  KEEPSAKE_SERVICE_TOKEN,
   MEMORY_LIFECYCLE_SERVICE_TOKEN,
   MEMORY_RECALL_SERVICE_TOKEN,
   PERSONAL_LIFE_SERVICE_TOKEN,
   PROACTIVE_DELIVERY_SERVICE_TOKEN,
   PROACTIVE_GENERATION_SERVICE_TOKEN,
+  RELATIONSHIP_ARCHIVE_SERVICE_TOKEN,
   RETRIEVAL_RUN_REPOSITORY_TOKEN,
   SCHEDULE_SERVICE_TOKEN,
   SCHEDULER_SERVICE_TOKEN,
@@ -44,6 +49,8 @@ import {
   SETTLEMENT_SERVICE_TOKEN,
   SSE_HUB_TOKEN,
   STORE_TOKEN,
+  TEMPORAL_CATCH_UP_SERVICE_TOKEN,
+  TEMPORAL_TASK_SCHEDULER_TOKEN,
 } from "./service-tokens.js";
 
 export interface ComposeServerOptions {
@@ -67,6 +74,7 @@ export interface ServerComposition {
   readonly kernel: ServerKernelHandle;
   readonly routeServices: RouteServices;
   readonly scheduler: HourlyScheduler;
+  readonly temporalTaskScheduler: TemporalTaskScheduler;
   dispose(reason: "fastify_close" | "build_failed"): Promise<void>;
 }
 
@@ -121,8 +129,15 @@ export async function composeServer(
     proactiveGeneration: registry.resolve(PROACTIVE_GENERATION_SERVICE_TOKEN),
     retrievalRuns: registry.resolve(RETRIEVAL_RUN_REPOSITORY_TOKEN),
     conversations: registry.resolve(CONVERSATION_SERVICE_TOKEN),
+    correspondence: registry.resolve(CORRESPONDENCE_SERVICE_TOKEN),
+    correspondenceRepository: registry.resolve(CORRESPONDENCE_REPOSITORY_TOKEN),
+    keepsakes: registry.resolve(KEEPSAKE_SERVICE_TOKEN),
+    relationshipArchive: registry.resolve(RELATIONSHIP_ARCHIVE_SERVICE_TOKEN),
+    temporalCatchUp: registry.resolve(TEMPORAL_CATCH_UP_SERVICE_TOKEN),
+    temporalTaskScheduler: registry.resolve(TEMPORAL_TASK_SCHEDULER_TOKEN),
   };
   const scheduler = registry.resolve(SCHEDULER_SERVICE_TOKEN);
+  const temporalTaskScheduler = registry.resolve(TEMPORAL_TASK_SCHEDULER_TOKEN);
   let disposed = false;
 
   return {
@@ -135,6 +150,7 @@ export async function composeServer(
     },
     routeServices,
     scheduler,
+    temporalTaskScheduler,
     dispose: async (reason) => {
       if (disposed) return;
       disposed = true;

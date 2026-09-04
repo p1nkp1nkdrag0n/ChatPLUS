@@ -762,6 +762,33 @@ function parseFixturePrompt(
   }
 }
 
+function letterReplyFixture(request: LLMRequest): JsonValue {
+  const payload = asRecord(request.payload);
+  const prompt = parseFixturePrompt(payload["prompt"]);
+  const snapshotEvidence = asRecord(prompt["SNAPSHOT_EVIDENCE"] ?? {});
+  const userLetter = asRecord(prompt["USER_LETTER"] ?? {});
+  const subject = stringValue(userLetter["subject"], "回信");
+  const body = stringValue(userLetter["body"], "谢谢你的来信。")
+    .trim()
+    .slice(0, 1_500);
+  const evidenceIds = Array.isArray(snapshotEvidence["evidenceIds"])
+    ? snapshotEvidence["evidenceIds"].filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  return {
+    subject: `回复：${subject}`.slice(0, 240),
+    salutation: "亲爱的朋友：",
+    paragraphs: [
+      `你的来信我已经认真读过。${body}`.slice(0, 4_000),
+      "愿这封回信在路上替我陪你一程，也愿你近来一切安好。",
+    ],
+    closing: "顺颂安好",
+    signature: "回信人",
+    referencedEvidenceIds: evidenceIds,
+  };
+}
+
 const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   compile_character: compileFixture,
   import_character: importFixture,
@@ -771,6 +798,7 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   enrich_activity: enrichFixture,
   compose_proactive_message: proactiveFixture,
   checkpoint_autobiography: checkpointAutobiographyFixture,
+  letter_reply: letterReplyFixture,
 };
 
 function tokenEstimate(value: string): number {

@@ -2,12 +2,55 @@ import {
   ActivityEnrichmentBatchSchema,
   AutobiographyRevisionProposalSchema,
   ContinuityTurnEffectsSchema,
+  LetterReplyProposalSchema,
   PersonaChatResponseSchema,
   PersonaTurnProviderEnvelopeSchema,
 } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
 
 import { createFixtureLlmProvider } from "./fixture-llm.js";
+
+describe("Fixture LLM letter reply purpose contract", () => {
+  it("returns a strict full-letter proposal grounded in snapshot evidence", async () => {
+    const response = await createFixtureLlmProvider().generate({
+      purpose: "letter_reply",
+      payload: {
+        prompt: JSON.stringify({
+          SNAPSHOT_EVIDENCE: { evidenceIds: ["evidence-arrival-1"] },
+          USER_LETTER: { subject: "九月来信", body: "我快要出发了。" },
+        }),
+      },
+    });
+
+    const proposal = LetterReplyProposalSchema.parse(response.data);
+    expect(proposal).toMatchObject({
+      subject: "回复：九月来信",
+      salutation: "亲爱的朋友：",
+      referencedEvidenceIds: ["evidence-arrival-1"],
+    });
+    expect(proposal.paragraphs).toHaveLength(2);
+  });
+
+  it("rejects fixture overrides with chat or infrastructure fields", () => {
+    const provider = createFixtureLlmProvider({
+      fixtures: {
+        letter_reply: {
+          subject: "回信",
+          salutation: "你好：",
+          paragraphs: ["收到来信。"],
+          closing: "安好",
+          signature: "林",
+          referencedEvidenceIds: [],
+          status: "in_transit",
+        },
+      },
+    });
+
+    expect(() =>
+      provider.generate({ purpose: "letter_reply", payload: {} }),
+    ).toThrow();
+  });
+});
 
 describe("Fixture LLM activity enrichment", () => {
   it("returns one validated enrichment for every input event", async () => {

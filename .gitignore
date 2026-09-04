@@ -10,6 +10,7 @@ blob-report/
 .env
 .env.*
 !.env.example
+!.env.selfhosted.example
 *.local
 
 # Runtime data
@@ -18,6 +19,11 @@ data/*.db-*
 data/*.sqlite
 data/*.sqlite-*
 data/test-*/
+data/selfhosted/
+data/selfhosted-assets/
+instances/
+logs/
+backups/
 tmp/
 
 # Editor and OS noise

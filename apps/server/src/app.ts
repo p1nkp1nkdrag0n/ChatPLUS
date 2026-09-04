@@ -1,5 +1,9 @@
+import { existsSync } from "node:fs";
+import { basename, join, sep } from "node:path";
+
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 
@@ -61,8 +65,9 @@ export async function buildApp(
       : { fixtureTurnBehavior: options.fixtureTurnBehavior }),
   });
   const services = composition.routeServices;
-  const { scheduler } = composition;
-  const { store, characters, schedules, life, conversations } = services;
+  const { scheduler, temporalTaskScheduler } = composition;
+  const { store, characters, schedules, life, conversations, correspondence } =
+    services;
 
   try {
     app.addHook("onClose", async () => {
@@ -76,6 +81,35 @@ export async function buildApp(
     await app.register(multipart, {
       limits: { fileSize: 512_000, files: 1, fields: 20 },
     });
+
+    const webDistPath =
+      config.serveWeb === true ? config.webDistPath : undefined;
+    if (webDistPath !== undefined) {
+      const indexPath = join(webDistPath, "index.html");
+      if (!existsSync(indexPath)) {
+        throw new TypeError(
+          `SERVE_WEB requires a built Vite index at ${indexPath}`,
+        );
+      }
+      await app.register(fastifyStatic, {
+        root: webDistPath,
+        wildcard: false,
+        cacheControl: false,
+        dotfiles: "deny",
+        setHeaders: (response, filePath) => {
+          if (basename(filePath) === "index.html") {
+            response.setHeader("cache-control", "no-store");
+          } else if (filePath.includes(`${sep}assets${sep}`)) {
+            response.setHeader(
+              "cache-control",
+              "public, max-age=31536000, immutable",
+            );
+          } else {
+            response.setHeader("cache-control", "public, max-age=3600");
+          }
+        },
+      });
+    }
 
     app.setErrorHandler((error, request, reply) => {
       if (reply.sent) return;
@@ -139,6 +173,13 @@ export async function buildApp(
     });
 
     app.setNotFoundHandler((request, reply) => {
+      if (webDistPath !== undefined && isHtmlNavigation(request)) {
+        void reply
+          .header("cache-control", "no-store")
+          .type("text/html; charset=utf-8")
+          .sendFile("index.html");
+        return;
+      }
       void reply.code(404).send({
         error: {
           code: "route_not_found",
@@ -163,10 +204,47 @@ export async function buildApp(
     }
 
     if (
+      ((config.correspondenceMode ?? "off") !== "off" ||
+        (config.keepsakeMode ?? "off") !== "off") &&
+      (config.correspondenceExecution ?? "lazy") === "lazy"
+    ) {
+      for (const { id: agentId } of characters.list(true)) {
+        try {
+          await correspondence.catchUpAgent(agentId);
+        } catch (error) {
+          // One damaged character must not prevent the local library from
+          // starting. Keep startup diagnostics structural and never log a
+          // letter body, prompt, encrypted envelope, or key material.
+          app.log.warn(
+            {
+              agentId,
+              errorCode:
+                typeof error === "object" &&
+                error !== null &&
+                "code" in error &&
+                typeof error.code === "string"
+                  ? error.code
+                  : "correspondence_startup_catch_up_failed",
+            },
+            "correspondence startup catch-up failed for one character",
+          );
+        }
+      }
+    }
+
+    if (
       options.startScheduler &&
       composition.kernel.bundle.capabilities.hourlySettlement
     ) {
       scheduler.start();
+    }
+    if (
+      options.startScheduler &&
+      ((config.correspondenceMode ?? "off") !== "off" ||
+        (config.keepsakeMode ?? "off") !== "off") &&
+      (config.correspondenceExecution ?? "lazy") !== "lazy"
+    ) {
+      await temporalTaskScheduler.start();
     }
     Object.assign(app, {
       personasim: { ...services, scheduler, kernel: composition.kernel },
@@ -187,4 +265,26 @@ export async function buildApp(
     });
     throw error;
   }
+}
+
+function isHtmlNavigation(request: {
+  readonly method: string;
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string | string[] | undefined>>;
+}): boolean {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  const pathname = request.url.split("?", 1)[0] ?? request.url;
+  if (
+    pathname === "/api" ||
+    pathname.startsWith("/api/") ||
+    pathname === "/events" ||
+    pathname.startsWith("/events/") ||
+    pathname === "/assets" ||
+    pathname.startsWith("/assets/")
+  ) {
+    return false;
+  }
+  const accept = request.headers.accept;
+  const value = Array.isArray(accept) ? accept.join(",") : accept;
+  return value?.toLowerCase().includes("text/html") === true;
 }

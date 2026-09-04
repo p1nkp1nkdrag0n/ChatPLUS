@@ -6,6 +6,10 @@ export default defineConfig({
   testDir: "./tests/e2e",
   globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
+  // Both viewport projects intentionally exercise the same disposable backend.
+  // Keep them sequential because its FakeClock and developer LLM-call ledger are
+  // process-global mutable test seams.
+  workers: 1,
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {

@@ -18,6 +18,36 @@ import type {
   TimelineProvenance,
 } from "@personasim/contracts";
 
+export type {
+  CorrespondenceMailboxResponse,
+  CorrespondenceThreadSummaryResponse,
+  CreateLetterDraftRequest,
+  DeveloperTemporalTaskResponse,
+  DeveloperTemporalTasksResponse,
+  KeepsakeDetailResponse,
+  KeepsakeFilterOptions,
+  KeepsakeKind,
+  KeepsakeListQuery,
+  KeepsakePageResponse,
+  KeepsakeSourceType,
+  KeepsakeSummaryResponse,
+  LetterDetailResponse,
+  LetterDirection,
+  LetterStatus,
+  LetterSummaryResponse,
+  OpenLetterResponse,
+  RelationshipArchiveEntry,
+  RelationshipArchiveEntryId,
+  RelationshipArchiveFilter,
+  RelationshipArchiveQuery,
+  RelationshipArchivePageResponse,
+  RelationshipShareProjection,
+  SealLetterRequest,
+  ShareComposerSelection,
+  ShareRedaction,
+  UpdateLetterDraftRequest,
+} from "@personasim/contracts";
+
 export type SimulationTier = "lightweight" | "daily" | "high_fidelity";
 
 export type CharacterStatus = "draft" | "published" | "archived";
@@ -230,6 +260,9 @@ export interface AppSettings {
   reasoningRequestFormat: string;
   hasApiKey: boolean;
   clockMode: "system" | "fake";
+  correspondenceMode: "off" | "shadow" | "enforced";
+  correspondenceExecution: "lazy" | "resident" | "worker";
+  keepsakeMode: "off" | "shadow" | "enforced";
   locale: string;
   defaultTimezone: string;
 }

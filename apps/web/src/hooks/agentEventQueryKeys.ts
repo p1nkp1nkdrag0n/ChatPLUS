@@ -21,5 +21,9 @@ export function agentEventQueryKeys(
     agentOverviewQueryKey(agentId),
     ["agent", agentId, "timeline"],
     ["messages", agentId],
+    ["correspondence", agentId],
+    ["relationship-archive", agentId],
+    ["keepsakes", agentId],
+    ["temporal-tasks", agentId],
   ];
 }

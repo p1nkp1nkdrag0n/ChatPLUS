@@ -10,11 +10,14 @@ import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore } from "../db/store.js";
 import { CalendarRepository } from "../repositories/calendar-repository.js";
+import { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
+import { KeepsakeRepository } from "../repositories/keepsake-repository.js";
 import { LifeRepository } from "../repositories/life-repository.js";
 import { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
 import { ActorQueue } from "../runtime/actor-queue.js";
 import { FakeClock, SystemClock, type Clock } from "../runtime/clock.js";
 import { HourlyScheduler } from "../runtime/hourly-scheduler.js";
+import { TemporalTaskScheduler } from "../runtime/temporal-task-scheduler.js";
 import { AutobiographyService } from "../services/autobiography-service.js";
 import { CalendarService } from "../services/calendar-service.js";
 import { CharacterService } from "../services/character-service.js";
@@ -25,6 +28,12 @@ import {
 import { ConversationContinuityService } from "../services/conversation-continuity-service.js";
 import { ConversationContextService } from "../services/conversation-context-service.js";
 import { ConversationService } from "../services/conversation-service.js";
+import {
+  CorrespondenceCryptoService,
+  CorrespondenceOpenService,
+} from "../services/correspondence-crypto-service.js";
+import { CorrespondenceService } from "../services/correspondence-service.js";
+import { CorrespondenceSnapshotService } from "../services/correspondence-snapshot-service.js";
 import { ContinuityIndexService } from "../services/continuity-index-service.js";
 import { ContinuityMemoryRepository } from "../services/continuity-memory-repository.js";
 import { ContinuityRepository } from "../services/continuity-repository.js";
@@ -39,9 +48,13 @@ import {
 } from "../services/llm-service.js";
 import { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import { MemoryRecallService } from "../services/memory-recall-service.js";
+import { LetterReplyGenerationService } from "../services/letter-reply-generation-service.js";
+import { KeepsakeAssetStore } from "../services/keepsake-asset-store.js";
+import { KeepsakeService } from "../services/keepsake-service.js";
 import { PersonalIntentService } from "../services/personal-intent-service.js";
 import { PersonalLifeService } from "../services/personal-life-service.js";
 import { ReplyRepairService } from "../services/reply-repair-service.js";
+import { RelationshipArchiveService } from "../services/relationship-archive-service.js";
 import { SelfPlanningService } from "../services/self-planning-service.js";
 import { ScheduleService } from "../services/schedule-service.js";
 import { SettlementService } from "../services/settlement-service.js";
@@ -49,6 +62,7 @@ import { ProactiveDeliveryService } from "../services/proactive-delivery-service
 import { ProactiveGenerationRepository } from "../services/proactive-generation-repository.js";
 import { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import { TurnCommitService } from "../services/turn-commit-service.js";
+import { TemporalCatchUpService } from "../services/temporal-catch-up-service.js";
 import {
   TurnDecisionService,
   type FixtureTurnBehavior,
@@ -62,6 +76,11 @@ import {
   CALENDAR_SERVICE_TOKEN,
   CHARACTER_SERVICE_TOKEN,
   CHECKPOINT_SERVICE_TOKEN,
+  CORRESPONDENCE_CRYPTO_SERVICE_TOKEN,
+  CORRESPONDENCE_OPEN_SERVICE_TOKEN,
+  CORRESPONDENCE_REPOSITORY_TOKEN,
+  CORRESPONDENCE_SERVICE_TOKEN,
+  CORRESPONDENCE_SNAPSHOT_SERVICE_TOKEN,
   CONVERSATION_CONTINUITY_SERVICE_TOKEN,
   CONVERSATION_CONTEXT_SERVICE_TOKEN,
   CONVERSATION_SERVICE_TOKEN,
@@ -70,12 +89,17 @@ import {
   DATE_DIGEST_SERVICE_TOKEN,
   FOLLOW_UP_SERVICE_TOKEN,
   LIFE_SERVICE_TOKEN,
+  LETTER_REPLY_GENERATION_SERVICE_TOKEN,
+  KEEPSAKE_ASSET_STORE_TOKEN,
+  KEEPSAKE_REPOSITORY_TOKEN,
+  KEEPSAKE_SERVICE_TOKEN,
   MEMORY_LIFECYCLE_SERVICE_TOKEN,
   MEMORY_RECALL_SERVICE_TOKEN,
   PERSONAL_INTENT_SERVICE_TOKEN,
   PERSONAL_LIFE_SERVICE_TOKEN,
   PROACTIVE_DELIVERY_SERVICE_TOKEN,
   PROACTIVE_GENERATION_SERVICE_TOKEN,
+  RELATIONSHIP_ARCHIVE_SERVICE_TOKEN,
   REPLY_REPAIR_SERVICE_TOKEN,
   RETRIEVAL_RUN_REPOSITORY_TOKEN,
   SELF_PLANNING_SERVICE_TOKEN,
@@ -91,6 +115,8 @@ import {
   STORE_TOKEN,
   TURN_COMMIT_SERVICE_TOKEN,
   TURN_DECISION_SERVICE_TOKEN,
+  TEMPORAL_CATCH_UP_SERVICE_TOKEN,
+  TEMPORAL_TASK_SCHEDULER_TOKEN,
   WORLD_EFFECT_SERVICE_TOKEN,
 } from "./service-tokens.js";
 
@@ -180,6 +206,7 @@ function createInfrastructurePlugin(
         SERVER_SERVICE_IDS.actors,
         SERVER_SERVICE_IDS.sse,
         SERVER_SERVICE_IDS.llm,
+        SERVER_SERVICE_IDS.correspondenceCrypto,
         "core.logger",
       ],
     },
@@ -211,6 +238,17 @@ function createInfrastructurePlugin(
         options.llmObservation,
       );
       const logger = createKernelLogger(options.logger);
+      const correspondenceMode = options.config.correspondenceMode ?? "off";
+      const correspondenceCrypto = CorrespondenceCryptoService.initialize(
+        database,
+        {
+          mode: correspondenceMode,
+          ...(options.config.instanceSecret === undefined
+            ? {}
+            : { instanceSecret: options.config.instanceSecret }),
+          nowUtc: clock.nowUtc(),
+        },
+      );
 
       context.services.provide(SERVER_CONFIG_TOKEN, options.config);
       context.services.provide(STORE_TOKEN, store);
@@ -218,6 +256,10 @@ function createInfrastructurePlugin(
       context.services.provide(ACTOR_QUEUE_TOKEN, actors);
       context.services.provide(SSE_HUB_TOKEN, sse);
       context.services.provide(SERVER_LLM_SERVICE_TOKEN, llm);
+      context.services.provide(
+        CORRESPONDENCE_CRYPTO_SERVICE_TOKEN,
+        correspondenceCrypto,
+      );
       context.services.provide(LOGGER_SERVICE_TOKEN, logger);
       context.logger.info("Infrastructure services ready", {
         bundle: bundle.id,
@@ -266,6 +308,16 @@ function createDomainPlugin(
         SERVER_SERVICE_IDS.proactiveDelivery,
         SERVER_SERVICE_IDS.proactiveGeneration,
         SERVER_SERVICE_IDS.retrievalRuns,
+        SERVER_SERVICE_IDS.correspondenceRepository,
+        SERVER_SERVICE_IDS.correspondenceSnapshots,
+        SERVER_SERVICE_IDS.letterReplyGeneration,
+        SERVER_SERVICE_IDS.temporalCatchUp,
+        SERVER_SERVICE_IDS.correspondenceOpen,
+        SERVER_SERVICE_IDS.correspondence,
+        SERVER_SERVICE_IDS.keepsakeRepository,
+        SERVER_SERVICE_IDS.keepsakeAssets,
+        SERVER_SERVICE_IDS.keepsakes,
+        SERVER_SERVICE_IDS.relationshipArchive,
       ],
     },
     setup: (context) => {
@@ -275,6 +327,10 @@ function createDomainPlugin(
       const sse = context.services.resolve(SSE_HUB_TOKEN);
       const config = context.services.resolve(SERVER_CONFIG_TOKEN);
       const actors = context.services.resolve(ACTOR_QUEUE_TOKEN);
+      const correspondenceMode = config.correspondenceMode ?? "off";
+      const correspondenceCrypto = context.services.resolve(
+        CORRESPONDENCE_CRYPTO_SERVICE_TOKEN,
+      );
       const characters = new CharacterService(
         store,
         clock,
@@ -306,6 +362,123 @@ function createDomainPlugin(
         store,
         new LifeRepository(store.database),
         clock,
+      );
+      const correspondenceRepository = new CorrespondenceRepository(
+        store.database,
+      );
+      const correspondenceSnapshots = new CorrespondenceSnapshotService(store);
+      const letterReplyGeneration =
+        correspondenceMode === "enforced" && correspondenceCrypto !== undefined
+          ? new LetterReplyGenerationService(
+              correspondenceRepository,
+              llm,
+              correspondenceCrypto,
+              {
+                provider: llm.providerName,
+                model: llm.modelName,
+              },
+            )
+          : undefined;
+      const temporalCatchUp = new TemporalCatchUpService(
+        correspondenceRepository,
+        {
+          advance: (agentId, toUtc) => {
+            life.advance(agentId, toUtc);
+          },
+        },
+        actors,
+        clock,
+        {
+          leaseMs: config.correspondenceGenerationLeaseMs ?? 1_800_000,
+          ...(correspondenceMode === "off"
+            ? {}
+            : {
+                outboundArrivalTaskHandler:
+                  correspondenceSnapshots.createOutboundArrivalTaskHandler(
+                    correspondenceMode,
+                  ),
+              }),
+          ...(letterReplyGeneration === undefined
+            ? {}
+            : {
+                externalTaskHandler:
+                  letterReplyGeneration.createExternalHandler(),
+              }),
+        },
+      );
+      const correspondenceOpen =
+        correspondenceCrypto === undefined
+          ? undefined
+          : new CorrespondenceOpenService(store.database, correspondenceCrypto);
+      const correspondence = new CorrespondenceService(
+        correspondenceRepository,
+        store,
+        clock,
+        actors,
+        temporalCatchUp,
+        sse,
+        {
+          mode: correspondenceMode,
+          transitPolicyVersion:
+            config.correspondenceTransitPolicy ?? "fixed_5d_v1",
+          ...(correspondenceCrypto === undefined
+            ? {}
+            : { crypto: correspondenceCrypto }),
+          ...(correspondenceOpen === undefined
+            ? {}
+            : { openService: correspondenceOpen }),
+        },
+      );
+      const keepsakeRepository = new KeepsakeRepository(store.database);
+      const keepsakeAssets = new KeepsakeAssetStore(
+        config.assetStoragePath ?? "./data/assets",
+      );
+      const keepsakes = new KeepsakeService(
+        keepsakeRepository,
+        correspondenceRepository,
+        store,
+        keepsakeAssets,
+        clock,
+        sse,
+        {
+          mode: config.keepsakeMode ?? "off",
+          leaseMs: config.correspondenceGenerationLeaseMs ?? 1_800_000,
+          onBackgroundError: (errorCode) => {
+            context.logger.warn("Background keepsake enqueue failed", {
+              errorCode,
+            });
+          },
+        },
+      );
+      correspondence.setAuxiliaryCatchUp(async (agentId, observedNowUtc) => {
+        try {
+          return await keepsakes.processDueForAgent(agentId, observedNowUtc);
+        } catch (error) {
+          // A generation failure is durably transitioned to retryable/failed
+          // by KeepsakeService. It must never make a committed/read letter or
+          // chat request fail at the shared temporal-work boundary.
+          context.logger.warn("Background keepsake generation failed", {
+            errorName: error instanceof Error ? error.name : "unknown",
+          });
+          return [];
+        }
+      });
+      correspondence.setRelatedKeepsakeResolver((replyLetterId) =>
+        keepsakes.listReadyForReply(replyLetterId),
+      );
+      letterReplyGeneration?.setReplyCommittedHandler((notice) => {
+        // Use the now-read incoming user letter as evidence. The newly created
+        // reply is still in transit and therefore intentionally ineligible.
+        keepsakes.enqueueLetterKeepsakeNonBlocking(
+          notice.agentId,
+          notice.incomingLetterId,
+          notice.replyLetterId,
+        );
+      });
+      const relationshipArchive = new RelationshipArchiveService(
+        store.database,
+        clock,
+        correspondenceCrypto,
       );
       const continuityRepository = new ContinuityRepository(store);
       const continuityMemoryRepository = new ContinuityMemoryRepository(store);
@@ -357,6 +530,8 @@ function createDomainPlugin(
         continuityIndex,
         config.autobiographyMode,
         config.memoryRecallMode,
+        (agentId, nowUtc) =>
+          keepsakes.relationshipArtifactsPromptContext(agentId, nowUtc),
       );
       const settlements = new SettlementService(
         store,
@@ -486,6 +661,34 @@ function createDomainPlugin(
       context.services.provide(WORLD_EFFECT_SERVICE_TOKEN, worldEffects);
       context.services.provide(TURN_COMMIT_SERVICE_TOKEN, turnCommits);
       context.services.provide(CONVERSATION_SERVICE_TOKEN, conversations);
+      context.services.provide(
+        CORRESPONDENCE_REPOSITORY_TOKEN,
+        correspondenceRepository,
+      );
+      context.services.provide(
+        CORRESPONDENCE_SNAPSHOT_SERVICE_TOKEN,
+        correspondenceSnapshots,
+      );
+      context.services.provide(
+        LETTER_REPLY_GENERATION_SERVICE_TOKEN,
+        letterReplyGeneration,
+      );
+      context.services.provide(
+        TEMPORAL_CATCH_UP_SERVICE_TOKEN,
+        temporalCatchUp,
+      );
+      context.services.provide(
+        CORRESPONDENCE_OPEN_SERVICE_TOKEN,
+        correspondenceOpen,
+      );
+      context.services.provide(CORRESPONDENCE_SERVICE_TOKEN, correspondence);
+      context.services.provide(KEEPSAKE_REPOSITORY_TOKEN, keepsakeRepository);
+      context.services.provide(KEEPSAKE_ASSET_STORE_TOKEN, keepsakeAssets);
+      context.services.provide(KEEPSAKE_SERVICE_TOKEN, keepsakes);
+      context.services.provide(
+        RELATIONSHIP_ARCHIVE_SERVICE_TOKEN,
+        relationshipArchive,
+      );
     },
   };
 }
@@ -494,11 +697,14 @@ function createSchedulerPlugin(): KernelPlugin<ServerKernelEvents> {
   return {
     manifest: {
       id: SERVER_PLUGIN_IDS.scheduler,
-      displayName: "Hourly settlement scheduler",
+      displayName: "Server runtime schedulers",
       version: "1.0.0",
       apiVersion: 1,
       requires: [SERVER_PLUGIN_IDS.domain],
-      provides: [SERVER_SERVICE_IDS.scheduler],
+      provides: [
+        SERVER_SERVICE_IDS.scheduler,
+        SERVER_SERVICE_IDS.temporalTaskScheduler,
+      ],
     },
     setup: (context) => {
       const scheduler = new HourlyScheduler(
@@ -513,12 +719,47 @@ function createSchedulerPlugin(): KernelPlugin<ServerKernelEvents> {
         context.services.resolve(LIFE_SERVICE_TOKEN),
         context.services.resolve(SERVER_CONFIG_TOKEN).lifePlanningMode,
       );
+      const config = context.services.resolve(SERVER_CONFIG_TOKEN);
+      const correspondenceMode = config.correspondenceMode ?? "off";
+      const temporalTaskScheduler = new TemporalTaskScheduler(
+        context.services.resolve(CORRESPONDENCE_REPOSITORY_TOKEN),
+        context.services.resolve(CORRESPONDENCE_SERVICE_TOKEN),
+        context.services.resolve(SERVER_CLOCK_TOKEN),
+        optionsLogger(context.logger),
+        {
+          execution: config.correspondenceExecution ?? "lazy",
+          taskKinds: [
+            ...(correspondenceMode === "enforced"
+              ? ([
+                  "letter.outbound_arrival",
+                  "letter.reply_generation",
+                  "letter.return_arrival",
+                  "letter.generation_retry",
+                ] as const)
+              : correspondenceMode === "shadow"
+                ? ([
+                    "letter.outbound_arrival",
+                    "letter.return_arrival",
+                  ] as const)
+                : []),
+            ...(config.keepsakeMode === "enforced"
+              ? (["keepsake.generate"] as const)
+              : []),
+          ],
+        },
+      );
       context.services.provide(SCHEDULER_SERVICE_TOKEN, scheduler);
-      context.events.on("server.stopping", () => {
+      context.services.provide(
+        TEMPORAL_TASK_SCHEDULER_TOKEN,
+        temporalTaskScheduler,
+      );
+      context.events.on("server.stopping", async () => {
         scheduler.stop();
+        await temporalTaskScheduler.dispose();
       });
-      context.onDispose(() => {
+      context.onDispose(async () => {
         scheduler.stop();
+        await temporalTaskScheduler.dispose();
       });
     },
   };

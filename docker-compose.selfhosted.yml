@@ -1,0 +1,105 @@
+name: chatplus-${CHATPLUS_INSTANCE_NAME:-friend}
+
+services:
+  app:
+    image: ${CHATPLUS_IMAGE:-chatplus-selfhosted:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    env_file:
+      - ${CHATPLUS_ENV_FILE:-.env.selfhosted}
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      WEB_ORIGIN: https://${CHATPLUS_DOMAIN:?set CHATPLUS_DOMAIN}
+      SELFHOSTED_REVERSE_PROXY: "true"
+      SERVE_WEB: "true"
+      WEB_DIST_PATH: /app/apps/web/dist
+      DATABASE_PATH: /app/data/chatplus.sqlite
+      ASSET_STORAGE_PATH: /app/assets
+      CORRESPONDENCE_EXECUTION: worker
+    expose:
+      - "3001"
+    volumes:
+      - type: bind
+        source: ${CHATPLUS_DATA_DIR:-./data/selfhosted}
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CHATPLUS_ASSETS_DIR:-./data/selfhosted-assets}
+        target: /app/assets
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CHATPLUS_LOG_DIR:-./logs/selfhosted}
+        target: /app/logs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CHATPLUS_BACKUP_DIR:-./backups/selfhosted}
+        target: /app/backups
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CHATPLUS_ENV_FILE:-./.env.selfhosted}
+        target: /app/config/instance.env
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - private
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      CHATPLUS_DOMAIN: ${CHATPLUS_DOMAIN:?set CHATPLUS_DOMAIN}
+      CHATPLUS_BASIC_AUTH_USER: ${CHATPLUS_BASIC_AUTH_USER:?set CHATPLUS_BASIC_AUTH_USER}
+      CHATPLUS_BASIC_AUTH_HASH: ${CHATPLUS_BASIC_AUTH_HASH:?set CHATPLUS_BASIC_AUTH_HASH}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - type: bind
+        source: ./deploy/Caddyfile.example
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - private
+
+networks:
+  private:
+    internal: false
+
+volumes:
+  caddy_data:
+  caddy_config:

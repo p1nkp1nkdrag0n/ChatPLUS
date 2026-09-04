@@ -10,6 +10,8 @@ import "./styles/shell.css";
 import "./styles/forms.css";
 import "./styles/chat.css";
 import "./styles/editor.css";
+import "./styles/correspondence.css";
+import "./styles/archive.css";
 import "./styles/responsive.css";
 
 const root = document.getElementById("root");

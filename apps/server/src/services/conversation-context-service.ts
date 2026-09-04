@@ -27,6 +27,16 @@ export interface PreparedConversationContext {
   autobiography?: AgentAutobiographySnapshot;
 }
 
+export interface RelationshipArtifactsPromptContext {
+  readonly correspondence: readonly Readonly<Record<string, unknown>>[];
+  readonly readyKeepsakes: readonly Readonly<Record<string, unknown>>[];
+}
+
+export type RelationshipArtifactsPromptContextProvider = (
+  agentId: string,
+  nowUtc: string,
+) => RelationshipArtifactsPromptContext;
+
 /** Collects bounded, turn-local context without placing selection rules in chat orchestration. */
 export class ConversationContextService {
   constructor(
@@ -37,6 +47,7 @@ export class ConversationContextService {
     private readonly continuityIndex: ContinuityIndexService,
     private readonly autobiographyMode: "off" | "shadow" | "enforced",
     private readonly memoryRecallMode: "legacy" | "shadow" | "enforced",
+    private readonly relationshipArtifacts?: RelationshipArtifactsPromptContextProvider,
   ) {}
 
   prepare(input: {
@@ -80,10 +91,15 @@ export class ConversationContextService {
             limit: 12,
             ...(dateRange === undefined ? {} : { dateRange }),
           });
-    const additionalPromptSegments = temporalSegments(
-      temporal.resolution,
-      this.memoryRecallMode === "enforced" ? undefined : temporal.digest,
-    );
+    const additionalPromptSegments = [
+      ...temporalSegments(
+        temporal.resolution,
+        this.memoryRecallMode === "enforced" ? undefined : temporal.digest,
+      ),
+      ...relationshipArtifactSegments(
+        this.relationshipArtifacts?.(input.agentId, input.nowUtc),
+      ),
+    ];
     const autobiography =
       this.autobiographyMode === "enforced"
         ? this.autobiographies.latest(input.agentId)?.snapshot
@@ -103,6 +119,31 @@ export class ConversationContextService {
   ): ReturnType<ConversationContinuityService["commitTurn"]> {
     return this.continuity.commitTurn(input);
   }
+}
+
+function relationshipArtifactSegments(
+  context: RelationshipArtifactsPromptContext | undefined,
+): PromptSegment<DefaultPromptContext>[] {
+  if (
+    context === undefined ||
+    (context.correspondence.length === 0 && context.readyKeepsakes.length === 0)
+  ) {
+    return [];
+  }
+  return [
+    staticSegment(
+      "12b_relationship_artifacts",
+      [
+        "Current relationship artifacts, projected without private letter bodies or image data.",
+        "Correspondence rows authorize only the stated lifecycle phase and timestamps. A read incoming letter may be acknowledged as received; never invent or reveal its text. Outgoing rows never authorize quoting a reply.",
+        "Only readyKeepsakes are durable artifacts that may be mentioned naturally when relevant. Source IDs are provenance, not prose.",
+        JSON.stringify(context),
+      ].join("\n"),
+      false,
+      88,
+      760,
+    ),
+  ];
 }
 
 function localCalendarRange(

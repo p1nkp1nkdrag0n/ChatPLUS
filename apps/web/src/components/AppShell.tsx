@@ -1,8 +1,11 @@
 import {
+  Archive,
   Bot,
   Braces,
   History,
   Library,
+  Mail,
+  PackageOpen,
   Plus,
   Settings,
   Sparkles,
@@ -10,7 +13,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { primeAgentOverview } from "../hooks/agentEventQueryKeys";
 import { useAgentEvents } from "../hooks/useAgentEvents";
@@ -23,10 +26,12 @@ interface NavigationItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  activePrefixes?: string[];
+  end?: boolean;
 }
 
 const PRIMARY_NAVIGATION: NavigationItem[] = [
-  { to: "/characters", label: "角色", icon: Library },
+  { to: "/characters", label: "角色", icon: Library, end: true },
   { to: "/create", label: "创建", icon: Plus },
   { to: "/timeline", label: "共同经历", icon: History },
 ];
@@ -36,12 +41,24 @@ const SECONDARY_NAVIGATION: NavigationItem[] = [
   { to: "/developer", label: "开发者", icon: Braces },
 ];
 
-function NavItem({ to, label, icon: Icon }: NavigationItem) {
+function NavItem({
+  to,
+  label,
+  icon: Icon,
+  activePrefixes,
+  end,
+}: NavigationItem) {
+  const location = useLocation();
+  const relatedRouteActive = activePrefixes?.some((prefix) =>
+    location.pathname.startsWith(prefix),
+  );
   return (
     <NavLink
       to={to}
+      {...(end === undefined ? {} : { end })}
+      aria-current={relatedRouteActive ? "page" : undefined}
       className={({ isActive }) =>
-        `app-nav__item${isActive ? " is-active" : ""}`
+        `app-nav__item${isActive || relatedRouteActive ? " is-active" : ""}`
       }
     >
       <Icon aria-hidden="true" size={20} strokeWidth={1.75} />
@@ -91,6 +108,34 @@ export function AppShell() {
     ]);
   }, [activationQuery.data, activeCharacterId, queryClient]);
   useAgentEvents(activeCharacterId);
+  const primaryNavigation = activeCharacterId
+    ? [
+        ...PRIMARY_NAVIGATION,
+        {
+          to: `/characters/${activeCharacterId}/correspondence`,
+          label: "书信",
+          icon: Mail,
+          activePrefixes: ["/letters/", "/correspondence/threads/"],
+        },
+        {
+          to: `/characters/${activeCharacterId}/relationship-archive`,
+          label: "关系档案",
+          icon: Archive,
+          activePrefixes: [
+            `/characters/${activeCharacterId}/relationship-share`,
+          ],
+        },
+        {
+          to: `/characters/${activeCharacterId}/keepsakes`,
+          label: "纪念物",
+          icon: PackageOpen,
+          activePrefixes: ["/keepsakes/"],
+        },
+      ]
+    : PRIMARY_NAVIGATION;
+  const mobileNavigation = primaryNavigation
+    .filter((item) => item.to !== "/create")
+    .concat(SECONDARY_NAVIGATION.filter((item) => item.to === "/settings"));
 
   return (
     <div className="app-shell">
@@ -108,7 +153,7 @@ export function AppShell() {
 
         <nav className="app-nav__groups">
           <div className="app-nav__group">
-            {PRIMARY_NAVIGATION.map((item) => (
+            {primaryNavigation.map((item) => (
               <NavItem key={item.to} {...item} />
             ))}
           </div>
@@ -134,7 +179,7 @@ export function AppShell() {
       </main>
 
       <nav className="mobile-nav" aria-label="移动端主导航">
-        {PRIMARY_NAVIGATION.concat(SECONDARY_NAVIGATION).map((item) => (
+        {mobileNavigation.map((item) => (
           <NavItem key={item.to} {...item} />
         ))}
       </nav>

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DilemmaEpisodeSchema,
   PressureEpisodeSchema,
+  type ActionRecord,
   type DecisionRecord,
   type DilemmaEpisode,
   type PressureEpisode,
@@ -38,7 +39,7 @@ describe("fuzzy-life conversation integration", () => {
     const command = {
       agentId: character.id,
       clientMessageId: "delegated-resignation-1",
-      text: "我到底要不要辞职？不要只分析，你直接替我决定。",
+      text: "我到底要不要辞职？我现在正式授权你替我决定，但不要把你的回答当作建议。",
     };
 
     const first = await app.inject({
@@ -109,6 +110,448 @@ describe("fuzzy-life conversation integration", () => {
     expect(scalarCount(app, "decision_records")).toBe(1);
   });
 
+  it("creates one delegated decision only for the current explicit grant in retained long-run turns", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+
+    const delegated = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "retained-current-delegation",
+      "现在我明确授权你，只在“接受影像平台副主编岗位”和“启动独立影像项目”之间替我作一次决定。这次授权只限今天这一件事。",
+    );
+    expect(modeForSource(app, delegated.assistantMessage.id)).toBe(
+      "delegated_decision",
+    );
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    expect(decision).toMatchObject({
+      dilemmaId: "test-user-branch-dilemma",
+      subject: "user",
+      authority: "delegated",
+      decidedBy: "character",
+      authorizedByMessageId: delegated.userMessage.id,
+    });
+    expect([
+      "test-user-branch-stable",
+      "test-user-branch-independent",
+    ]).toContain(decision.selectedOptionId);
+    expect(scalarCount(app, "decision_records")).toBe(1);
+    expect(scalarCount(app, "dilemma_episodes")).toBe(1);
+    expect(scalarCount(app, "relationship_milestones")).toBe(1);
+    expect(domainEventCount(app, "life.delegated_decision_recorded")).toBe(1);
+
+    const nonDelegations = [
+      "有件事得更正：我今天刚问到家里人。那张底片里的人其实是我姨妈，不是外婆；姨妈也明确说了不愿意公开展示。你不用替我处理她的决定，我只是把归属和边界说准。",
+      "信看完了。你说把水痕保留到‘不再妨碍看清主体’为止，这个标准我能用；你也没有趁机替我选工作，这两点都对。先不用再解释，我只是告诉你我收到了。",
+      "可以问一句。‘可以给建议’只允许你建议，不等于授权你代选；只有我明确说‘替我决定’，才是一次具体代选授权。把这两层分开就行。",
+      "刚才断了一下。你还记得你替我选的是哪一项，以及那次授权只限什么范围吗？只答两点。",
+      "把事实记准：这是杭州决定和我实际行动之后出现的混合结果，不是计划。先不要判定这个选择对不对；只帮我拆开，哪部分可能受当时选择影响，哪部分来自执行方式或外部环境，最多三点。",
+      "先不谈第二封信的正文。如果要描述我们现在的关系，只说三件确实发生过的事，不给我贴‘谨慎型’或任何人格标签，也别把一次代选写成你长期替我决定。",
+      "明天我要定《潮痕》的内部清单。请先问一个真正必要的问题，再给一条建议；别因为你曾替我选过工作，就把这次也接过去。",
+    ];
+
+    for (const [index, text] of nonDelegations.entries()) {
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `retained-non-delegation-${String(index + 1)}`,
+        text,
+      );
+      expect(scalarCount(app, "decision_records"), text).toBe(1);
+      expect(scalarCount(app, "dilemma_episodes"), text).toBe(1);
+      expect(scalarCount(app, "relationship_milestones"), text).toBe(1);
+      expect(
+        domainEventCount(app, "life.delegated_decision_recorded"),
+        text,
+      ).toBe(1);
+      expect(
+        latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json")
+          .closingDecisionId,
+        text,
+      ).toBe(decision.id);
+      expect(
+        latestJson<DecisionRecord>(app, "decision_records", "decision_json")
+          .authorizedByMessageId,
+        text,
+      ).toBe(delegated.userMessage.id);
+    }
+    expect(
+      latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json"),
+    ).toMatchObject({
+      id: "test-user-branch-dilemma",
+      status: "closed",
+      closingDecisionId: decision.id,
+    });
+  });
+
+  it("keeps comparison, quoted, future, and revoked language out of delegated writes", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+
+    const comparison = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "non-delegation-comparison",
+      "请你替我比较这两个选项。",
+    );
+    expect(modeForSource(app, comparison.assistantMessage.id)).toBe(
+      "deliberate",
+    );
+    expect(scalarCount(app, "decision_records")).toBe(0);
+    expect(
+      latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json")
+        .status,
+    ).toBe("open");
+
+    const comparisonWithBoundary = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "non-delegation-comparison-with-boundary",
+      "请你替我比较这两个选项，我没有授权你替我决定。",
+    );
+    expect(modeForSource(app, comparisonWithBoundary.assistantMessage.id)).toBe(
+      "deliberate",
+    );
+    expect(scalarCount(app, "decision_records")).toBe(0);
+
+    const nonDelegations = [
+      "请把【你替我选一个】这句话翻译成英文。",
+      "请你等我明确授权后再替我决定。",
+      "我想请你以后替我决定。",
+      "如果需要，你替我决定。",
+      "如果需要，这次请你替我决定。",
+      "上次，你替我决定了。",
+      "刚才，你替我决定了。",
+      "规则是，你替我决定才算授权。",
+      "这次请你替我决定。等等，我还是自己选。",
+      "你替我选一个，不，还是我自己来。",
+      "请你替我决定，但不是现在。",
+      "请你替我决定……算了。",
+      "我授权你替我决定，但先别替我决定。",
+      "请你替我决定，不过决定权还是在我。",
+      "请你替我决定，但我只把你的话当建议。",
+      "请你替我定稿。",
+      "请说明：你替我决定是什么意思。",
+      "你替我决定，这句话是在举例。",
+      "请你替我决定。等等，明天再说。",
+      "请你替我决定，如果有需要的话。",
+      "你说了算？",
+      "请翻译“我最终决定选择杭州”这句话。",
+      "原文：我最终选择了 A。",
+      "我只是转述同事的话：请你替我决定。",
+      "我在模拟用户会怎么说：请你替我决定。",
+      "请你替我决定。我开玩笑的。",
+      "我现在正式授权你替我决定，但我现在不同意了。",
+      "朋友请我转述给你：请你替我决定。",
+    ];
+    for (const [index, text] of nonDelegations.entries()) {
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `non-delegation-language-${String(index + 1)}`,
+        text,
+      );
+      expect(turn.assistantMessage.content, text).not.toContain("我的决定：");
+      expect(scalarCount(app, "decision_records"), text).toBe(0);
+      expect(scalarCount(app, "dilemma_episodes"), text).toBe(1);
+      expect(scalarCount(app, "relationship_milestones"), text).toBe(0);
+      expect(
+        domainEventCount(app, "life.delegated_decision_recorded"),
+        text,
+      ).toBe(0);
+      expect(
+        latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json")
+          .status,
+        text,
+      ).toBe("open");
+    }
+  });
+
+  it("keeps quoted, meta-level, and future support language out of life records", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    const inactiveWithoutDilemma = [
+      "请翻译“替我比较这两个选项”是什么意思。",
+      "请解释“帮我分析这两个选项”是什么意思。",
+      "如果以后我请你帮我分析 A/B，再开始梳理。",
+      "请你帮我分析 A/B。这只是个例子。",
+      "请翻译“我该不该辞职”是什么意思。",
+      "如果以后我问你该不该辞职，再帮我分析。",
+      "请翻译“选项 A 是杭州项目”是什么意思。",
+      "请把 `选项 A 是杭州项目` 原样复制。",
+      "假设：选项 A 是杭州项目。",
+      "朋友说“选项 A 是杭州项目”。",
+      "请翻译“我很焦虑”是什么意思。",
+      "假设我该不该辞职，你会怎么回答？",
+      "角色扮演：你替我决定。",
+      "我已经不纠结该不该辞职了。",
+      "这篇文章讨论该不该辞职。",
+      "我朋友正在犹豫该不该辞职。",
+      "你该不该辞职？",
+      "客服让我转告你：请推荐一个。",
+      "你从来没有帮我分析过。",
+      "请推荐一个，但别给建议。",
+    ];
+    for (const [index, text] of inactiveWithoutDilemma.entries()) {
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `inactive-support-without-dilemma-${String(index + 1)}`,
+        text,
+      );
+      expect(turn.assistantMessage.content, text).not.toContain("我的决定：");
+      expect(scalarCount(app, "dilemma_episodes"), text).toBe(0);
+      expect(scalarCount(app, "support_interventions"), text).toBe(0);
+      expect(scalarCount(app, "pressure_episodes"), text).toBe(0);
+      expect(scalarCount(app, "decision_records"), text).toBe(0);
+      expect(scalarCount(app, "relationship_milestones"), text).toBe(0);
+      expect(
+        domainEventCount(app, "life.delegated_decision_recorded"),
+        text,
+      ).toBe(0);
+    }
+
+    injectUserBranchDilemma(app, character.id, sessionId);
+    const openBefore = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    );
+    const evidenceEventCountBefore = dilemmaEvidenceEventCount(
+      app,
+      character.id,
+    );
+    for (const [index, text] of [
+      "请把【替我列出两个方案】改写得礼貌些。",
+      "等我明天回来，再替我比较两个方案。",
+      "请你帮我分析 A/B；这仅为示例。",
+      "举例来说：我该不该辞职。",
+      "原文：请你帮我分析。",
+      "原文：选项 A 是杭州项目。",
+      "举例：我最看重稳定，所以应该选择留在上海。",
+      "请翻译“选项 A 不是留在上海，而是去北京”。",
+    ].entries()) {
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `inactive-support-with-open-dilemma-${String(index + 1)}`,
+        text,
+      );
+      expect(scalarCount(app, "dilemma_episodes"), text).toBe(1);
+      expect(scalarCount(app, "support_interventions"), text).toBe(0);
+      expect(scalarCount(app, "decision_records"), text).toBe(0);
+      expect(
+        latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json"),
+        text,
+      ).toEqual(openBefore);
+      expect(dilemmaEvidenceEventCount(app, character.id), text).toBe(
+        evidenceEventCountBefore,
+      );
+    }
+  });
+
+  it("records recommendation-only downgrades without transferring decision authority", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+
+    const recommendationOnly = [
+      "请你替我决定，但我只把你的话当建议。",
+      "请你替我决定，不过决定权还是在我。",
+      "请你替我决定，但最终由我决定。",
+      "请你替我决定，不过我最终还是自己决定。",
+      "请你替我决定，但我保留最终决定权。",
+      "请你替我决定，其实这次我只想听建议。",
+      "请你替我决定，但只当建议。",
+      "请你替我选一个，供我参考。",
+      "由你决定，但最终由我决定。",
+      "请你替我决定，但你的答案仅作参考。",
+      "请你替我决定，但拍板权在我。",
+      "请你替我决定，但是否采纳由我。",
+      "请你替我决定，不过给我建议就好。",
+      "请你替我决定，但你只能提意见。",
+    ];
+    for (const [index, text] of recommendationOnly.entries()) {
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `recommendation-only-${String(index + 1)}`,
+        text,
+      );
+      expect(modeForSource(app, turn.assistantMessage.id), text).toBe(
+        "recommend",
+      );
+      expect(
+        rowJson<SupportIntervention>(
+          app,
+          "support_interventions",
+          "intervention_json",
+          "source_message_id",
+          turn.assistantMessage.id,
+        ),
+        text,
+      ).toMatchObject({
+        dilemmaId: "test-user-branch-dilemma",
+        mode: "recommend",
+        offeredBy: "character",
+        receivedBy: "user",
+      });
+      expect(scalarCount(app, "support_interventions"), text).toBe(index + 1);
+      expect(scalarCount(app, "decision_records"), text).toBe(0);
+      expect(scalarCount(app, "relationship_milestones"), text).toBe(0);
+      expect(
+        domainEventCount(app, "life.delegated_decision_recorded"),
+        text,
+      ).toBe(0);
+      expect(
+        latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json")
+          .status,
+        text,
+      ).toBe("open");
+    }
+
+    const deliberate = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "delegation-downgraded-to-deliberation",
+      "请你替我决定，不过你只负责分析。",
+    );
+    expect(modeForSource(app, deliberate.assistantMessage.id)).toBe(
+      "deliberate",
+    );
+    expect(scalarCount(app, "decision_records")).toBe(0);
+    expect(scalarCount(app, "relationship_milestones")).toBe(0);
+  });
+
+  it("never treats assistant decision wording as delegated user authority", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    const fixtureGenerate = app.personasim.llm.generateObject.bind(
+      app.personasim.llm,
+    );
+    let modelReturnedDecisionWording = false;
+    vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
+      (input) => {
+        if (input.purpose !== "chat_turn") return fixtureGenerate(input);
+        modelReturnedDecisionWording = true;
+        return Promise.resolve({
+          replyDecision: {
+            text: "我的决定：接受影像平台副主编岗位。",
+          },
+          worldEffects: {},
+        } as never);
+      },
+    );
+
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "assistant-wording-is-not-authority",
+      "请陪我一起分析这两个方向，不要替我决定。",
+    );
+
+    expect(modelReturnedDecisionWording).toBe(true);
+    expect(turn.assistantMessage.content).not.toContain("我的决定：");
+    expect(modeForSource(app, turn.assistantMessage.id)).toBe("deliberate");
+    expect(scalarCount(app, "decision_records")).toBe(0);
+    expect(scalarCount(app, "relationship_milestones")).toBe(0);
+    expect(domainEventCount(app, "life.delegated_decision_recorded")).toBe(0);
+    expect(
+      latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json"),
+    ).toMatchObject({
+      id: "test-user-branch-dilemma",
+      status: "open",
+    });
+  });
+
+  it("keeps quoted follow-up evidence out of an existing decision chain", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "quoted-follow-up-decision",
+      "这次请你替我决定选哪个。",
+    );
+    const milestoneCountBefore = scalarCount(app, "relationship_milestones");
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "quoted-follow-up-evidence",
+      "请翻译“我已经提交了申请，这是实际行动；结果比预期更好；我回头看这个决定很值得”。",
+    );
+
+    expect(scalarCount(app, "decision_records")).toBe(1);
+    expect(scalarCount(app, "action_records")).toBe(0);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+    expect(scalarCount(app, "reflection_records")).toBe(0);
+    expect(scalarCount(app, "relationship_milestones")).toBe(
+      milestoneCountBefore,
+    );
+  });
+
+  it("classifies reflection stance from active text while preserving quoted source", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "quoted-reflection-decision",
+      "我最终决定了：选择接受影像平台副主编岗位。",
+    );
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "quoted-reflection-stance",
+      "回头看，我仍认同这个决定，‘我后悔了’不是我的感受。",
+    );
+
+    const reflection = latestJson<ReflectionRecord>(
+      app,
+      "reflection_records",
+      "reflection_json",
+    );
+    expect(reflection.summary).toContain("‘我后悔了’");
+    expect(reflection).toMatchObject({
+      subject: "user",
+      stanceTowardDecision: "affirm",
+      changedInterpretation: false,
+    });
+  });
+
   it("does not create a dilemma from unbound scenario-like context or corrections", async () => {
     app = await createTestApp();
     const character = await createAndPublish(app);
@@ -172,6 +615,13 @@ describe("fuzzy-life conversation integration", () => {
       "unrelated-open-dentist",
       "更正：牙医预约改到周五，不是周四。",
     );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-open-relationship-with-quoted-work",
+      "我母亲希望我结束这段关系，另外把“接受影像平台副主编岗位”翻译成英文。",
+    );
 
     expect(
       rowJson<DilemmaEpisode>(
@@ -183,6 +633,376 @@ describe("fuzzy-life conversation integration", () => {
       ),
     ).toEqual(before);
     expect(dilemmaEvidenceEventCount(app, character.id)).toBe(eventCountBefore);
+  });
+
+  it("persists a quoted structured option without treating quoted structure as evidence", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "quoted-structured-option",
+      "选项 B 是“去北京”。",
+    );
+
+    const dilemma = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    );
+    expect(dilemma.options[1]?.label).toBe("去北京");
+    expect(dilemma.options[1]?.label).not.toBe("”");
+  });
+
+  it("keeps quoted notes out of persisted option values and tradeoffs", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "option-with-quoted-non-evidence",
+      "选项 A 是留在上海，收入稳定；备注‘分手、梦想、压力’不是选择依据。",
+    );
+
+    const option = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    ).options[0];
+    expect(option?.description).toContain("‘分手、梦想、压力’");
+    expect(option?.valuesAtStake).toEqual(["稳定与成长"]);
+    expect(option?.likelyTradeoffs.join(" ")).not.toMatch(/分手|梦想|压力/u);
+  });
+
+  it("records a natural user dilemma without letting an independent future sentence erase it", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "natural-dilemma-with-independent-future",
+      "我在 A 和 B 之间左右为难。如果明天需要，提醒我带伞。",
+    );
+
+    expect(scalarCount(app, "dilemma_episodes")).toBe(1);
+    expect(scalarCount(app, "support_interventions")).toBe(1);
+    expect(modeForSource(app, turn.assistantMessage.id)).toBe("deliberate");
+    expect(
+      latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json"),
+    ).toMatchObject({ subject: "user", status: "open" });
+  });
+
+  it("uses classified evidence for dilemma values, pressure kind, and first real scale", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-dilemma-with-quoted-work-values",
+      "我该不该分手？另请解释“职业成长和收入”。",
+    );
+    const dilemma = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    );
+    expect(dilemma.domain).toBe("relationship");
+    expect(dilemma.options.flatMap((option) => option.valuesAtStake)).toEqual(
+      expect.arrayContaining(["关系与自我尊重"]),
+    );
+    expect(
+      dilemma.options.flatMap((option) => option.valuesAtStake),
+    ).not.toEqual(expect.arrayContaining(["稳定与成长"]));
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-pressure-with-quoted-scale",
+      "我最近因为这段关系很焦虑。顺便翻译“压力 2/10”。",
+    );
+    expect(
+      latestJson<PressureEpisode>(app, "pressure_episodes", "episode_json"),
+    ).toMatchObject({
+      pressureKind: "relationship",
+      initialPressure: 0.72,
+      currentPressure: 0.72,
+    });
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-first-real-scale",
+      "我现在压力 4/10。",
+    );
+    expect(
+      latestJson<PressureEpisode>(app, "pressure_episodes", "episode_json"),
+    ).toMatchObject({ initialPressure: 0.4, currentPressure: 0.4 });
+  });
+
+  it("routes a delegated decision by active text instead of a quoted competing dilemma", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    injectUserRelationshipDilemma(app, character.id, sessionId);
+
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-delegation-with-quoted-work",
+      "这次请你替我决定要不要分手，并把“辞职”翻译成英文。",
+    );
+
+    expect(turn.assistantMessage.content).toContain("我的决定：");
+    expect(
+      latestJson<DecisionRecord>(app, "decision_records", "decision_json"),
+    ).toMatchObject({
+      dilemmaId: "test-user-relationship-dilemma",
+      selectedOptionId: "test-user-relationship-break-up",
+      authority: "delegated",
+    });
+    expect(
+      rowJson<DilemmaEpisode>(
+        app,
+        "dilemma_episodes",
+        "episode_json",
+        "id",
+        "test-user-branch-dilemma",
+      ).status,
+    ).toBe("open");
+    expect(
+      rowJson<DilemmaEpisode>(
+        app,
+        "dilemma_episodes",
+        "episode_json",
+        "id",
+        "test-user-relationship-dilemma",
+      ).status,
+    ).toBe("closed");
+  });
+
+  it("routes action evidence and action kind without quoted competing facts", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "work-subject-decision",
+      "我最终决定了：选择接受影像平台副主编岗位。",
+    );
+    injectUserRelationshipDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-subject-decision",
+      "我最终决定了：选择分手。",
+    );
+    const relationshipDecision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    expect(relationshipDecision.dilemmaId).toBe(
+      "test-user-relationship-dilemma",
+    );
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-action-with-quoted-work",
+      "我今天已经分手了。另请把“已经签了副主编合同并放弃了项目”翻译成英文。",
+    );
+
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(
+      latestJson<ActionRecord>(app, "action_records", "action_json"),
+    ).toMatchObject({
+      decisionId: relationshipDecision.id,
+      actionKind: "initiated",
+    });
+  });
+
+  it("requires current first-person evidence for pressure and causal stages", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "future-possible-pressure",
+      "以后我可能会很焦虑。",
+    );
+    expect(scalarCount(app, "pressure_episodes")).toBe(0);
+    expect(scalarCount(app, "support_interventions")).toBe(0);
+
+    injectUserBranchDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "actuality-gate-subject-decision",
+      "我最终决定了：选择接受影像平台副主编岗位。",
+    );
+    expect(scalarCount(app, "decision_records")).toBe(1);
+
+    for (const [id, text, table] of [
+      [
+        "other-person-action",
+        "我朋友已经按照这个决定提交了离职申请。",
+        "action_records",
+      ],
+      [
+        "possible-future-outcome",
+        "明天这个决定的结果可能会让我很开心。",
+        "outcome_records",
+      ],
+      [
+        "other-person-outcome",
+        "我朋友辞职后，后来结果成功了。",
+        "outcome_records",
+      ],
+      ["other-person-direct-outcome", "后来我朋友成功了。", "outcome_records"],
+      [
+        "other-person-reflection",
+        "我朋友回头看这个决定，觉得很值得。",
+        "reflection_records",
+      ],
+    ] as const) {
+      await sendChat(app, sessionId, character.id, id, text);
+      expect(scalarCount(app, table), text).toBe(0);
+    }
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "current-user-action-positive-control",
+      "我今天已经提交了副主编岗位的申请。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "current-user-outcome-positive-control",
+      "后来我成功拿到了副主编岗位，这是实际结果。",
+    );
+    expect(scalarCount(app, "outcome_records")).toBe(1);
+  });
+
+  it("does not apply a third-party scale to the user's pressure episode", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "user-pressure-before-third-party-scale",
+      "我的工作让我压力很大。",
+    );
+    const before = latestJson<PressureEpisode>(
+      app,
+      "pressure_episodes",
+      "episode_json",
+    );
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "third-party-pressure-scale",
+      "我朋友说他压力 2/10。",
+    );
+
+    expect(
+      rowJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+        "id",
+        before.id,
+      ),
+    ).toEqual(before);
+  });
+
+  it("keeps quoted dilemma text out of historical pressure routing", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "work-pressure-before-relationship",
+      "副主编合同让我压力很大。",
+    );
+    const pressureBefore = latestJson<PressureEpisode>(
+      app,
+      "pressure_episodes",
+      "episode_json",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-dilemma-with-meta-work-quote",
+      "我该不该分手？另请解释“副主编合同”。",
+    );
+    expect(
+      latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json")
+        .summary,
+    ).not.toContain("副主编合同");
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-decision-after-work-pressure",
+      "现在请你替我决定。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "relationship-outcome-after-work-pressure",
+      "这个分手决定后来让我轻松了，这是实际结果。",
+    );
+
+    expect(
+      rowJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+        "id",
+        pressureBefore.id,
+      ),
+    ).toMatchObject({
+      outcomeIds: pressureBefore.outcomeIds,
+      sourceMessageIds: pressureBefore.sourceMessageIds,
+    });
   });
 
   it("keeps one pressure episode, honors support-mode negation, and builds the canonical A/B dilemma", async () => {
@@ -703,6 +1523,16 @@ describe("fuzzy-life conversation integration", () => {
     const sessionId = await createSession(app, character.id);
     injectCharacterDilemma(app, character.id, sessionId);
 
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "quoted-character-advice",
+      "请翻译“我的建议是你选择保留克制”这句话。",
+    );
+    expect(scalarCount(app, "support_interventions")).toBe(0);
+    expect(scalarCount(app, "decision_records")).toBe(0);
+
     const advice = await sendChat(
       app,
       sessionId,
@@ -798,7 +1628,7 @@ describe("fuzzy-life conversation integration", () => {
       sessionId,
       character.id,
       "character-outcome",
-      "后来被摄者放心了，但合作方担心市场吸引力，这是混合结果。",
+      "后来你成功保住了被摄者的信任，但合作方担心市场吸引力，这是混合结果。",
     );
     const characterOutcome = latestJson<{ id: string }>(
       app,
@@ -1323,6 +2153,13 @@ function scalarCount(app: PersonaSimApp, table: string): number {
   return row.count;
 }
 
+function domainEventCount(app: PersonaSimApp, eventType: string): number {
+  const row = app.personasim.store.database
+    .prepare(`SELECT COUNT(*) AS count FROM domain_events WHERE event_type = ?`)
+    .get(eventType) as { count: number };
+  return row.count;
+}
+
 function dilemmaEvidenceEventCount(
   app: PersonaSimApp,
   agentId: string,
@@ -1541,6 +2378,50 @@ function injectSecondUserBranchDilemma(
       recordedAtUtc: START_UTC,
       updatedAtUtc: START_UTC,
       idempotencyKey: "test:user-branch-dilemma-second",
+      schemaVersion: 1,
+    }),
+  );
+}
+
+function injectUserRelationshipDilemma(
+  app: PersonaSimApp,
+  agentId: string,
+  sessionId: string,
+): void {
+  const repository = new LifeRepository(app.personasim.store.database);
+  repository.insertDilemma(
+    DilemmaEpisodeSchema.parse({
+      id: "test-user-relationship-dilemma",
+      agentId,
+      sessionId,
+      subject: "user",
+      title: "是否结束目前的亲密关系",
+      summary: "在继续交往与结束持续消耗自己的关系之间选择。",
+      domain: "relationship",
+      options: [
+        {
+          id: "test-user-relationship-continue",
+          label: "继续交往",
+          description: "继续这段关系，并尝试重新建立信任与边界。",
+          likelyTradeoffs: ["可能延续当前的消耗与不确定性"],
+          valuesAtStake: ["关系承诺", "修复可能"],
+        },
+        {
+          id: "test-user-relationship-break-up",
+          label: "结束关系并分手",
+          description: "结束这段持续消耗自己的关系。",
+          likelyTradeoffs: ["要承受失落，但能停止持续消耗"],
+          valuesAtStake: ["自我尊重", "情绪安全"],
+        },
+      ],
+      status: "open",
+      sourceMessageIds: ["test-user-relationship-control-evidence"],
+      effectiveLocalDate: "2026-09-01",
+      effectivePeriod: "morning",
+      temporalPrecision: "period",
+      recordedAtUtc: START_UTC,
+      updatedAtUtc: START_UTC,
+      idempotencyKey: "test:user-relationship-dilemma",
       schemaVersion: 1,
     }),
   );

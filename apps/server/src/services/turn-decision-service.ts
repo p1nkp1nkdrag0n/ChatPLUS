@@ -55,6 +55,7 @@ import {
   buildScheduleNegotiationContract,
   type ActiveScheduleNegotiation,
 } from "./schedule-negotiation-service.js";
+import { analyzeSupportSpeechAct } from "./fuzzy-life-language.js";
 
 export interface TurnDecisionServiceOptions {
   chatEffectsMode?: "off" | "gated";
@@ -974,11 +975,13 @@ function fixtureDecision(
   causalContext: unknown,
   fixtureTurnBehavior: FixtureTurnBehavior | undefined,
 ): AgentTurnDecision {
-  const delegatedDecision =
-    fixtureTurnBehavior?.selectDelegatedDecision?.({
-      userText: text,
-      ...(causalContext === undefined ? {} : { causalContext }),
-    }) ?? fixtureDelegatedDecision(text, causalContext);
+  const speechAct = analyzeSupportSpeechAct(text);
+  const delegatedDecision = speechAct.delegated
+    ? (fixtureTurnBehavior?.selectDelegatedDecision?.({
+        userText: speechAct.operativeDilemmaClassifyText,
+        ...(causalContext === undefined ? {} : { causalContext }),
+      }) ?? fixtureDelegatedDecision(text, causalContext))
+    : undefined;
   if (delegatedDecision !== undefined) {
     const reply = `我的决定：${delegatedDecision}。我知道这不是轻描淡写的一句话；先把第一步落下来，之后真正发生了什么，我们再一起看。`;
     return {
@@ -1343,27 +1346,36 @@ export function fixtureDelegatedDecision(
   text: string,
   causalContext?: unknown,
 ): string | undefined {
+  const speechAct = analyzeSupportSpeechAct(text);
+  if (!speechAct.delegated) return undefined;
+  const operativeText = speechAct.operativeDilemmaClassifyText;
   if (
     /(?:不要|别|无需|不需要)(?:再)?(?:替我|帮我|你来)(?:做|作|来)?(?:这个|这次|最后|最终)?(?:决定|选择)/u.test(
-      text,
+      operativeText,
     ) ||
     !/(?:替我|你来|你替我|帮我).{0,12}(?:决定|选)|直接.{0,8}(?:决定|选)|你说了算/u.test(
-      text,
+      operativeText,
     )
   ) {
     return undefined;
   }
   if (
-    /A\s*(?:和|与|、|\/)\s*B.{0,20}(?:之间)?.{0,12}(?:决定|选择)/iu.test(text)
+    /A\s*(?:和|与|、|\/)\s*B.{0,20}(?:之间)?.{0,12}(?:决定|选择)/iu.test(
+      operativeText,
+    )
   ) {
     return fixtureDilemmaOptions(causalContext).at(-1) ?? "选项 B";
   }
-  if (/辞职|离职|工作/u.test(text)) return "离开当前这份工作，开始下一阶段";
-  if (/分手|关系|伴侣|恋爱/u.test(text)) return "结束这段持续消耗你的关系";
-  if (/搬家|城市|留在|去哪里/u.test(text))
+  if (/辞职|离职|工作/u.test(operativeText))
+    return "离开当前这份工作，开始下一阶段";
+  if (/分手|关系|伴侣|恋爱/u.test(operativeText))
+    return "结束这段持续消耗你的关系";
+  if (/搬家|城市|留在|去哪里/u.test(operativeText))
     return "去更接近你真正想要生活的地方";
-  if (/转行|职业/u.test(text)) return "转向你反复提到、真正愿意长期投入的方向";
-  if (/学习|考试|专业/u.test(text)) return "选择更符合长期目标的学习路径";
+  if (/转行|职业/u.test(operativeText))
+    return "转向你反复提到、真正愿意长期投入的方向";
+  if (/学习|考试|专业/u.test(operativeText))
+    return "选择更符合长期目标的学习路径";
   return "选择改变现状，并从今天能完成的第一步开始";
 }
 

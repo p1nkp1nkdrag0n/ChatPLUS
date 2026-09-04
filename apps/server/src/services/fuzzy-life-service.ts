@@ -63,6 +63,8 @@ import {
   DILEMMA_CONTEXT_EVIDENCE_RELEVANCE_THRESHOLD,
   PRESSURE_DILEMMA_RELEVANCE_THRESHOLD,
   REFLECTION_CONTINUITY_RELEVANCE_THRESHOLD,
+  actionEvidenceSubject,
+  analyzeSupportSpeechAct,
   compactLifePromptText,
   decisionEvidenceSemanticRelevance,
   decisionRelevance,
@@ -73,7 +75,6 @@ import {
   extractSelectedDirection,
   hasExplicitCausalStageReference,
   hasExplicitDilemmaContextFrame,
-  hasExplicitSupportIntent,
   hasMeaningfulDilemmaContextAnchor,
   hasMixedCausation,
   inferActionKind,
@@ -83,8 +84,6 @@ import {
   isCharacterDilemmaTurn,
   isCharacterReflectionRequest,
   isCharacterSubjectDecisionRequest,
-  isDelegatedDecision,
-  isDilemma,
   isIdentityFacetOfLifeChoice,
   isOutcomeEvidence,
   isPressureDisclosure,
@@ -93,6 +92,8 @@ import {
   isReflectionEvidence,
   isUserAdviceToCharacter,
   isUserOwnedDecision,
+  isUserPressureEvidenceSubject,
+  outcomeEvidenceSubject,
   parseScaleMetric,
   pressureDilemmaSemanticRelevance,
   pressureKind,
@@ -103,7 +104,7 @@ import {
   selectDilemmaOption,
   shortTitle,
   supportIntendedEffect,
-  supportMode,
+  type LifeEvidenceSubject,
   userToCharacterSupportMode,
 } from "./fuzzy-life-language.js";
 import {
@@ -566,29 +567,45 @@ export class FuzzyLifeService {
     const local = projectCharacterTime(spec.identity, input.recordedAtUtc);
     const localDate = local.localDate;
     const period = dayPeriod(local.hour);
+    const supportSpeechAct = analyzeSupportSpeechAct(input.userText);
+    const dilemmaEvidenceText = supportSpeechAct.operativeDilemmaText;
+    const dilemmaEvidenceClassifyText =
+      supportSpeechAct.operativeDilemmaClassifyText;
     const pressureFollowUp = this.applyPressureFollowUp(
       input,
+      dilemmaEvidenceClassifyText,
       localDate,
       period,
     );
     const followUpImpact = this.recordDecisionFollowUp(
       input,
+      dilemmaEvidenceText,
+      dilemmaEvidenceClassifyText,
       localDate,
       period,
     );
-    this.recordDilemmaEvidence(input, localDate, period);
+    this.recordDilemmaEvidence(
+      input,
+      dilemmaEvidenceText,
+      dilemmaEvidenceClassifyText,
+      localDate,
+      period,
+    );
 
     const characterDilemma = this.selectOpenDilemma(
       input.agentId,
       "character",
-      `${input.userText} ${input.assistantText}`,
+      dilemmaEvidenceClassifyText,
     );
     if (
+      dilemmaEvidenceClassifyText.trim() !== "" &&
       characterDilemma !== undefined &&
-      isCharacterDilemmaTurn(input.userText, characterDilemma)
+      isCharacterDilemmaTurn(dilemmaEvidenceClassifyText, characterDilemma)
     ) {
       const characterImpact = this.recordCharacterDirectedTurn(
         input,
+        dilemmaEvidenceText,
+        dilemmaEvidenceClassifyText,
         characterDilemma,
         localDate,
         period,
@@ -602,14 +619,17 @@ export class FuzzyLifeService {
       };
     }
 
-    if (isUserOwnedDecision(input.userText)) {
+    if (isUserOwnedDecision(dilemmaEvidenceClassifyText)) {
       const dilemma = this.selectOpenDilemma(
         input.agentId,
         "user",
-        input.userText,
+        dilemmaEvidenceClassifyText,
       );
       if (dilemma !== undefined) {
-        const selectedOption = selectDilemmaOption(dilemma, input.userText);
+        const selectedOption = selectDilemmaOption(
+          dilemma,
+          dilemmaEvidenceClassifyText,
+        );
         const ownedSupport = this.subjectDecisionSupport({
           dilemma,
           offeredBy: "character",
@@ -625,7 +645,7 @@ export class FuzzyLifeService {
           authority: "subject",
           decidedBy: "user",
           sourceMessageIds: [input.userMessageId],
-          reasoningSummary: input.userText,
+          reasoningSummary: dilemmaEvidenceText,
           supportInterventionIds: ownedSupport.interventionIds,
           localDate,
           period,
@@ -659,19 +679,16 @@ export class FuzzyLifeService {
       }
     }
 
-    const delegated = isDelegatedDecision(input.userText);
-    const mode = supportMode(
-      input.userText,
-      delegated,
-      isDilemma(input.userText),
-    );
-    const explicitSupport = hasExplicitSupportIntent(input.userText);
+    const delegated = supportSpeechAct.delegated;
+    const mode = supportSpeechAct.supportMode;
+    const explicitSupport = supportSpeechAct.explicitSupport;
     const dilemmaLike =
       delegated ||
-      isDilemma(input.userText) ||
+      supportSpeechAct.dilemmaLike ||
       (explicitSupport && mode !== "listen_only");
     const pressureLike =
-      isPressureDisclosure(input.userText) && !pressureFollowUp.updated;
+      isPressureDisclosure(dilemmaEvidenceClassifyText) &&
+      !pressureFollowUp.updated;
     const shouldRecordSupport =
       dilemmaLike ||
       pressureLike ||
@@ -679,12 +696,23 @@ export class FuzzyLifeService {
       pressureFollowUp.updated;
     if (!shouldRecordSupport) return followUpImpact;
 
-    const domain = inferDomain(input.userText);
+    const domain = inferDomain(dilemmaEvidenceClassifyText);
     let dilemma = dilemmaLike
-      ? this.selectOpenDilemma(input.agentId, "user", input.userText)
+      ? this.selectOpenDilemma(
+          input.agentId,
+          "user",
+          dilemmaEvidenceClassifyText,
+        )
       : undefined;
     if (dilemmaLike && dilemma === undefined) {
-      dilemma = this.createUserDilemma(input, domain, localDate, period);
+      dilemma = this.createUserDilemma(
+        input,
+        dilemmaEvidenceText,
+        dilemmaEvidenceClassifyText,
+        domain,
+        localDate,
+        period,
+      );
     }
 
     const pressureId = pressureLike
@@ -699,15 +727,17 @@ export class FuzzyLifeService {
         ...(dilemma === undefined ? {} : { dilemmaId: dilemma.id }),
         subject: "user",
         pressureKind: pressureKind(domain),
-        triggerSummary: input.userText,
+        triggerSummary: dilemmaEvidenceText,
         status: "open",
-        initialPressure: parseScaleMetric(input.userText, "pressure") ?? 0.72,
-        currentPressure: parseScaleMetric(input.userText, "pressure") ?? 0.72,
+        initialPressure:
+          parseScaleMetric(dilemmaEvidenceClassifyText, "pressure") ?? 0.72,
+        currentPressure:
+          parseScaleMetric(dilemmaEvidenceClassifyText, "pressure") ?? 0.72,
         initialClarity:
-          parseScaleMetric(input.userText, "clarity") ??
+          parseScaleMetric(dilemmaEvidenceClassifyText, "clarity") ??
           (dilemmaLike ? 0.3 : 0.45),
         currentClarity:
-          parseScaleMetric(input.userText, "clarity") ??
+          parseScaleMetric(dilemmaEvidenceClassifyText, "clarity") ??
           (dilemmaLike ? 0.3 : 0.45),
         initialFeltUnderstood: 0.2,
         currentFeltUnderstood: 0.2,
@@ -739,7 +769,7 @@ export class FuzzyLifeService {
         ? undefined
         : selectDilemmaOption(
             dilemma,
-            `${input.assistantText} ${input.userText}`,
+            `${input.assistantText} ${dilemmaEvidenceClassifyText}`,
           );
     let interventionId: string | undefined;
     if (dilemma !== undefined || targetPressureId !== undefined) {
@@ -850,15 +880,18 @@ export class FuzzyLifeService {
 
   private recordDecisionFollowUp(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    evidenceText: string,
+    classifyText: string,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
   ): ConversationLifeImpact {
-    const actionEvidence = isActionEvidence(input.userText);
-    const outcomeEvidence = isOutcomeEvidence(input.userText);
-    const userReflectionEvidence = isReflectionEvidence(input.userText);
-    const characterReflectionRequest = isCharacterReflectionRequest(
-      input.userText,
-    );
+    const actionSubject = actionEvidenceSubject(classifyText);
+    const outcomeSubject = outcomeEvidenceSubject(classifyText);
+    const actionEvidence = isActionEvidence(classifyText);
+    const outcomeEvidence = isOutcomeEvidence(classifyText);
+    const userReflectionEvidence = isReflectionEvidence(classifyText);
+    const characterReflectionRequest =
+      isCharacterReflectionRequest(classifyText);
     if (
       !actionEvidence &&
       !outcomeEvidence &&
@@ -867,16 +900,24 @@ export class FuzzyLifeService {
     ) {
       return {};
     }
+    const stage = outcomeEvidence
+      ? "outcome"
+      : userReflectionEvidence || characterReflectionRequest
+        ? "reflection"
+        : "action";
+    const evidenceSubject =
+      stage === "action"
+        ? actionSubject
+        : stage === "outcome"
+          ? outcomeSubject
+          : "unspecified";
     const decision = this.selectDecisionForEvidence(
       input.agentId,
       input.sessionId,
-      input.userText,
+      classifyText,
       characterReflectionRequest,
-      outcomeEvidence
-        ? "outcome"
-        : userReflectionEvidence || characterReflectionRequest
-          ? "reflection"
-          : "action",
+      stage,
+      evidenceSubject,
     );
     if (decision === undefined) return {};
     const reflectionEvidence =
@@ -890,7 +931,7 @@ export class FuzzyLifeService {
     let actionId: string | undefined;
     if (
       actionEvidence &&
-      !(actionsBeforeTurn.length > 0 && isActionRestatement(input.userText))
+      !(actionsBeforeTurn.length > 0 && isActionRestatement(classifyText))
     ) {
       const candidateActionId = stableId(
         "action",
@@ -904,13 +945,17 @@ export class FuzzyLifeService {
           decisionId: decision.id,
           subject: decision.subject,
           performedBy:
-            decision.subject === "user"
+            actionSubject === "user"
               ? "user"
-              : decision.subject === "character"
+              : actionSubject === "character"
                 ? "character"
-                : "joint",
-          actionKind: inferActionKind(input.userText),
-          summary: input.userText,
+                : decision.subject === "user"
+                  ? "user"
+                  : decision.subject === "character"
+                    ? "character"
+                    : "joint",
+          actionKind: inferActionKind(classifyText),
+          summary: evidenceText,
           sourceEvidenceIds: [input.userMessageId],
           effectiveLocalDate: localDate,
           effectivePeriod: period,
@@ -944,12 +989,12 @@ export class FuzzyLifeService {
         causeKind:
           actionIds.length === 0
             ? "external"
-            : hasMixedCausation(input.userText)
+            : hasMixedCausation(classifyText)
               ? "mixed"
               : "action",
-        valence: inferOutcomeValence(input.userText),
-        summary: input.userText,
-        consequenceFacts: [input.userText],
+        valence: inferOutcomeValence(classifyText),
+        summary: evidenceText,
+        consequenceFacts: [evidenceText],
         sourceEvidenceIds: [input.userMessageId],
         confidence: 0.82,
         status: "observed",
@@ -976,7 +1021,11 @@ export class FuzzyLifeService {
       const reflectionText =
         decision.subject === "character" && characterReflectionRequest
           ? input.assistantText
-          : input.userText;
+          : evidenceText;
+      const reflectionAnalysisText =
+        decision.subject === "character" && characterReflectionRequest
+          ? input.assistantText
+          : classifyText;
       const linkedOutcomeId =
         outcomeId ??
         this.repository
@@ -1003,9 +1052,9 @@ export class FuzzyLifeService {
           : { outcomeId: linkedOutcomeId }),
         summary: reflectionText,
         lessons: [reflectionLesson(reflectionText)],
-        stanceTowardDecision: reflectionStance(reflectionText),
+        stanceTowardDecision: reflectionStance(reflectionAnalysisText),
         changedInterpretation: /后悔|改主意|不是.*想的|重新/u.test(
-          reflectionText,
+          reflectionAnalysisText,
         ),
         sourceMessageIds: [reflectionSourceMessageId],
         effectiveLocalDate: localDate,
@@ -1044,7 +1093,7 @@ export class FuzzyLifeService {
           summary:
             decision.subject === "character" && characterReflectionRequest
               ? input.assistantText
-              : input.userText,
+              : evidenceText,
           significance: 0.72,
           interventionIds: [],
           decisionIds: [decision.id],
@@ -1102,6 +1151,8 @@ export class FuzzyLifeService {
 
   private createUserDilemma(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    evidenceText: string,
+    classifyText: string,
     domain: LifeDomain,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
@@ -1116,8 +1167,8 @@ export class FuzzyLifeService {
       agentId: input.agentId,
       sessionId: input.sessionId,
       subject: "user",
-      title: shortTitle(input.userText),
-      summary: input.userText,
+      title: shortTitle(evidenceText),
+      summary: evidenceText,
       domain,
       options: [
         {
@@ -1125,14 +1176,14 @@ export class FuzzyLifeService {
           label: selected,
           description: `按照本轮讨论形成的方向：${selected}`,
           likelyTradeoffs: ["会带来改变，也需要承担相应的不确定性"],
-          valuesAtStake: inferDilemmaValues(input.userText),
+          valuesAtStake: inferDilemmaValues(classifyText),
         },
         {
           id: stableId("option", `${dilemmaId}:status-quo`),
           label: "暂时维持现状",
           description: "保留当前路径，继续观察后再决定。",
           likelyTradeoffs: ["短期更稳定，但原有压力或疑问可能继续存在"],
-          valuesAtStake: inferDilemmaValues(input.userText),
+          valuesAtStake: inferDilemmaValues(classifyText),
         },
       ],
       status: "open",
@@ -1151,13 +1202,16 @@ export class FuzzyLifeService {
 
   private recordDilemmaEvidence(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    evidenceText: string,
+    classifyText: string,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
   ): void {
-    const evidence = extractDilemmaTurnEvidence(input.userText);
+    if (classifyText.trim() === "") return;
+    const evidence = extractDilemmaTurnEvidence(evidenceText, classifyText);
     if (evidence === undefined) return;
 
-    let dilemma = this.selectOpenDilemma(input.agentId, "user", input.userText);
+    let dilemma = this.selectOpenDilemma(input.agentId, "user", classifyText);
     if (dilemma === undefined) {
       // A structured option can introduce a dilemma. A free-standing context
       // detail or correction cannot: it must be grounded in an existing open
@@ -1165,7 +1219,9 @@ export class FuzzyLifeService {
       if (evidence.kind !== "option") return;
       dilemma = this.createUserDilemma(
         input,
-        inferDomain(input.userText),
+        evidenceText,
+        classifyText,
+        inferDomain(classifyText),
         localDate,
         period,
       );
@@ -1173,20 +1229,16 @@ export class FuzzyLifeService {
 
     if (
       evidence.kind === "context" &&
-      (dilemmaRelevance(dilemma, input.userText) <
+      (dilemmaRelevance(dilemma, classifyText) <
         DILEMMA_CONTEXT_EVIDENCE_RELEVANCE_THRESHOLD ||
-        (!hasMeaningfulDilemmaContextAnchor(dilemma, input.userText) &&
-          !hasExplicitDilemmaContextFrame(input.userText)))
+        (!hasMeaningfulDilemmaContextAnchor(dilemma, classifyText) &&
+          !hasExplicitDilemmaContextFrame(classifyText)))
     ) {
       return;
     }
     if (
       evidence.kind === "correction" &&
-      !dilemmaCorrectionMatchesOptions(
-        dilemma.options,
-        evidence,
-        input.userText,
-      )
+      !dilemmaCorrectionMatchesOptions(dilemma.options, evidence, evidenceText)
     ) {
       return;
     }
@@ -1194,12 +1246,13 @@ export class FuzzyLifeService {
     const nextOptions = applyDilemmaEvidenceToOptions(
       dilemma.options,
       evidence,
-      input.userText,
+      evidenceText,
+      classifyText,
     );
 
     const updated = DilemmaEpisodeSchema.parse({
       ...dilemma,
-      summary: `${dilemma.summary}\n证据补充：${input.userText}`,
+      summary: `${dilemma.summary}\n证据补充：${evidenceText}`,
       options: nextOptions,
       sourceMessageIds: [
         ...new Set([...dilemma.sourceMessageIds, input.userMessageId]),
@@ -1231,21 +1284,23 @@ export class FuzzyLifeService {
 
   private recordCharacterDirectedTurn(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    evidenceText: string,
+    classifyText: string,
     dilemma: DilemmaEpisode,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
   ): ConversationLifeImpact {
-    const wantsOwnDecision = isCharacterSubjectDecisionRequest(input.userText);
+    const wantsOwnDecision = isCharacterSubjectDecisionRequest(classifyText);
     const offersSupport =
-      wantsOwnDecision || isUserAdviceToCharacter(input.userText);
+      wantsOwnDecision || isUserAdviceToCharacter(classifyText);
     if (!offersSupport) return { dilemmaId: dilemma.id };
 
     const mode: SupportMode = wantsOwnDecision
       ? "deliberate"
-      : userToCharacterSupportMode(input.userText);
+      : userToCharacterSupportMode(classifyText);
     const selectedOption = selectDilemmaOption(
       dilemma,
-      `${input.userText} ${input.assistantText}`,
+      `${classifyText} ${input.assistantText}`,
     );
     const pressureEpisodeId = this.repository
       .listOpenPressures(input.agentId, 12)
@@ -1267,7 +1322,7 @@ export class FuzzyLifeService {
         mode,
         offeredBy: "user",
         receivedBy: "character",
-        summary: input.userText,
+        summary: evidenceText,
         intendedEffect: supportIntendedEffect(mode, "character"),
         ...(mode === "recommend"
           ? { recommendationOptionId: selectedOption.id }
@@ -1531,8 +1586,20 @@ export class FuzzyLifeService {
     evidenceText: string,
     preferCharacter: boolean,
     stage: "action" | "outcome" | "reflection",
+    evidenceSubject: LifeEvidenceSubject = "unspecified",
   ): DecisionRecord | undefined {
-    const decisions = this.repository.listCurrentDecisions(agentId, 32);
+    const decisions = this.repository
+      .listCurrentDecisions(agentId, 32)
+      .filter(
+        (decision) =>
+          stage === "reflection" ||
+          evidenceSubject === "unspecified" ||
+          (evidenceSubject === "user" &&
+            (decision.subject === "user" || decision.subject === "shared")) ||
+          (evidenceSubject === "character" &&
+            (decision.subject === "character" ||
+              decision.subject === "shared")),
+      );
     if (decisions.length === 0) return undefined;
     const scored = decisions.map((decision, index) => {
       const dilemma = this.findDilemma(decision.dilemmaId);
@@ -1860,7 +1927,9 @@ export class FuzzyLifeService {
     return episode.sourceMessageIds.flatMap((messageId) => {
       const row = selectMessage.get(messageId) as
         { content: string } | undefined;
-      return row === undefined ? [] : [row.content];
+      return row === undefined
+        ? []
+        : [analyzeSupportSpeechAct(row.content).operativeDilemmaClassifyText];
     });
   }
 
@@ -1895,23 +1964,27 @@ export class FuzzyLifeService {
     return episode.sourceMessageIds.some((messageId) => {
       const row = selectMessage.get(messageId) as
         { content: string } | undefined;
+      if (row === undefined) return false;
+      const classifyText = analyzeSupportSpeechAct(
+        row.content,
+      ).operativeDilemmaClassifyText;
       return (
-        row !== undefined &&
-        (parseScaleMetric(row.content, "pressure") !== undefined ||
-          parseScaleMetric(row.content, "clarity") !== undefined)
+        parseScaleMetric(classifyText, "pressure") !== undefined ||
+        parseScaleMetric(classifyText, "clarity") !== undefined
       );
     });
   }
 
   private selectContinuingUserPressure(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    classifyText: string,
   ): PressureEpisode | undefined {
     const candidates = this.repository
       .listOpenPressures(input.agentId, 24)
       .filter((episode) => episode.subject === "user");
     if (candidates.length === 0) return undefined;
 
-    if (isPressureTrajectoryContinuation(input.userText)) {
+    if (isPressureTrajectoryContinuation(classifyText)) {
       return candidates[0];
     }
 
@@ -1919,7 +1992,7 @@ export class FuzzyLifeService {
       (episode) => episode.sessionId === input.sessionId,
     );
     const pool = sameSession.length > 0 ? sameSession : candidates;
-    const inferredKind = pressureKind(inferDomain(input.userText));
+    const inferredKind = pressureKind(inferDomain(classifyText));
     const exactKind = pool.find(
       (episode) => episode.pressureKind === inferredKind,
     );
@@ -1927,7 +2000,7 @@ export class FuzzyLifeService {
 
     if (
       inferredKind === "identity" &&
-      isIdentityFacetOfLifeChoice(input.userText)
+      isIdentityFacetOfLifeChoice(classifyText)
     ) {
       return pool.find((episode) =>
         ["work", "decision", "identity"].includes(episode.pressureKind),
@@ -1935,10 +2008,10 @@ export class FuzzyLifeService {
     }
 
     const hasExplicitScale =
-      parseScaleMetric(input.userText, "pressure") !== undefined ||
-      parseScaleMetric(input.userText, "clarity") !== undefined;
+      parseScaleMetric(classifyText, "pressure") !== undefined ||
+      parseScaleMetric(classifyText, "clarity") !== undefined;
     if (hasExplicitScale && sameSession.length > 0) return sameSession[0];
-    if (sameSession.length > 0 && isPressureFeedbackText(input.userText)) {
+    if (sameSession.length > 0 && isPressureFeedbackText(classifyText)) {
       return sameSession[0];
     }
     return undefined;
@@ -2154,22 +2227,26 @@ export class FuzzyLifeService {
 
   private applyPressureFollowUp(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    classifyText: string,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
   ): PressureFollowUpResult {
-    const explicitPressure = parseScaleMetric(input.userText, "pressure");
-    const explicitClarity = parseScaleMetric(input.userText, "clarity");
+    if (!isUserPressureEvidenceSubject(classifyText)) {
+      return { updated: false };
+    }
+    const explicitPressure = parseScaleMetric(classifyText, "pressure");
+    const explicitClarity = parseScaleMetric(classifyText, "clarity");
     const improvingLanguage =
       /好多了|轻松多了|没那么(?:焦虑|难受|乱)|想清楚了|清楚多了|被理解|谢谢你.*(?:听|陪)/u.test(
-        input.userText,
+        classifyText,
       );
     const worseningLanguage =
-      /更焦虑|更难受|更糟|还是很乱|完全没用|压力更大/u.test(input.userText);
+      /更焦虑|更难受|更糟|还是很乱|完全没用|压力更大/u.test(classifyText);
     const feltUnderstoodPositive =
-      /被(?:你)?听见|被理解|谢谢你.*(?:听|陪)|你听懂了/u.test(input.userText);
+      /被(?:你)?听见|被理解|谢谢你.*(?:听|陪)|你听懂了/u.test(classifyText);
     const feltUnderstoodNegative =
-      /没(?:有)?被(?:听见|理解)|你没听懂|完全没听进去/u.test(input.userText);
-    const episode = this.selectContinuingUserPressure(input);
+      /没(?:有)?被(?:听见|理解)|你没听懂|完全没听进去/u.test(classifyText);
+    const episode = this.selectContinuingUserPressure(input, classifyText);
     if (
       explicitPressure === undefined &&
       explicitClarity === undefined &&
@@ -2180,8 +2257,8 @@ export class FuzzyLifeService {
     ) {
       if (
         episode !== undefined &&
-        isPressureDisclosure(input.userText) &&
-        isPressureTrajectoryContinuation(input.userText)
+        isPressureDisclosure(classifyText) &&
+        isPressureTrajectoryContinuation(classifyText)
       ) {
         const updated = PressureEpisodeSchema.parse({
           ...episode,
@@ -2222,7 +2299,7 @@ export class FuzzyLifeService {
       explicitPressure === undefined &&
       explicitClarity === undefined &&
       !/别(?:自动)?把.{0,12}(?:写成|当成).{0,12}(?:缓解|好转)|不代表轻松/u.test(
-        input.userText,
+        classifyText,
       );
     const nextPressure =
       explicitPressure ??
@@ -2264,7 +2341,7 @@ export class FuzzyLifeService {
     );
     const resolved =
       /已经没事|压力(?:是|到|降到)?\s*0(?:\.0+)?\s*\/\s*10|彻底解决了/u.test(
-        input.userText,
+        classifyText,
       );
     const pressureDelta = nextPressure - episode.currentPressure;
     const firstExplicitScale =

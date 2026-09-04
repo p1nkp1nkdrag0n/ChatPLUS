@@ -21,6 +21,8 @@ import {
   LetterSummaryResponseSchema,
   OpenLetterResponseSchema,
   OpenLetterRequestSchema,
+  RetryLetterReplyGenerationRequestSchema,
+  RetryLetterReplyGenerationResponseSchema,
   SealLetterRequestSchema,
   TemporalTaskSchema,
   UpdateLetterDraftRequestSchema,
@@ -688,6 +690,30 @@ describe("correspondence contracts", () => {
     expect(
       SealLetterRequestSchema.safeParse({ clientRequestId: "seal-1" }).success,
     ).toBe(true);
+    expect(
+      RetryLetterReplyGenerationRequestSchema.parse({
+        clientRequestId: "retry-reply-1",
+      }),
+    ).toEqual({ clientRequestId: "retry-reply-1" });
+    expect(
+      RetryLetterReplyGenerationRequestSchema.safeParse({
+        clientRequestId: "retry-reply-1",
+        snapshotId: "snapshot-private",
+      }).success,
+    ).toBe(false);
+    expect(
+      RetryLetterReplyGenerationResponseSchema.parse({
+        incomingLetterId: "letter-incoming",
+        replayed: false,
+      }),
+    ).toEqual({ incomingLetterId: "letter-incoming", replayed: false });
+    expect(
+      RetryLetterReplyGenerationResponseSchema.safeParse({
+        incomingLetterId: "letter-incoming",
+        replayed: false,
+        generationEpoch: 1,
+      }).success,
+    ).toBe(false);
     expect(OpenLetterRequestSchema.safeParse({}).success).toBe(true);
     expect(OpenLetterRequestSchema.safeParse({ force: true }).success).toBe(
       false,

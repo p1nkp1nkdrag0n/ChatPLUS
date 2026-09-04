@@ -13,6 +13,7 @@ import {
   ProcessKeepsakeTaskRequestSchema,
   RelationshipArchiveQuerySchema,
   RelationshipRecapQuerySchema,
+  RetryLetterReplyGenerationRequestSchema,
   SealLetterRequestSchema,
   ShareComposerSelectionSchema,
   TriggerKeepsakeGenerationRequestSchema,
@@ -554,6 +555,21 @@ export function registerRoutes(
     return reply.send(result);
   });
 
+  app.post(
+    "/api/letters/:letterId/reply-generation/retry",
+    async (request, reply) => {
+      const { letterId } = letterIdParamsSchema.parse(request.params);
+      const input = RetryLetterReplyGenerationRequestSchema.parse(request.body);
+      const result = await correspondenceApi(
+        () => correspondence.retryLetterReplyGeneration({ letterId, ...input }),
+        { includeErrorDetails: false },
+      );
+      void services.temporalTaskScheduler.wake();
+      reply.header("cache-control", "no-store");
+      return reply.code(202).send(result);
+    },
+  );
+
   app.get("/api/letters/:letterId", async (request, reply) => {
     const { letterId } = letterIdParamsSchema.parse(request.params);
     reply.header("cache-control", "no-store");
@@ -944,6 +960,7 @@ function normalizeChatBody(body: unknown): Record<string, unknown> {
 
 async function correspondenceApi<T>(
   operation: () => T | Promise<T>,
+  options: Readonly<{ includeErrorDetails?: boolean }> = {},
 ): Promise<T> {
   try {
     return await operation();
@@ -957,7 +974,12 @@ async function correspondenceApi<T>(
           : error.code === "letter_integrity_error"
             ? 500
             : 409;
-    throw new ApiError(statusCode, error.code, error.message, error.details);
+    throw new ApiError(
+      statusCode,
+      error.code,
+      error.message,
+      options.includeErrorDetails === false ? undefined : error.details,
+    );
   }
 }
 

@@ -10,6 +10,8 @@ import {
   LetterReplyGenerationTaskPayloadSchema,
   LetterSummaryResponseSchema,
   OpenLetterResponseSchema,
+  RetryLetterReplyGenerationRequestSchema,
+  RetryLetterReplyGenerationResponseSchema,
   SealLetterRequestSchema,
   UpdateLetterDraftRequestSchema,
   UtcDateTimeSchema,
@@ -23,6 +25,8 @@ import {
   type LetterReplyProposal,
   type LetterSummaryResponse,
   type OpenLetterResponse,
+  type RetryLetterReplyGenerationRequest,
+  type RetryLetterReplyGenerationResponse,
   type SealLetterRequest,
   type TemporalTask,
   type UpdateLetterDraftRequest,
@@ -40,6 +44,7 @@ import type { Clock } from "../runtime/clock.js";
 import {
   CorrespondenceRepositoryError,
   type CorrespondenceRepository,
+  type CorrespondenceRepositoryErrorCode,
   type LetterWithEncryptedBody,
 } from "../repositories/correspondence-repository.js";
 import type { SseHub } from "../sse/hub.js";
@@ -62,6 +67,9 @@ export type CorrespondenceServiceErrorCode =
   | "correspondence_processing_paused"
   | "correspondence_turn_in_progress"
   | "idempotency_conflict"
+  | "generation_not_retryable"
+  | "reply_already_committed"
+  | "reply_retry_in_progress"
   | "immutable_letter"
   | "letter_not_arrived"
   | "letter_not_openable"
@@ -100,6 +108,10 @@ export interface SealCorrespondenceLetterInput extends SealLetterRequest {
 }
 
 export interface OpenCorrespondenceLetterCommand {
+  readonly letterId: string;
+}
+
+export interface RetryLetterReplyGenerationCommand extends RetryLetterReplyGenerationRequest {
   readonly letterId: string;
 }
 
@@ -446,6 +458,43 @@ export class CorrespondenceService {
       return response;
     } catch (error) {
       throw translateCorrespondenceError(error);
+    }
+  }
+
+  async retryLetterReplyGeneration(
+    rawInput: RetryLetterReplyGenerationCommand,
+  ): Promise<RetryLetterReplyGenerationResponse> {
+    this.assertWritesEnabled();
+    const letterId = EntityIdSchema.parse(rawInput.letterId);
+    const input = RetryLetterReplyGenerationRequestSchema.parse({
+      clientRequestId: rawInput.clientRequestId,
+    });
+    const incoming = this.requireLetter(letterId);
+    this.requireCharacterTimezone(incoming.agentId);
+    const requestedAtUtc = UtcDateTimeSchema.parse(this.clock.nowUtc());
+
+    try {
+      const result = await this.actors.runExclusive(incoming.agentId, () =>
+        this.repository.enqueueReplyGenerationRetry({
+          incomingLetterId: incoming.id,
+          clientRequestId: input.clientRequestId,
+          requestedAtUtc,
+          source: "local_user",
+        }),
+      );
+      if (!result.replayed) {
+        this.publishInvalidation(
+          "correspondence.updated",
+          incoming.agentId,
+          incoming.id,
+        );
+      }
+      return RetryLetterReplyGenerationResponseSchema.parse({
+        incomingLetterId: result.incomingLetterId,
+        replayed: result.replayed,
+      });
+    } catch (error) {
+      throw translateReplyGenerationRetryError(error);
     }
   }
 
@@ -998,4 +1047,43 @@ function translateCorrespondenceError(error: unknown): Error {
     return serviceError(code, error.message, error.details, error);
   }
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function translateReplyGenerationRetryError(error: unknown): Error {
+  if (error instanceof CorrespondenceServiceError) return error;
+  if (!(error instanceof CorrespondenceRepositoryError)) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+
+  const safeErrors: Partial<
+    Record<
+      CorrespondenceRepositoryErrorCode,
+      Readonly<{
+        code: CorrespondenceServiceErrorCode;
+        message: string;
+      }>
+    >
+  > = {
+    generation_not_retryable: {
+      code: "generation_not_retryable",
+      message: "Reply generation is not eligible for retry",
+    },
+    reply_already_committed: {
+      code: "reply_already_committed",
+      message: "A reply has already been committed for this letter",
+    },
+    reply_retry_in_progress: {
+      code: "reply_retry_in_progress",
+      message: "Reply generation retry is already in progress",
+    },
+    idempotency_conflict: {
+      code: "idempotency_conflict",
+      message: "The retry request conflicts with an existing request",
+    },
+  };
+  const safe = safeErrors[error.code] ?? {
+    code: "generation_not_retryable" as const,
+    message: "Reply generation is not eligible for retry",
+  };
+  return serviceError(safe.code, safe.message, {}, error);
 }

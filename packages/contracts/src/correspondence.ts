@@ -1063,6 +1063,31 @@ export const SealLetterRequestSchema = z
   .strict();
 export type SealLetterRequest = z.infer<typeof SealLetterRequestSchema>;
 
+export const RetryLetterReplyGenerationRequestSchema = z
+  .object({
+    clientRequestId: CorrespondenceClientRequestIdSchema,
+  })
+  .strict();
+export type RetryLetterReplyGenerationRequest = z.infer<
+  typeof RetryLetterReplyGenerationRequestSchema
+>;
+
+/**
+ * The recovery command is asynchronous. Its ordinary response confirms only
+ * which incoming letter accepted the command and whether this was an
+ * idempotent replay; generation epochs, task/run IDs, snapshots, provider
+ * details and errors stay behind the server boundary.
+ */
+export const RetryLetterReplyGenerationResponseSchema = z
+  .object({
+    incomingLetterId: EntityIdSchema,
+    replayed: z.boolean(),
+  })
+  .strict();
+export type RetryLetterReplyGenerationResponse = z.infer<
+  typeof RetryLetterReplyGenerationResponseSchema
+>;
+
 export const OpenLetterRequestSchema = z.object({}).strict();
 export type OpenLetterRequest = z.infer<typeof OpenLetterRequestSchema>;
 

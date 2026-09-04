@@ -8,6 +8,7 @@ import type {
   DeveloperTemporalTasksResponse,
   LetterDetailResponse,
   OpenLetterResponse,
+  RetryLetterReplyGenerationResponse,
 } from "@personasim/contracts";
 import {
   canonicalCorrespondenceJson,
@@ -17,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "./app.js";
 import { readConfig } from "./config.js";
+import { CorrespondenceRepositoryError } from "./repositories/correspondence-repository.js";
 import { FakeClock } from "./runtime/clock.js";
 import type { LlmLogicalCallEvent } from "./services/llm-service.js";
 import { SseHub } from "./sse/hub.js";
@@ -992,6 +994,399 @@ describe("correspondence HTTP lifecycle", () => {
       canRetry: false,
     });
   });
+
+  it("rejects reply recovery writes outside enforced mode", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-retry-mode-"));
+    const databasePath = join(directory, "correspondence.db");
+    const clock = new FakeClock(SEPTEMBER_9);
+
+    for (const mode of ["off", "shadow"] as const) {
+      app = await startApp(databasePath, mode, clock, []);
+      const wake = vi.spyOn(app.personasim.temporalTaskScheduler, "wake");
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/letters/retry-mode-guard-letter/reply-generation/retry",
+        payload: { clientRequestId: `retry-mode-guard-${mode}` },
+      });
+
+      expect(response.statusCode).toBe(409);
+      const modeError = response.json<{
+        error: { code: string; message: string; requestId: string };
+      }>();
+      expect(modeError.error.requestId).not.toHaveLength(0);
+      expect(modeError).toEqual({
+        error: {
+          code:
+            mode === "off"
+              ? "correspondence_disabled"
+              : "correspondence_shadow_mode",
+          message:
+            mode === "off"
+              ? "Correspondence writing is disabled"
+              : "Correspondence writing is unavailable in shadow mode",
+          requestId: modeError.error.requestId,
+        },
+      });
+      expect(wake).not.toHaveBeenCalled();
+      expect(
+        readReplyRetryArtifactCounts(app, "retry-mode-guard-letter"),
+      ).toEqual({ requests: 0, tasks: 0, events: 0 });
+
+      wake.mockRestore();
+      await app.close();
+      app = undefined;
+    }
+  });
+
+  it("recovers a terminal reply through an append-only idempotent API", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-correspondence-retry-"));
+    const databasePath = join(directory, "correspondence.db");
+    const clock = new FakeClock(SEPTEMBER_3);
+    app = await startApp(databasePath, "enforced", clock, []);
+    const agentId = await createPublishedAgent(app);
+    const incomingLetterId = await createAndSealLetter(
+      app,
+      agentId,
+      "reply-recovery",
+      "PRIVATE-RECOVERY-SOURCE-BODY",
+    );
+    const repository = app.personasim.correspondenceRepository;
+    const wake = vi.spyOn(app.personasim.temporalTaskScheduler, "wake");
+    const generate = vi.spyOn(app.personasim.llm, "generateObject");
+
+    const prematureRetry = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: { clientRequestId: "reply-recovery-before-failure" },
+    });
+    expect(prematureRetry.statusCode).toBe(409);
+    const prematureError = prematureRetry.json<{
+      error: { code: string; message: string; requestId: string };
+    }>();
+    expect(prematureError.error.requestId).not.toHaveLength(0);
+    expect(prematureError).toEqual({
+      error: {
+        code: "generation_not_retryable",
+        message: "Reply generation is not eligible for retry",
+        requestId: prematureError.error.requestId,
+      },
+    });
+    expect(prematureRetry.body).not.toMatch(
+      /snapshotId|generationEpoch|taskId|runId|provider|model|requestHash|idempotency|constraint|sqlite|PRIVATE/iu,
+    );
+    const malformedRetry = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: {
+        clientRequestId: "reply-recovery-malformed",
+        snapshotId: "client-must-not-control-snapshot",
+      },
+    });
+    expect(malformedRetry.statusCode).toBe(400);
+    expect(wake).not.toHaveBeenCalled();
+    expect(readReplyRetryArtifactCounts(app, incomingLetterId)).toEqual({
+      requests: 0,
+      tasks: 0,
+      events: 0,
+    });
+
+    generate.mockResolvedValueOnce({
+      subject: "不会提交的首次输出",
+      salutation: "你好。",
+      paragraphs: ["首次输出违反证据范围。"],
+      closing: "祝安。",
+      signature: "Correspondent",
+      referencedEvidenceIds: ["future-recovery-evidence"],
+    });
+
+    clock.setUtc(SEPTEMBER_9);
+    const failedMailbox = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+    expect(failedMailbox.statusCode).toBe(200);
+    expect(
+      failedMailbox
+        .json<CorrespondenceMailboxResponse>()
+        .threads.find((thread) => thread.status === "open")?.replyState,
+    ).toEqual({
+      kind: "failed",
+      incomingLetterId,
+      canRetry: true,
+    });
+    expect(generate).toHaveBeenCalledTimes(1);
+    const originalTask = repository.findLatestGenerationTask(incomingLetterId);
+    const originalRun = repository.getGenerationRunForEpoch(
+      incomingLetterId,
+      0,
+    );
+    const originalSnapshot =
+      repository.getSnapshotForIncomingLetter(incomingLetterId);
+    expect(originalTask).toMatchObject({ status: "dead_letter" });
+    expect(originalRun).toMatchObject({ status: "failed" });
+    expect(originalSnapshot).toBeDefined();
+
+    const internalFailure = vi
+      .spyOn(repository, "enqueueReplyGenerationRetry")
+      .mockImplementationOnce(() => {
+        throw new CorrespondenceRepositoryError(
+          "idempotency_conflict",
+          "UNIQUE constraint failed: temporal_tasks.idempotency_key",
+          {
+            taskId: "internal-task-id",
+            requestHash: "internal-request-hash",
+          },
+        );
+      });
+    const sanitizedFailure = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: { clientRequestId: "reply-recovery-internal-failure" },
+    });
+    expect(sanitizedFailure.statusCode).toBe(409);
+    const sanitizedError = sanitizedFailure.json<{
+      error: { code: string; message: string; requestId: string };
+    }>();
+    expect(sanitizedError.error.requestId).not.toHaveLength(0);
+    expect(sanitizedError).toEqual({
+      error: {
+        code: "idempotency_conflict",
+        message: "The retry request conflicts with an existing request",
+        requestId: sanitizedError.error.requestId,
+      },
+    });
+    expect(sanitizedFailure.body).not.toMatch(
+      /internal-task|internal-request|UNIQUE|constraint|temporal_tasks|idempotency_key/iu,
+    );
+    expect(wake).not.toHaveBeenCalled();
+    expect(readReplyRetryArtifactCounts(app, incomingLetterId)).toEqual({
+      requests: 0,
+      tasks: 0,
+      events: 0,
+    });
+    internalFailure.mockRestore();
+
+    generate.mockResolvedValueOnce({
+      subject: "恢复后的真实回信",
+      salutation: "你好。",
+      paragraphs: ["我重新读过这封信，并认真写下这份回复。"],
+      closing: "祝安。",
+      signature: "Correspondent",
+      referencedEvidenceIds: [incomingLetterId],
+    });
+    const retryRequest = {
+      clientRequestId: "reply-recovery-request-one",
+    };
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: retryRequest,
+    });
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.headers["cache-control"]).toBe("no-store");
+    expect(accepted.json<RetryLetterReplyGenerationResponse>()).toEqual({
+      incomingLetterId,
+      replayed: false,
+    });
+    expect(accepted.body).not.toMatch(
+      /snapshot|generationEpoch|taskId|runId|provider|model|error|PRIVATE-RECOVERY/iu,
+    );
+    expect(wake).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(repository.findLatestGenerationTask(incomingLetterId)).toMatchObject(
+      {
+        kind: "letter.generation_retry",
+        status: "pending",
+        payload: {
+          incomingLetterId,
+          snapshotId: originalSnapshot!.id,
+          generationEpoch: 1,
+        },
+      },
+    );
+    expect(readReplyRetryArtifactCounts(app, incomingLetterId)).toEqual({
+      requests: 1,
+      tasks: 1,
+      events: 1,
+    });
+
+    const replayBeforeProcessing = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: retryRequest,
+    });
+    expect(replayBeforeProcessing.statusCode).toBe(202);
+    expect(replayBeforeProcessing.json()).toEqual({
+      incomingLetterId,
+      replayed: true,
+    });
+    expect(wake).toHaveBeenCalledTimes(2);
+    const concurrentDifferentRequest = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: { clientRequestId: "reply-recovery-request-two" },
+    });
+    expect(concurrentDifferentRequest.statusCode).toBe(409);
+    const concurrentError = concurrentDifferentRequest.json<{
+      error: { code: string; message: string; requestId: string };
+    }>();
+    expect(concurrentError.error.requestId).not.toHaveLength(0);
+    expect(concurrentError).toEqual({
+      error: {
+        code: "reply_retry_in_progress",
+        message: "Reply generation retry is already in progress",
+        requestId: concurrentError.error.requestId,
+      },
+    });
+    expect(concurrentDifferentRequest.body).not.toMatch(
+      /snapshotId|generationEpoch|taskId|runId|provider|model|requestHash|idempotency|constraint|sqlite|PRIVATE/iu,
+    );
+    expect(wake).toHaveBeenCalledTimes(2);
+    expect(readReplyRetryArtifactCounts(app, incomingLetterId)).toEqual({
+      requests: 1,
+      tasks: 1,
+      events: 1,
+    });
+
+    const recoveredMailbox = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+    expect(recoveredMailbox.statusCode).toBe(200);
+    expect(generate).toHaveBeenCalledTimes(2);
+    const recovered = recoveredMailbox.json<CorrespondenceMailboxResponse>();
+    const persistedReply = repository.findReplyToLetter(incomingLetterId);
+    expect(persistedReply).toBeDefined();
+    const reply = recovered.letters.find(
+      (letter) => letter.id === persistedReply!.id,
+    );
+    expect(reply).toMatchObject({ status: "in_transit", canOpen: false });
+    expect(
+      recovered.threads.find((thread) => thread.status === "open"),
+    ).not.toHaveProperty("replyState");
+    expect(repository.getTask(originalTask!.id)).toEqual(originalTask);
+    expect(repository.getGenerationRun(originalRun!.id)).toEqual(originalRun);
+    expect(
+      repository.getGenerationRunForEpoch(incomingLetterId, 1),
+    ).toMatchObject({
+      status: "committed",
+      snapshotId: originalSnapshot!.id,
+      replyLetterId: reply!.id,
+    });
+    expect(repository.findLatestGenerationTask(incomingLetterId)).toMatchObject(
+      {
+        kind: "letter.generation_retry",
+        status: "completed",
+      },
+    );
+    const persistedEnvelope = app.personasim.store.database
+      .prepare(
+        `SELECT body, encrypted_ciphertext AS ciphertext
+         FROM letters WHERE id = ?`,
+      )
+      .get(reply!.id) as { body: null; ciphertext: string };
+    expect(persistedEnvelope.body).toBeNull();
+    expect(persistedEnvelope.ciphertext.length).toBeGreaterThan(0);
+    const retryRequestRow = app.personasim.store.database
+      .prepare(
+        `SELECT id, request_hash AS requestHash
+         FROM correspondence_reply_retry_requests
+         WHERE incoming_letter_id = ?`,
+      )
+      .get(incomingLetterId) as { id: string; requestHash: string };
+    const auditEvents = app.personasim.store.database
+      .prepare(
+        `SELECT payload_json AS payloadJson,
+                idempotency_key AS idempotencyKey
+         FROM domain_events
+         WHERE event_type = 'letter.reply_retry_requested'`,
+      )
+      .all() as Array<{ payloadJson: string; idempotencyKey: string }>;
+    expect(auditEvents).toHaveLength(1);
+    const auditPayload = JSON.parse(auditEvents[0]!.payloadJson) as Record<
+      string,
+      unknown
+    >;
+    expect(typeof auditPayload.retryRequestId).toBe("string");
+    expect(auditPayload).toEqual({
+      generationEpoch: 1,
+      incomingLetterId,
+      retryRequestId: auditPayload.retryRequestId,
+      source: "local_user",
+    });
+    expect(auditEvents[0]!.idempotencyKey).toBe(
+      `letter-reply-retry-request:${String(auditPayload.retryRequestId)}`,
+    );
+    expect(JSON.stringify(auditEvents)).not.toContain(
+      retryRequest.clientRequestId,
+    );
+    expect(JSON.stringify(auditEvents)).not.toContain(
+      retryRequestRow.requestHash,
+    );
+    const timeline = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/timeline?limit=100`,
+    });
+    expect(timeline.statusCode).toBe(200);
+    expect(timeline.body).not.toContain(retryRequest.clientRequestId);
+    expect(timeline.body).not.toContain(retryRequestRow.requestHash);
+
+    await app.close();
+    app = undefined;
+    app = await startApp(databasePath, "enforced", clock, []);
+    const restartedWake = vi.spyOn(
+      app.personasim.temporalTaskScheduler,
+      "wake",
+    );
+    const replayAfterRestart = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: retryRequest,
+    });
+    expect(replayAfterRestart.statusCode).toBe(202);
+    expect(replayAfterRestart.json()).toEqual({
+      incomingLetterId,
+      replayed: true,
+    });
+    expect(restartedWake).toHaveBeenCalledTimes(1);
+    const retryAfterCommit = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: { clientRequestId: "reply-recovery-after-commit" },
+    });
+    expect(retryAfterCommit.statusCode).toBe(409);
+    const committedError = retryAfterCommit.json<{
+      error: { code: string; message: string; requestId: string };
+    }>();
+    expect(committedError.error.requestId).not.toHaveLength(0);
+    expect(committedError).toEqual({
+      error: {
+        code: "reply_already_committed",
+        message: "A reply has already been committed for this letter",
+        requestId: committedError.error.requestId,
+      },
+    });
+    expect(retryAfterCommit.body).not.toMatch(
+      /snapshotId|generationEpoch|taskId|runId|provider|model|requestHash|idempotency|constraint|sqlite|PRIVATE/iu,
+    );
+    expect(restartedWake).toHaveBeenCalledTimes(1);
+    expect(
+      app.personasim.store.database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM correspondence_reply_retry_requests
+           WHERE incoming_letter_id = ?`,
+        )
+        .get(incomingLetterId),
+    ).toEqual({ count: 1 });
+    expect(
+      app.personasim.store.database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM letters
+           WHERE reply_to_letter_id = ?`,
+        )
+        .get(incomingLetterId),
+    ).toEqual({ count: 1 });
+  }, 30_000);
 });
 
 async function createPublishedAgent(app: PersonaSimApp): Promise<string> {
@@ -1028,6 +1423,39 @@ async function createAndSealLetter(
   });
   expect(sealed.statusCode).toBe(200);
   return letterId;
+}
+
+function readReplyRetryArtifactCounts(
+  app: PersonaSimApp,
+  incomingLetterId: string,
+): Readonly<{ requests: number; tasks: number; events: number }> {
+  const database = app.personasim.store.database;
+  const requests = database
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM correspondence_reply_retry_requests
+       WHERE incoming_letter_id = ?`,
+    )
+    .get(incomingLetterId) as { count: number };
+  const tasks = database
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM temporal_tasks
+       WHERE entity_id = ? AND kind = 'letter.generation_retry'`,
+    )
+    .get(incomingLetterId) as { count: number };
+  const events = database
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM domain_events
+       WHERE stream_id = ? AND event_type = 'letter.reply_retry_requested'`,
+    )
+    .get(incomingLetterId) as { count: number };
+  return {
+    requests: requests.count,
+    tasks: tasks.count,
+    events: events.count,
+  };
 }
 
 async function startApp(

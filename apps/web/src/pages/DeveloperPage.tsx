@@ -1,4 +1,7 @@
-import type { MemoryRecallPreviewResponse } from "@personasim/contracts";
+import type {
+  DeveloperTemporalTaskResponse,
+  MemoryRecallPreviewResponse,
+} from "@personasim/contracts";
 import {
   BrainCircuit,
   Braces,
@@ -109,10 +112,6 @@ export default function DeveloperPage() {
     mutationFn: (minutes: number) => api.developer.advanceClock(minutes),
     onSuccess: refresh,
   });
-  const processLetter = useMutation({
-    mutationFn: (letterId: string) => api.developer.processLetter(letterId),
-    onSuccess: refresh,
-  });
   const settle = useMutation({
     mutationFn: () => api.developer.settle(activeId),
     onSuccess: refresh,
@@ -127,8 +126,7 @@ export default function DeveloperPage() {
       });
     },
   });
-  const mutationError =
-    setClock.error ?? advance.error ?? settle.error ?? processLetter.error;
+  const mutationError = setClock.error ?? advance.error ?? settle.error;
   const snapshotJson = useMemo(
     () => JSON.stringify(snapshotQuery.data ?? {}, null, 2),
     [snapshotQuery.data],
@@ -244,62 +242,25 @@ export default function DeveloperPage() {
           <div className="developer-panel__heading">
             <Hourglass size={19} />
             <div>
-              <h2>书信时间任务</h2>
-              <p>到期时间、租约、重试和错误码；不投影任何信件正文。</p>
+              <h2>时间任务</h2>
+              <p>
+                统一显示书信与纪念物任务的到期时间、租约、重试和错误码；不投影正文或生成内容。
+              </p>
             </div>
           </div>
           {temporalTasksQuery.isPending ? (
-            <LoadingBlock label="读取书信任务…" />
+            <LoadingBlock label="读取时间任务…" />
           ) : null}
           {temporalTasksQuery.isError ? (
             <ErrorBlock error={temporalTasksQuery.error} />
           ) : null}
-          <div className="temporal-task-list">
-            {(temporalTasksQuery.data?.tasks ?? []).map((task) => (
-              <article key={task.id}>
-                <header>
-                  <strong>{task.kind}</strong>
-                  <code>{task.status}</code>
-                </header>
-                <dl>
-                  <div>
-                    <dt>due</dt>
-                    <dd>{task.dueAtUtc}</dd>
-                  </div>
-                  <div>
-                    <dt>attempt</dt>
-                    <dd>
-                      {task.attempt} / {task.maxAttempts}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>lease</dt>
-                    <dd>{task.leaseExpiresAtUtc ?? "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>error</dt>
-                    <dd>{task.lastErrorCode ?? "—"}</dd>
-                  </div>
-                </dl>
-                <div className="temporal-task-list__footer">
-                  <code title={task.entityId}>{task.entityId}</code>
-                  {task.status !== "completed" ? (
-                    <button
-                      className="button button--quiet"
-                      type="button"
-                      disabled={processLetter.isPending}
-                      onClick={() => processLetter.mutate(task.entityId)}
-                    >
-                      强制处理
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-            {temporalTasksQuery.data?.tasks.length === 0 ? (
-              <p>当前角色没有书信时间任务。</p>
-            ) : null}
-          </div>
+          <DeveloperTemporalTaskList
+            tasks={
+              temporalTasksQuery.isSuccess
+                ? temporalTasksQuery.data.tasks
+                : undefined
+            }
+          />
         </section>
 
         <section className="developer-panel developer-panel--snapshot">
@@ -451,6 +412,56 @@ export default function DeveloperPage() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+export function DeveloperTemporalTaskList({
+  tasks,
+}: {
+  tasks: readonly DeveloperTemporalTaskResponse[] | undefined;
+}) {
+  if (tasks === undefined) return null;
+
+  return (
+    <div className="temporal-task-list">
+      <p className="temporal-task-list__guidance">
+        任务列表只用于诊断，不提供逐任务强制状态转换。“立即结算角色”只会依照当前运行模式，补算截至当前时刻可调度的任务；
+        <code>dead_letter</code>
+        不会被正常调度自动重跑。如对应领域明确提供了专用恢复入口，才能通过该入口恢复；否则会保留此诊断状态。
+      </p>
+      {tasks.map((task) => (
+        <article key={task.id}>
+          <header>
+            <strong>{task.kind}</strong>
+            <code>{task.status}</code>
+          </header>
+          <dl>
+            <div>
+              <dt>due</dt>
+              <dd>{task.dueAtUtc}</dd>
+            </div>
+            <div>
+              <dt>attempt</dt>
+              <dd>
+                {task.attempt} / {task.maxAttempts}
+              </dd>
+            </div>
+            <div>
+              <dt>lease</dt>
+              <dd>{task.leaseExpiresAtUtc ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>error</dt>
+              <dd>{task.lastErrorCode ?? "—"}</dd>
+            </div>
+          </dl>
+          <div className="temporal-task-list__footer">
+            <code title={task.entityId}>{task.entityId}</code>
+          </div>
+        </article>
+      ))}
+      {tasks.length === 0 ? <p>当前角色没有时间任务。</p> : null}
     </div>
   );
 }

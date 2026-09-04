@@ -81,8 +81,26 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     await sealDialog.getByRole("button", { name: "确认封缄并寄出" }).click();
     await expect(page).toHaveURL(/\/letters\/[^?]+\?agentId=/u);
     const incomingLetterId = letterIdFromUrl(page.url());
+    const sealedLetterUrl = page.url();
     await expect(page.locator(".letter-paper__body")).toHaveText(USER_BODY);
     await expect(page.getByRole("link", { name: "继续编辑" })).toHaveCount(0);
+
+    await page.goto("/developer");
+    await expect(
+      page.getByRole("heading", { name: "时间任务", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("任务列表只用于诊断", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("letter.outbound_arrival", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "强制处理" })).toHaveCount(0);
+    await page.screenshot({
+      path: test.info().outputPath("developer-temporal-task-inspector.png"),
+      fullPage: true,
+    });
+    await page.goto(sealedLetterUrl);
 
     await advanceClock(request, 4);
     await page.reload();

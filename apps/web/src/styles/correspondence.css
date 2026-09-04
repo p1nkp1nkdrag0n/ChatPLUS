@@ -1203,6 +1203,21 @@
   gap: 10px;
 }
 
+.temporal-task-list__guidance {
+  margin: 0;
+  border-left: 3px solid var(--line-strong);
+  padding: 9px 11px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.temporal-task-list__guidance code {
+  margin: 0 3px;
+  font-size: 10px;
+}
+
 .temporal-task-list > article {
   border: 1px solid var(--line);
   padding: 12px;

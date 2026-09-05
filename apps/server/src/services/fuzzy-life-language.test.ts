@@ -75,6 +75,47 @@ describe("fuzzy-life language helpers", () => {
     expect(isDelegatedDecision("这次不要你替我决定，我自己选")).toBe(false);
   });
 
+  it.each(["另外", "此外", "顺便", "还有"])(
+    "recognizes current authorization after %s with or without a comma",
+    (prefix) => {
+      for (const separator of ["", "，"]) {
+        for (const scope of [
+          "在接受影像平台副主编岗位和启动独立影像项目之间替我作一次决定",
+          "，只在接受影像平台副主编岗位和启动独立影像项目之间替我作一次决定",
+        ]) {
+          const text = `${prefix}${separator}我现在明确授权你${scope}。`;
+          const analysis = analyzeSupportSpeechAct(text);
+          expect(analysis, text).toMatchObject({
+            delegated: true,
+            explicitSupport: true,
+            supportMode: "delegated_decision",
+          });
+          expect(analysis.operativeDilemmaText).toContain(prefix);
+        }
+      }
+    },
+  );
+
+  it.each([
+    ["另外请翻译“我现在明确授权你替我决定”。", "listen_only"],
+    ["另外我昨天明确授权你替我决定过。", "listen_only"],
+    ["另外我明天会明确授权你替我决定。", "listen_only"],
+    ["如果明天我还没回复，另外我现在明确授权你替我决定。", "listen_only"],
+    ["另外我现在没有授权你替我决定。", "listen_only"],
+    ["另外我现在明确授权你替我决定，但我只把它当作建议。", "recommend"],
+    ["另外我现在明确授权你替我决定，但先听我说。", "listen_only"],
+    ["另外我现在明确授权你替我决定，不过先帮我分析。", "deliberate"],
+    ["另外我现在明确授权你替我决定。等等，我还是自己选。", "listen_only"],
+  ])(
+    "keeps the operative limits after a discourse marker: %s",
+    (text, expectedMode) => {
+      expect(analyzeSupportSpeechAct(text)).toMatchObject({
+        delegated: false,
+        supportMode: expectedMode,
+      });
+    },
+  );
+
   it("accepts only a current explicit delegation from the retained long-run evidence", () => {
     expect(
       isDelegatedDecision(

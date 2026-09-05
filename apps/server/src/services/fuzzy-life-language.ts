@@ -619,7 +619,11 @@ function analyzeExplicitSupport(text: string): ExplicitSupportAnalysis {
     let delegationConditionBlocked = false;
     const clauses = semanticClauseParts(sentence);
     for (const [clauseIndex, clause] of clauses.entries()) {
-      const segment = clause.classifyText.trim();
+      // Additive discourse markers do not change the following speech act.
+      // Normalize only classification; retain original clauses as evidence.
+      const segment = clause.classifyText
+        .trim()
+        .replace(/^(?:另外|此外|还有|顺便)\s*(?=\S)/u, "");
       if (segment === "") continue;
 
       if (isFutureDelegationScopeLimit(segment)) continue;

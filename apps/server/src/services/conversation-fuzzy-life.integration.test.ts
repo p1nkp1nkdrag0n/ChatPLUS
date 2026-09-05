@@ -157,35 +157,43 @@ describe("fuzzy-life conversation integration", () => {
     ]).toEqual(beforeReplay);
   });
 
-  it("preserves an independent explicit delegation after a consent boundary", async () => {
-    app = await createTestApp();
-    const character = await createAndPublish(app);
-    const sessionId = await createSession(app, character.id);
-    injectUserBranchDilemma(app, character.id, sessionId);
-    const turn = await sendChat(
-      app,
-      sessionId,
-      character.id,
-      "mixed-consent-delegation",
-      "姨妈还没同意公开照片。现在我明确授权你，只在接受影像平台副主编岗位和启动独立影像项目之间替我作一次决定。",
-    );
-    expect(scalarCount(app, "decision_records")).toBe(1);
-    expect(scalarCount(app, "action_records")).toBe(0);
-    const decision = latestJson<DecisionRecord>(
-      app,
-      "decision_records",
-      "decision_json",
-    );
-    expect(decision).toMatchObject({
-      dilemmaId: "test-user-branch-dilemma",
-      supportMode: "delegated_decision",
-      authorizedByMessageId: turn.userMessage.id,
-    });
-    expect([
-      "test-user-branch-stable",
-      "test-user-branch-independent",
-    ]).toContain(decision.selectedOptionId);
-  });
+  it.each([
+    "现在我明确授权你，只在接受影像平台副主编岗位和启动独立影像项目之间替我作一次决定。",
+    "另外我现在明确授权你在接受影像平台副主编岗位和启动独立影像项目之间替我作一次决定。",
+    "另外，我现在明确授权你在接受影像平台副主编岗位和启动独立影像项目之间替我作一次决定。",
+  ])(
+    "preserves an independent explicit delegation after a consent boundary: %s",
+    async (delegation) => {
+      app = await createTestApp();
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      injectUserBranchDilemma(app, character.id, sessionId);
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "mixed-consent-delegation",
+        `姨妈还没同意公开照片。${delegation}`,
+      );
+      expect(scalarCount(app, "decision_records")).toBe(1);
+      expect(scalarCount(app, "action_records")).toBe(0);
+      expect(scalarCount(app, "outcome_records")).toBe(0);
+      const decision = latestJson<DecisionRecord>(
+        app,
+        "decision_records",
+        "decision_json",
+      );
+      expect(decision).toMatchObject({
+        dilemmaId: "test-user-branch-dilemma",
+        supportMode: "delegated_decision",
+        authorizedByMessageId: turn.userMessage.id,
+      });
+      expect([
+        "test-user-branch-stable",
+        "test-user-branch-independent",
+      ]).toContain(decision.selectedOptionId);
+    },
+  );
 
   it.each(["reflection", "character_decision", "user_support"] as const)(
     "keeps user evidence without fabricating %s from an empty independent reply",

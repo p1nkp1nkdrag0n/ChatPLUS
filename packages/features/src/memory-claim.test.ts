@@ -394,6 +394,37 @@ describe("activity-scoped weekly plans", () => {
     }
   });
 
+  it("requires one atomic weekly plan per candidate even when one of several facts matches", () => {
+    const evidenceText = "画画的时间改到每周二晚上。我计划每周六上午游泳。";
+    for (const candidateContent of [
+      "用户将画画时间安排在每周二晚上。用户将游泳时间安排在每周五下午。",
+      "用户将画画时间安排在每周二晚上。用户将游泳时间安排在每周六上午。",
+    ]) {
+      expect(
+        deriveExplicitUserMemoryClaim({
+          category: "user_fact",
+          evidenceText,
+          candidateContent,
+        }),
+      ).toBeUndefined();
+      expect(
+        hasExplicitMemoryCorrectionForClaim({
+          category: "user_fact",
+          evidenceText,
+          candidateContent,
+          subjectKey,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      deriveExplicitUserMemoryClaim({
+        category: "user_fact",
+        evidenceText,
+        candidateContent: "用户将游泳时间安排在每周六上午。",
+      })?.subjectKey,
+    ).toBe("user_fact:weekly_plan:游泳");
+  });
+
   it("leaves an unqualified multi-day activity unresolved and permits an explicit replacement", () => {
     expect(
       extractExplicitWeeklyPlanFacts(

@@ -1,6 +1,8 @@
 import type { Memory } from "@personasim/contracts";
 import {
   canonicalMemoryConflictPair,
+  deriveExplicitUserMemoryClaim,
+  hasExplicitMemoryCorrectionForClaim,
   planMemoryLifecycleTransition,
   reconcileMemoryClaims,
   stableId,
@@ -14,6 +16,7 @@ import type { Clock } from "../runtime/clock.js";
 import type {
   ContinuityMemoryRepository,
   LifecycleMemoryRecord,
+  LifecycleUserMessageEvidence,
 } from "./continuity-memory-repository.js";
 
 export interface MemoryLifecycleMaintenanceResult {
@@ -170,6 +173,8 @@ export class MemoryLifecycleService {
       ) {
         return [];
       }
+
+      this.alignLegacyWeeklyClaims(incoming.memory, nowUtc);
 
       const existing = this.repository
         .listLifecycleMemories(agentId)
@@ -391,6 +396,83 @@ export class MemoryLifecycleService {
       }
       return results;
     });
+  }
+
+  private alignLegacyWeeklyClaims(incoming: Memory, nowUtc: string): void {
+    const subjectKey = incoming.claim?.subjectKey;
+    if (
+      subjectKey === undefined ||
+      !subjectKey.startsWith("user_fact:weekly_plan:") ||
+      incoming.claim?.revisionIntent !== "explicit_correction" ||
+      !isReliableWeeklyUserMemory(incoming)
+    )
+      return;
+    const incomingTime = Date.parse(incoming.claim.recordedAtUtc);
+    if (!Number.isFinite(incomingTime)) return;
+    const correctionSource = this.repository
+      .listUserMessageEvidence(incoming)
+      .find(
+        (source) =>
+          validSourceTime(source, incomingTime) &&
+          sourceSupportsWeeklyMemory(source, incoming, subjectKey) &&
+          hasExplicitMemoryCorrectionForClaim({
+            category: "user_fact",
+            evidenceText: source.content,
+            candidateContent: incoming.content,
+            subjectKey,
+          }),
+      );
+    if (correctionSource === undefined) return;
+
+    for (const { memory } of this.repository.listLifecycleMemories(
+      incoming.agentId,
+    )) {
+      if (
+        memory.claim !== undefined ||
+        !isReliableWeeklyUserMemory(memory) ||
+        !["active", "aging", "needs_review"].includes(memory.status)
+      )
+        continue;
+      const oldTime = Date.parse(memory.createdAtUtc);
+      if (!Number.isFinite(oldTime) || oldTime > incomingTime) continue;
+      const source = this.repository
+        .listUserMessageEvidence(memory)
+        .find(
+          (evidence) =>
+            validSourceTime(evidence, oldTime) &&
+            sourceSupportsWeeklyMemory(evidence, memory, subjectKey),
+        );
+      if (source === undefined) continue;
+      const claim = {
+        subjectKey,
+        disposition: "affirmed" as const,
+        recordedAtUtc: memory.createdAtUtc,
+      };
+      if (!this.repository.attachLegacyClaim(memory.id, claim)) continue;
+      requireInsert(
+        this.repository.insertDomainEvent({
+          agentId: memory.agentId,
+          streamType: "memory",
+          streamId: memory.id,
+          streamVersion: nextStreamVersion(this.repository, memory.id),
+          eventType: "memory.claim.legacy_aligned",
+          recordedAtUtc: nowUtc,
+          payload: {
+            memoryId: memory.id,
+            subjectKey,
+            previousClaim: null,
+            claim,
+            correctionMemoryId: incoming.id,
+            sourceMessageId: source.sourceId,
+            sourceEvidenceId: source.evidenceId,
+            correctionSourceMessageId: correctionSource.sourceId,
+            correctionSourceEvidenceId: correctionSource.evidenceId,
+          },
+          idempotencyKey: `memory-legacy-claim:${memory.id}:${incoming.id}`,
+        }),
+        "Legacy memory claim alignment event already exists without its claim.",
+      );
+    }
   }
 
   reconcile(input: {
@@ -647,6 +729,46 @@ function correctionTargetIsEquivalent(
     existingClaim.disposition === incomingClaim.disposition &&
     canonicalCorrectionContent(existing.content) ===
       canonicalCorrectionContent(incoming.content)
+  );
+}
+
+function isReliableWeeklyUserMemory(memory: Memory): boolean {
+  return (
+    memory.kind === "semantic" &&
+    memory.namespace === "user_model" &&
+    memory.attribution === "user_explicit" &&
+    memory.certainty === "explicit" &&
+    memory.confidence >= 0.8 &&
+    memory.occurredAtUtc === undefined &&
+    !["occurred", "in_progress", "cancelled"].includes(
+      memory.temporalMetadata?.temporalStatus ?? "unknown",
+    )
+  );
+}
+
+function validSourceTime(
+  source: LifecycleUserMessageEvidence,
+  noLaterThan: number,
+): boolean {
+  const sourceTime = Date.parse(source.createdAtUtc);
+  return Number.isFinite(sourceTime) && sourceTime <= noLaterThan;
+}
+
+function sourceSupportsWeeklyMemory(
+  source: LifecycleUserMessageEvidence,
+  memory: Memory,
+  subjectKey: string,
+): boolean {
+  return [
+    source.content,
+    ...(source.quote === null ? [] : [source.quote]),
+  ].every(
+    (evidenceText) =>
+      deriveExplicitUserMemoryClaim({
+        category: "user_fact",
+        evidenceText,
+        candidateContent: memory.content,
+      })?.subjectKey === subjectKey,
   );
 }
 

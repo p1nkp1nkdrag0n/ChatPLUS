@@ -429,6 +429,249 @@ describe("memory service evidence integration", () => {
     }
   });
 
+  it("rejects a mixed weekly candidate while splitting a multi-activity user source into atomic memories", () => {
+    const sourceId = "message-weekly-atomic";
+    insertMessage(
+      database,
+      sourceId,
+      "user",
+      "画画的时间改到每周二晚上。我计划每周六上午游泳。",
+    );
+    for (const content of [
+      "用户将画画时间安排在每周二晚上。用户将游泳时间安排在每周五下午。",
+      "用户将画画时间安排在每周二晚上。用户将游泳时间安排在每周六上午。",
+    ]) {
+      expect(
+        validateMergeAndPersistMemories({
+          store,
+          agentId: AGENT_ID,
+          candidates: [
+            stableUserCandidate({
+              content,
+              sourceMessageIds: [sourceId],
+              tags: ["user_fact", "weekly_plan"],
+            }),
+          ],
+          nowUtc: NOW,
+          maxCandidates: 4,
+        }),
+      ).toEqual([]);
+    }
+    expect(
+      validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [],
+        authoritativeMessageId: sourceId,
+        nowUtc: NOW,
+        maxCandidates: 4,
+      }).map((memory) => memory.claim?.subjectKey),
+    ).toEqual(["user_fact:weekly_plan:画画", "user_fact:weekly_plan:游泳"]);
+  });
+
+  it("lazily aligns only the corrected legacy activity from original evidence and preserves its history", () => {
+    const old = createLegacyWeeklyMemory(
+      database,
+      store,
+      "legacy-drawing",
+      "我计划每周四晚上画画。",
+    );
+    const other = createLegacyWeeklyMemory(
+      database,
+      store,
+      "legacy-swimming",
+      "我计划每周六上午游泳。",
+    );
+    const repository = new ContinuityMemoryRepository(store);
+    const original = repository.getLifecycleMemory(old.id)!.memory;
+    const originalEvidence = readMemoryEvidence(store, [old.id]);
+    expect(original.claim).toBeUndefined();
+    const correction = createWeeklyCorrection(database, store);
+    const lifecycle = new MemoryLifecycleService(
+      repository,
+      new FakeClock(offsetNow(1)),
+    );
+    lifecycle.maintainAgent(AGENT_ID);
+    expect(repository.getLifecycleMemory(old.id)?.memory.claim).toBeUndefined();
+    expect(
+      lifecycle.reconcileNewMemories(AGENT_ID, [correction.id])[0]
+        ?.reconciliation.kind,
+    ).toBe("supersede");
+    const aligned = repository.getLifecycleMemory(old.id)!.memory;
+    expect(aligned).toMatchObject({
+      id: old.id,
+      content: original.content,
+      createdAtUtc: original.createdAtUtc,
+      sourceMessageIds: original.sourceMessageIds,
+      claim: {
+        subjectKey: "user_fact:weekly_plan:画画",
+        recordedAtUtc: original.createdAtUtc,
+      },
+      status: "superseded",
+      supersededById: correction.id,
+    });
+    expect(aligned.temporalMetadata).toEqual(original.temporalMetadata);
+    expect(readMemoryEvidence(store, [old.id])).toEqual(originalEvidence);
+    expect(repository.getLifecycleMemory(other.id)?.memory).toMatchObject({
+      status: "active",
+    });
+    expect(
+      repository.getLifecycleMemory(other.id)?.memory.claim,
+    ).toBeUndefined();
+    const events = database
+      .prepare(
+        "SELECT payload_json FROM domain_events WHERE event_type = 'memory.claim.legacy_aligned'",
+      )
+      .all() as Array<{ payload_json: string }>;
+    expect(events).toHaveLength(1);
+    expect(JSON.parse(events[0]!.payload_json)).toMatchObject({
+      memoryId: old.id,
+      sourceMessageId: old.sourceId,
+      sourceEvidenceId: originalEvidence[0]?.id,
+      correctionMemoryId: correction.id,
+    });
+    lifecycle.reconcileNewMemories(AGENT_ID, [correction.id]);
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM domain_events WHERE event_type = 'memory.claim.legacy_aligned'",
+        )
+        .get(),
+    ).toEqual({ count: 1 });
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM memory_conflicts").get(),
+    ).toEqual({ count: 1 });
+  });
+
+  it.each([
+    "question",
+    "quotation",
+    "summary_only",
+    "missing_source",
+    "forged_quote",
+    "unrelated_quote",
+    "assistant_source",
+    "foreign_agent",
+    "future_source",
+    "future_memory",
+    "inferred_memory",
+  ] as const)("does not align unsupported legacy evidence: %s", (scenario) => {
+    const old = createLegacyWeeklyMemory(
+      database,
+      store,
+      `legacy-${scenario}`,
+      "我计划每周四晚上画画。",
+    );
+    if (
+      scenario === "question" ||
+      scenario === "quotation" ||
+      scenario === "summary_only"
+    ) {
+      const content =
+        scenario === "question"
+          ? "我在想，能不能把画画时间定在每周四晚上？"
+          : scenario === "quotation"
+            ? "朋友说：我计划每周四晚上画画。"
+            : "我的护照放在抽屉里。";
+      database
+        .prepare("UPDATE messages SET content = ? WHERE id = ?")
+        .run(content, old.sourceId);
+      database
+        .prepare("UPDATE memory_evidence SET quote = ? WHERE memory_id = ?")
+        .run(content, old.id);
+    } else if (scenario === "missing_source") {
+      database
+        .prepare(
+          "UPDATE memory_evidence SET source_id = 'missing-user-source' WHERE memory_id = ?",
+        )
+        .run(old.id);
+    } else if (scenario === "forged_quote" || scenario === "unrelated_quote") {
+      database
+        .prepare("UPDATE memory_evidence SET quote = ? WHERE memory_id = ?")
+        .run(
+          scenario === "forged_quote" ? "我计划每周二晚上画画。" : "每周四",
+          old.id,
+        );
+    } else if (scenario === "assistant_source") {
+      database
+        .prepare(
+          "UPDATE messages SET role = 'assistant', message_kind = 'assistant_reply' WHERE id = ?",
+        )
+        .run(old.sourceId);
+    } else if (scenario === "foreign_agent") {
+      database
+        .prepare(
+          "INSERT INTO characters(id, current_version, status, tier, name, source_type, created_at_utc, updated_at_utc) VALUES ('agent-foreign-weekly', 1, 'published', 'daily', 'Foreign', 'original', ?, ?)",
+        )
+        .run(NOW, NOW);
+      database
+        .prepare(
+          "UPDATE messages SET agent_id = 'agent-foreign-weekly' WHERE id = ?",
+        )
+        .run(old.sourceId);
+    } else if (scenario === "future_source") {
+      database
+        .prepare("UPDATE messages SET created_at_utc = ? WHERE id = ?")
+        .run(offsetNow(10), old.sourceId);
+    } else if (scenario === "future_memory") {
+      database
+        .prepare("UPDATE memories SET created_at_utc = ? WHERE id = ?")
+        .run(offsetNow(10), old.id);
+    } else {
+      database
+        .prepare(
+          "UPDATE memories SET attribution = 'model_inference', certainty = 'inferred' WHERE id = ?",
+        )
+        .run(old.id);
+    }
+    const correction = createWeeklyCorrection(database, store);
+    const repository = new ContinuityMemoryRepository(store);
+    const lifecycle = new MemoryLifecycleService(
+      repository,
+      new FakeClock(offsetNow(1)),
+    );
+    expect(lifecycle.reconcileNewMemories(AGENT_ID, [correction.id])).toEqual(
+      [],
+    );
+    expect(repository.getLifecycleMemory(old.id)?.memory.claim).toBeUndefined();
+    expect(repository.getLifecycleMemory(old.id)?.memory.status).toBe("active");
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM domain_events WHERE event_type = 'memory.claim.legacy_aligned'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("does not align legacy data without a verified new correction", () => {
+    const old = createLegacyWeeklyMemory(
+      database,
+      store,
+      "legacy-no-correction",
+      "我计划每周四晚上画画。",
+    );
+    const correction = createWeeklyCorrection(database, store);
+    database
+      .prepare(
+        "UPDATE messages SET content = '我计划每周二晚上画画。' WHERE id = ?",
+      )
+      .run(correction.sourceMessageIds[0]);
+    database
+      .prepare(
+        "UPDATE memory_evidence SET quote = '我计划每周二晚上画画。' WHERE memory_id = ?",
+      )
+      .run(correction.id);
+    const repository = new ContinuityMemoryRepository(store);
+    expect(
+      new MemoryLifecycleService(
+        repository,
+        new FakeClock(offsetNow(1)),
+      ).reconcileNewMemories(AGENT_ID, [correction.id]),
+    ).toEqual([]);
+    expect(repository.getLifecycleMemory(old.id)?.memory.claim).toBeUndefined();
+  });
+
   it("persists every reviewed v3 fact from authoritative user evidence", () => {
     for (const candidateNumber of [12, 13, 15, 16, 17, 37, 38, 39, 40, 41]) {
       const messageId = `message-v3-${candidateNumber}`;
@@ -933,6 +1176,53 @@ function stableUserCandidate(
     reasonSummary: "The user stated this directly.",
     ...overrides,
   });
+}
+
+function createLegacyWeeklyMemory(
+  database: Database,
+  store: DatabaseStore,
+  sourceId: string,
+  content: string,
+) {
+  insertMessage(database, sourceId, "user", content);
+  const [memory] = validateMergeAndPersistMemories({
+    store,
+    agentId: AGENT_ID,
+    candidates: [],
+    authoritativeMessageId: sourceId,
+    nowUtc: NOW,
+    maxCandidates: 1,
+  });
+  if (memory === undefined)
+    throw new Error(
+      "Expected a sourced weekly memory in the isolated fixture.",
+    );
+  // Simulate the old schema projection in this test database, preserving the
+  // actual source message and evidence instead of seeding an unsupported claim.
+  database
+    .prepare(
+      "UPDATE memories SET claim_subject_key = NULL, claim_disposition = NULL, memory_json = json_remove(memory_json, '$.claim') WHERE id = ?",
+    )
+    .run(memory.id);
+  return { id: memory.id, sourceId };
+}
+
+function createWeeklyCorrection(database: Database, store: DatabaseStore) {
+  const sourceId = "message-legacy-weekly-correction";
+  insertMessage(database, sourceId, "user", "画画的时间改到每周二晚上。");
+  const [memory] = validateMergeAndPersistMemories({
+    store,
+    agentId: AGENT_ID,
+    candidates: [],
+    authoritativeMessageId: sourceId,
+    nowUtc: offsetNow(1),
+    maxCandidates: 1,
+  });
+  if (memory === undefined)
+    throw new Error(
+      "Expected a sourced weekly correction in the isolated fixture.",
+    );
+  return memory;
 }
 
 function sharedExperienceCandidate(): MemoryCandidate {

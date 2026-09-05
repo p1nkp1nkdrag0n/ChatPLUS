@@ -92,6 +92,7 @@ export function deriveExplicitUserMemoryClaim(input: {
     const candidateWeeklyFacts = extractExplicitWeeklyPlanFacts(
       input.candidateContent ?? "",
     );
+    if (candidateWeeklyFacts.length > 1) return undefined;
     if (candidateWeeklyFacts.length > 0) {
       const verified = weeklyFacts.find((fact) =>
         candidateWeeklyFacts.some((candidate) =>
@@ -152,13 +153,19 @@ export function hasExplicitMemoryCorrectionForClaim(input: {
   candidateContent?: string;
 }): boolean {
   if (input.subjectKey.startsWith("user_fact:weekly_plan:")) {
+    const candidateFacts =
+      input.candidateContent === undefined
+        ? undefined
+        : extractExplicitWeeklyPlanFacts(input.candidateContent);
+    if (candidateFacts !== undefined && candidateFacts.length !== 1)
+      return false;
     return extractExplicitWeeklyPlanFacts(input.evidenceText).some(
       (fact) =>
         fact.subjectKey === input.subjectKey &&
         fact.explicitCorrection &&
         (input.candidateContent === undefined ||
-          extractExplicitWeeklyPlanFacts(input.candidateContent).some(
-            (candidate) => weeklyPlanValuesMatch(fact, candidate),
+          candidateFacts?.some((candidate) =>
+            weeklyPlanValuesMatch(fact, candidate),
           )),
     );
   }

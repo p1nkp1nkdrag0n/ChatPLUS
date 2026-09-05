@@ -68,6 +68,9 @@ function compactLabeledJson(
   } catch {
     return undefined;
   }
+  if (label === "AUTOBIOGRAPHY_JSON") {
+    return compactWholeAutobiography(label, parsed, maximumCharacters);
+  }
   const configurations = [
     [2_000, 20],
     [1_000, 12],
@@ -95,6 +98,41 @@ function compactLabeledJson(
   }
   const marker = `${label}\n{"_truncated":true}`;
   return marker.length <= maximumCharacters ? marker : null;
+}
+
+function compactWholeAutobiography(
+  label: string,
+  value: unknown,
+  maximumCharacters: number,
+): string | null {
+  const retained: Record<string, unknown> = { _truncated: true };
+  const render = (data: Record<string, unknown>) =>
+    `${label}\n${JSON.stringify(data)}`;
+  if (render(retained).length > maximumCharacters) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return render(retained);
+  const original = value as Record<string, unknown>;
+  const keep = (key: string, item: unknown) => {
+    if (render({ ...retained, [key]: item }).length <= maximumCharacters)
+      retained[key] = item;
+  };
+  for (const key of ["revision", "fromUtc", "throughUtc", "summaryFirstPerson"])
+    if (original[key] !== undefined) keep(key, original[key]);
+
+  // The snapshot lists are chronological. Try the newest whole report from
+  // each category first, without splitting its quote, condition or negation.
+  const lists = Object.entries(original).filter((entry) =>
+    Array.isArray(entry[1]),
+  ) as [string, unknown[]][];
+  const longest = Math.max(0, ...lists.map(([, items]) => items.length));
+  for (let offset = 1; offset <= longest; offset += 1) {
+    for (const [key, items] of lists) {
+      if (offset > items.length) continue;
+      const selected = (retained[key] as unknown[] | undefined) ?? [];
+      keep(key, [items[items.length - offset], ...selected]);
+    }
+  }
+  return render(retained);
 }
 
 function compactJsonValue(

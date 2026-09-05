@@ -208,6 +208,49 @@ describe("PromptSegmentRegistry", () => {
     expect(result.trace.segments[0]).toMatchObject({ truncated: true });
   });
 
+  it.each([60, 300, 1_200, 3_000])(
+    "retains only whole autobiography statements within %i tokens",
+    (budget) => {
+      const summary = `我在对话中说过：「${"我一度考虑提交申请。".repeat(30)}但我最终没有提交。」`;
+      const reports = Array.from(
+        { length: 8 },
+        (_, index) =>
+          `对方在对话中说过：「第${index}次，${"如果时间允许，我会考虑去。".repeat(25)}这些都只是设想，并没有发生。」`,
+      );
+      const autobiography = {
+        revision: 1,
+        summaryFirstPerson: summary,
+        importantExperiences: reports,
+        relationshipChanges: ["我说我感到更熟悉，但没有替对方确认感受。"],
+      };
+      for (const global of [false, true]) {
+        const registry = new PromptSegmentRegistry<TestContext>([
+          segment({
+            id: "01_autobiography",
+            content: `AUTOBIOGRAPHY_JSON\n${JSON.stringify(autobiography)}`,
+            tokenBudget: global ? 10_000 : budget,
+          }),
+        ]);
+        const result = registry.render(
+          {},
+          global ? { maxInputTokens: budget } : {},
+        );
+        expect(result.trace.estimatedInputTokens).toBeLessThanOrEqual(budget);
+        const retained = JSON.parse(
+          result.prompt.split("\n")[1]!,
+        ) as typeof autobiography;
+        if (retained.summaryFirstPerson !== undefined)
+          expect(retained.summaryFirstPerson).toBe(summary);
+        for (const report of retained.importantExperiences ?? [])
+          expect(reports).toContain(report);
+        for (const report of retained.relationshipChanges ?? [])
+          expect(autobiography.relationshipChanges).toContain(report);
+        if ((retained.importantExperiences ?? []).length > 0)
+          expect(retained.importantExperiences.at(-1)).toBe(reports.at(-1));
+      }
+    },
+  );
+
   it.each([
     ["RECENT_VERBATIM_JSON", undefined],
     ["RECENT_VERBATIM_JSON", 100],

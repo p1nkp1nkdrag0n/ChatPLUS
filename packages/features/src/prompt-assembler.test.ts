@@ -686,6 +686,45 @@ describe("assembleChatPrompt registry integration", () => {
     ).toBe(false);
   });
 
+  it.each([false, true])(
+    "preserves whole autobiography reports and omits oversized legacy summaries (%s)",
+    (oversized) => {
+      const report = `对方在对话中说过：「${"当时我确实考虑过这个方案。".repeat(30)}不过我后来没有实施。」`;
+      const summary = oversized ? report.repeat(6) : report;
+      const result = assembleChatPrompt(
+        baseInput({
+          autobiography: {
+            id: "snapshot",
+            agentId: "agent",
+            sourceCheckpointId: "checkpoint",
+            revision: 1,
+            summaryFirstPerson: summary,
+            importantExperiences: [report],
+            relationshipChanges: [],
+            activeGoals: [],
+            unresolvedThreads: [],
+            commitments: [],
+            sourceEvidenceIds: ["source"],
+            fromUtc: NOW,
+            throughUtc: NOW,
+            createdAtUtc: NOW,
+          },
+        }),
+      );
+      const lines = result.prompt.split("\n");
+      const projected = JSON.parse(
+        lines[lines.indexOf("AUTOBIOGRAPHY_JSON") + 1]!,
+      ) as {
+        summaryFirstPerson?: string;
+        importantExperiences: string[];
+      };
+      expect(projected.importantExperiences).toEqual([report]);
+      expect(projected.summaryFirstPerson).toBe(
+        oversized ? undefined : summary,
+      );
+    },
+  );
+
   it("honors the global input budget without dropping required segments", () => {
     const result = assembleChatPrompt(
       baseInput({

@@ -431,7 +431,11 @@ function compactRelationship(relationship?: RelationshipStateLike) {
 function compactAutobiography(snapshot: AgentAutobiographySnapshot) {
   return {
     revision: snapshot.revision,
-    summaryFirstPerson: truncate(snapshot.summaryFirstPerson, 2_000),
+    // Reports can contain late negation, conditions and quoted speakers. Keep
+    // a complete statement or omit it; a prefix is not equivalent evidence.
+    ...(snapshot.summaryFirstPerson.length <= 2_000
+      ? { summaryFirstPerson: snapshot.summaryFirstPerson }
+      : {}),
     importantExperiences: compactTextList(snapshot.importantExperiences),
     relationshipChanges: compactTextList(snapshot.relationshipChanges),
     activeGoals: compactTextList(snapshot.activeGoals),
@@ -443,7 +447,7 @@ function compactAutobiography(snapshot: AgentAutobiographySnapshot) {
 }
 
 function compactTextList(values: readonly string[]): string[] {
-  return values.slice(0, 4).map((value) => truncate(value, 240));
+  return values.filter((value) => value.length <= 2_000).slice(-4);
 }
 
 function compactMemoryEvidence(bundle: EvidenceBundle): EvidenceBundle {

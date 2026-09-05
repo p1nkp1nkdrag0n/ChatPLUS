@@ -1,7 +1,15 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import {
   EventCardSchema,
   MemoryCandidateSchema,
+  MemoryEvidenceSchema,
+  MemorySchema,
+  SendMessageResponseSchema,
   type EventCard,
+  type MemoryCandidate,
 } from "@personasim/contracts";
 import { resolveTemporalQuery } from "@personasim/features";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,13 +23,41 @@ import type { MemoryRecallService } from "./memory-recall-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
 
 const SHANGHAI_NOW = "2026-08-21T04:00:00.000Z";
+const EXPLICIT_FACT_SOURCE_AT = "2026-09-04T10:00:00.000Z";
+const EXPLICIT_FACT_RECALL_AT = "2026-10-12T10:00:00.000Z";
+const EXPLICIT_FACT_QUERY =
+  "周末去暗房前，替我核对两件旧事：我喝茶的习惯，和那只铁盒的标签。只答事实，不解释它们象征什么。";
+const EXPLICIT_FACT_SOURCE_TEXT =
+  "行。我先把下周要带的东西说清楚：底片装在钴蓝色铁盒里，盖子上写着“1998/潮声”。暗房那边如果要点喝的，我喝红茶不加糖，别替我点甜的。";
+const TEA_FACT = "用户喝不加糖的红茶，不喜欢被替点甜的。";
+const BOX_FACT =
+  "用户下周带来底片，装在钴蓝色铁盒里，盖子上写着“1998 / 潮声”。";
+const EXPLICIT_FACT_REPLY =
+  "你喝不加糖的红茶，不喜欢被替点甜的。那只钴蓝色铁盒的盖子上写着“1998 / 潮声”。";
+const EXPLICIT_FACT_REFUSAL = "现有可靠事实不足以完整核对这两项。";
+
+type StoredEvidenceRow = {
+  id: string;
+  memoryId: string;
+  sourceType: string;
+  sourceId: string;
+  quote: string | null;
+  contextSummary: string | null;
+  recordedAtUtc: string;
+  evidenceJson: string;
+};
 
 describe("continuity memory recall hierarchy", () => {
   let app: PersonaSimApp | undefined;
+  let temporaryDirectory: string | undefined;
 
   afterEach(async () => {
     if (app !== undefined) await app.close();
     app = undefined;
+    if (temporaryDirectory !== undefined) {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+      temporaryDirectory = undefined;
+    }
   });
 
   it("prefers EventCards, selects at most three sources, records relationship score, and replays exactly", async () => {
@@ -39,7 +75,7 @@ describe("continuity memory recall hierarchy", () => {
     for (let index = 0; index < 4; index += 1) {
       const messageId = `message-shared-trail-${index}`;
       const content = `Shared trail memory ${index} was a joyful experience.`;
-      insertUserMessage(app, {
+      insertUserMessage(harness.app, {
         id: messageId,
         sessionId,
         agentId: harness.agentId,
@@ -302,6 +338,2200 @@ describe("continuity memory recall hierarchy", () => {
       ]),
     );
     expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+  });
+
+  it("recalls every explicitly requested fact after 38 days and a restart, but never returns a partial checklist", async () => {
+    temporaryDirectory = mkdtempSync(
+      join(tmpdir(), "chatplus-explicit-fact-recall-"),
+    );
+    const databasePath = join(temporaryDirectory, "instance.sqlite");
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_SOURCE_AT,
+      timezone: "Asia/Shanghai",
+      databasePath,
+      explicitFactReplies: true,
+    });
+    app = harness.app;
+    const sourceSession = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Explicit fact sources",
+    );
+    const sharedSourceMessageId = "message-explicit-fact-source";
+    insertUserMessage(app, {
+      id: sharedSourceMessageId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: EXPLICIT_FACT_SOURCE_TEXT,
+      createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+    });
+    const targets = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        MemoryCandidateSchema.parse({
+          ...explicitUserFact(
+            BOX_FACT,
+            ["user fact", "底片", "潮痕", "下周约定"],
+            0.6,
+            EXPLICIT_FACT_SOURCE_AT,
+          ),
+          evidence: [
+            {
+              sourceType: "message",
+              sourceId: sharedSourceMessageId,
+              quote: "盖子上写着“1998/潮声”",
+            },
+          ],
+        }),
+        MemoryCandidateSchema.parse({
+          ...explicitUserFact(
+            TEA_FACT,
+            ["user preference", "饮品", "偏好"],
+            0.4,
+            EXPLICIT_FACT_SOURCE_AT,
+          ),
+          evidence: [
+            {
+              sourceType: "message",
+              sourceId: sharedSourceMessageId,
+              quote: "我喝红茶不加糖",
+            },
+          ],
+        }),
+      ],
+      nowUtc: EXPLICIT_FACT_SOURCE_AT,
+      maxCandidates: 4,
+      authoritativeMessageId: sharedSourceMessageId,
+    });
+    const boxMemory = targets.find((memory) => memory.content === BOX_FACT);
+    const teaMemory = targets.find((memory) => memory.content === TEA_FACT);
+    expect(boxMemory?.claim).toBeUndefined();
+    expect(teaMemory?.claim).toBeUndefined();
+    if (boxMemory === undefined || teaMemory === undefined) {
+      throw new Error("Expected both explicit fact memories to persist");
+    }
+
+    const boundarySourceMessageId = "message-explicit-fact-boundary";
+    insertUserMessage(app, {
+      id: boundarySourceMessageId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content:
+        "还有，别把我不爱甜茶写成什么人格象征。我只是喝不加糖的红茶，这个事实到这里就够了。",
+      createdAtUtc: "2026-10-11T08:00:00.000Z",
+    });
+    const [boundaryMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          "用户明确要求：'喝不加糖的红茶'只是事实记录，不要解读为人格象征或引申分析。",
+          ["user preference", "用户偏好", "边界", "记录方式"],
+          0.95,
+          "2026-10-11T08:00:00.000Z",
+        ),
+      ],
+      nowUtc: "2026-10-11T08:00:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: boundarySourceMessageId,
+    });
+    if (boundaryMemory === undefined) {
+      throw new Error("Expected the boundary decoy to persist");
+    }
+
+    const contextSourceMessageId = "message-explicit-fact-context-decoy";
+    insertUserMessage(app, {
+      id: contextSourceMessageId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: "我周末去暗房前会核对灯具清单，只记录事实。",
+      createdAtUtc: "2026-10-11T09:00:00.000Z",
+    });
+    const [contextMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          "用户周末去暗房前会核对灯具清单，只记录事实。",
+          ["user fact", "周末", "暗房", "核对"],
+          1,
+          "2026-10-11T09:00:00.000Z",
+        ),
+      ],
+      nowUtc: "2026-10-11T09:00:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: contextSourceMessageId,
+    });
+    if (contextMemory === undefined) {
+      throw new Error("Expected the context decoy to persist");
+    }
+    const queryEchoSourceId = "message-explicit-fact-query-echo";
+    insertUserMessage(app, {
+      id: queryEchoSourceId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: EXPLICIT_FACT_QUERY,
+      createdAtUtc: "2026-10-11T09:30:00.000Z",
+    });
+    const [queryEchoMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          EXPLICIT_FACT_QUERY,
+          ["user fact", "核对", "暗房"],
+          1,
+          "2026-10-11T09:30:00.000Z",
+          "user_fact:query_echo_decoy",
+        ),
+      ],
+      nowUtc: "2026-10-11T09:30:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: queryEchoSourceId,
+    });
+    if (queryEchoMemory === undefined) {
+      throw new Error("Expected the query-echo decoy to persist");
+    }
+    expect(
+      new ContinuityRepository(app.personasim.store).upsertEventCards([
+        sharedEventCard({
+          id: "event-card-explicit-fact-context-decoy",
+          agentId: harness.agentId,
+          messageId: contextSourceMessageId,
+          title: "周末暗房核对",
+          summary: "用户周末去暗房前会核对灯具清单，只记录事实。",
+          occurredAtUtc: "2026-10-11T09:00:00.000Z",
+        }),
+      ]),
+    ).toBe(1);
+    expect(
+      Date.parse(EXPLICIT_FACT_RECALL_AT) - Date.parse(EXPLICIT_FACT_SOURCE_AT),
+    ).toBeGreaterThan(30 * 24 * 60 * 60 * 1_000);
+    await app.close();
+    app = undefined;
+    app = await openHarnessApp({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      databasePath,
+      explicitFactReplies: true,
+    });
+    const recallSession = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Explicit fact recall after restart",
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${recallSession.id}/messages`,
+      payload: {
+        agentId: harness.agentId,
+        clientMessageId: "explicit-fact-recall-after-restart",
+        text: EXPLICIT_FACT_QUERY,
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    expect(exchange.memoryRecall).toMatchObject({
+      rolloutMode: "enforced",
+      recallMode: "basic_memory",
+      abstained: false,
+    });
+    expect(new Set(exchange.memoryRecall?.selectedMemoryIds)).toEqual(
+      new Set([boxMemory.id, teaMemory.id]),
+    );
+    expect(new Set(exchange.memoryRecall?.promptMemoryIds)).toEqual(
+      new Set([boxMemory.id, teaMemory.id]),
+    );
+    expect(exchange.assistantMessage.content).toBe(EXPLICIT_FACT_REPLY);
+    expect(exchange.assistantMessage.content).not.toMatch(
+      /(?:人格|性格|象征|引申|意味着)/u,
+    );
+
+    const successfulRun = latestRun(app, harness.agentId);
+    expect(successfulRun.inputSnapshot.query.query).toBe(EXPLICIT_FACT_QUERY);
+    expect(successfulRun.inputSnapshot.minimumScore).toBe(0.2);
+    expect(successfulRun.inputSnapshot.hierarchy).toMatchObject({
+      finalTier: "basic_memory",
+      selectorAudit: {
+        policy: "explicit_fact_checklist_v1",
+        expectedFacetCount: 2,
+        outcome: "selected",
+        scanLimit: 500,
+        scanTruncated: false,
+        attempts: [
+          { tier: "event_card", outcome: "incomplete" },
+          {
+            tier: "basic_memory",
+            outcome: "selected",
+            facets: [
+              { index: 0, kind: "beverage_preference", outcome: "selected" },
+              { index: 1, kind: "entity_inscription", outcome: "selected" },
+            ],
+          },
+        ],
+      },
+    });
+    expect(successfulRun.configSnapshot).toMatchObject({
+      strategy: {
+        selectorPolicyVersion: "explicit_fact_checklist_v1",
+      },
+    });
+    expect(
+      successfulRun.stages.find((stage) => stage.name === "selection")
+        ?.snapshot,
+    ).toMatchObject({
+      selector: {
+        policy: "explicit_fact_checklist_v1",
+        outcome: "selected",
+      },
+    });
+    expect(successfulRun.result.selectedMemoryIds).toHaveLength(2);
+    expect(successfulRun.result.selectedEvidenceIds).toHaveLength(2);
+    expect(
+      successfulRun.inputSnapshot.memories.map((memory) => memory.content),
+    ).toEqual(expect.arrayContaining([TEA_FACT, BOX_FACT]));
+    expect(successfulRun.inputSnapshot.memories).toHaveLength(2);
+    expect(
+      successfulRun.inputSnapshot.evidence.every(
+        (evidence) =>
+          evidence.sourceType === "message" &&
+          evidence.sourceId === sharedSourceMessageId,
+      ),
+    ).toBe(true);
+    expect(successfulRun.renderedPromptFragment).toContain(TEA_FACT);
+    expect(successfulRun.renderedPromptFragment).toContain(BOX_FACT);
+    expect(successfulRun.renderedPromptFragment).not.toContain(
+      boundaryMemory.content,
+    );
+    expect(successfulRun.renderedPromptFragment).not.toContain(
+      contextMemory.content,
+    );
+    expect(successfulRun.result.selectedMemoryIds).not.toContain(
+      queryEchoMemory.id,
+    );
+    expectReplayExact(app.personasim.memoryRecalls, app, successfulRun.id);
+
+    const friendTeaSourceId = "message-friend-green-tea";
+    insertUserMessage(app, {
+      id: friendTeaSourceId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: "我的朋友喝不加糖的绿茶。",
+      createdAtUtc: "2026-10-11T09:40:00.000Z",
+    });
+    const friendTeaMemory = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          "用户喝不加糖的绿茶。",
+          ["user preference", "绿茶"],
+          0.98,
+          "2026-10-11T09:40:00.000Z",
+          "user_preference:friend_green_tea_decoy",
+        ),
+      ],
+      nowUtc: "2026-10-11T09:40:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: friendTeaSourceId,
+    }).find((memory) => memory.content === "用户喝不加糖的绿茶。");
+    if (friendTeaMemory === undefined) {
+      throw new Error("Expected the friend-owned tea decoy to persist");
+    }
+    const friendOwnedTea = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: "替我核对两件旧事：我喝绿茶的习惯，和那只铁盒的标签。只答事实。",
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(friendOwnedTea.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_incomplete",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    expect(friendOwnedTea.result.selectedMemoryIds).not.toContain(
+      friendTeaMemory.id,
+    );
+
+    const continuingCoffeeSourceId = "message-continuing-coffee-preference";
+    insertUserMessage(app, {
+      id: continuingCoffeeSourceId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: "我还是喝不加糖的咖啡。",
+      createdAtUtc: "2026-10-11T09:45:00.000Z",
+    });
+    const continuingCoffeeMemory = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          "用户还是喝不加糖的咖啡。",
+          ["user preference", "咖啡"],
+          0.75,
+          "2026-10-11T09:45:00.000Z",
+          "user_preference:continuing_unsweetened_coffee",
+        ),
+      ],
+      nowUtc: "2026-10-11T09:45:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: continuingCoffeeSourceId,
+    }).find((memory) => memory.content === "用户还是喝不加糖的咖啡。");
+    if (continuingCoffeeMemory === undefined) {
+      throw new Error("Expected the continuing coffee fact to persist");
+    }
+    const continuingCoffee = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: "替我核对两件旧事：我喝咖啡的习惯，和那只铁盒的标签。只答事实。",
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(continuingCoffee.result).toMatchObject({
+      mode: "basic_memory",
+      abstained: false,
+    });
+    expect(new Set(continuingCoffee.result.selectedMemoryIds)).toEqual(
+      new Set([boxMemory.id, continuingCoffeeMemory.id]),
+    );
+    const genericBeverageConflict = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: "替我核对两件旧事：我的饮品偏好，和那只铁盒的标签。只答事实。",
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(genericBeverageConflict.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      latestRun(app, harness.agentId).id,
+    );
+
+    const incompleteHttpResponse = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${recallSession.id}/messages`,
+      payload: {
+        agentId: harness.agentId,
+        clientMessageId: "explicit-fact-recall-incomplete-http",
+        text: "替我核对两件旧事：我喝茶的习惯，和那只木盒的标签。只答事实。",
+      },
+    });
+    expect(incompleteHttpResponse.statusCode).toBe(201);
+    const incompleteExchange = SendMessageResponseSchema.parse(
+      JSON.parse(incompleteHttpResponse.body),
+    );
+    expect(incompleteExchange.memoryRecall).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_incomplete",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    expect(incompleteExchange.assistantMessage.content).toBe(
+      EXPLICIT_FACT_REFUSAL,
+    );
+
+    for (const incompleteQuery of [
+      "替我核对两件旧事：我喝茶的习惯，和那只木盒的标签。只答事实。",
+      "替我核对两件旧事：我喝可可的习惯，和那只铁盒的标签。只答事实。",
+    ]) {
+      const incomplete = app.personasim.memoryRecalls.preview({
+        agentId: harness.agentId,
+        sessionId: recallSession.id,
+        query: incompleteQuery,
+        nowUtc: EXPLICIT_FACT_RECALL_AT,
+        timezone: "Asia/Shanghai",
+        requireDurableEvidence: true,
+      });
+      expect(incomplete.result).toMatchObject({
+        mode: "none",
+        abstained: true,
+        selectedMemoryIds: [],
+        selectedEvidenceIds: [],
+        abstentionReason: "requested_fact_facets_incomplete",
+      });
+      expect(incomplete.result).not.toHaveProperty("evidenceBundle");
+      const incompleteRun = latestRun(app, harness.agentId);
+      expect(incompleteRun.inputSnapshot.hierarchy).toMatchObject({
+        finalTier: "none",
+        abstentionReason: "requested_fact_facets_incomplete",
+      });
+      expectReplayExact(app.personasim.memoryRecalls, app, incompleteRun.id);
+    }
+
+    const insufficientCapacity = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 1,
+    });
+    expect(insufficientCapacity.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+      abstentionReason: "requested_fact_evidence_capacity_insufficient",
+    });
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      latestRun(app, harness.agentId).id,
+    );
+
+    const callerThreshold = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: { query: EXPLICIT_FACT_QUERY, minimumScore: 0.42 },
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(callerThreshold.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+      abstentionReason: "requested_fact_below_caller_threshold",
+    });
+    const callerThresholdRun = latestRun(app, harness.agentId);
+    expect(callerThresholdRun.inputSnapshot.minimumScore).toBe(0.42);
+    expectReplayExact(app.personasim.memoryRecalls, app, callerThresholdRun.id);
+
+    const explicitTimeRange = {
+      fromUtc: "2026-10-11T00:00:00.000Z",
+      toUtc: "2026-10-12T00:00:00.000Z",
+      statuses: ["occurred" as const],
+    };
+    const timeConstrained = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: { query: EXPLICIT_FACT_QUERY, timeRange: explicitTimeRange },
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(timeConstrained.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_facets_incomplete",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const timeConstrainedRun = latestRun(app, harness.agentId);
+    expect(timeConstrainedRun.inputSnapshot.query.timeRange).toEqual(
+      explicitTimeRange,
+    );
+    expectReplayExact(app.personasim.memoryRecalls, app, timeConstrainedRun.id);
+
+    const milkTeaMismatch = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: "替我核对两件旧事：我喝奶茶的习惯，和那只铁盒的标签。只答事实。",
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(milkTeaMismatch.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_facets_incomplete",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+
+    const evidenceRow = app.personasim.store.database
+      .prepare(
+        `SELECT id, memory_id AS memoryId, source_type AS sourceType,
+          source_id AS sourceId, quote, context_summary AS contextSummary,
+          recorded_at_utc AS recordedAtUtc, evidence_json AS evidenceJson
+         FROM memory_evidence WHERE memory_id = ?`,
+      )
+      .get(boxMemory.id) as StoredEvidenceRow | undefined;
+    if (evidenceRow === undefined) {
+      throw new Error("Expected stored evidence for the box fact");
+    }
+    const replaceBoxEvidence = (input: {
+      sourceId: string;
+      quote?: string;
+      recordedAtUtc: string;
+    }): void => {
+      const storedEvidence = MemoryEvidenceSchema.parse(
+        JSON.parse(evidenceRow.evidenceJson),
+      );
+      const nextEvidence: Record<string, unknown> = {
+        ...storedEvidence,
+        sourceId: input.sourceId,
+        recordedAtUtc: input.recordedAtUtc,
+      };
+      if (input.quote !== undefined) nextEvidence["quote"] = input.quote;
+      else delete nextEvidence["quote"];
+      const evidenceJson = JSON.stringify(nextEvidence);
+      app?.personasim.store.database
+        .prepare(
+          `UPDATE memory_evidence
+           SET source_id = ?, quote = ?, context_summary = NULL,
+             recorded_at_utc = ?, evidence_json = ?
+           WHERE id = ?`,
+        )
+        .run(
+          input.sourceId,
+          input.quote ?? null,
+          input.recordedAtUtc,
+          evidenceJson,
+          evidenceRow.id,
+        );
+    };
+    const restoreBoxEvidence = (): void => {
+      app?.personasim.store.database
+        .prepare(
+          `UPDATE memory_evidence
+           SET source_id = ?, quote = ?, context_summary = ?,
+             recorded_at_utc = ?, evidence_json = ?
+           WHERE id = ?`,
+        )
+        .run(
+          evidenceRow.sourceId,
+          evidenceRow.quote,
+          evidenceRow.contextSummary,
+          evidenceRow.recordedAtUtc,
+          evidenceRow.evidenceJson,
+          evidenceRow.id,
+        );
+    };
+
+    replaceBoxEvidence({
+      sourceId: evidenceRow.sourceId,
+      quote: "盖子上写着“1998/潮声”",
+      recordedAtUtc: evidenceRow.recordedAtUtc,
+    });
+    const legacyPartialEvidence = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(legacyPartialEvidence.result.abstained).toBe(false);
+    const legacyPartialRun = latestRun(app, harness.agentId);
+    expect(
+      legacyPartialRun.inputSnapshot.evidence.find(
+        (evidence) => evidence.memoryId === boxMemory.id,
+      )?.quote,
+    ).toBe(EXPLICIT_FACT_SOURCE_TEXT);
+    expectReplayExact(app.personasim.memoryRecalls, app, legacyPartialRun.id);
+
+    replaceBoxEvidence({
+      sourceId: evidenceRow.sourceId,
+      recordedAtUtc: evidenceRow.recordedAtUtc,
+    });
+    const legacyMissingQuote = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(legacyMissingQuote.result.abstained).toBe(false);
+    const legacyMissingQuoteRun = latestRun(app, harness.agentId);
+    expect(
+      legacyMissingQuoteRun.inputSnapshot.evidence.find(
+        (evidence) => evidence.memoryId === boxMemory.id,
+      )?.quote,
+    ).toBe(EXPLICIT_FACT_SOURCE_TEXT);
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      legacyMissingQuoteRun.id,
+    );
+    restoreBoxEvidence();
+
+    replaceBoxEvidence({
+      sourceId: evidenceRow.sourceId,
+      quote: "我的钴蓝色铁盒标签写着“伪造值”。",
+      recordedAtUtc: evidenceRow.recordedAtUtc,
+    });
+    const ungroundedQuote = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(ungroundedQuote.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_incomplete",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const ungroundedRun = latestRun(app, harness.agentId);
+    const serializedUngroundedRun = JSON.stringify({
+      inputSnapshot: ungroundedRun.inputSnapshot,
+      stages: ungroundedRun.stages,
+      candidates: ungroundedRun.candidates,
+      configSnapshot: ungroundedRun.configSnapshot,
+      renderedPromptFragment: ungroundedRun.renderedPromptFragment,
+    });
+    expect(serializedUngroundedRun).not.toContain("伪造值");
+    expect(serializedUngroundedRun).toContain(
+      "fact_evidence_quote_not_grounded",
+    );
+    expectReplayExact(app.personasim.memoryRecalls, app, ungroundedRun.id);
+
+    const groundedButInvalidBoxEvidence = [
+      {
+        id: "message-conflicting-box-label",
+        quote: "我的钴蓝色铁盒标签写着“2001 / 风声”。",
+        reason: "requested_fact_facets_conflicted",
+      },
+      {
+        id: "message-unresolved-box-label",
+        quote: "我不知道铁盒标签写着什么，现在还没定。",
+      },
+      {
+        id: "message-other-object-label",
+        quote: "铁盒在桌上，画册的标签写着“A-7”。",
+      },
+      {
+        id: "message-coordinated-other-object-label",
+        quote: "铁盒和画册的标签写着“A-7”。",
+      },
+      {
+        id: "message-external-other-object-label",
+        quote: "铁盒在桌上，外面那本画册标签写着“A-7”。",
+      },
+      {
+        id: "message-missing-box-label",
+        quote: "铁盒标签已经掉了。",
+      },
+      {
+        id: "message-ambiguous-box-label-choice",
+        quote: "铁盒标签写着“A”还是“B”。",
+      },
+      {
+        id: "message-negated-box-label-excerpt",
+        sourceContent:
+          "我说“铁盒标签写着 1998 / 潮声”是错的，正确标签是 2001 / 风声。",
+        quote: "铁盒标签写着 1998 / 潮声",
+      },
+      {
+        id: "message-denied-box-label",
+        sourceContent:
+          "我否认下面这句话。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+        quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”",
+      },
+      {
+        id: "message-example-box-label",
+        sourceContent:
+          "以下只是示例，不是事实。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+        quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”",
+      },
+      {
+        id: "message-hypothetical-box-label",
+        sourceContent:
+          "先看一个假设：如果我的钴蓝色铁盒标签写着“1998 / 潮声”，就把它留着。",
+        quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”",
+      },
+      {
+        id: "message-quoted-example-box-label",
+        sourceContent: "引用内容如下：“我的钴蓝色铁盒标签写着“1998 / 潮声””。",
+        quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”",
+      },
+      {
+        id: "message-negated-quoted-box-label",
+        sourceContent: "我的钴蓝色铁盒标签写着“1998 / 潮声”不是事实。",
+        quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”",
+      },
+      {
+        id: "message-friend-owned-box-label",
+        quote: "我朋友的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      },
+      {
+        id: "message-named-owner-box-label",
+        quote: "小李的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      },
+      {
+        id: "message-combined-named-owner-box-label",
+        sourceContent:
+          "我喝不加糖的红茶。小李的钴蓝色铁盒标签写着“1998 / 潮声”。",
+        quote: "小李的钴蓝色铁盒标签写着“1998 / 潮声”",
+      },
+      {
+        id: "message-quoted-ownerless-box-label",
+        sourceContent: "请看：“钴蓝色铁盒标签写着 1998 / 潮声”。",
+        quote: "钴蓝色铁盒标签写着 1998 / 潮声",
+      },
+      {
+        id: "message-excerpt-box-label",
+        quote: "摘录：钴蓝色铁盒标签写着 1998 / 潮声。",
+      },
+      {
+        id: "message-source-material-box-label",
+        quote: "资料里写着：钴蓝色铁盒标签写着 1998 / 潮声。",
+      },
+      {
+        id: "message-reported-box-label",
+        quote: "有人写道：钴蓝色铁盒标签写着 1998 / 潮声。",
+      },
+      {
+        id: "message-falsehood-box-label",
+        quote: "这是假话：钴蓝色铁盒标签写着 1998 / 潮声。",
+      },
+      {
+        id: "message-counterfactual-box-label",
+        quote: "这是反事实：钴蓝色铁盒标签写着 1998 / 潮声。",
+      },
+      {
+        id: "message-please-read-quoted-box-label",
+        sourceContent: "请看：“我的钴蓝色铁盒标签写着 1998 / 潮声”。",
+        quote: "我的钴蓝色铁盒标签写着 1998 / 潮声",
+      },
+      {
+        id: "message-quoted-correction-box-label",
+        sourceContent:
+          "引用：“旧记录。更正：我的钴蓝色铁盒标签写着 1998 / 潮声”。",
+        quote: "我的钴蓝色铁盒标签写着 1998 / 潮声",
+      },
+      {
+        id: "message-unconfirmed-box-label",
+        quote: "我尚未确认我的钴蓝色铁盒标签写着 1998 / 潮声。",
+      },
+      {
+        id: "message-example-word-box-label",
+        sourceContent: "这是一个例子。我的钴蓝色铁盒标签写着 1998 / 潮声。",
+        quote: "我的钴蓝色铁盒标签写着 1998 / 潮声",
+      },
+      {
+        id: "message-fictional-tail-box-label",
+        sourceContent: "我的钴蓝色铁盒标签写着“1998 / 潮声”，纯属虚构。",
+        quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”",
+      },
+    ] as const;
+    for (const invalidEvidence of groundedButInvalidBoxEvidence) {
+      insertUserMessage(app, {
+        id: invalidEvidence.id,
+        sessionId: sourceSession.id,
+        agentId: harness.agentId,
+        content:
+          "sourceContent" in invalidEvidence
+            ? invalidEvidence.sourceContent
+            : invalidEvidence.quote,
+        createdAtUtc: "2026-10-11T10:00:00.000Z",
+      });
+      replaceBoxEvidence({
+        sourceId: invalidEvidence.id,
+        quote: invalidEvidence.quote,
+        recordedAtUtc: "2026-10-11T10:00:00.000Z",
+      });
+      const mismatchedValue = app.personasim.memoryRecalls.preview({
+        agentId: harness.agentId,
+        sessionId: recallSession.id,
+        query: EXPLICIT_FACT_QUERY,
+        nowUtc: EXPLICIT_FACT_RECALL_AT,
+        timezone: "Asia/Shanghai",
+        requireDurableEvidence: true,
+      });
+      expect(mismatchedValue.result, invalidEvidence.id).toMatchObject({
+        abstained: true,
+        abstentionReason:
+          "reason" in invalidEvidence
+            ? invalidEvidence.reason
+            : "requested_fact_facets_incomplete",
+        selectedMemoryIds: [],
+        selectedEvidenceIds: [],
+      });
+      expect(
+        JSON.stringify(latestRun(app, harness.agentId).inputSnapshot.evidence),
+      ).not.toContain(invalidEvidence.quote);
+    }
+    restoreBoxEvidence();
+
+    const correctedBoxSourceId = "message-corrected-box-label";
+    insertUserMessage(app, {
+      id: correctedBoxSourceId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content:
+        "引用：“小李的钴蓝色铁盒标签写着 2001 / 风声”。更正：我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      createdAtUtc: "2026-10-11T10:10:00.000Z",
+    });
+    replaceBoxEvidence({
+      sourceId: correctedBoxSourceId,
+      quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”",
+      recordedAtUtc: "2026-10-11T10:10:00.000Z",
+    });
+    const correctedEvidence = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(correctedEvidence.result.abstained).toBe(false);
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      latestRun(app, harness.agentId).id,
+    );
+    restoreBoxEvidence();
+
+    const originalBoxRecordedAt = app.personasim.store.database
+      .prepare(
+        "SELECT recorded_at_utc AS recordedAtUtc FROM memories WHERE id = ?",
+      )
+      .get(boxMemory.id) as { recordedAtUtc: string } | undefined;
+    if (originalBoxRecordedAt === undefined) {
+      throw new Error("Expected the box memory row to exist");
+    }
+    app.personasim.store.database
+      .prepare("UPDATE memories SET recorded_at_utc = ? WHERE id = ?")
+      .run("2026-10-13T10:00:00.000Z", boxMemory.id);
+    const futureDerivedMemory = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(futureDerivedMemory.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_incomplete",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    app.personasim.store.database
+      .prepare("UPDATE memories SET recorded_at_utc = ? WHERE id = ?")
+      .run(originalBoxRecordedAt.recordedAtUtc, boxMemory.id);
+
+    const reinforcingTeaSourceId = "message-reinforcing-tea-preference";
+    insertUserMessage(app, {
+      id: reinforcingTeaSourceId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: "我喝不加糖的红茶，不喜欢甜的。",
+      createdAtUtc: "2026-10-11T10:30:00.000Z",
+    });
+    const [reinforcingTea] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          TEA_FACT,
+          ["user fact"],
+          0.7,
+          "2026-10-11T10:30:00.000Z",
+          "user_preference:tea_sugar_reinforcement",
+        ),
+      ],
+      nowUtc: "2026-10-11T10:30:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: reinforcingTeaSourceId,
+    });
+    if (reinforcingTea === undefined) {
+      throw new Error("Expected the equivalent tea fact to persist");
+    }
+    expect(reinforcingTea.id).not.toBe(teaMemory.id);
+    const reinforced = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(reinforced.result.abstained).toBe(false);
+    expect(reinforced.result.selectedMemoryIds).toContain(boxMemory.id);
+    expect(
+      reinforced.result.selectedMemoryIds.filter((id) =>
+        [teaMemory.id, reinforcingTea.id].includes(id),
+      ),
+    ).toHaveLength(1);
+
+    const conflictingTeaSourceId = "message-conflicting-tea-preference";
+    insertUserMessage(app, {
+      id: conflictingTeaSourceId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: "我喝加糖的红茶，喜欢甜的。",
+      createdAtUtc: "2026-10-11T11:00:00.000Z",
+    });
+    const [conflictingTea] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          "用户喝加糖的红茶，喜欢甜的。",
+          ["user preference"],
+          0.99,
+          "2026-10-11T11:00:00.000Z",
+          "user_preference:tea_sugar_conflict",
+        ),
+      ],
+      nowUtc: "2026-10-11T11:00:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: conflictingTeaSourceId,
+    });
+    if (conflictingTea === undefined) {
+      throw new Error("Expected the conflicting tea fact to persist");
+    }
+    expect(conflictingTea.id).not.toBe(teaMemory.id);
+    const conflicted = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(conflicted.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const conflictedRun = latestRun(app, harness.agentId);
+    expect(conflictedRun.inputSnapshot.hierarchy?.selectorAudit).toMatchObject({
+      outcome: "conflicted",
+      attempts: [
+        { tier: "event_card", outcome: "incomplete" },
+        {
+          tier: "basic_memory",
+          outcome: "conflicted",
+          facets: [
+            {
+              index: 0,
+              kind: "beverage_preference",
+              outcome: "conflicted",
+            },
+            {
+              index: 1,
+              kind: "entity_inscription",
+              outcome: "selected",
+            },
+          ],
+        },
+      ],
+    });
+    const conflictedFacet =
+      conflictedRun.inputSnapshot.hierarchy?.selectorAudit?.attempts[1]
+        ?.facets[0];
+    expect(
+      new Set(
+        conflictedFacet?.candidates.flatMap((candidate) =>
+          candidate.valueGroupId === undefined ? [] : [candidate.valueGroupId],
+        ),
+      ).size,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      JSON.stringify(conflictedRun.inputSnapshot.hierarchy?.selectorAudit),
+    ).not.toMatch(/(?:加糖|不加糖|红茶|潮声)/u);
+    expectReplayExact(app.personasim.memoryRecalls, app, conflictedRun.id);
+
+    const conflictedWithSmallCallerLimit = app.personasim.memoryRecalls.preview(
+      {
+        agentId: harness.agentId,
+        sessionId: recallSession.id,
+        query: EXPLICIT_FACT_QUERY,
+        nowUtc: EXPLICIT_FACT_RECALL_AT,
+        timezone: "Asia/Shanghai",
+        requireDurableEvidence: true,
+        limit: 2,
+      },
+    );
+    expect(conflictedWithSmallCallerLimit.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      latestRun(app, harness.agentId).id,
+    );
+  });
+
+  it("keeps EventCard first when one verified user source covers the complete fact checklist", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Complete EventCard fact source",
+    );
+    const messageId = "message-complete-explicit-fact-event-card";
+    const source =
+      "我的钴蓝色铁盒标签写着“1998/潮声”。我喝红茶不加糖，不要甜的。";
+    insertUserMessage(app, {
+      id: messageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: source,
+      createdAtUtc: "2026-10-11T12:00:00.000Z",
+    });
+    expect(
+      new ContinuityRepository(app.personasim.store).upsertEventCards([
+        sharedEventCard({
+          id: "event-card-complete-explicit-facts",
+          agentId: harness.agentId,
+          messageId,
+          title: "暗房前的两项事实",
+          summary: source,
+          occurredAtUtc: "2026-10-11T12:00:00.000Z",
+        }),
+      ]),
+    ).toBe(1);
+    const [consistentTeaMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        MemoryCandidateSchema.parse({
+          ...explicitUserFact(
+            TEA_FACT,
+            ["user preference", "红茶"],
+            0.7,
+            "2026-10-11T12:00:00.000Z",
+            "user_preference:event_cross_check_tea",
+          ),
+          evidence: [
+            {
+              sourceType: "message",
+              sourceId: messageId,
+              quote: "我喝红茶不加糖",
+            },
+          ],
+        }),
+      ],
+      nowUtc: "2026-10-11T12:00:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: messageId,
+    });
+    if (consistentTeaMemory === undefined) {
+      throw new Error("Expected the EventCard cross-check fact to persist");
+    }
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 1,
+    });
+
+    expect(preview.result).toMatchObject({
+      mode: "event_card",
+      abstained: false,
+      selectedMemoryIds: ["event-card-complete-explicit-facts"],
+    });
+    expect(preview.result.selectedEvidenceIds).toHaveLength(1);
+    const run = latestRun(app, harness.agentId);
+    expect(run.inputSnapshot).toMatchObject({
+      maxEvidence: 1,
+      hierarchy: {
+        finalTier: "event_card",
+        selectorAudit: {
+          outcome: "selected",
+          attempts: [
+            {
+              tier: "event_card",
+              outcome: "selected",
+              facets: [
+                { index: 0, outcome: "selected" },
+                { index: 1, outcome: "selected" },
+              ],
+            },
+            {
+              tier: "basic_memory",
+              outcome: "incomplete",
+            },
+          ],
+        },
+      },
+    });
+    const selectedAuditMemoryIds = new Set(
+      run.inputSnapshot.hierarchy?.selectorAudit?.attempts[0]?.facets.flatMap(
+        (facet) =>
+          facet.candidates
+            .filter((candidate) => candidate.decision === "selected")
+            .map((candidate) => candidate.memoryId),
+      ),
+    );
+    expect(selectedAuditMemoryIds).toEqual(
+      new Set(["event-card-complete-explicit-facts"]),
+    );
+    expect(run.inputSnapshot.memories).toHaveLength(1);
+    expect(run.inputSnapshot.evidence).toHaveLength(1);
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+
+    const conflictMessageId = "message-event-card-cross-tier-conflict";
+    insertUserMessage(app, {
+      id: conflictMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我喝加糖的红茶，喜欢甜的。",
+      createdAtUtc: "2026-10-11T12:30:00.000Z",
+    });
+    const [conflictingTeaMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        explicitUserFact(
+          "用户喝加糖的红茶，喜欢甜的。",
+          ["user preference", "红茶"],
+          0.8,
+          "2026-10-11T12:30:00.000Z",
+          "user_preference:event_cross_tier_conflict",
+        ),
+      ],
+      nowUtc: "2026-10-11T12:30:00.000Z",
+      maxCandidates: 2,
+      authoritativeMessageId: conflictMessageId,
+    });
+    if (conflictingTeaMemory === undefined) {
+      throw new Error("Expected the cross-tier conflict fact to persist");
+    }
+    const conflicted = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(conflicted.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const conflictRun = latestRun(app, harness.agentId);
+    expect(conflictRun.inputSnapshot.hierarchy?.selectorAudit).toMatchObject({
+      outcome: "conflicted",
+      attempts: [
+        {
+          tier: "event_card",
+          outcome: "conflicted",
+          facets: [
+            { index: 0, outcome: "conflicted" },
+            { index: 1, outcome: "selected" },
+          ],
+        },
+        {
+          tier: "basic_memory",
+          outcome: "conflicted",
+          facets: [
+            { index: 0, outcome: "conflicted" },
+            { index: 1, outcome: "missing" },
+          ],
+        },
+      ],
+    });
+    expect(
+      conflictRun.inputSnapshot.hierarchy?.selectorAudit?.attempts.flatMap(
+        (attempt) =>
+          attempt.facets.flatMap((facet) =>
+            facet.candidates.filter(
+              (candidate) => candidate.decision === "selected",
+            ),
+          ),
+      ),
+    ).toEqual([]);
+    expectReplayExact(app.personasim.memoryRecalls, app, conflictRun.id);
+  });
+
+  it("uses a minimal proof set while auditing redundant consistent EventCard evidence", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Redundant EventCard evidence",
+    );
+    const source = "我喝不加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。";
+    const evidenceSources = Array.from({ length: 4 }, (_unused, index) => {
+      const messageId = `message-redundant-event-facts-${index}`;
+      insertUserMessage(harness.app, {
+        id: messageId,
+        sessionId: session.id,
+        agentId: harness.agentId,
+        content: source,
+        createdAtUtc: `2026-10-11T13:0${index}:00.000Z`,
+      });
+      return {
+        id: `event-source-redundant-facts-${index}`,
+        messageId,
+        quote: source,
+        recordedAtUtc: `2026-10-11T13:0${index}:00.000Z`,
+      };
+    });
+    const card = sharedEventCard({
+      id: "event-card-redundant-explicit-facts",
+      agentId: harness.agentId,
+      messageId: evidenceSources[0]!.messageId,
+      title: "多次确认的两项事实",
+      summary: source,
+      occurredAtUtc: "2026-10-11T13:03:00.000Z",
+      evidenceSources,
+    });
+    expect(
+      new ContinuityRepository(app.personasim.store).upsertEventCards([card]),
+    ).toBe(1);
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 1,
+    });
+    expect(preview.result).toMatchObject({
+      mode: "event_card",
+      abstained: false,
+      selectedMemoryIds: [card.id],
+    });
+    expect(preview.result.selectedEvidenceIds).toHaveLength(1);
+    const run = latestRun(app, harness.agentId);
+    expect(run.inputSnapshot.evidence).toHaveLength(1);
+    expect(
+      run.inputSnapshot.hierarchy?.selectorAudit?.attempts[0]?.facets.map(
+        (facet) =>
+          facet.candidates[0]?.evidence.filter(
+            (evidence) => evidence.decision === "accepted",
+          ).length,
+      ),
+    ).toEqual([4, 4]);
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+  });
+
+  it("requires every EventCard fact source to agree while allowing split provenance", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Split EventCard provenance",
+    );
+    const teaMessageId = "message-split-event-tea";
+    const boxMessageId = "message-split-event-box";
+    insertUserMessage(app, {
+      id: teaMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我喝不加糖的红茶。",
+      createdAtUtc: "2026-10-11T13:00:00.000Z",
+    });
+    insertUserMessage(app, {
+      id: boxMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      createdAtUtc: "2026-10-11T13:01:00.000Z",
+    });
+    const summary =
+      "用户喝不加糖的红茶。用户的钴蓝色铁盒标签写着“1998 / 潮声”。";
+    const splitCard = sharedEventCard({
+      id: "event-card-split-explicit-facts",
+      agentId: harness.agentId,
+      messageId: teaMessageId,
+      title: "分源核对事实",
+      summary,
+      occurredAtUtc: "2026-10-11T13:01:00.000Z",
+      evidenceSources: [
+        {
+          id: "event-source-split-tea",
+          messageId: teaMessageId,
+          quote: "我喝不加糖的红茶。",
+          recordedAtUtc: "2026-10-11T13:00:00.000Z",
+        },
+        {
+          id: "event-source-split-box",
+          messageId: boxMessageId,
+          quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+          recordedAtUtc: "2026-10-11T13:01:00.000Z",
+        },
+      ],
+    });
+    const continuity = new ContinuityRepository(app.personasim.store);
+    expect(continuity.upsertEventCards([splitCard])).toBe(1);
+
+    const split = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 2,
+    });
+    expect(split.result).toMatchObject({
+      mode: "event_card",
+      abstained: false,
+      selectedMemoryIds: [splitCard.id],
+    });
+    expect(split.result.selectedEvidenceIds).toHaveLength(2);
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      latestRun(app, harness.agentId).id,
+    );
+
+    const insufficientSplitCapacity = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 1,
+    });
+    expect(insufficientSplitCapacity.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_evidence_capacity_insufficient",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      latestRun(app, harness.agentId).id,
+    );
+
+    const compactBasicSourceId = "message-compact-basic-explicit-facts";
+    const compactBasicSource =
+      "我喝不加糖的红茶。我的钴蓝色铁盒盖子上写着“1998 / 潮声”。";
+    insertUserMessage(app, {
+      id: compactBasicSourceId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: compactBasicSource,
+      createdAtUtc: "2026-10-11T13:01:30.000Z",
+    });
+    const compactBasicMemoryId = "memory-compact-basic-explicit-facts";
+    insertStableFactMemoryWithoutEvidence(app, {
+      id: compactBasicMemoryId,
+      agentId: harness.agentId,
+      dedupeKey: "compact-basic-explicit-facts",
+      content: "用户喝不加糖的红茶。用户的钴蓝色铁盒盖子上写着“1998 / 潮声”。",
+      tags: ["user preference", "红茶", "铁盒", "标签"],
+    });
+    const compactBasicEvidence = MemoryEvidenceSchema.parse({
+      id: "evidence-compact-basic-explicit-facts",
+      memoryId: compactBasicMemoryId,
+      sourceType: "message",
+      sourceId: compactBasicSourceId,
+      quote: compactBasicSource,
+      recordedAtUtc: "2026-10-11T13:01:30.000Z",
+    });
+    app.personasim.store.database
+      .prepare(
+        `INSERT INTO memory_evidence(
+          id, memory_id, source_type, source_id, quote, recorded_at_utc,
+          evidence_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        compactBasicEvidence.id,
+        compactBasicEvidence.memoryId,
+        compactBasicEvidence.sourceType,
+        compactBasicEvidence.sourceId,
+        compactBasicEvidence.quote,
+        compactBasicEvidence.recordedAtUtc,
+        JSON.stringify(compactBasicEvidence),
+      );
+    const blockedBasicFallback = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 1,
+    });
+    expect(blockedBasicFallback.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_evidence_capacity_insufficient",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const blockedBasicRun = latestRun(app, harness.agentId);
+    expect(
+      blockedBasicRun.inputSnapshot.hierarchy?.selectorAudit?.attempts.map(
+        (attempt) => attempt.outcome,
+      ),
+    ).toEqual(["capacity_insufficient", "complete_not_selected"]);
+    expectReplayExact(app.personasim.memoryRecalls, app, blockedBasicRun.id);
+
+    const conflictingMessageId = "message-split-event-conflicting-tea";
+    const cleanMessageId = "message-clean-event-facts";
+    insertUserMessage(app, {
+      id: conflictingMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我喝不加糖的红茶。我喝加糖的红茶。",
+      createdAtUtc: "2026-10-11T13:02:00.000Z",
+    });
+    insertUserMessage(app, {
+      id: cleanMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我喝不加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      createdAtUtc: "2026-10-11T13:03:00.000Z",
+    });
+    const conflictingCard = sharedEventCard({
+      id: splitCard.id,
+      agentId: harness.agentId,
+      messageId: teaMessageId,
+      title: "分源核对事实",
+      summary,
+      occurredAtUtc: "2026-10-11T13:02:00.000Z",
+      evidenceSources: [
+        ...splitCard.evidence.map((evidence) => ({
+          id: evidence.id,
+          messageId: evidence.sourceId,
+          quote: evidence.quote ?? "",
+          recordedAtUtc: evidence.recordedAtUtc,
+        })),
+        {
+          id: "event-source-split-conflict",
+          messageId: conflictingMessageId,
+          quote: "我喝不加糖的红茶。我喝加糖的红茶。",
+          recordedAtUtc: "2026-10-11T13:02:00.000Z",
+        },
+      ],
+    });
+    const cleanCard = sharedEventCard({
+      id: "event-card-clean-explicit-facts",
+      agentId: harness.agentId,
+      messageId: cleanMessageId,
+      title: "一致的核对事实",
+      summary,
+      occurredAtUtc: "2026-10-11T13:03:00.000Z",
+      evidenceSources: [
+        {
+          id: "event-source-clean-facts",
+          messageId: cleanMessageId,
+          quote: "我喝不加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+          recordedAtUtc: "2026-10-11T13:03:00.000Z",
+        },
+      ],
+    });
+    expect(continuity.upsertEventCards([conflictingCard, cleanCard])).toBe(2);
+
+    const conflicted = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(conflicted.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const conflictedRun = latestRun(app, harness.agentId);
+    expect(
+      conflictedRun.inputSnapshot.hierarchy?.selectorAudit?.attempts[0]
+        ?.facets[0]?.outcome,
+    ).toBe("conflicted");
+    expectReplayExact(app.personasim.memoryRecalls, app, conflictedRun.id);
+  });
+
+  it("preserves stronger Event outcomes when the Basic fact scan is truncated", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    for (let index = 0; index < 501; index += 1) {
+      insertStableFactMemoryWithoutEvidence(app, {
+        id: `memory-unrelated-scan-${index}`,
+        agentId: harness.agentId,
+        dedupeKey: `unrelated-scan:${index}`,
+        content: "用户喜欢在公园散步。",
+        tags: ["user preference", "散步"],
+      });
+    }
+    const unrelatedPool = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(unrelatedPool.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_incomplete",
+    });
+
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Coupled explicit-fact scan outcomes",
+    );
+    const teaMessageId = "message-scan-coupling-tea";
+    const boxMessageId = "message-scan-coupling-box";
+    insertUserMessage(app, {
+      id: teaMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我喝不加糖的红茶。",
+      createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+    });
+    insertUserMessage(app, {
+      id: boxMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+    });
+    const splitCard = sharedEventCard({
+      id: "event-card-scan-coupling-split",
+      agentId: harness.agentId,
+      messageId: teaMessageId,
+      title: "分源保存的两项事实",
+      summary: "用户喝不加糖的红茶。用户的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      occurredAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      evidenceSources: [
+        {
+          id: "event-source-scan-coupling-tea",
+          messageId: teaMessageId,
+          quote: "我喝不加糖的红茶。",
+          recordedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+        },
+        {
+          id: "event-source-scan-coupling-box",
+          messageId: boxMessageId,
+          quote: "我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+          recordedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+        },
+      ],
+    });
+    const continuity = new ContinuityRepository(app.personasim.store);
+    expect(continuity.upsertEventCards([splitCard])).toBe(1);
+
+    for (let index = 0; index < 501; index += 1) {
+      insertStableFactMemoryWithoutEvidence(app, {
+        id: `memory-explicit-fact-scan-${index}`,
+        agentId: harness.agentId,
+        dedupeKey: `explicit-fact-scan:${index}`,
+      });
+    }
+
+    const blockedSelection = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 2,
+    });
+    expect(blockedSelection.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_scan_truncated",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const blockedSelectionRun = latestRun(app, harness.agentId);
+    const blockedEventAttempt =
+      blockedSelectionRun.inputSnapshot.hierarchy?.selectorAudit?.attempts[0];
+    const blockedBasicAttempt =
+      blockedSelectionRun.inputSnapshot.hierarchy?.selectorAudit?.attempts[1];
+    expect(blockedEventAttempt).toMatchObject({
+      tier: "event_card",
+      outcome: "incomplete",
+    });
+    for (const facet of blockedEventAttempt?.facets ?? []) {
+      expect(facet.outcome).toBe("selected");
+      expect(
+        facet.candidates.filter(
+          (candidate) =>
+            candidate.reasonCode ===
+            "fact_candidate_rejected_due_scan_truncation",
+        ),
+      ).toHaveLength(1);
+      expect(
+        facet.candidates.filter(
+          (candidate) => candidate.decision === "selected",
+        ),
+      ).toHaveLength(0);
+    }
+    expect(blockedBasicAttempt).toMatchObject({
+      tier: "basic_memory",
+      outcome: "scan_truncated",
+      scannedCandidateCount: 500,
+      scanUnit: "candidate_pool",
+      scanLimit: 500,
+      scanWitnessMemoryId: expect.any(String),
+    });
+    const basicFrozenTiers =
+      blockedSelectionRun.inputSnapshot.selectorAuditInput?.candidateTiers.filter(
+        (candidate) => candidate.tier === "basic_memory",
+      ) ?? [];
+    expect(basicFrozenTiers).toHaveLength(501);
+    expect(
+      basicFrozenTiers.some(
+        (candidate) =>
+          candidate.memoryId === blockedBasicAttempt?.scanWitnessMemoryId,
+      ),
+    ).toBe(true);
+    expect(
+      blockedSelectionRun.inputSnapshot.memories.some(
+        (memory) => memory.id === blockedBasicAttempt?.scanWitnessMemoryId,
+      ),
+    ).toBe(false);
+    expectReplayExact(
+      app.personasim.memoryRecalls,
+      app,
+      blockedSelectionRun.id,
+    );
+
+    const belowThreshold = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: { query: EXPLICIT_FACT_QUERY, minimumScore: 0.99 },
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 2,
+    });
+    expect(belowThreshold.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_scan_truncated",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const belowThresholdRun = latestRun(app, harness.agentId);
+    expect(
+      belowThresholdRun.inputSnapshot.hierarchy?.selectorAudit,
+    ).toMatchObject({
+      outcome: "scan_truncated",
+      scanTruncated: true,
+      attempts: [
+        { tier: "event_card", outcome: "below_threshold" },
+        { tier: "basic_memory", outcome: "scan_truncated" },
+      ],
+    });
+    expectReplayExact(app.personasim.memoryRecalls, app, belowThresholdRun.id);
+
+    const capacityInsufficient = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 1,
+    });
+
+    expect(capacityInsufficient.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_scan_truncated",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const run = latestRun(app, harness.agentId);
+    expect(run.inputSnapshot.hierarchy?.selectorAudit).toMatchObject({
+      outcome: "scan_truncated",
+      scanLimit: 500,
+      scanTruncated: true,
+      attempts: [
+        { tier: "event_card", outcome: "capacity_insufficient" },
+        { tier: "basic_memory", outcome: "scan_truncated" },
+      ],
+    });
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+
+    const conflictingMessageId = "message-scan-coupling-conflict";
+    insertUserMessage(app, {
+      id: conflictingMessageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: "我喝加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+    });
+    const conflictingCard = sharedEventCard({
+      id: "event-card-scan-coupling-conflict",
+      agentId: harness.agentId,
+      messageId: conflictingMessageId,
+      title: "与既有记录冲突的两项事实",
+      summary: "用户喝加糖的红茶。用户的钴蓝色铁盒标签写着“1998 / 潮声”。",
+      occurredAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      evidenceSources: [
+        {
+          id: "event-source-scan-coupling-conflict",
+          messageId: conflictingMessageId,
+          quote: "我喝加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
+          recordedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+        },
+      ],
+    });
+    expect(continuity.upsertEventCards([conflictingCard])).toBe(1);
+
+    const conflicted = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      maxEvidence: 1,
+    });
+    expect(conflicted.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const conflictedRun = latestRun(app, harness.agentId);
+    expect(conflictedRun.inputSnapshot.hierarchy?.selectorAudit).toMatchObject({
+      outcome: "conflicted",
+      scanTruncated: true,
+      attempts: [
+        { tier: "event_card", outcome: "conflicted" },
+        { tier: "basic_memory", outcome: "scan_truncated" },
+      ],
+    });
+    expectReplayExact(app.personasim.memoryRecalls, app, conflictedRun.id);
+  });
+
+  it("audits evidence past the preview cap and fails closed at the safety cap", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Explicit fact evidence safety",
+    );
+    const memoryId = "memory-explicit-fact-audit-evidence-cap";
+    insertStableFactMemoryWithoutEvidence(app, {
+      id: memoryId,
+      agentId: harness.agentId,
+      dedupeKey: "explicit-fact-audit-evidence-cap",
+      content: "用户喝不加糖的红茶。",
+      tags: ["user preference", "红茶"],
+    });
+    const insertEvidence = app.personasim.store.database.prepare(
+      `INSERT INTO memory_evidence(
+        id, memory_id, source_type, source_id, quote, recorded_at_utc,
+        evidence_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const appendEvidence = (index: number, content: string): void => {
+      const suffix = index.toString().padStart(2, "0");
+      const sourceId = `message-explicit-audit-${suffix}`;
+      insertUserMessage(app!, {
+        id: sourceId,
+        sessionId: session.id,
+        agentId: harness.agentId,
+        content,
+        createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      });
+      const evidence = MemoryEvidenceSchema.parse({
+        id: `evidence-explicit-audit-${suffix}`,
+        memoryId,
+        sourceType: "message",
+        sourceId,
+        quote: content,
+        recordedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      });
+      insertEvidence.run(
+        evidence.id,
+        evidence.memoryId,
+        evidence.sourceType,
+        evidence.sourceId,
+        evidence.quote,
+        evidence.recordedAtUtc,
+        JSON.stringify(evidence),
+      );
+    };
+    for (let index = 0; index < 21; index += 1) {
+      appendEvidence(
+        index,
+        index === 20 ? "我喝加糖的红茶。" : "我喝不加糖的红茶。",
+      );
+    }
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(preview.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+    });
+    const run = latestRun(app, harness.agentId);
+    const candidate = run.inputSnapshot.hierarchy?.selectorAudit?.attempts
+      .find((attempt) => attempt.tier === "basic_memory")
+      ?.facets[0]?.candidates.find((item) => item.memoryId === memoryId);
+    expect(candidate?.evidence).toHaveLength(20);
+    expect(candidate?.evidenceOmittedCount).toBe(1);
+    expect(candidate?.evidence).toContainEqual({
+      evidenceId: "evidence-explicit-audit-20",
+      decision: "rejected",
+      reasonCode: "fact_evidence_value_conflict",
+    });
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+
+    for (let index = 21; index < 101; index += 1) {
+      appendEvidence(index, "我喝不加糖的红茶。");
+    }
+    const truncated = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(truncated.result).toMatchObject({
+      abstained: true,
+      abstentionReason: "requested_fact_scan_truncated",
+    });
+    const truncatedRun = latestRun(app, harness.agentId);
+    expect(truncatedRun.inputSnapshot.hierarchy?.selectorAudit).toMatchObject({
+      outcome: "scan_truncated",
+      attempts: [
+        { tier: "event_card", outcome: "incomplete" },
+        { tier: "basic_memory", outcome: "scan_truncated" },
+      ],
+    });
+    expectReplayExact(app.personasim.memoryRecalls, app, truncatedRun.id);
+  });
+
+  it("bounds diagnostic evidence across the full explicit-fact candidate pool", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Bounded explicit fact diagnostics",
+    );
+    const unsweetenedSourceIds: string[] = [];
+    const sweetenedSourceIds: string[] = [];
+    for (let index = 0; index < 21; index += 1) {
+      const suffix = index.toString().padStart(2, "0");
+      const unsweetenedSourceId = `message-diagnostic-unsweetened-${suffix}`;
+      const sweetenedSourceId = `message-diagnostic-sweetened-${suffix}`;
+      unsweetenedSourceIds.push(unsweetenedSourceId);
+      sweetenedSourceIds.push(sweetenedSourceId);
+      insertUserMessage(app, {
+        id: unsweetenedSourceId,
+        sessionId: session.id,
+        agentId: harness.agentId,
+        content: "我喝不加糖的红茶。",
+        createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      });
+      insertUserMessage(app, {
+        id: sweetenedSourceId,
+        sessionId: session.id,
+        agentId: harness.agentId,
+        content: "我喝加糖的红茶。",
+        createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      });
+    }
+    const insertEvidence = app.personasim.store.database.prepare(
+      `INSERT INTO memory_evidence(
+        id, memory_id, source_type, source_id, quote, recorded_at_utc,
+        evidence_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    app.personasim.store.database.transaction(() => {
+      for (let memoryIndex = 0; memoryIndex < 500; memoryIndex += 1) {
+        const memorySuffix = memoryIndex.toString().padStart(3, "0");
+        const memoryId = `memory-diagnostic-pool-${memorySuffix}`;
+        const isConflict = memoryIndex === 499;
+        const content = isConflict
+          ? "用户喝加糖的红茶。"
+          : "用户喝不加糖的红茶。";
+        insertStableFactMemoryWithoutEvidence(app!, {
+          id: memoryId,
+          agentId: harness.agentId,
+          dedupeKey: `diagnostic-pool:${memorySuffix}`,
+          content,
+          tags: ["user preference", "红茶"],
+        });
+        for (let evidenceIndex = 0; evidenceIndex < 21; evidenceIndex += 1) {
+          const sourceId = isConflict
+            ? sweetenedSourceIds[evidenceIndex]!
+            : unsweetenedSourceIds[evidenceIndex]!;
+          const evidence = MemoryEvidenceSchema.parse({
+            id: `evidence-diagnostic-${memorySuffix}-${evidenceIndex
+              .toString()
+              .padStart(2, "0")}`,
+            memoryId,
+            sourceType: "message",
+            sourceId,
+            quote: isConflict ? "我喝加糖的红茶。" : "我喝不加糖的红茶。",
+            recordedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+          });
+          insertEvidence.run(
+            evidence.id,
+            evidence.memoryId,
+            evidence.sourceType,
+            evidence.sourceId,
+            evidence.quote,
+            evidence.recordedAtUtc,
+            JSON.stringify(evidence),
+          );
+        }
+      }
+    })();
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+      limit: 500,
+    });
+    expect(preview.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_facets_conflicted",
+    });
+    expect(preview.candidateCount).toBe(500);
+    expect(preview.evidenceCount).toBe(500);
+    const run = latestRun(app, harness.agentId);
+    expect(run.inputSnapshot.memories).toHaveLength(500);
+    expect(run.inputSnapshot.evidence).toHaveLength(500);
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+  });
+
+  it("fails closed when the explicit-fact EventCard safety scan is truncated", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "EventCard safety scan truncation",
+    );
+    const messageId = "message-event-card-scan-source";
+    const source = "我喝不加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。";
+    insertUserMessage(app, {
+      id: messageId,
+      sessionId: session.id,
+      agentId: harness.agentId,
+      content: source,
+      createdAtUtc: "2026-10-11T14:00:00.000Z",
+    });
+    const cards = Array.from({ length: 501 }, (_unused, index) =>
+      sharedEventCard({
+        id: `event-card-explicit-scan-${index.toString().padStart(3, "0")}`,
+        agentId: harness.agentId,
+        messageId,
+        title: "饮品与铁盒标签",
+        summary: source,
+        occurredAtUtc: "2026-10-11T14:00:00.000Z",
+      }),
+    );
+    expect(
+      new ContinuityRepository(app.personasim.store).upsertEventCards(cards),
+    ).toBe(501);
+
+    const preview = app.personasim.memoryRecalls.preview({
+      agentId: harness.agentId,
+      sessionId: session.id,
+      query: EXPLICIT_FACT_QUERY,
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      requireDurableEvidence: true,
+    });
+    expect(preview.result).toMatchObject({
+      mode: "none",
+      abstained: true,
+      abstentionReason: "requested_fact_scan_truncated",
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    const run = latestRun(app, harness.agentId);
+    expect(run.inputSnapshot.hierarchy?.selectorAudit).toMatchObject({
+      outcome: "scan_truncated",
+      scanLimit: 500,
+      scanTruncated: true,
+      attempts: [
+        {
+          tier: "event_card",
+          outcome: "scan_truncated",
+          scannedCandidateCount: 500,
+          scanUnit: "candidate_pool",
+          scanLimit: 500,
+          scanWitnessMemoryId: "event-card-explicit-scan-500",
+        },
+      ],
+    });
+    const eventFrozenTiers =
+      run.inputSnapshot.selectorAuditInput?.candidateTiers.filter(
+        (candidate) => candidate.tier === "event_card",
+      ) ?? [];
+    expect(eventFrozenTiers).toHaveLength(501);
+    expect(
+      eventFrozenTiers.some(
+        (candidate) => candidate.memoryId === "event-card-explicit-scan-500",
+      ),
+    ).toBe(true);
+    expect(
+      run.inputSnapshot.memories.some(
+        (memory) => memory.id === "event-card-explicit-scan-500",
+      ),
+    ).toBe(false);
+    expectReplayExact(app.personasim.memoryRecalls, app, run.id);
+  });
+
+  it("leaves narrative and unsupported checklists on the existing recall hierarchy", async () => {
+    const harness = await createHarness({
+      nowUtc: SHANGHAI_NOW,
+      timezone: "Asia/Shanghai",
+    });
+    app = harness.app;
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Checklist scope",
+    );
+    const cases = [
+      {
+        id: "narrative-checklist",
+        query:
+          "我已经核对两件事实：我的喝茶习惯，和铁盒标签。现在只是告诉你进度。",
+        occurredAtUtc: SHANGHAI_NOW,
+      },
+      {
+        id: "unsupported-checklist",
+        query: "替我核对两件旧事：我的护照号码，和公司的门禁码。只答事实。",
+        occurredAtUtc: SHANGHAI_NOW,
+      },
+      {
+        id: "reported-checklist",
+        query:
+          "昨天我对同事说，替我核对两件旧事：我的喝茶习惯，和铁盒标签。只答事实。",
+        occurredAtUtc: "2026-08-20T04:00:00.000Z",
+      },
+      {
+        id: "reported-checklist-mentioned",
+        query:
+          "昨天我对同事提到，替我核对两件旧事：我的喝茶习惯，和铁盒标签。只答事实。",
+        occurredAtUtc: "2026-08-20T04:00:00.000Z",
+      },
+    ] as const;
+
+    for (const item of cases) {
+      const messageId = `message-${item.id}`;
+      insertUserMessage(app, {
+        id: messageId,
+        sessionId: session.id,
+        agentId: harness.agentId,
+        content: item.query,
+        createdAtUtc: SHANGHAI_NOW,
+      });
+      expect(
+        new ContinuityRepository(app.personasim.store).upsertEventCards([
+          sharedEventCard({
+            id: `event-card-${item.id}`,
+            agentId: harness.agentId,
+            messageId,
+            title: item.query,
+            summary: item.query,
+            occurredAtUtc: item.occurredAtUtc,
+          }),
+        ]),
+      ).toBe(1);
+      const preview = app.personasim.memoryRecalls.preview({
+        agentId: harness.agentId,
+        sessionId: session.id,
+        query: item.query,
+        nowUtc: SHANGHAI_NOW,
+        timezone: "Asia/Shanghai",
+        requireDurableEvidence: true,
+      });
+      expect(preview.result, item.id).toMatchObject({
+        mode: "event_card",
+        abstained: false,
+      });
+      expect(
+        latestRun(app, harness.agentId).inputSnapshot.hierarchy,
+      ).toMatchObject({ finalTier: "event_card" });
+    }
+
+    for (const directRequest of [
+      {
+        query: "核对两件旧事：我的喝茶习惯，和铁盒标签。只答事实。",
+        reason: "requested_fact_facets_incomplete",
+      },
+      {
+        query: "替我核对两件旧事：我的喝茶习惯，和铁盒标签。再告诉我门禁码。",
+        reason: "requested_fact_request_invalid",
+      },
+      {
+        query: "替我核对两件旧事：我的喝茶习惯。",
+        reason: "requested_fact_request_invalid",
+      },
+      {
+        query: "替我核对两件旧事：我的喝茶习惯和铁盒标签。",
+        reason: "requested_fact_request_invalid",
+      },
+    ]) {
+      const preview = app.personasim.memoryRecalls.preview({
+        agentId: harness.agentId,
+        sessionId: session.id,
+        query: directRequest.query,
+        nowUtc: SHANGHAI_NOW,
+        timezone: "Asia/Shanghai",
+        requireDurableEvidence: true,
+      });
+      expect(preview.result).toMatchObject({
+        mode: "none",
+        abstained: true,
+        abstentionReason: directRequest.reason,
+        selectedMemoryIds: [],
+        selectedEvidenceIds: [],
+      });
+    }
   });
 
   it("recalls a completion preference instead of rejecting it as a missing temporal anchor", async () => {
@@ -723,36 +2953,10 @@ describe("continuity memory recall hierarchy", () => {
 async function createHarness(input: {
   nowUtc: string;
   timezone: string;
+  databasePath?: string;
+  explicitFactReplies?: boolean;
 }): Promise<{ app: PersonaSimApp; agentId: string }> {
-  const clock = new (await import("../runtime/clock.js")).FakeClock(
-    input.nowUtc,
-  );
-  const config = readConfig({
-    nodeEnv: "test",
-    databasePath: ":memory:",
-    clockMode: "fake",
-    seedDemo: false,
-    developerRoutes: true,
-    chatEffectsMode: "off",
-    scheduleNegotiationMode: "legacy",
-    liveWorldEffectsMode: "off",
-    memoryRecallMode: "enforced",
-    llm: {
-      provider: "fixture",
-      baseUrl: "https://example.invalid",
-      model: "personasim-fixture-v1",
-      timeoutMs: 1_000,
-      maxRetries: 0,
-    },
-  });
-  const app = await buildApp({
-    config,
-    database: openDatabase(":memory:"),
-    clock,
-    seedDemo: false,
-    startScheduler: false,
-    logger: false,
-  });
+  const app = await openHarnessApp(input);
   const generated = await app.inject({
     method: "POST",
     url: "/api/characters/generate",
@@ -782,6 +2986,109 @@ async function createHarness(input: {
   return { app, agentId: draft.id };
 }
 
+async function openHarnessApp(input: {
+  nowUtc: string;
+  databasePath?: string;
+  explicitFactReplies?: boolean;
+}): Promise<PersonaSimApp> {
+  const databasePath = input.databasePath ?? ":memory:";
+  const clock = new (await import("../runtime/clock.js")).FakeClock(
+    input.nowUtc,
+  );
+  const config = readConfig({
+    nodeEnv: "test",
+    databasePath,
+    clockMode: "fake",
+    seedDemo: false,
+    developerRoutes: true,
+    chatEffectsMode: "off",
+    scheduleNegotiationMode: "legacy",
+    liveWorldEffectsMode: "off",
+    memoryRecallMode: "enforced",
+    llm: {
+      provider: "fixture",
+      baseUrl: "https://example.invalid",
+      model: "personasim-fixture-v1",
+      timeoutMs: 1_000,
+      maxRetries: 0,
+    },
+  });
+  const app = await buildApp({
+    config,
+    database: openDatabase(databasePath),
+    clock,
+    seedDemo: false,
+    startScheduler: false,
+    logger: false,
+    ...(input.explicitFactReplies === true
+      ? {
+          fixtureTurnBehavior: {
+            semanticReply: ({
+              userText,
+              prompt,
+            }: {
+              userText: string;
+              prompt: string;
+            }) => {
+              if (
+                !/(?:核对|确认|复述).{0,24}(?:两|2)(?:件|个|项)/u.test(userText)
+              ) {
+                return undefined;
+              }
+              return prompt.includes(TEA_FACT) && prompt.includes(BOX_FACT)
+                ? EXPLICIT_FACT_REPLY
+                : EXPLICIT_FACT_REFUSAL;
+            },
+          },
+        }
+      : {}),
+  });
+  return app;
+}
+
+function explicitUserFact(
+  content: string,
+  tags: string[],
+  importance: number,
+  recordedAtUtc: string,
+  claimSubjectKey?: string,
+): MemoryCandidate {
+  return MemoryCandidateSchema.parse({
+    kind: "semantic",
+    content,
+    importance,
+    confidence: 0.95,
+    tags,
+    sourceMessageIds: [],
+    sourceActivityEventIds: [],
+    origin: "runtime_simulation",
+    namespace: "user_model",
+    certainty: "explicit",
+    attribution: "user_explicit",
+    stability: "stable",
+    ...(claimSubjectKey === undefined
+      ? {}
+      : {
+          claim: {
+            subjectKey: claimSubjectKey,
+            disposition: "affirmed",
+            recordedAtUtc,
+          },
+        }),
+    temporalMetadata: {
+      mentionedAtUtc: recordedAtUtc,
+      recordedAtUtc,
+      temporalCertainty: "exact",
+      temporalStatus: "unknown",
+    },
+    evidence: [],
+    shouldWrite: true,
+    forbiddenOverclaims: [],
+    reasonCode: "explicit_user_fact",
+    reasonSummary: "The user stated this fact directly.",
+  });
+}
+
 function sharedEventCard(input: {
   id: string;
   agentId: string;
@@ -790,6 +3097,12 @@ function sharedEventCard(input: {
   summary: string;
   occurredAtUtc?: string;
   plannedAtUtc?: string;
+  evidenceSources?: Array<{
+    id: string;
+    messageId: string;
+    quote: string;
+    recordedAtUtc: string;
+  }>;
 }): EventCard {
   const evidenceId = `evidence-${input.id}`;
   const recordedAtUtc =
@@ -808,6 +3121,25 @@ function sharedEventCard(input: {
           temporalCertainty: "exact" as const,
           temporalStatus: "occurred" as const,
         };
+  const evidence = input.evidenceSources?.map((source) => ({
+    id: source.id,
+    sourceType: "message_archive" as const,
+    sourceId: source.messageId,
+    quote: source.quote,
+    temporalStatus: temporalMetadata.temporalStatus,
+    reliability: "reported" as const,
+    recordedAtUtc: source.recordedAtUtc,
+  })) ?? [
+    {
+      id: evidenceId,
+      sourceType: "message_archive" as const,
+      sourceId: input.messageId,
+      quote: input.summary,
+      temporalStatus: temporalMetadata.temporalStatus,
+      reliability: "reported" as const,
+      recordedAtUtc,
+    },
+  ];
   return EventCardSchema.parse({
     id: input.id,
     agentId: input.agentId,
@@ -823,23 +3155,80 @@ function sharedEventCard(input: {
     attribution: "mixed",
     temporalMetadata,
     importance: 0.9,
-    evidence: [
-      {
-        id: evidenceId,
-        sourceType: "message_archive",
-        sourceId: input.messageId,
-        quote: input.summary,
-        temporalStatus: temporalMetadata.temporalStatus,
-        reliability: "reported",
-        recordedAtUtc,
-      },
-    ],
-    sourceEvidenceIds: [evidenceId],
+    evidence,
+    sourceEvidenceIds: evidence.map((item) => item.id),
     status: "active",
     indexVersion: 1,
     createdAtUtc: recordedAtUtc,
     updatedAtUtc: recordedAtUtc,
   });
+}
+
+function insertStableFactMemoryWithoutEvidence(
+  app: PersonaSimApp,
+  input: {
+    id: string;
+    agentId: string;
+    dedupeKey: string;
+    content?: string;
+    tags?: string[];
+  },
+): void {
+  const memory = MemorySchema.parse({
+    id: input.id,
+    agentId: input.agentId,
+    kind: "semantic",
+    content: input.content ?? "用户喝不加糖的红茶。",
+    importance: 0.5,
+    confidence: 0.95,
+    tags: input.tags ?? ["user preference", "红茶"],
+    sourceMessageIds: [],
+    sourceActivityEventIds: [],
+    origin: "runtime_simulation",
+    namespace: "user_model",
+    certainty: "explicit",
+    attribution: "user_explicit",
+    stability: "stable",
+    temporalMetadata: {
+      mentionedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      recordedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      temporalCertainty: "exact",
+      temporalStatus: "unknown",
+    },
+    status: "active",
+    dedupeKey: input.dedupeKey,
+    createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+    updatedAtUtc: EXPLICIT_FACT_SOURCE_AT,
+  });
+  app.personasim.store.database
+    .prepare(
+      `INSERT INTO memories(
+        id, agent_id, type, content, tags_json, importance, confidence,
+        created_at_utc, memory_json, namespace, certainty, attribution,
+        stability, status, mentioned_at_utc, recorded_at_utc,
+        temporal_certainty, temporal_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      memory.id,
+      memory.agentId,
+      memory.kind,
+      memory.content,
+      JSON.stringify(memory.tags),
+      memory.importance,
+      memory.confidence,
+      memory.createdAtUtc,
+      JSON.stringify(memory),
+      memory.namespace,
+      memory.certainty,
+      memory.attribution,
+      memory.stability,
+      memory.status,
+      memory.temporalMetadata?.mentionedAtUtc,
+      memory.temporalMetadata?.recordedAtUtc,
+      memory.temporalMetadata?.temporalCertainty,
+      memory.temporalMetadata?.temporalStatus,
+    );
 }
 
 function insertUserMessage(

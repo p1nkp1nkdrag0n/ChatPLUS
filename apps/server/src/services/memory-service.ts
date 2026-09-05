@@ -75,6 +75,78 @@ export type RecallCandidatePoolInput = {
   keywordLimit?: number;
 };
 
+export type StableExplicitUserMemoryScan = {
+  memories: Memory[];
+  truncated: boolean;
+  scanLimit: number;
+  truncationWitness?: Memory;
+};
+
+/**
+ * Reads the complete bounded safety pool used for atomic explicit-fact
+ * verification. Unlike the ordinary recall pool, its limit is internal and
+ * cannot be reduced by a caller's presentation-oriented candidate limit.
+ */
+export function readStableExplicitUserMemoryScan(
+  store: DatabaseStore,
+  agentId: string,
+  nowUtc: string,
+  input: { searchTerms: readonly string[]; scanLimit: number },
+): StableExplicitUserMemoryScan {
+  const scanLimit = Math.max(1, Math.min(500, Math.trunc(input.scanLimit)));
+  const searchTerms = [
+    ...new Set(
+      input.searchTerms
+        .map((term) => term.normalize("NFKC").trim().toLocaleLowerCase())
+        .filter(Boolean),
+    ),
+  ].slice(0, 80);
+  if (searchTerms.length === 0) {
+    return { memories: [], truncated: false, scanLimit };
+  }
+  const termClauses = searchTerms
+    .map(
+      () => "(instr(lower(content), ?) > 0 OR instr(lower(tags_json), ?) > 0)",
+    )
+    .join(" OR ");
+  const rows = store.database
+    .prepare(
+      `SELECT id, agent_id, type, content, tags_json, importance, confidence,
+        source_message_id, source_event_id, created_at_utc, valid_until_utc,
+        memory_json, namespace, certainty, attribution, stability, status,
+        claim_subject_key, claim_disposition, superseded_by_id,
+        merged_into_id, last_reinforced_at_utc,
+        lifecycle_updated_at_utc,
+        mentioned_at_utc, planned_start_at_utc, planned_end_at_utc,
+        occurred_start_at_utc, occurred_end_at_utc, recorded_at_utc,
+        temporal_certainty, temporal_status
+       FROM memories
+       WHERE agent_id = ? AND type = 'semantic' AND status = 'active'
+         AND namespace = 'user_model' AND certainty = 'explicit'
+         AND attribution = 'user_explicit' AND stability = 'stable'
+         AND superseded_by_id IS NULL AND merged_into_id IS NULL
+         AND (claim_disposition IS NULL OR claim_disposition NOT IN ('cancelled', 'completed'))
+         AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND (${termClauses})
+       ORDER BY importance DESC, created_at_utc DESC, id ASC
+       LIMIT ?`,
+    )
+    .all(
+      agentId,
+      nowUtc,
+      ...searchTerms.flatMap((term) => [term, term]),
+      scanLimit + 1,
+    ) as MemoryRow[];
+  const memories = rows.map(memoryFromRow);
+  const truncationWitness = memories[scanLimit];
+  return {
+    memories: memories.slice(0, scanLimit),
+    truncated: truncationWitness !== undefined,
+    scanLimit,
+    ...(truncationWitness === undefined ? {} : { truncationWitness }),
+  };
+}
+
 /**
  * Builds one bounded, query-aware pool. Keyword matches are ranked ahead of
  * the importance fallback by token rarity and coverage, so a rare relevant
@@ -266,22 +338,70 @@ export function readMemoryEvidence(
     )
     .all(...uniqueIds) as MemoryEvidenceRow[];
   return rows.flatMap((row) => {
-    const fromJson = parseJson(row.evidence_json);
-    const parsed = MemoryEvidenceSchema.safeParse(
-      fromJson ?? {
-        id: row.id,
-        memoryId: row.memory_id,
-        sourceType: row.source_type,
-        sourceId: row.source_id,
-        ...(row.quote === null ? {} : { quote: row.quote }),
-        ...(row.context_summary === null
-          ? {}
-          : { contextSummary: row.context_summary }),
-        recordedAtUtc: row.recorded_at_utc,
-      },
-    );
-    return parsed.success ? [parsed.data] : [];
+    const evidence = memoryEvidenceFromRow(row);
+    return evidence === undefined ? [] : [evidence];
   });
+}
+
+export type ExplicitFactMemoryEvidenceScan = {
+  evidence: MemoryEvidence[];
+  truncatedMemoryIds: string[];
+  perMemoryLimit: number;
+};
+
+/**
+ * Reads up to N+1 evidence rows per memory for the explicit-fact safety path.
+ * The extra row is never returned; it only makes evidence saturation visible
+ * so a late contradiction cannot be hidden behind a presentation cap.
+ */
+export function readExplicitFactMemoryEvidenceScan(
+  store: DatabaseStore,
+  memoryIds: readonly string[],
+  perMemoryLimit: number,
+): ExplicitFactMemoryEvidenceScan {
+  const uniqueIds = [...new Set(memoryIds)].slice(0, 500);
+  const safeLimit = Math.max(1, Math.min(500, Math.trunc(perMemoryLimit)));
+  if (uniqueIds.length === 0) {
+    return { evidence: [], truncatedMemoryIds: [], perMemoryLimit: safeLimit };
+  }
+  const placeholders = uniqueIds.map(() => "?").join(", ");
+  const rows = store.database
+    .prepare(
+      `WITH ranked AS (
+         SELECT id, memory_id, source_type, source_id, quote,
+           context_summary, recorded_at_utc, evidence_json,
+           ROW_NUMBER() OVER (
+             PARTITION BY memory_id
+             ORDER BY recorded_at_utc DESC, id
+           ) AS evidence_rank
+         FROM memory_evidence
+         WHERE memory_id IN (${placeholders})
+       )
+       SELECT id, memory_id, source_type, source_id, quote,
+         context_summary, recorded_at_utc, evidence_json, evidence_rank
+       FROM ranked
+       WHERE evidence_rank <= ?
+       ORDER BY memory_id, evidence_rank`,
+    )
+    .all(...uniqueIds, safeLimit + 1) as Array<
+    MemoryEvidenceRow & { evidence_rank: number }
+  >;
+  const truncatedMemoryIds = [
+    ...new Set(
+      rows
+        .filter((row) => row.evidence_rank > safeLimit)
+        .map((row) => row.memory_id),
+    ),
+  ].sort();
+  return {
+    evidence: rows.flatMap((row) => {
+      if (row.evidence_rank > safeLimit) return [];
+      const evidence = memoryEvidenceFromRow(row);
+      return evidence === undefined ? [] : [evidence];
+    }),
+    truncatedMemoryIds,
+    perMemoryLimit: safeLimit,
+  };
 }
 
 export function validateMergeAndPersistMemories(
@@ -1359,6 +1479,26 @@ type MemoryEvidenceRow = {
   recorded_at_utc: string;
   evidence_json: string;
 };
+
+function memoryEvidenceFromRow(
+  row: MemoryEvidenceRow,
+): MemoryEvidence | undefined {
+  const fromJson = parseJson(row.evidence_json);
+  const parsed = MemoryEvidenceSchema.safeParse(
+    fromJson ?? {
+      id: row.id,
+      memoryId: row.memory_id,
+      sourceType: row.source_type,
+      sourceId: row.source_id,
+      ...(row.quote === null ? {} : { quote: row.quote }),
+      ...(row.context_summary === null
+        ? {}
+        : { contextSummary: row.context_summary }),
+      recordedAtUtc: row.recorded_at_utc,
+    },
+  );
+  return parsed.success ? parsed.data : undefined;
+}
 
 type MemoryRow = {
   id: string;

@@ -420,7 +420,7 @@ describe("memory recall runtime integration", () => {
     const calls: Array<GenerateObjectInput<unknown>> = [];
     mockLlm(app.personasim.llm, calls);
     const character = await createAndPublish(app);
-    seedRecallMemories(app, character.id);
+    const seeded = seedRecallMemories(app, character.id);
     calls.length = 0;
     const session = app.personasim.conversations.createSession(
       character.id,
@@ -447,6 +447,22 @@ describe("memory recall runtime integration", () => {
         sourceMessageId: first.userMessage.id,
       }),
     ]);
+    expect(runs[0]?.result).toMatchObject({
+      abstained: false,
+      selectedMemoryIds: [seeded.teaMemoryId],
+    });
+    expect(runs[0]?.result.selectedEvidenceIds).toHaveLength(1);
+    expect(runs[0]?.result.selectedMemoryIds).not.toContain(
+      seeded.unverifiedMemoryId,
+    );
+    expect(runs[0]?.inputSnapshot.evidence).toHaveLength(2);
+    expect(
+      runs[0]?.result.selectedEvidenceIds.every((evidenceId) =>
+        runs[0]?.inputSnapshot.evidence.some(
+          (evidence) => evidence.id === evidenceId,
+        ),
+      ),
+    ).toBe(true);
     expect(calls.filter((call) => call.purpose === "chat_turn")).toHaveLength(
       1,
     );

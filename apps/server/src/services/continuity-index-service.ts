@@ -123,6 +123,14 @@ export class ContinuityIndexService {
   }): EventCard[] {
     return this.repository.searchEventCards(input);
   }
+
+  scanExplicitFactEventCards(input: {
+    agentId: string;
+    searchTerms: readonly string[];
+    scanLimit: number;
+  }) {
+    return this.repository.scanExplicitFactEventCards(input);
+  }
   temporalAnchors(input: {
     agentId: string;
     query: string;

@@ -39,6 +39,13 @@ export interface AutobiographyBundle {
   entries: AutobiographyEntry[];
 }
 
+export interface ExplicitFactEventCardScan {
+  cards: EventCard[];
+  truncated: boolean;
+  scanLimit: number;
+  truncationWitness?: EventCard;
+}
+
 export class ContinuityRepository {
   constructor(readonly store: DatabaseStore) {}
 
@@ -612,6 +619,60 @@ export class ContinuityRepository {
               ) as Array<{ card_json: string }>
           ).map((row) => JSON.parse(row.card_json) as EventCard);
     return mergeSearchMatches(input.query, hanMatches, ftsMatches, limit);
+  }
+
+  /**
+   * Reads a bounded, caller-independent safety pool for atomic fact checks.
+   * The supplied terms must be a conservative superset of everything the
+   * downstream fact extractor can accept; reaching the cap is reported so the
+   * caller can fail closed instead of overlooking a later contradiction.
+   */
+  scanExplicitFactEventCards(input: {
+    agentId: string;
+    searchTerms: readonly string[];
+    scanLimit: number;
+  }): ExplicitFactEventCardScan {
+    const scanLimit = Math.max(1, Math.min(500, Math.trunc(input.scanLimit)));
+    const searchTerms = [
+      ...new Set(
+        input.searchTerms
+          .map((term) => term.normalize("NFKC").trim().toLocaleLowerCase())
+          .filter(Boolean),
+      ),
+    ].slice(0, 80);
+    if (searchTerms.length === 0) {
+      return { cards: [], truncated: false, scanLimit };
+    }
+    const termClauses = searchTerms
+      .map(
+        () =>
+          "(instr(lower(title), ?) > 0 OR instr(lower(summary), ?) > 0 OR instr(lower(tags_text), ?) > 0)",
+      )
+      .join(" OR ");
+    const rows = this.store.database
+      .prepare(
+        `SELECT card_json
+         FROM event_cards
+         WHERE agent_id = ? AND status = 'active'
+           AND (${termClauses})
+         ORDER BY importance DESC, recorded_at_utc DESC, id ASC
+         LIMIT ?`,
+      )
+      .all(
+        input.agentId,
+        ...searchTerms.flatMap((term) => [term, term, term]),
+        scanLimit + 1,
+      ) as Array<{ card_json: string }>;
+    const parsedRows = rows.map(
+      (row) => JSON.parse(row.card_json) as EventCard,
+    );
+    const truncationWitness = parsedRows[scanLimit];
+    return {
+      cards: parsedRows.slice(0, scanLimit),
+      truncated: truncationWitness !== undefined,
+      scanLimit,
+      ...(truncationWitness === undefined ? {} : { truncationWitness }),
+    };
   }
 
   replaceEventCards(agentId: string, cards: readonly EventCard[]): number {

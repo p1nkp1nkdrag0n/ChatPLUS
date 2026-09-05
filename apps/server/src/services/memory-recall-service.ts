@@ -20,6 +20,7 @@ import {
   RETRIEVAL_RUN_STAGE_NAMES,
   RetrievalRunRepository,
   type CreateRetrievalRunInput,
+  type ExplicitFactSelectorInputSnapshot,
   type RetrievalHierarchySnapshot,
   type RetrievalReplayInput,
   type RetrievalRunCandidate,
@@ -146,6 +147,7 @@ type MemoryRecallInspection = {
   prepared: PreparedRecall;
   candidateBreakdowns: Map<string, RetrievalScoreBreakdown>;
   hierarchy?: RetrievalHierarchySnapshot;
+  selectorAuditInput?: ExplicitFactSelectorInputSnapshot;
 };
 
 function inspectAgentMemoryRecall(
@@ -276,6 +278,9 @@ function toRetrievalRunInput(
           strategyVersion: "continuity_hierarchy_v1",
           hierarchy: inspection.hierarchy,
         }),
+    ...(inspection.selectorAuditInput === undefined
+      ? {}
+      : { selectorAuditInput: inspection.selectorAuditInput }),
   };
   const strategyName =
     inspection.hierarchy === undefined
@@ -292,6 +297,8 @@ function toRetrievalRunInput(
       candidateLimit: inputSnapshot.candidateLimit,
       maxEvidence: inputSnapshot.maxEvidence,
       minimumScore: inputSnapshot.minimumScore,
+      selectorPolicyVersion:
+        inspection.hierarchy?.selectorAudit?.policy ?? null,
     },
     hierarchy: [
       "event_card",
@@ -453,6 +460,24 @@ function retrievalRunStages(
         ...(preview.result.abstained
           ? { abstentionReason: preview.result.abstentionReason }
           : {}),
+        selector:
+          inspection.hierarchy?.selectorAudit === undefined
+            ? null
+            : {
+                policy: inspection.hierarchy.selectorAudit.policy,
+                outcome: inspection.hierarchy.selectorAudit.outcome,
+                attempts: inspection.hierarchy.selectorAudit.attempts.map(
+                  (attempt) => ({
+                    tier: attempt.tier,
+                    outcome: attempt.outcome,
+                    facets: attempt.facets.map((facet) => ({
+                      index: facet.index,
+                      kind: facet.kind,
+                      outcome: facet.outcome,
+                    })),
+                  }),
+                ),
+              },
       }),
     },
     {

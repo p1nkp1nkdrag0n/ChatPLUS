@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 import {
-  AutobiographyRevisionProposalSchema,
   ConversationCheckpointSchema,
   DEFAULT_CONVERSATION_RETENTION_POLICY,
   type AgentAutobiographySnapshot,
@@ -30,7 +29,8 @@ import type {
   ArchivedMessage,
   ContinuityRepository,
 } from "./continuity-repository.js";
-import type { LlmService } from "./llm-service.js";
+
+export { LlmCheckpointAutobiographyModel } from "./checkpoint-autobiography-model.js";
 
 export interface CheckpointAutobiographyModelInput {
   agentId: string;
@@ -342,28 +342,6 @@ export class CheckpointService {
   }
 }
 
-export class LlmCheckpointAutobiographyModel implements CheckpointAutobiographyModel {
-  constructor(private readonly llm: Pick<LlmService, "generateObject">) {}
-
-  generateAutobiography(
-    input: CheckpointAutobiographyModelInput,
-  ): Promise<AutobiographyRevisionProposal> {
-    return this.llm.generateObject({
-      purpose: "checkpoint_autobiography",
-      system:
-        "Revise the character's first-person autobiography using only the verified evidence. Planned events must remain planned and must never be described as occurred.",
-      prompt: JSON.stringify({
-        checkpointId: input.checkpointId,
-        previousAutobiography: input.previousAutobiography ?? null,
-        messages: input.messages,
-        evidence: input.evidence.map(modelEvidence),
-      }),
-      schema: AutobiographyRevisionProposalSchema,
-      agentId: input.agentId,
-    });
-  }
-}
-
 export function checkpointSourceHash(
   messages: readonly ArchivedMessage[],
 ): string {
@@ -445,25 +423,6 @@ function cardKind(
   if (kind === "active_goal") return "goal";
   if (kind === "commitment") return "commitment";
   return "shared_experience";
-}
-
-function modelEvidence(
-  evidence: VerifiedContinuityEvidence,
-): Omit<VerifiedContinuityEvidence, "text"> {
-  return {
-    id: evidence.id,
-    sourceType: evidence.sourceType,
-    sourceId: evidence.sourceId,
-    ...(evidence.quote === undefined ? {} : { quote: evidence.quote }),
-    ...(evidence.contextSummary === undefined
-      ? {}
-      : { contextSummary: evidence.contextSummary }),
-    ...(evidence.temporalStatus === undefined
-      ? {}
-      : { temporalStatus: evidence.temporalStatus }),
-    reliability: evidence.reliability,
-    recordedAtUtc: evidence.recordedAtUtc,
-  };
 }
 
 function errorMessage(error: unknown): string {

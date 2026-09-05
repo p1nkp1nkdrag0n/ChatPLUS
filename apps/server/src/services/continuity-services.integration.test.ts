@@ -18,6 +18,7 @@ import {
 } from "./autobiography-service.js";
 import {
   CheckpointService,
+  LlmCheckpointAutobiographyModel,
   checkpointSourceHash,
   type CheckpointAutobiographyModel,
   type CheckpointAutobiographyModelInput,
@@ -27,6 +28,7 @@ import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
 import { ContinuityRepository } from "./continuity-repository.js";
 import { DateDigestService } from "./date-digest-service.js";
 import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
+import type { GenerateObjectInput } from "./llm-service.js";
 
 const AGENT_ID = "agent_continuity";
 const SESSION_ID = "session_continuity";
@@ -54,6 +56,114 @@ describe("continuity services", () => {
 
   afterEach(() => {
     database.close();
+  });
+
+  it("commits reported conversations through the model DTO without inventing occurrence evidence", async () => {
+    insertMessage(store, {
+      id: "msg_report_user",
+      role: "user",
+      messageKind: "user",
+      content: "我说错了，画画是在周二，不是周四。".repeat(80),
+      createdAtUtc: "2026-08-21T02:00:00.000Z",
+    });
+    insertMessage(store, {
+      id: "msg_report_character",
+      role: "assistant",
+      messageKind: "assistant_reply",
+      inReplyToMessageId: "msg_report_user",
+      content: "我刚剪完粗剪，明天想再检查一次粗剪。".repeat(80),
+      createdAtUtc: "2026-08-21T02:01:00.000Z",
+    });
+    insertLargeTurn(store, 1);
+    const repository = new ContinuityRepository(store);
+    const llm = {
+      generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+        const { evidence } = JSON.parse(input.prompt) as {
+          evidence: ContinuityEvidenceRef[];
+        };
+        const user = evidence.find(
+          (item) => item.sourceId === "msg_report_user",
+        )!;
+        const character = evidence.find(
+          (item) => item.sourceId === "msg_report_character",
+        )!;
+        return Promise.resolve(
+          input.schema.parse({
+            summaryFirstPerson:
+              "林舟把画画时间从周四更正为周二；我提到刚剪完粗剪，并计划再检查粗剪。",
+            entries: [
+              {
+                entryKind: "important_experience",
+                content: "林舟把画画时间从周四更正为周二。",
+                temporalStatus: "unknown",
+                evidenceIds: [user.id],
+              },
+              {
+                entryKind: "important_experience",
+                content: "我提到刚剪完粗剪。",
+                temporalStatus: "unknown",
+                evidenceIds: [character.id],
+              },
+              {
+                entryKind: "commitment",
+                content: "我计划再检查粗剪。",
+                temporalStatus: "planned",
+                evidenceIds: [character.id],
+              },
+            ],
+          }),
+        );
+      },
+    };
+    const services = createServices(
+      repository,
+      new LlmCheckpointAutobiographyModel(llm),
+      clock,
+    );
+    const result = await services.checkpoints.createIfNeeded({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+    });
+    expect(result.status).toBe("committed");
+    const reloaded = new ContinuityRepository(store).getLatestAutobiography(
+      AGENT_ID,
+    )!;
+    expect(reloaded.snapshot.revision).toBe(1);
+    expect(reloaded.snapshot.summaryFirstPerson).toContain(
+      "我记得这些记录中提到：",
+    );
+    expect(reloaded.entries.map((entry) => entry.temporalStatus)).toEqual([
+      "unknown",
+      "unknown",
+      "planned",
+    ]);
+    expect(reloaded.entries.map((entry) => entry.content)).toEqual([
+      "对方曾在对话中提到：林舟把画画时间从周四更正为周二。",
+      "我曾在对话中提到：我提到刚剪完粗剪。",
+      "我曾在对话中提到：我计划再检查粗剪。",
+    ]);
+    expect(
+      reloaded.entries.every((entry) =>
+        entry.evidence.every(
+          (item) =>
+            item.reliability === "reported" &&
+            item.temporalStatus === "unknown",
+        ),
+      ),
+    ).toBe(true);
+    const cards = readIndexedCards(database);
+    expect(cards).toHaveLength(3);
+    expect(
+      cards.every(
+        (card) => card.temporalMetadata.occurredStartAtUtc === undefined,
+      ),
+    ).toBe(true);
+    expect(
+      cards.map((card) => card.temporalMetadata.temporalStatus).sort(),
+    ).toEqual(["planned", "unknown", "unknown"]);
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)?.id).toBe(
+      reloaded.snapshot.sourceCheckpointId,
+    );
   });
 
   it("prioritizes bounded Han bigrams for paraphrased continuity search", () => {

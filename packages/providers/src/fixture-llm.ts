@@ -880,6 +880,35 @@ export class FixtureLlmProvider implements LlmProvider {
         ? {}
         : { maxOutputTokens: input.maxOutputTokens }),
     });
+    if (
+      input.purpose === "checkpoint_autobiography" &&
+      parseFixturePrompt(input.prompt)["outputContractVersion"] ===
+        "checkpoint_evidence_ids_v1"
+    ) {
+      const proposal = asRecord(response.data ?? {});
+      const entries = Array.isArray(proposal["entries"])
+        ? proposal["entries"]
+        : [];
+      return input.schema.parse({
+        summaryFirstPerson: stringValue(
+          proposal["summaryFirstPerson"],
+          "",
+        ).slice(0, 9_900),
+        entries: entries.map((value) => {
+          const entry = asRecord(value);
+          const evidence = Array.isArray(entry["evidence"])
+            ? entry["evidence"]
+            : [];
+          const fields = { ...entry };
+          delete fields["evidence"];
+          return {
+            ...fields,
+            content: stringValue(entry["content"], "").slice(0, 1_900),
+            evidenceIds: evidence.map((item) => asRecord(item)["id"]),
+          };
+        }),
+      });
+    }
     return parseWithSchema(response.data, response.content, input.schema);
   }
 

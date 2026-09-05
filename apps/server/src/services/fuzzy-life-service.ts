@@ -10,6 +10,7 @@ import {
   analyzeSpeakerSelfDisclosure,
   supportTopicScore,
   supportTopicText,
+  listenerSupportResponseText,
 } from "./fuzzy-life-support.js";
 import {
   ActionRecordSchema,
@@ -55,8 +56,13 @@ import {
 import type { Clock } from "../runtime/clock.js";
 import {
   analyzeLifeEvidence,
-  evidenceSubject as inferEvidenceSubject,
+  type LifeEvidenceClause,
 } from "./fuzzy-life-evidence.js";
+import {
+  collectLifeAssociationEvidence,
+  selectLifeEvidenceAssociation,
+  type LifeEvidenceAssociation,
+} from "./fuzzy-life-association.js";
 import {
   assertTimelinePlanHash,
   buildDailyIntents,
@@ -76,47 +82,35 @@ import {
   timelineLocalDate,
 } from "./fuzzy-life-planning.js";
 import {
-  DECISION_EVIDENCE_RELEVANCE_THRESHOLD,
   DILEMMA_CONTEXT_EVIDENCE_RELEVANCE_THRESHOLD,
   PRESSURE_DILEMMA_RELEVANCE_THRESHOLD,
-  REFLECTION_CONTINUITY_RELEVANCE_THRESHOLD,
   analyzeSupportSpeechAct,
   compactLifePromptText,
-  decisionEvidenceSemanticRelevance,
-  decisionRelevance,
-  decisionStagePredecessorRelevance,
   decisionSupportDirection,
   dilemmaRelevance,
   exactlyOne,
-  hasExplicitCausalStageReference,
   hasExplicitDilemmaContextFrame,
   hasMeaningfulDilemmaContextAnchor,
   hasMixedCausation,
   inferActionKind,
-  inferOutcomeValence,
   isActionRestatement,
   isCharacterDilemmaTurn,
-  isCharacterReflectionRequest,
   isCharacterSubjectDecisionRequest,
   isIdentityFacetOfLifeChoice,
   isPressureDisclosure,
   isPressureFeedbackText,
   isPressureTrajectoryContinuation,
-  isReflectionEvidence,
   isUserAdviceToCharacter,
   isUserOwnedDecision,
   isUserPressureEvidenceSubject,
   parseScaleMetric,
   pressureDilemmaSemanticRelevance,
   pressureKind,
-  reflectionContinuityRelevance,
   reflectionLesson,
   reflectionStance,
-  reflectionSubjectMatches,
   selectDilemmaOption,
   shortTitle,
   supportIntendedEffect,
-  type LifeEvidenceSubject,
   userToCharacterSupportMode,
 } from "./fuzzy-life-language.js";
 import {
@@ -577,8 +571,16 @@ export class FuzzyLifeService {
     // A user's offer can only refer to disclosures already visible before
     // this reply. New assistant disclosures are recorded afterwards.
     const participantImpact = this.recordParticipantTurn(input);
+    const spec = this.store.getCharacterSpec(input.agentId);
+    if (!spec) throw notFound("Character");
+    const local = projectCharacterTime(spec.identity, input.recordedAtUtc);
+    const followUpImpact = this.recordDecisionFollowUp(
+      input,
+      local.localDate,
+      dayPeriod(local.hour),
+    );
     const characterImpact = this.recordCharacterDisclosure(input);
-    return { ...characterImpact, ...participantImpact };
+    return { ...characterImpact, ...participantImpact, ...followUpImpact };
   }
 
   private recordParticipantTurn(
@@ -608,11 +610,7 @@ export class FuzzyLifeService {
       localDate,
       period,
     );
-    const followUpImpact = this.recordDecisionFollowUp(
-      input,
-      localDate,
-      period,
-    );
+    const followUpImpact: ConversationLifeImpact = {};
     this.recordDilemmaEvidence(
       input,
       dilemmaEvidenceText,
@@ -857,8 +855,18 @@ export class FuzzyLifeService {
     )
       mode = "deliberate";
     let interventionId: string | undefined;
+    const assistantSupportText = listenerSupportResponseText(
+      input.assistantText,
+    );
     if (
       input.assistantText.trim() !== "" &&
+      (assistantSupportText !== "" ||
+        selectedOption !== undefined ||
+        (dilemma !== undefined &&
+          dilemmaScopeScore(
+            dilemma,
+            analyzeLifeEvidence(input.assistantText).classifyText,
+          ) > 0)) &&
       (dilemma !== undefined || targetPressureId !== undefined)
     ) {
       interventionId = stableId(
@@ -877,7 +885,7 @@ export class FuzzyLifeService {
           mode,
           offeredBy: "character",
           receivedBy: "user",
-          summary: input.assistantText,
+          summary: assistantSupportText || input.assistantText,
           intendedEffect: supportIntendedEffect(mode, "user"),
           ...(mode === "recommend" || mode === "delegated_decision"
             ? { recommendationOptionId: selectedOption?.id }
@@ -971,289 +979,277 @@ export class FuzzyLifeService {
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
   ): ConversationLifeImpact {
-    // Occurrence evidence has its own modality rules. The support analyzer
-    // deliberately discards past narration, which may be a real action here.
-    const analysis = analyzeLifeEvidence(input.userText);
-    const assertedClauses = analysis.clauses.filter(
-      (clause) => clause.modality === "asserted",
-    );
-    const evidenceText = assertedClauses
-      .map((clause) => clause.sourceText)
-      .join("；");
-    const actionText = analysis.clauses
-      .filter((clause) => clause.action)
-      .map((clause) => clause.sourceText)
-      .join("；");
-    const outcomeText = analysis.clauses
-      .filter((clause) => clause.outcome)
-      .map((clause) => clause.sourceText)
-      .join("；");
-    const classifyText = analysis.classifyText;
-    const actionSubject = inferEvidenceSubject(analysis, "action");
-    const outcomeSubject = inferEvidenceSubject(analysis, "outcome");
-    const actionEvidence = analysis.clauses.some((clause) => clause.action);
-    const outcomeEvidence = analysis.clauses.some((clause) => clause.outcome);
-    const userReflectionEvidence = analysis.clauses.some(
-      (clause) => clause.reflection,
-    );
-    const characterReflectionRequest =
-      input.assistantText.trim() !== "" &&
-      isCharacterReflectionRequest(classifyText);
-    if (
-      !actionEvidence &&
-      !outcomeEvidence &&
-      !userReflectionEvidence &&
-      !characterReflectionRequest
-    ) {
-      return {};
-    }
-    const stage = outcomeEvidence
-      ? "outcome"
-      : userReflectionEvidence || characterReflectionRequest
-        ? "reflection"
-        : "action";
-    const evidenceSubject =
-      stage === "action"
-        ? actionSubject
-        : stage === "outcome"
-          ? outcomeSubject
-          : "unspecified";
-    const decision = this.selectDecisionForEvidence(
-      input.agentId,
-      input.sessionId,
-      classifyText,
-      characterReflectionRequest,
-      stage,
-      evidenceSubject,
-    );
-    if (decision === undefined) return {};
-    const reflectionEvidence =
-      userReflectionEvidence ||
-      (characterReflectionRequest && decision.subject === "character");
-
-    const actionsBeforeTurn = this.repository.listActionsForDecision(
-      decision.id,
-      24,
-    );
-    let actionId: string | undefined;
-    if (
-      actionEvidence &&
-      !(actionsBeforeTurn.length > 0 && isActionRestatement(classifyText))
-    ) {
-      const candidateActionId = stableId(
-        "action",
-        `${decision.id}:${input.userMessageId}`,
-      );
-      const inserted = this.repository.insertAction(
-        ActionRecordSchema.parse({
-          id: candidateActionId,
-          agentId: input.agentId,
-          sessionId: input.sessionId,
-          decisionId: decision.id,
-          subject: decision.subject,
-          performedBy:
-            actionSubject === "user"
-              ? "user"
-              : actionSubject === "character"
-                ? "character"
-                : decision.subject === "user"
-                  ? "user"
-                  : decision.subject === "character"
-                    ? "character"
-                    : "joint",
-          actionKind: inferActionKind(actionText),
-          summary: actionText,
-          sourceEvidenceIds: [input.userMessageId],
-          effectiveLocalDate: localDate,
-          effectivePeriod: period,
-          temporalPrecision: "period",
-          recordedAtUtc: input.recordedAtUtc,
-          idempotencyKey: `action:${decision.id}:${input.userMessageId}`,
-          schemaVersion: 1,
-        }),
-      );
-      if (inserted) actionId = candidateActionId;
-    }
-
-    const existingActionIds = this.repository
-      .listActionsForDecision(decision.id, 12)
-      .map((action) => action.id);
-    const actionIds = [
-      ...new Set([...(actionId ? [actionId] : []), ...existingActionIds]),
+    const recentMessages = this.store
+      .listMessages(input.sessionId, 18)
+      .filter(
+        (message) =>
+          message.id !== input.userMessageId &&
+          message.id !== input.assistantMessageId,
+      )
+      .slice(-8)
+      .map((message) => ({ ...message, text: message.content }));
+    const impacts: ConversationLifeImpact = {};
+    const messages = [
+      {
+        id: input.userMessageId,
+        speaker: "user" as const,
+        analysis: analyzeLifeEvidence(input.userText),
+      },
+      {
+        id: input.assistantMessageId,
+        speaker: "character" as const,
+        analysis: analyzeLifeEvidence(input.assistantText),
+      },
     ];
-    let outcomeId: string | undefined;
-    if (outcomeEvidence) {
-      const candidateOutcomeId = stableId(
-        "decision_outcome",
-        `${decision.id}:${input.userMessageId}`,
-      );
-      const outcome = OutcomeRecordSchema.parse({
-        id: candidateOutcomeId,
-        agentId: input.agentId,
-        sessionId: input.sessionId,
-        decisionId: decision.id,
-        actionIds,
-        causeKind:
-          actionIds.length === 0
-            ? "external"
-            : hasMixedCausation(classifyText)
-              ? "mixed"
-              : "action",
-        valence: inferOutcomeValence(outcomeText),
-        summary: outcomeText,
-        consequenceFacts: [outcomeText],
-        sourceEvidenceIds: [input.userMessageId],
-        confidence: 0.82,
-        status: "observed",
-        effectiveLocalDate: localDate,
-        effectivePeriod: period,
-        temporalPrecision: "period",
-        recordedAtUtc: input.recordedAtUtc,
-        idempotencyKey: `decision-outcome:${decision.id}:${input.userMessageId}`,
-        schemaVersion: 1,
-      });
-      const inserted = this.repository.insertOutcomeRecord(outcome);
-      if (inserted) {
-        outcomeId = candidateOutcomeId;
-        this.linkOutcomeToPressureEpisode(decision, outcome, input);
-      }
-    }
-
-    let reflectionId: string | undefined;
-    if (reflectionEvidence) {
-      const reflectionSourceMessageId =
-        decision.subject === "character" && characterReflectionRequest
-          ? input.assistantMessageId
-          : input.userMessageId;
-      const reflectionText =
-        decision.subject === "character" && characterReflectionRequest
-          ? input.assistantText
-          : evidenceText;
-      const reflectionAnalysisText =
-        decision.subject === "character" && characterReflectionRequest
-          ? input.assistantText
-          : classifyText;
-      const linkedOutcomeId =
-        outcomeId ??
-        this.repository
-          .listRecentOutcomeRecords(input.agentId, 32)
-          .find((outcome) => outcome.decisionId === decision.id)?.id;
-      const candidateReflectionId = stableId(
-        "reflection",
-        `${decision.id}:${reflectionSourceMessageId}`,
-      );
-      const reflection = ReflectionRecordSchema.parse({
-        id: candidateReflectionId,
-        agentId: input.agentId,
-        sessionId: input.sessionId,
-        subject: decision.subject,
-        reflectedBy:
-          decision.subject === "user"
-            ? "user"
-            : decision.subject === "character"
+    // Messages have a real order even when a FakeClock gives them the same
+    // instant. A later assistant action cannot cause the earlier user result.
+    for (const message of messages) {
+      for (const stage of ["action", "outcome", "reflection"] as const) {
+        const candidates = this.repository
+          .listCurrentDecisions(input.agentId, 32)
+          // A decision established by this reply is not yet available to the
+          // preceding user report, even when both share a clock timestamp.
+          .filter(
+            (decision) =>
+              message.speaker !== "user" ||
+              !decision.sourceMessageIds.includes(input.assistantMessageId),
+          )
+          .map((decision) => ({
+            decision,
+            dilemma: this.findDilemma(decision.dilemmaId),
+            actions: this.repository.listActionsForDecision(decision.id, 64),
+            outcomes: this.repository
+              .listRecentOutcomeRecords(input.agentId, 128)
+              .filter((outcome) => outcome.decisionId === decision.id),
+          }));
+        const groups = new Map<
+          string,
+          {
+            association: LifeEvidenceAssociation;
+            clauses: LifeEvidenceClause[];
+            actionIds: Set<string>;
+            outcomeIds: Set<string>;
+          }
+        >();
+        for (const clause of collectLifeAssociationEvidence(
+          message.analysis,
+          stage,
+        )) {
+          // An assistant's second-person description is about its listener;
+          // only the character's own reported experience can extend its life.
+          if (
+            message.speaker === "character" &&
+            clause.subject !== "user" &&
+            !(
+              stage === "outcome" &&
+              clause.subject === "unspecified" &&
+              /我(?:的|们)/u.test(clause.classifyText)
+            )
+          )
+            continue;
+          const subject =
+            message.speaker === "character"
               ? "character"
-              : "joint",
-        decisionId: decision.id,
-        ...(linkedOutcomeId === undefined
-          ? {}
-          : { outcomeId: linkedOutcomeId }),
-        summary: reflectionText,
-        lessons: [reflectionLesson(reflectionText)],
-        stanceTowardDecision: reflectionStance(reflectionAnalysisText),
-        changedInterpretation: /后悔|改主意|不是.*想的|重新/u.test(
-          reflectionAnalysisText,
-        ),
-        sourceMessageIds: [reflectionSourceMessageId],
-        effectiveLocalDate: localDate,
-        effectivePeriod: period,
-        temporalPrecision: "period",
-        recordedAtUtc: input.recordedAtUtc,
-        idempotencyKey: `reflection:${decision.id}:${reflectionSourceMessageId}`,
-        schemaVersion: 1,
-      });
-      const inserted = this.repository.insertReflection(reflection);
-      if (inserted) {
-        reflectionId = candidateReflectionId;
-        this.linkReflectionToPressureEpisode(decision, reflection, input);
+              : clause.subject === "character"
+                ? "character"
+                : "user";
+          const association = selectLifeEvidenceAssociation({
+            stage,
+            clause,
+            candidates,
+            sessionId: input.sessionId,
+            atUtc: input.recordedAtUtc,
+            subject,
+            recentMessages,
+          });
+          if (association === undefined) continue;
+          const key = association.decision.id;
+          const group = groups.get(key) ?? {
+            association,
+            clauses: [],
+            actionIds: new Set<string>(),
+            outcomeIds: new Set<string>(),
+          };
+          group.clauses.push(clause);
+          association.actionIds.forEach((id) => group.actionIds.add(id));
+          if (association.outcomeId)
+            group.outcomeIds.add(association.outcomeId);
+          groups.set(key, group);
+        }
+        for (const {
+          association,
+          clauses,
+          actionIds,
+          outcomeIds,
+        } of groups.values()) {
+          const { decision, dilemma } = association;
+          const summary = clauses.map((clause) => clause.sourceText).join("；");
+          const classification = clauses
+            .map((clause) => clause.classifyText)
+            .join("；");
+          const key = `${decision.id}:${message.id}`;
+          let recordId: string;
+          let inserted: boolean;
+          if (stage === "action") {
+            if (
+              candidates.find(
+                (candidate) => candidate.decision.id === decision.id,
+              )!.actions.length > 0 &&
+              isActionRestatement(classification)
+            )
+              continue;
+            recordId = stableId("action", key);
+            inserted = this.repository.insertAction(
+              ActionRecordSchema.parse({
+                id: recordId,
+                agentId: input.agentId,
+                sessionId: input.sessionId,
+                decisionId: decision.id,
+                subject: decision.subject,
+                performedBy:
+                  decision.subject === "shared" ? "joint" : decision.subject,
+                actionKind: inferActionKind(summary),
+                summary,
+                sourceEvidenceIds: [message.id],
+                effectiveLocalDate: localDate,
+                effectivePeriod: period,
+                temporalPrecision: "period",
+                recordedAtUtc: input.recordedAtUtc,
+                idempotencyKey: `action:${key}`,
+                schemaVersion: 1,
+              }),
+            );
+          } else if (stage === "outcome") {
+            recordId = stableId("decision_outcome", key);
+            const outcome = OutcomeRecordSchema.parse({
+              id: recordId,
+              agentId: input.agentId,
+              sessionId: input.sessionId,
+              decisionId: decision.id,
+              actionIds: [...actionIds],
+              causeKind:
+                actionIds.size === 0
+                  ? "external"
+                  : hasMixedCausation(classification)
+                    ? "mixed"
+                    : "action",
+              valence:
+                clauses.some((clause) => clause.valence === "mixed") ||
+                (clauses.some((clause) => clause.valence === "positive") &&
+                  clauses.some((clause) => clause.valence === "negative"))
+                  ? "mixed"
+                  : (clauses.find((clause) => clause.valence !== "neutral")
+                      ?.valence ?? "neutral"),
+              summary,
+              consequenceFacts: clauses.map((clause) => clause.sourceText),
+              sourceEvidenceIds: [message.id],
+              confidence: 0.82,
+              status: "observed",
+              effectiveLocalDate: localDate,
+              effectivePeriod: period,
+              temporalPrecision: "period",
+              recordedAtUtc: input.recordedAtUtc,
+              idempotencyKey: `decision-outcome:${key}`,
+              schemaVersion: 1,
+            });
+            inserted = this.repository.insertOutcomeRecord(outcome);
+            if (inserted)
+              this.linkOutcomeToPressureEpisode(decision, outcome, input);
+          } else {
+            recordId = stableId("reflection", key);
+            const linkedOutcomeId =
+              outcomeIds.size === 1 ? [...outcomeIds][0] : undefined;
+            const reflection = ReflectionRecordSchema.parse({
+              id: recordId,
+              agentId: input.agentId,
+              sessionId: input.sessionId,
+              subject: decision.subject,
+              reflectedBy:
+                decision.subject === "shared" ? "joint" : decision.subject,
+              decisionId: decision.id,
+              ...(linkedOutcomeId ? { outcomeId: linkedOutcomeId } : {}),
+              summary,
+              lessons: [reflectionLesson(summary)],
+              stanceTowardDecision: reflectionStance(classification),
+              changedInterpretation: /后悔|改主意|不是.*想的|重新/u.test(
+                classification,
+              ),
+              sourceMessageIds: [message.id],
+              effectiveLocalDate: localDate,
+              effectivePeriod: period,
+              temporalPrecision: "period",
+              recordedAtUtc: input.recordedAtUtc,
+              idempotencyKey: `reflection:${key}`,
+              schemaVersion: 1,
+            });
+            inserted = this.repository.insertReflection(reflection);
+            if (inserted)
+              this.linkReflectionToPressureEpisode(decision, reflection, input);
+          }
+          if (!inserted) continue;
+          const impactKey =
+            stage === "action"
+              ? "actionId"
+              : stage === "outcome"
+                ? "outcomeId"
+                : "reflectionId";
+          impacts[impactKey] = recordId;
+          let milestoneId: string | undefined;
+          if (stage !== "action") {
+            milestoneId = stableId("milestone", `${stage}:${key}`);
+            const bounded = isBoundedLifeChoice(dilemma);
+            this.repository.insertMilestone(
+              RelationshipMilestoneSchema.parse({
+                id: milestoneId,
+                agentId: input.agentId,
+                sessionId: input.sessionId,
+                kind: bounded ? "other" : "turning_point",
+                title:
+                  stage === "outcome"
+                    ? "看见选择之后的实际反馈"
+                    : "重新看待已经作出的选择",
+                summary,
+                significance: bounded
+                  ? stage === "outcome"
+                    ? 0.32
+                    : 0.38
+                  : 0.72,
+                interventionIds: [],
+                decisionIds: [decision.id],
+                outcomeIds: stage === "outcome" ? [recordId] : [...outcomeIds],
+                reflectionIds: stage === "reflection" ? [recordId] : [],
+                sourceMessageIds: [message.id],
+                effectiveLocalDate: localDate,
+                effectivePeriod: period,
+                temporalPrecision: "period",
+                recordedAtUtc: input.recordedAtUtc,
+                idempotencyKey: `milestone:${stage}:${key}`,
+                schemaVersion: 1,
+              }),
+            );
+            impacts.milestoneId = milestoneId;
+          }
+          this.recordEvent({
+            agentId: input.agentId,
+            streamType: "decision_causality",
+            streamId: decision.id,
+            eventType: "life.decision_follow_up_evidenced",
+            recordedAtUtc: input.recordedAtUtc,
+            effectiveAtUtc: input.recordedAtUtc,
+            payload: {
+              decisionId: decision.id,
+              [impactKey]: recordId,
+              milestoneId,
+              evidenceMessageId: message.id,
+            },
+            correlationId: input.correlationId,
+            causationId: message.id,
+            idempotencyKey: `decision-follow-up:${stage}:${key}`,
+          });
+        }
       }
     }
-
-    let milestoneId: string | undefined;
-    if (outcomeId !== undefined || reflectionId !== undefined) {
-      const milestoneSourceMessageId =
-        reflectionId !== undefined &&
-        decision.subject === "character" &&
-        characterReflectionRequest
-          ? input.assistantMessageId
-          : input.userMessageId;
-      milestoneId = stableId(
-        "milestone",
-        `turning-point:${decision.id}:${milestoneSourceMessageId}`,
-      );
-      this.repository.insertMilestone(
-        RelationshipMilestoneSchema.parse({
-          id: milestoneId,
-          agentId: input.agentId,
-          sessionId: input.sessionId,
-          kind: "turning_point",
-          title: "共同选择开始产生真实后果",
-          summary:
-            decision.subject === "character" && characterReflectionRequest
-              ? input.assistantText
-              : evidenceText,
-          significance: 0.72,
-          interventionIds: [],
-          decisionIds: [decision.id],
-          outcomeIds: outcomeId === undefined ? [] : [outcomeId],
-          reflectionIds: reflectionId === undefined ? [] : [reflectionId],
-          sourceMessageIds: [milestoneSourceMessageId],
-          effectiveLocalDate: localDate,
-          effectivePeriod: period,
-          temporalPrecision: "period",
-          recordedAtUtc: input.recordedAtUtc,
-          idempotencyKey: `milestone:turning-point:${decision.id}:${milestoneSourceMessageId}`,
-          schemaVersion: 1,
-        }),
-      );
-    }
-
-    if (
-      actionId !== undefined ||
-      outcomeId !== undefined ||
-      reflectionId !== undefined
-    ) {
-      this.recordEvent({
-        agentId: input.agentId,
-        streamType: "decision_causality",
-        streamId: decision.id,
-        eventType: "life.decision_follow_up_evidenced",
-        recordedAtUtc: input.recordedAtUtc,
-        effectiveAtUtc: input.recordedAtUtc,
-        payload: {
-          decisionId: decision.id,
-          actionId,
-          outcomeId,
-          reflectionId,
-          milestoneId,
-          evidenceMessageId:
-            reflectionId !== undefined &&
-            decision.subject === "character" &&
-            characterReflectionRequest
-              ? input.assistantMessageId
-              : input.userMessageId,
-        },
-        correlationId: input.correlationId,
-        causationId: input.userMessageId,
-        idempotencyKey: `decision-follow-up:${decision.id}:${input.userMessageId}`,
-      });
-    }
-
-    return {
-      ...(actionId === undefined ? {} : { actionId }),
-      ...(outcomeId === undefined ? {} : { outcomeId }),
-      ...(reflectionId === undefined ? {} : { reflectionId }),
-      ...(milestoneId === undefined ? {} : { milestoneId }),
-    };
+    return impacts;
   }
 
   private recordCharacterDisclosure(
@@ -1866,7 +1862,7 @@ export class FuzzyLifeService {
         kind: "shared_decision",
         title:
           input.authority === "delegated"
-            ? "一次被明确托付的人生选择"
+            ? "一次明确授权的选择"
             : input.dilemma.subject === "character"
               ? "角色按自己的价值作出选择"
               : "用户明确作出自己的选择",
@@ -1874,7 +1870,11 @@ export class FuzzyLifeService {
           input.authority === "delegated"
             ? `用户明确授权角色选择：${input.selectedOption.label}`
             : `${input.dilemma.subject === "character" ? "角色" : "用户"}保留决定权并选择：${input.selectedOption.label}`,
-        significance: input.authority === "delegated" ? 0.8 : 0.74,
+        significance: isBoundedLifeChoice(input.dilemma)
+          ? 0.35
+          : input.authority === "delegated"
+            ? 0.8
+            : 0.74,
         interventionIds: supportInterventionIds,
         decisionIds: [decisionId],
         outcomeIds: [],
@@ -2043,136 +2043,6 @@ export class FuzzyLifeService {
         elapsed <= 6 * 60 * 60 * 1_000
       );
     });
-  }
-
-  private selectDecisionForEvidence(
-    agentId: string,
-    sessionId: string,
-    evidenceText: string,
-    preferCharacter: boolean,
-    stage: "action" | "outcome" | "reflection",
-    evidenceSubject: LifeEvidenceSubject = "unspecified",
-  ): DecisionRecord | undefined {
-    const decisions = this.repository
-      .listCurrentDecisions(agentId, 32)
-      .filter(
-        (decision) =>
-          stage === "reflection" ||
-          evidenceSubject === "unspecified" ||
-          (evidenceSubject === "user" &&
-            (decision.subject === "user" || decision.subject === "shared")) ||
-          (evidenceSubject === "character" &&
-            (decision.subject === "character" ||
-              decision.subject === "shared")),
-      );
-    if (decisions.length === 0) return undefined;
-    const scored = decisions.map((decision, index) => {
-      const dilemma = this.findDilemma(decision.dilemmaId);
-      const actions = this.repository.listActionsForDecision(decision.id, 24);
-      const outcomes = this.repository
-        .listRecentOutcomeRecords(agentId, 64)
-        .filter((outcome) => outcome.decisionId === decision.id);
-      const stageEvidenceBonus =
-        stage === "outcome"
-          ? actions.some((action) => action.sessionId === sessionId)
-            ? 180
-            : actions.length > 0
-              ? 35
-              : 0
-          : stage === "reflection"
-            ? outcomes.some((outcome) => outcome.sessionId === sessionId)
-              ? 180
-              : outcomes.length > 0
-                ? 35
-                : 0
-            : 0;
-      const semanticRelevance = decisionEvidenceSemanticRelevance(
-        decision,
-        dilemma,
-        evidenceText,
-      );
-      const predecessorRelevance = decisionStagePredecessorRelevance(
-        stage,
-        evidenceText,
-        actions.map((action) => action.summary),
-        outcomes.map((outcome) => outcome.summary),
-      );
-      const hasStageContinuity =
-        stage === "action"
-          ? decision.sessionId === sessionId
-          : stage === "outcome"
-            ? actions.some((action) => action.sessionId === sessionId)
-            : outcomes.some((outcome) => outcome.sessionId === sessionId) ||
-              decision.sessionId === sessionId;
-      const normalEligible =
-        semanticRelevance >= DECISION_EVIDENCE_RELEVANCE_THRESHOLD ||
-        predecessorRelevance >= DECISION_EVIDENCE_RELEVANCE_THRESHOLD ||
-        (hasStageContinuity &&
-          hasExplicitCausalStageReference(evidenceText, stage));
-      const sameSessionOutcome = outcomes.some(
-        (outcome) => outcome.sessionId === sessionId,
-      );
-      const reflectionSubjectMatch = reflectionSubjectMatches(
-        decision,
-        evidenceText,
-        preferCharacter,
-      );
-      const continuityRelevance = reflectionContinuityRelevance(
-        decision,
-        dilemma,
-        evidenceText,
-        actions.map((action) => action.summary),
-        outcomes.map((outcome) => outcome.summary),
-      );
-      const continuityEligible =
-        stage === "reflection" &&
-        !preferCharacter &&
-        isReflectionEvidence(evidenceText) &&
-        sameSessionOutcome &&
-        reflectionSubjectMatch &&
-        continuityRelevance >= REFLECTION_CONTINUITY_RELEVANCE_THRESHOLD;
-      const eligible = normalEligible || continuityEligible;
-      const score =
-        decisionRelevance(decision, dilemma, evidenceText) +
-        (decision.sessionId === sessionId ? 240 : 0) +
-        (preferCharacter && decision.subject === "character" ? 500 : 0) +
-        (!preferCharacter &&
-        decision.subject === "user" &&
-        /我|我的|我们/u.test(evidenceText)
-          ? 80
-          : 0) +
-        stageEvidenceBonus +
-        (decisions.length - index);
-      return {
-        decision,
-        score,
-        eligible,
-        normalEligible,
-        sameSessionOutcome,
-        reflectionSubjectMatch,
-        semanticRelevance,
-        predecessorRelevance,
-        continuityRelevance,
-      };
-    });
-    const eligible = scored
-      .filter((candidate) => candidate.eligible)
-      .sort((left, right) => right.score - left.score);
-    if (stage !== "reflection") return eligible[0]?.decision;
-    const sameSessionRelevant = eligible.filter(
-      (candidate) =>
-        candidate.sameSessionOutcome && candidate.reflectionSubjectMatch,
-    );
-    if (sameSessionRelevant.length > 1) return undefined;
-    if (sameSessionRelevant.length === 1) {
-      return sameSessionRelevant[0]!.decision;
-    }
-    const fullyGroundedElsewhere = eligible.filter(
-      (candidate) => candidate.normalEligible,
-    );
-    return fullyGroundedElsewhere.length === 1
-      ? fullyGroundedElsewhere[0]!.decision
-      : undefined;
   }
 
   private findDilemma(id: string): DilemmaEpisode | undefined {
@@ -2920,6 +2790,30 @@ export class FuzzyLifeService {
       throw new Error("Life outcome evidence event is missing");
     return row.id;
   }
+}
+
+function isBoundedLifeChoice(dilemma: DilemmaEpisode | undefined): boolean {
+  if (
+    dilemma === undefined ||
+    ["work", "study", "health", "relationship", "identity"].includes(
+      dilemma.domain,
+    )
+  )
+    return false;
+  const labels = dilemma.options.map((option) => option.label);
+  return (
+    labels.some((label) =>
+      /(?:\d+|[一二三四五六七八九十两半]+)(?:分钟|小时|张|页|步)|一会儿/u.test(
+        label,
+      ),
+    ) &&
+    labels.every(
+      (label) =>
+        !/辞职|离职|合同|手术|用药|治疗|投资|贷款|结婚|离婚|分手|搬家/u.test(
+          label,
+        ),
+    )
+  );
 }
 
 function sameLifeThreadEvent(

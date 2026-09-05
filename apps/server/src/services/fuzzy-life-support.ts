@@ -18,6 +18,8 @@ const DENIED_PRESSURE =
   /(?:并不|没有|不再|不觉得|没觉得|毫无|一点也不).{0,8}(?:焦虑|压力|难受|低落|烦躁|害怕|失眠|疲惫|疲倦|累)|不(?:焦虑|难受|害怕|累)|不是.{0,8}(?:焦虑|难受|累)/u;
 const DILEMMA =
   /犹豫|纠结|拿不定主意|左右为难|举棋不定|没(?:有)?决定|难以决定|不知.{0,8}(?:选|该)|要不要|该不该|是否应该|选哪个|怎么选|怎么办/u;
+const PRESSURE_TOPIC_MENTION =
+  /(?:话题|谈话|讨论).{0,20}(?:从|关于)|(?:刚才|之前|前面).{0,8}(?:说|聊|谈|提到).{0,12}(?:焦虑|压力)/u;
 
 /** The evidence parser calls first person "user"; here that means the actual speaker. */
 export function analyzeSpeakerSelfDisclosure(
@@ -71,6 +73,7 @@ export function analyzeSpeakerSelfDisclosure(
       active.filter(
         (clause) =>
           PRESSURE.test(clause.classifyText) &&
+          !PRESSURE_TOPIC_MENTION.test(clause.classifyText) &&
           !DENIED_PRESSURE.test(clause.classifyText),
       ),
     ),
@@ -118,7 +121,8 @@ export function analyzeCharacterSupportOffer(
       );
   const clauses = analysis.clauses.filter(
     (clause) =>
-      clause.modality !== "meta" &&
+      (clause.modality !== "meta" ||
+        /^我(?:正在|在|认真)?听你(?:说|讲)/u.test(clause.classifyText)) &&
       clause.modality !== "negated" &&
       (clause.modality !== "conditional" ||
         /如果是我|如果我是你/u.test(clause.classifyText) ||
@@ -179,6 +183,22 @@ export function supportTopicText(text: string): string {
 
 export function supportTopicScore(left: string, right: string): number {
   return topicOverlap(supportTopicText(left), supportTopicText(right));
+}
+
+export function listenerSupportResponseText(text: string): string {
+  const offer = analyzeCharacterSupportOffer(text);
+  const acknowledgement = analyzeLifeEvidence(text)
+    .clauses.filter(
+      (clause) =>
+        ["asserted", "question"].includes(clause.modality) &&
+        /我(?:听见|听到|明白|理解|知道|看见).{0,12}(?:你|这对你)|听起来.{0,20}(?:你|很|不容易)|我们(?:可以|先|一起).{0,12}(?:梳理|看看|分析|比较|拆开)|先把.{0,20}(?:分开|拆开|理清)|你愿意.{0,12}(?:说|聊|讲)/u.test(
+          clause.classifyText,
+        ),
+    )
+    .map((clause) => clause.sourceText);
+  return [
+    ...new Set([...(offer ? [offer.sourceText] : []), ...acknowledgement]),
+  ].join("；");
 }
 
 function joinSources(clauses: LifeEvidenceClause[]): string {

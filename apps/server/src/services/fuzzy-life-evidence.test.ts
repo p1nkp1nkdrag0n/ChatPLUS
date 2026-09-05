@@ -28,6 +28,7 @@ describe("clause-level life evidence", () => {
     "今天的安排是提交申请。",
     "我今天想提交申请。",
     "我已经决定辞职了。",
+    "现在我明确授权你替我在留在目前公司和正式辞职之间作决定。",
     "我准备好了，但还没有提交申请。",
     "我今天会把申请提交。",
     "接下来两周先观察执行情况。",
@@ -75,6 +76,17 @@ describe("clause-level life evidence", () => {
         .map((clause) => clause.sourceText),
     ).toEqual(["我今天已经提交了申请", "我刚换好鞋出门了"]);
     expect(analysis.clauses.some((clause) => clause.outcome)).toBe(false);
+  });
+
+  it("does not execute a delegated option but preserves an independent completed action", () => {
+    const analysis = analyzeLifeEvidence(
+      "现在我明确授权你替我在留在目前公司和正式辞职之间作决定。我已经按照这个决定向主管提出离职。",
+    );
+    expect(
+      analysis.clauses
+        .filter((clause) => clause.action)
+        .map((clause) => clause.sourceText),
+    ).toEqual(["我已经按照这个决定向主管提出离职"]);
   });
 
   it("keeps an earlier event when an independent clause requests translation", () => {
@@ -210,6 +222,65 @@ describe("clause-level life evidence", () => {
     expect(analysis.clauses.filter((clause) => clause.action)).toHaveLength(4);
     expect(evidenceSubject(analysis, "action")).toBe("unspecified");
   });
+
+  it.each([
+    ["我仍认同保留克制结尾，因为尊严更重要。", true],
+    ["我不再认同这个选择。", true],
+    ["如果以后我仍认同这个选择，我会告诉你。", false],
+    ["你现在仍认同这个选择吗？", false],
+    ["请翻译‘我仍认同这个选择’。", false],
+  ] as const)(
+    "recognizes only an actual expressed reinterpretation: %s",
+    (text, expected) => {
+      expect(
+        analyzeLifeEvidence(text).clauses.some((clause) => clause.reflection),
+      ).toBe(expected);
+    },
+  );
+
+  it("treats an external acceptance and offer as observed responses, never the user's completed action", () => {
+    const analysis = analyzeLifeEvidence(
+      "青屿影像确认接受我，但项目资金延迟；同时现公司愿意让我带一个更有自主权的小组。这是混合结果。",
+    );
+    expect(
+      analysis.clauses
+        .filter((clause) => clause.outcome)
+        .map((clause) => clause.sourceText),
+    ).toEqual([
+      "青屿影像确认接受我",
+      "但项目资金延迟",
+      "同时现公司愿意让我带一个更有自主权的小组",
+      "这是混合结果",
+    ]);
+    expect(analysis.clauses.some((clause) => clause.action)).toBe(false);
+    expect(
+      analyzeLifeEvidence(
+        "如果青屿影像确认接受我，现公司也许愿意让我带组。",
+      ).clauses.some((clause) => clause.outcome),
+    ).toBe(false);
+  });
+
+  it.each(["现公司不愿意让我带小组。", "项目资金没有延迟。"])(
+    "does not turn a negated external offer or delay into its positive event: %s",
+    (text) => {
+      expect(
+        analyzeLifeEvidence(text).clauses.some((clause) => clause.outcome),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    ["你的外包项目申请后来被拒绝了。", false, true],
+    ["我今天拒绝了这份邀请。", true, true],
+    ["我被拒绝后又提交了新的申请。", true, true],
+  ] as const)(
+    "separates a passive response from an actual performed action: %s",
+    (text, action, outcome) => {
+      const clauses = analyzeLifeEvidence(text).clauses;
+      expect(clauses.some((clause) => clause.action)).toBe(action);
+      expect(clauses.some((clause) => clause.outcome)).toBe(outcome);
+    },
+  );
 
   it("does not count a negated deterioration but keeps actual negative feedback", () => {
     const negated = analyzeLifeEvidence("我并没有更焦虑。");

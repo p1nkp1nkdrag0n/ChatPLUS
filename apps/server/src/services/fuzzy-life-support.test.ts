@@ -74,6 +74,21 @@ describe("speaker-owned disclosures and offered support", () => {
     ).toBe("recommend");
   });
 
+  it("does not turn a past pressure topic into a present disclosure", () => {
+    expect(
+      analyzeSpeakerSelfDisclosure(
+        "既然把话题从我的焦虑里拔出来了，我想反过来问问你。",
+        true,
+      ).pressureText,
+    ).toBe("");
+    expect(
+      analyzeSpeakerSelfDisclosure(
+        "既然把话题从我的焦虑里拔出来了。但我现在还是压力 8/10。",
+        true,
+      ).pressureText,
+    ).toBe("但我现在还是压力 8/10");
+  });
+
   it("keeps an explicitly named offer scope even when it precedes a listening clause", () => {
     const offer =
       analyzeCharacterSupportOffer("关于外包申请，你可以慢慢说，我在听。");

@@ -10,6 +10,7 @@ import {
   type OutcomeRecord,
   type ReflectionRecord,
   type SupportIntervention,
+  type RelationshipMilestone,
 } from "@personasim/contracts";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
@@ -37,6 +38,8 @@ const groundedChoiceFixture: FixtureTurnBehavior = {
   ...companionLongRunV3FixtureBehavior,
   selectDelegatedDecision: (input) => {
     const speech = analyzeSupportSpeechAct(input.userText);
+    if (speech.delegated && speech.operativeDilemmaText.includes("正式辞职"))
+      return "正式辞职";
     if (
       speech.delegated &&
       (/副主编/u.test(speech.operativeDilemmaText) ||
@@ -81,6 +84,395 @@ describe("fuzzy-life conversation integration", () => {
     app = undefined;
     vi.restoreAllMocks();
   });
+
+  it("keeps two real conversation branches separate across sessions, stages, and replay", async () => {
+    app = await createTestApp({
+      selectDelegatedDecision: ({ userText }) =>
+        userText.includes("外包") ? "接受外包项目" : "散步二十分钟",
+      semanticReply: () => "我听见你说的了。",
+    });
+    const character = await createAndPublish(app);
+    const workSession = await createSession(app, character.id);
+    await sendChat(
+      app,
+      workSession,
+      character.id,
+      "multi-work-choice",
+      "这次请你只在接受外包项目和暂时不接之间替我选一个。",
+    );
+    const work = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    await sendChat(
+      app,
+      workSession,
+      character.id,
+      "multi-work-action",
+      "我今天已经提交了外包项目申请。",
+    );
+    const workAction = latestJson<ActionRecord>(
+      app,
+      "action_records",
+      "action_json",
+    );
+    const walkSession = await createSession(app, character.id);
+    await sendChat(
+      app,
+      walkSession,
+      character.id,
+      "multi-walk-choice",
+      "这次请你只在散步二十分钟和整理十张照片之间替我选一个。",
+    );
+    const walk = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    const choiceMilestone = latestJson<RelationshipMilestone>(
+      app,
+      "relationship_milestones",
+      "milestone_json",
+    );
+    expect(choiceMilestone.significance).toBeLessThan(0.5);
+    expect(choiceMilestone.title).not.toContain("人生");
+    await sendChat(
+      app,
+      walkSession,
+      character.id,
+      "multi-walk-action",
+      "我今天已经散步二十分钟了。",
+    );
+    const walkAction = latestJson<ActionRecord>(
+      app,
+      "action_records",
+      "action_json",
+    );
+    expect(walkAction.decisionId).toBe(walk.id);
+    const responseText =
+      "后来公司拒绝了我的外包项目申请。现在散步让我身体轻松多了。";
+    const result = await sendChat(
+      app,
+      walkSession,
+      character.id,
+      "multi-outcomes",
+      responseText,
+    );
+    const outcomes = new LifeRepository(
+      app.personasim.store.database,
+    ).listRecentOutcomeRecords(character.id, 10);
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes.find((item) => item.decisionId === work.id)).toMatchObject({
+      actionIds: [workAction.id],
+      sourceEvidenceIds: [result.userMessage.id],
+    });
+    expect(outcomes.find((item) => item.decisionId === walk.id)).toMatchObject({
+      actionIds: [walkAction.id],
+      sourceEvidenceIds: [result.userMessage.id],
+    });
+    expect(
+      outcomes.find((item) => item.decisionId === work.id)?.summary,
+    ).not.toContain("散步");
+    expect(
+      outcomes.find((item) => item.decisionId === walk.id)?.summary,
+    ).not.toContain("外包");
+    const outcomeMilestone = latestJson<RelationshipMilestone>(
+      app,
+      "relationship_milestones",
+      "milestone_json",
+    );
+    expect(outcomeMilestone).toMatchObject({
+      kind: "other",
+      decisionIds: [walk.id],
+    });
+    expect(outcomeMilestone.significance).toBeLessThan(0.5);
+    const reflected = await sendChat(
+      app,
+      walkSession,
+      character.id,
+      "multi-reflection",
+      "回头看外包项目这个决定，我后悔了。",
+    );
+    const reflection = latestJson<ReflectionRecord>(
+      app,
+      "reflection_records",
+      "reflection_json",
+    );
+    expect(reflection).toMatchObject({
+      decisionId: work.id,
+      outcomeId: outcomes.find((item) => item.decisionId === work.id)!.id,
+      sourceMessageIds: [reflected.userMessage.id],
+    });
+    const counts = [
+      "action_records",
+      "outcome_records",
+      "reflection_records",
+      "relationship_milestones",
+    ].map((table) => scalarCount(app!, table));
+    await sendChat(
+      app,
+      walkSession,
+      character.id,
+      "multi-plan",
+      "我明天打算跟甲方确认外包项目的边界。",
+    );
+    await sendChat(
+      app,
+      walkSession,
+      character.id,
+      "multi-imagined-conflict",
+      "回头看我们吵完架又修补的那次分歧，我后悔了。",
+    );
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${walkSession}/messages`,
+      payload: {
+        agentId: character.id,
+        clientMessageId: "multi-outcomes",
+        text: responseText,
+      },
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json<{ idempotentReplay: boolean }>().idempotentReplay).toBe(
+      true,
+    );
+    expect(
+      [
+        "action_records",
+        "outcome_records",
+        "reflection_records",
+        "relationship_milestones",
+      ].map((table) => scalarCount(app!, table)),
+    ).toEqual(counts);
+  });
+
+  it("does not let a later assistant action become a cause of an earlier user-reported outcome", async () => {
+    let replies = 0;
+    app = await createTestApp({
+      semanticReply: () =>
+        ++replies === 1
+          ? "我在接受外包项目和暂时不接之间犹豫。"
+          : replies === 2
+            ? "我选择接受外包项目，这个决定由我承担。"
+            : "我今天已经提交了外包项目申请。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "ordered-role-dilemma",
+      "最近怎么样？",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "ordered-role-decision",
+      "关于外包项目，请按你自己的价值作决定。",
+    );
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "ordered-passive-outcome",
+      "你的外包项目申请后来被拒绝了。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(
+      latestJson<ActionRecord>(app, "action_records", "action_json"),
+    ).toMatchObject({
+      subject: "character",
+      performedBy: "character",
+      sourceEvidenceIds: [turn.assistantMessage.id],
+    });
+    expect(
+      latestJson<OutcomeRecord>(app, "outcome_records", "outcome_json"),
+    ).toMatchObject({
+      actionIds: [],
+      causeKind: "external",
+      sourceEvidenceIds: [turn.userMessage.id],
+    });
+  });
+
+  it("keeps an earlier user report separate from a decision made by the following reply", async () => {
+    app = await createTestApp({
+      selectDelegatedDecision: () => "散步二十分钟",
+      semanticReply: () => "我听见你了。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "report-before-new-decision",
+      "我今天已经散步二十分钟了。现在散步让我身体轻松多了。这次请你只在散步二十分钟和整理十张照片之间替我选一个。",
+    );
+    expect(scalarCount(app, "decision_records")).toBe(1);
+    expect(scalarCount(app, "action_records")).toBe(0);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+
+    const nextTurn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "report-after-new-decision",
+      "我今天已经散步二十分钟了。现在散步让我身体轻松多了。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(scalarCount(app, "outcome_records")).toBe(1);
+    expect(
+      latestJson<OutcomeRecord>(app, "outcome_records", "outcome_json"),
+    ).toMatchObject({ sourceEvidenceIds: [nextTurn.userMessage.id] });
+  });
+
+  it("does not attach an unrelated external result when only the small choice exists", async () => {
+    app = await createTestApp({
+      selectDelegatedDecision: () => "散步二十分钟",
+      semanticReply: () => "我听见你了。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-only-walk",
+      "这次请你只在散步二十分钟和整理十张照片之间替我选一个。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-walk-action",
+      "我今天已经散步二十分钟了。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "unrelated-work-outcome",
+      "后来公司拒绝了我的外包项目申请。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+  });
+
+  it("associates only the asserted action clauses when another branch is negated", async () => {
+    app = await createTestApp({
+      selectDelegatedDecision: ({ userText }) =>
+        userText.includes("外包") ? "接受外包项目" : "散步二十分钟",
+      semanticReply: () => "我听见你了。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "clause-work",
+      "这次请你只在接受外包项目和暂时不接之间替我选一个。",
+    );
+    const work = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "clause-walk",
+      "这次请你只在散步二十分钟和整理十张照片之间替我选一个。",
+    );
+    const walk = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "clause-actual",
+      "我还没提交外包项目申请。我今天已经散步二十分钟了。",
+    );
+    const repository = new LifeRepository(app.personasim.store.database);
+    expect(repository.listActionsForDecision(work.id, 10)).toHaveLength(0);
+    expect(repository.listActionsForDecision(walk.id, 10)).toEqual([
+      expect.objectContaining({
+        sourceEvidenceIds: [turn.userMessage.id],
+        summary: "我今天已经散步二十分钟了",
+      }),
+    ]);
+    const both = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "clause-both",
+      "我今天已经提交了外包项目申请。我今天又散步二十分钟了。",
+    );
+    expect(repository.listActionsForDecision(work.id, 10)).toEqual([
+      expect.objectContaining({ sourceEvidenceIds: [both.userMessage.id] }),
+    ]);
+    expect(repository.listActionsForDecision(walk.id, 10)).toHaveLength(2);
+    expect(
+      repository.listActionsForDecision(work.id, 10)[0]!.summary,
+    ).not.toContain("散步");
+  });
+
+  it.each([
+    ["既然把话题从我的焦虑里拔出来了，我想反过来问问你，最近剪辑怎么样？", 0],
+    ["我现在确实因为考试很焦虑。", 1],
+  ] as const)(
+    "does not infer character-to-user support from an unrelated self-disclosure: %s",
+    async (text, userPressures) => {
+      app = await createTestApp({
+        semanticReply: () =>
+          "我最近为《夜航》的剪辑发愁。我在重剪结尾和保留原版之间犹豫，压力 6/10。",
+      });
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "support-evidence-actual",
+        text,
+      );
+      const pressures = new LifeRepository(
+        app.personasim.store.database,
+      ).listOpenPressures(character.id, 10);
+      expect(pressures.filter((item) => item.subject === "user")).toHaveLength(
+        userPressures,
+      );
+      expect(
+        pressures.filter((item) => item.subject === "character"),
+      ).toHaveLength(1);
+      expect(scalarCount(app, "support_interventions")).toBe(0);
+      const next = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "support-evidence-next",
+        "关于《夜航》，我陪你梳理这两个选项。",
+      );
+      expect(
+        new LifeRepository(
+          app.personasim.store.database,
+        ).listRecentInterventions(character.id, 10),
+      ).toEqual([
+        expect.objectContaining({
+          offeredBy: "user",
+          receivedBy: "character",
+          sourceMessageId: next.userMessage.id,
+        }),
+      ]);
+    },
+  );
 
   it("records a naturally disclosed character dilemma, user support, and the character's own choice", async () => {
     app = await createTestApp({
@@ -532,7 +924,9 @@ describe("fuzzy-life conversation integration", () => {
       expect(
         latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json"),
       ).toMatchObject({ status: "open" });
-      expect(modeForSource(app, turn.assistantMessage.id)).toBe("deliberate");
+      if (reply === "散步和整理照片都可以")
+        expect(modeForSource(app, turn.assistantMessage.id)).toBe("deliberate");
+      else expect(scalarCount(app, "support_interventions")).toBe(0);
     },
   );
 
@@ -2320,8 +2714,10 @@ describe("fuzzy-life conversation integration", () => {
       subject: "user",
       reflectedBy: "user",
       decisionId: decision.id,
-      outcomeId: recordedOutcome.id,
     });
+    // A new understanding of personal values refers to the choice; it does
+    // not identify any particular external outcome as its subject.
+    expect(understandingReflection.outcomeId).toBeUndefined();
     let trajectory = latestJson<PressureEpisode>(
       app,
       "pressure_episodes",
@@ -2939,9 +3335,10 @@ describe("fuzzy-life conversation integration", () => {
       sessionId,
       character.id,
       "causal-guard-delegated-decision",
-      "现在我明确授权你替我在留下和离开之间作决定。请只选一个；我会把你的选择当作决定，但不会假装自己已经行动。",
+      "现在我明确授权你替我在留在目前公司和正式辞职之间作决定。请只选一个；我会把你的选择当作决定，但不会假装自己已经行动。",
     );
-    await sendChat(
+    expect(scalarCount(app, "action_records")).toBe(0);
+    const actionTurn = await sendChat(
       app,
       sessionId,
       character.id,
@@ -2955,11 +3352,14 @@ describe("fuzzy-life conversation integration", () => {
       authority: "delegated",
       decidedBy: "character",
     });
+    expect(scalarCount(app, "action_records")).toBe(1);
     expect(
-      latestJson<Record<string, unknown>>(app, "action_records", "action_json"),
+      latestJson<ActionRecord>(app, "action_records", "action_json"),
     ).toMatchObject({
       subject: "user",
       performedBy: "user",
+      summary: "我已经按照这个决定向主管提出离职",
+      sourceEvidenceIds: [actionTurn.userMessage.id],
     });
     injectCharacterDilemma(app, character.id, sessionId);
 

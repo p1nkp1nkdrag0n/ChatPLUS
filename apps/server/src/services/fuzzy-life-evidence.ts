@@ -80,6 +80,8 @@ const ACTION_REPORT_SOURCE = ACTION_PREDICATES.map((verb) =>
   typeof verb === "string" ? verb : verb[1],
 ).join("|");
 const ACTION_VERB = new RegExp(ACTION_REPORT_SOURCE, "u");
+const DELEGATED_CHOICE =
+  /(?:授权|委托)(?:你|对方).{0,80}(?:作(?:出)?决定|做(?:出)?决定|选(?:择|出|一个)?)/u;
 const COMPLETED_TIME =
   /已经|刚刚|刚才|刚(?=\S)|后来|今天|昨晚|昨天|最终|正式|确实|实际/u;
 const FUTURE =
@@ -111,11 +113,13 @@ const NEGATED_STATE_CHANGE =
 const PENDING_RESULT =
   /(?:还没|尚未|没有|并未).{0,12}(?:最终结果|结果|反馈|确认|同意|通过|成功|收到)|(?:仍然|仍)不是最终结果|只有行动.{0,8}没有结果|事实没有变化|没有新的确认/u;
 const REFLECTION =
-  /回头看|现在想想|我觉得这个决定|我对这个选择|我后悔|我很庆幸|我才明白|我想明白|我(?:现在)?的理解是|重新想/u;
+  /回头看|现在想想|我觉得这个决定|我对这个选择|我后悔|我很庆幸|我才明白|我想明白|我(?:现在)?的理解是|我(?:现在)?(?:仍然?|不再)认同|重新想/u;
 const PRESSURE_FEEDBACK =
   /好多了|轻松(?:多|些|了)|松快(?:了|些)|安静了(?:一些|不少|一点)?|没那么(?:焦虑|难受|乱)|想清楚了|清楚多了|被(?:你)?听见|被理解|谢谢你.*(?:听|陪)|更焦虑|更难受|更糟|还是很乱|完全没用|压力更大|没(?:有)?被(?:听见|理解)|(?:嗡嗡(?:声)?|紧绷|焦虑|压力|难受).{0,16}(?:退了|小了|少了|松了|减轻|缓解|散了|没了)|(?:心里|脑子|身体|整个人).{0,12}(?:松快|轻松|安静|放松|踏实)(?:了|些)|松了(?:一)?口气/u;
 const ACTUAL_OUTCOME =
   /(?:同意|拒绝|通过|失败|成功)(?:了|的通知|的结果)|(?:结果|后来|因此|所以|最终|现在).{0,28}(?:同意|拒绝|通过|失败|成功|变得|让我|轻松|开心|难受|后悔|更好|更糟|有了)|拿到(?:了)?.{0,16}(?:岗位|职位|录用|批准|许可)|(?:收到|收到了).{0,16}(?:录用|拒绝|批准|通过|失败|结果|通知)|几天后的结果是|这是混合结果|出现的实际反馈|收入比.{0,12}(?:少|多)|薪资.{0,12}(?:降低|提高)/u;
+const EXTERNAL_RESPONSE =
+  /确认(?:接受|录用|录取)(?:了)?我|(?:公司|团队|平台|机构|学校).{0,12}愿意(?:让|给)我|(?:项目)?资金(?:发生)?延迟/u;
 
 /**
  * Extracts reported events, not instructions to perform them. Sentence and
@@ -182,6 +186,10 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
       if (COMPLETED_TIME.test(value) && !intention && !FUTURE.test(value))
         planned = false;
       const subject = inheritedSubject;
+      const externalResponse =
+        EXTERNAL_RESPONSE.test(value) &&
+        subject === "third_party" &&
+        !/(?:不|并不|尚不|没有|并未|尚未).{0,8}(?:愿意|确认|延迟)/u.test(value);
       const reflection = REFLECTION.test(value);
       reflectionFrame ||= reflection;
       let modality: EvidenceModality =
@@ -206,22 +214,41 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
       const actorAllowed = subject !== "third_party";
       const feedback =
         asserted && actorAllowed && PRESSURE_FEEDBACK.test(value);
+      const passiveResponse =
+        /(?:被|遭到).{0,6}(?:拒绝|批准|驳回|录取)(?:了)?/gu;
+      const actionText = value.replace(passiveResponse, " ");
+      const explicitActionOutsidePassive =
+        actionText === value ||
+        new RegExp(
+          `(?:已经|今天|昨天|刚刚|刚才|后来|正式).{0,8}(?:${ACTION_REPORT_SOURCE})|(?:${ACTION_REPORT_SOURCE})(?:了|完|过)`,
+          "u",
+        ).test(actionText);
       const action =
         asserted &&
         actorAllowed &&
         !inheritedOrganization &&
         !reflectionFrame &&
-        isOccurredAction(value);
+        !DELEGATED_CHOICE.test(value) &&
+        explicitActionOutsidePassive &&
+        (isOccurredAction(actionText) ||
+          (actionText !== value &&
+            new RegExp(`(?:${ACTION_STEM_SOURCE})了`, "u").test(actionText)));
       const outcome =
         asserted &&
-        (actorAllowed || inheritedOrganization) &&
+        (actorAllowed || inheritedOrganization || externalResponse) &&
         !PENDING_RESULT.test(value) &&
         !reflectionFrame &&
-        (ACTUAL_OUTCOME.test(value) || (feedback && hasStateChange(value)));
+        (ACTUAL_OUTCOME.test(value) ||
+          actionText !== value ||
+          externalResponse ||
+          (feedback && hasStateChange(value)));
       clauses.push({
         sourceText: clause.sourceText.trim(),
         classifyText: value,
-        subject: outcome && inheritedOrganization ? "unspecified" : subject,
+        subject:
+          outcome && (inheritedOrganization || externalResponse)
+            ? "unspecified"
+            : subject,
         modality,
         action,
         outcome,

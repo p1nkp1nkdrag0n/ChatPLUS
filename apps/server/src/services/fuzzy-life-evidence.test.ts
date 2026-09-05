@@ -35,6 +35,18 @@ describe("clause-level life evidence", () => {
     "我还没有提交申请。",
     "我没有实际出门，只是计划去做。",
     "我没有画过那幅画。",
+    "我昨天没有去散步。",
+    "我昨天没发出邮件。",
+    "我昨天没有收起画具。",
+    "我今天想先散步二十分钟。",
+    "我今天要出门。",
+    "我今天想把画具收起。",
+    "我昨天差点就提交了申请，但最后没有提交。",
+    "我刚才险些发出邮件。",
+    "我今天听王明说已经提交了申请。",
+    "我今天听医生讲已经完成了申请。",
+    "我聊完了自己的近况。王明昨天提交了申请。",
+    "我聊完了自己的近况。程夏出门了。",
     "如果我已经提交了申请，再联系公司。",
     "我已经提交申请了吗？",
     "我是否已经提交了申请。",
@@ -117,6 +129,9 @@ describe("clause-level life evidence", () => {
     "公司没有同意申请。",
     "我并没有轻松多了。",
     "没有更难受，也没有变得轻松。",
+    "对方现在不是拒绝，而是还在讨论。",
+    "我并没有更焦虑。",
+    "我没有失败，现在仍然在等结果。",
     "我只是期待会轻松多了。",
     "后来我朋友成功了。",
     "如果公司同意了申请，我会高兴。",
@@ -156,5 +171,62 @@ describe("clause-level life evidence", () => {
     );
     expect(analysis.clauses.some((clause) => clause.reflection)).toBe(true);
     expect(analysis.clauses.some((clause) => clause.action)).toBe(false);
+  });
+
+  it("keeps independent completed actions next to intentions, denials and counterfactuals", () => {
+    const analysis = analyzeLifeEvidence(
+      "我今天想先散步二十分钟。我昨天已经提交了申请。我刚才险些发出邮件，但我后来确实发出了邮件。我昨天没有收起画具；另外我刚刚把画具收起了。",
+    );
+    expect(
+      analysis.clauses
+        .filter((clause) => clause.action)
+        .map((clause) => clause.sourceText),
+    ).toEqual([
+      "我昨天已经提交了申请",
+      "但我后来确实发出了邮件",
+      "另外我刚刚把画具收起了",
+    ]);
+  });
+
+  it("does not carry a named third-party or reported-speech frame into a new explicit user assertion", () => {
+    const analysis = analyzeLifeEvidence(
+      "王明昨天提交了申请，我今天也提交了申请。我听程夏说她已经出门，我刚刚把画具收起了。",
+    );
+    expect(
+      analysis.clauses
+        .filter((clause) => clause.action)
+        .map((clause) => [clause.sourceText, clause.subject]),
+    ).toEqual([
+      ["我今天也提交了申请", "user"],
+      ["我刚刚把画具收起了", "user"],
+    ]);
+    expect(evidenceSubject(analysis, "action")).toBe("user");
+  });
+
+  it("preserves verb-led subject ellipsis after yesterday and today", () => {
+    const analysis = analyzeLifeEvidence(
+      "昨晚补了两笔颜色。今天已经提交了申请。散步回来，刚刚把画具放下了。",
+    );
+    expect(analysis.clauses.filter((clause) => clause.action)).toHaveLength(4);
+    expect(evidenceSubject(analysis, "action")).toBe("unspecified");
+  });
+
+  it("does not count a negated deterioration but keeps actual negative feedback", () => {
+    const negated = analyzeLifeEvidence("我并没有更焦虑。");
+    expect(
+      negated.clauses.some(
+        (clause) => clause.outcome || clause.pressureFeedback,
+      ),
+    ).toBe(false);
+    expect(
+      analyzeLifeEvidence("我没有被理解，反而更难受了。").clauses.some(
+        (clause) => clause.pressureFeedback,
+      ),
+    ).toBe(true);
+    expect(
+      analyzeLifeEvidence("对方不是拒绝，而是后来同意了申请。")
+        .clauses.filter((clause) => clause.outcome)
+        .map((clause) => clause.sourceText),
+    ).toEqual(["而是后来同意了申请"]);
   });
 });

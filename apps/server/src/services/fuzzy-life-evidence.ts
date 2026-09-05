@@ -29,24 +29,85 @@ export interface LifeEvidenceAnalysis {
   clauses: LifeEvidenceClause[];
 }
 
-const ACTION_VERB =
-  /提交|办理|报名|申请|搬走|搬家|分手|辞职|离职|答应|拒绝|开始做|完成|做完|办完|做了|去了|联系|签(?:了|约|署)|取消|执行|行动|发(?:出|给|了)|提出|确认|启动|出门|回来|走完|散步|画(?:了|完)|补(?:了|完)|涂(?:了|完)|蹭(?:了|完)|放下|拿起|停下|摊开|收起/u;
+// One predicate inventory drives both occurrence and its negation. A few
+// verbs need an aspect marker in an affirmative report ("画了", not "画纸"),
+// while their bare stem must still be recognized after "没有".
+const ACTION_PREDICATES: readonly (string | readonly [string, string])[] = [
+  "提交",
+  "办理",
+  "报名",
+  "申请",
+  "搬走",
+  "搬家",
+  "分手",
+  "辞职",
+  "离职",
+  ["答应", "答应了"],
+  ["拒绝", "拒绝了"],
+  ["开始", "开始做"],
+  "完成",
+  "做完",
+  "办完",
+  ["做", "做了"],
+  ["去", "去了"],
+  "联系",
+  ["签", "签(?:了|约|署)"],
+  "取消",
+  "执行",
+  "行动",
+  ["发", "发(?:邮件|出|给|了)"],
+  "提出",
+  "确认",
+  "启动",
+  "出门",
+  "回来",
+  "走完",
+  "散步",
+  ["画", "画(?:了|完)"],
+  ["补", "补(?:了|完)"],
+  ["涂", "涂(?:了|完)"],
+  ["蹭", "蹭(?:了|完)"],
+  "放下",
+  "拿起",
+  "停下",
+  "摊开",
+  "收起",
+];
+const ACTION_STEM_SOURCE = ACTION_PREDICATES.map((verb) =>
+  typeof verb === "string" ? verb : verb[0],
+).join("|");
+const ACTION_REPORT_SOURCE = ACTION_PREDICATES.map((verb) =>
+  typeof verb === "string" ? verb : verb[1],
+).join("|");
+const ACTION_VERB = new RegExp(ACTION_REPORT_SOURCE, "u");
 const COMPLETED_TIME =
   /已经|刚刚|刚才|刚(?=\S)|后来|今天|昨晚|昨天|最终|正式|确实|实际/u;
 const FUTURE =
   /明天|后天|下周|下个月|^(?:我|我们|你)?以后|将来|未来|下次|回头(?!看)|接下来|头两周/u;
 const INTENTION =
   /打算|计划|准备|想要|考虑|期待|希望|安排是|决定(?=提交|办理|报名|申请|搬|分手|辞职|离职|联系|执行|行动|出门)|想(?=提交|办理|报名|申请|搬|分手|辞职|离职|联系|执行|行动|出门)|(?:我|我们|你)(?:今天|现在)?(?:会|将)|(?:^|还|也|就)(?:会|将)(?=把|去|提交|执行|出门)|要先|先去|等.{0,16}(?:再|才)|先(?:看|观察|盯|等|跟进|考虑).{0,12}(?:执行|行动|结果|是否|是不是)/u;
+const INTENDED_ACTION = new RegExp(
+  `(?:想(?!起|清楚|明白|好)|要)(?:先|去|把|将|再)?[^，,。；;就便却]{0,12}(?:${ACTION_STEM_SOURCE})`,
+  "u",
+);
+const COUNTERFACTUAL_ACTION = new RegExp(
+  `(?:差点(?:儿)?|差一点(?:儿)?|险些)[^，,。；;]{0,16}(?:${ACTION_STEM_SOURCE})`,
+  "u",
+);
+const REPORTED_SPEECH =
+  /据说|听说|传闻|转述|(?:听|听到|听见)[\p{L}·]{1,20}(?:说|讲|提到)|(?:别人|有人|朋友|同事|家人|他|她)(?:告诉我|说|表示)/u;
 const UNCERTAIN =
   /^(?:如果|假如|要是|若|万一|假设)|可能|也许|或许|预计|(?<!比)预期/u;
 const META =
-  /(?:请|帮我).{0,12}(?:翻译|改写|复述|朗读|解释这句话)|(?:假装|扮演|模拟)(?:一下)?(?:我|你|用户|角色)|请.{0,16}(?:区分|回顾|总结).{0,40}(?:决定|行动|结果)|按顺序回顾|哪条消息.{0,24}(?:证明|行动|结果)|原文|据说|听说|传闻|转述/u;
+  /(?:请|帮我).{0,12}(?:翻译|改写|复述|朗读|解释这句话)|(?:假装|扮演|模拟)(?:一下)?(?:我|你|用户|角色)|请.{0,16}(?:区分|回顾|总结).{0,40}(?:决定|行动|结果)|按顺序回顾|哪条消息.{0,24}(?:证明|行动|结果)|原文/u;
 const EXAMPLE_FRAME =
   /(?:只是|这是|仅为)(?:一个|个)?(?:例句|例子|示例|反例)|(?:测试|练习)(?:文本|句子)|场景设定|举例来说/u;
-const NON_OCCURRENCE =
-  /(?:还没|没有|尚未|并未|从未|不会|不等于|没)(?:有)?[^，,。；;就便却]{0,12}(?:提交|办理|报名|申请|搬|分手|开始|完成|联系|签|执行|行动|发邮件|辞职|答应|出门|回来|画|补|涂|蹭|放下|拿起)|(?:只是|仍是).{0,8}(?:计划|打算)|事实没有变化|没有新的确认/u;
+const NON_OCCURRENCE = new RegExp(
+  `(?:还没|没有|尚未|并未|从未|不会|不等于|不是|并非|没)(?:有)?[^，,。；;就便却]{0,12}(?:${ACTION_STEM_SOURCE})|(?:只是|仍是).{0,8}(?:计划|打算)|事实没有变化|没有新的确认`,
+  "u",
+);
 const NEGATED_STATE_CHANGE =
-  /(?:还没|没有|尚未|并未|并不|不是).{0,8}(?:好(?:多|些)了|轻松|松快|安静|放松|踏实|更难受|更糟|缓解|减轻|退了|少了)|并没有.{0,8}(?:成功|同意|通过)/u;
+  /(?:还没|没有|尚未|并未|并不|不是).{0,8}(?:好(?:多|些)了|轻松|松快|安静|放松|踏实|更焦虑|更难受|更糟|缓解|减轻|退了|少了)|(?:不是|并非|没有|尚未|并未).{0,8}(?:成功|失败|同意|拒绝|通过)/u;
 const PENDING_RESULT =
   /(?:还没|尚未|没有|并未).{0,12}(?:最终结果|结果|反馈|确认|同意|通过|成功|收到)|(?:仍然|仍)不是最终结果|只有行动.{0,8}没有结果|事实没有变化|没有新的确认/u;
 const REFLECTION =
@@ -81,6 +142,7 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
     let planned = false;
     let reflectionFrame = false;
     let metaFrame = false;
+    let reportedFrame = false;
     for (const clause of alignedParts(
       sentence.sourceText,
       sentence.classifyText,
@@ -99,16 +161,25 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
         conditional = false;
         planned = false;
         metaFrame = false;
+        reportedFrame = false;
+      }
+      // A new explicit first-person assertion can follow someone else's
+      // reported speech in the same sentence; it does not inherit that frame.
+      if (
+        freshSubject?.subject === "user" &&
+        COMPLETED_TIME.test(value) &&
+        !REPORTED_SPEECH.test(value) &&
+        !META.test(value)
+      ) {
+        reportedFrame = false;
       }
       metaFrame ||= META.test(value);
+      reportedFrame ||= REPORTED_SPEECH.test(value);
       if (UNCERTAIN.test(value)) conditional = true;
-      if (FUTURE.test(value) || INTENTION.test(value)) planned = true;
+      const intention = INTENTION.test(value) || INTENDED_ACTION.test(value);
+      if (FUTURE.test(value) || intention) planned = true;
       // Explicit actual-time assertions can start a new independent event.
-      if (
-        COMPLETED_TIME.test(value) &&
-        !INTENTION.test(value) &&
-        !FUTURE.test(value)
-      )
+      if (COMPLETED_TIME.test(value) && !intention && !FUTURE.test(value))
         planned = false;
       const subject = inheritedSubject;
       const reflection = REFLECTION.test(value);
@@ -116,11 +187,12 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
       let modality: EvidenceModality =
         sentenceExample ||
         metaFrame ||
+        reportedFrame ||
         /^(?:请|别|不要|不用|不必)(?!担心)/u.test(value)
           ? "meta"
           : question || /是否|有没有|(?:吗|么)$|是不是/u.test(value)
             ? "question"
-            : conditional
+            : conditional || COUNTERFACTUAL_ACTION.test(value)
               ? "conditional"
               : planned && !reflection
                 ? "planned"
@@ -160,7 +232,7 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
         valence: asserted ? evidenceValence(value) : "neutral",
       });
     }
-    if (question || sentenceExample || metaFrame) {
+    if (question || sentenceExample || metaFrame || reportedFrame) {
       inheritedSubject = "unspecified";
       inheritedOrganization = false;
     }
@@ -177,9 +249,10 @@ function isOccurredAction(text: string): boolean {
   )
     return false;
   if (
-    /(?:已经|刚刚|刚才|刚|后来|今天|昨晚|昨天|最终|正式|确实|实际).{0,48}(?:提交|办理|报名|申请|搬走|搬家|分手|辞职|离职|答应了|拒绝了|开始做|完成|做了|去了|联系|签了|签约|签署|取消|执行|行动|发出|发给|发了|提出|确认|启动|出门|回来|散步)/u.test(
-      text,
-    )
+    new RegExp(
+      `(?:已经|刚刚|刚才|刚|后来|今天|昨晚|昨天|最终|正式|确实|实际).{0,48}(?:${ACTION_REPORT_SOURCE})`,
+      "u",
+    ).test(text)
   )
     return true;
   return /(?:出门|回来|走完)(?:了|一趟)?(?:$|[^\p{Script=Han}])|(?:散步|走路|跑步|运动|办事|买菜|上课)回来|(?:画|补|涂|蹭)(?:了|完).{0,12}(?:笔|线|画|颜色)|(?:把|将).{0,12}(?:笔|纸|画具|书|工具).{0,6}(?:放下|拿起|摊开|收起|停下)(?:了)?|(?:已经|刚才|刚刚).{0,12}(?:放下|拿起|停下|摊开|收起)/u.test(
@@ -248,7 +321,7 @@ function explicitSubject(
   text: string,
 ): { subject: EvidenceSubject; organization: boolean } | undefined {
   const clause = text.replace(
-    /^(?:(?:另外|此外|但(?:是)?|不过|可是|而且|然后|随后|后来|今天|现在|目前|最终|正式|刚刚|刚才|这次|几天后|一周后)\s*)+/u,
+    /^(?:(?:另外|此外|但(?:是)?|不过|可是|而且|而是|同时|然后|随后|后来|今天|昨天|昨晚|现在|目前|最终|正式|刚刚|刚才|已经|确实|实际|其实|顺手|顺便|接着|这次|几天后|一周后|又|也)\s*)+/u,
     "",
   );
   if (
@@ -257,12 +330,29 @@ function explicitSubject(
     )
   )
     return { subject: "third_party", organization: false };
-  if (/^(?:公司|团队|平台|对方|甲方|机构|学校)/u.test(clause))
+  if (/^(?:现|原)?(?:公司|团队|平台|对方|甲方|机构|学校)/u.test(clause))
     return { subject: "third_party", organization: true };
   if (/^(?:我|我们)/u.test(clause))
     return { subject: "user", organization: false };
   if (/^(?:你|角色)/u.test(clause))
     return { subject: "character", organization: false };
+  // An unfamiliar explicit actor must not silently inherit the preceding
+  // user's identity. Keep ordinary verb-led ellipsis ("散步回来", "把画具…")
+  // available, but abstain when a noun/name precedes a time marker or verb.
+  if (
+    /^[\p{L}·]{1,20}?(?=昨天|昨晚|今天|已经|刚刚|刚才|后来|正式|确实|实际)/u.test(
+      clause,
+    ) ||
+    (!new RegExp(
+      `^(?:${ACTION_STEM_SOURCE}|同意|拒绝|通过|失败|成功|收到|拿到|心里|脑子|身体|压力|焦虑|把|将|走|跑|换|拿|从|到|在|刚)`,
+      "u",
+    ).test(clause) &&
+      new RegExp(
+        `^[\\p{L}·]{1,16}?(?=${ACTION_REPORT_SOURCE}|说|表示|告诉)`,
+        "u",
+      ).test(clause))
+  )
+    return { subject: "third_party", organization: false };
   return undefined;
 }
 

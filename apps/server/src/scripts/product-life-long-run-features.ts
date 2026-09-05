@@ -24,6 +24,8 @@ export interface ProductLifeFeatureCheck {
 }
 
 export interface ProductLifePublicMessage {
+  sourceId: string;
+  authoredDisplayDate: string;
   role: "user" | "assistant";
   channel: "letter" | "product_status";
   content: string;
@@ -109,6 +111,8 @@ export async function dispatchProductLifeLetter(
       "The current fixed_5d_v1 policy requires five local calendar days for the outbound leg.",
     );
     action.publicMessages.push({
+      sourceId: updated.letter.id,
+      authoredDisplayDate: sealed.letter.authoredDisplayDate,
       role: "user",
       channel: "letter",
       content: `【我已寄出的信】\n${updated.subject ?? ""}\n${updated.body ?? ""}`,
@@ -266,6 +270,8 @@ export async function inspectProductLifeCorrespondence(
             "Only the successful product open operation decrypts and exposes the reply.",
           );
           action.publicMessages.push({
+            sourceId: opened.letter.id,
+            authoredDisplayDate: opened.letter.authoredDisplayDate,
             role: "assistant",
             channel: "letter",
             content: [

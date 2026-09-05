@@ -4,21 +4,40 @@ import { join, relative, resolve } from "node:path";
 
 import {
   FixtureLlmProvider,
+  StructuredOutputError,
   type GenerateObjectInput,
 } from "@personasim/providers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
-import { runProductLifeLongRun } from "./product-life-long-run.js";
+import {
+  productLifeAcceptanceStatus,
+  runProductLifeLongRun,
+} from "./product-life-long-run.js";
 
 class FullRunFixtureUser extends FixtureLlmProvider {
   calls = 0;
+  prompts: Record<string, unknown>[] = [];
   constructor() {
     super({ model: "product-life-user-offline" });
   }
   override generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
     this.calls += 1;
+    const context = JSON.parse(input.prompt) as {
+      controlledRecallProbe?: { questions: string[] };
+    };
+    this.prompts.push(context);
+    if (this.calls === 1)
+      return Promise.resolve(
+        input.schema.parse({ text: "林舟，你回来啦，我刚剪完片。" }),
+      );
+    if (context.controlledRecallProbe)
+      return Promise.resolve(
+        input.schema.parse({
+          text: context.controlledRecallProbe.questions[0],
+        }),
+      );
     if (input.purpose === "simulate_product_life_letter") {
       return Promise.resolve(
         input.schema.parse({
@@ -123,11 +142,55 @@ describe("42-turn product life long-run", () => {
       status: "completed",
       completedTurns: 42,
     });
-    expect(userProvider.calls).toBe(43);
+    expect(userProvider.calls).toBe(44);
     expect(globalThis.fetch).not.toHaveBeenCalled();
     const before = rows(runDirectory);
     expect(before.sessions).toBe(3);
     expect(before.messages).toHaveLength(84);
+    expect(JSON.stringify(before.messages)).not.toContain("林舟，你回来啦");
+    const inputChecks = (
+      await readFile(join(runDirectory, "user-input-checks.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+    expect(inputChecks[0]).toMatchObject({
+      step: "user-1",
+      attempt: 1,
+      accepted: false,
+    });
+    expect(inputChecks[1]).toMatchObject({
+      step: "user-1",
+      attempt: 2,
+      accepted: true,
+    });
+    const lastHistory = userProvider.prompts.at(-1)!.publicHistory as Array<{
+      sourceId: string;
+      speakerName: string;
+      authoredAtLocal: string;
+      channel?: string;
+    }>;
+    expect(
+      lastHistory.filter((message) => message.channel === "letter"),
+    ).toHaveLength(2);
+    expect(new Set(lastHistory.map((message) => message.sourceId)).size).toBe(
+      lastHistory.length,
+    );
+    expect(
+      lastHistory.every(
+        (message) =>
+          ["林舟", "顾澜"].includes(message.speakerName) &&
+          message.authoredAtLocal.length > 0,
+      ),
+    ).toBe(true);
+    const acceptance = await parsed(
+      join(runDirectory, "acceptance-status.json"),
+    );
+    expect(acceptance).toMatchObject({
+      execution: "completed",
+      semanticQuality: "pending_review",
+      readmeGoals: "not_evaluated",
+    });
     expect(before.checkpoints).toBeGreaterThan(0);
     const turnFiles = (await readdir(runDirectory)).filter((name) =>
       /^turn-\d\d\.json$/u.test(name),
@@ -231,7 +294,7 @@ describe("42-turn product life long-run", () => {
       resume: true,
     });
     expect(resumed).toMatchObject({ status: "completed", completedTurns: 42 });
-    expect(userProvider.calls).toBe(43);
+    expect(userProvider.calls).toBe(44);
     expect(rows(runDirectory)).toEqual(before);
     expect(await readFile(join(runDirectory, "model-io.jsonl"), "utf8")).toBe(
       ioBefore,
@@ -257,7 +320,74 @@ describe("42-turn product life long-run", () => {
         resume: true,
       }),
     ).rejects.toThrow("Resume configuration or scenario differs");
-    expect(userProvider.calls).toBe(43);
+    expect(userProvider.calls).toBe(44);
     expect(rows(runDirectory)).toEqual(before);
   }, 90_000);
+
+  it("reports failed features separately from completed dialogue without inventing semantic acceptance", () => {
+    const report = productLifeAcceptanceStatus({
+      status: "completed",
+      completedTurns: 42,
+      nowUtc: "2026-10-20T04:00:00.000Z",
+      steps: {
+        artifacts: {
+          checks: [
+            { id: "image_missing", passed: false, detail: "No ready asset" },
+          ],
+        },
+        "turn-1": {},
+      },
+    });
+    expect(report.featureChecks.status).toBe("failed");
+    expect(report.sceneCoverage[0]?.status).toBe("pending_review");
+    expect(report.sceneCoverage[1]?.status).toBe("not_executed");
+    expect(report.readmeGoals).toBe("not_evaluated");
+  });
+
+  it.each(["role", "schema", "transport"])(
+    "stops invalid %s input before persisting a user message",
+    async (failure) => {
+      const parent = await mkdtemp(join(tmpdir(), "product-life-full-test-"));
+      directories.push(parent);
+      const runDirectory = join(parent, "rejected");
+      const config = readConfig({
+        nodeEnv: "test",
+        profile: "test",
+        seedDemo: false,
+        llm: {
+          provider: "fixture",
+          model: "personasim-fixture-v1",
+          baseUrl: "https://fixture.invalid",
+          timeoutMs: 1000,
+          maxRetries: 0,
+        },
+      });
+      const provider = new FixtureLlmProvider();
+      const generate = vi
+        .spyOn(provider, "generateObject")
+        .mockImplementation((input) => {
+          if (failure === "schema")
+            return Promise.reject(new StructuredOutputError("Invalid JSON"));
+          if (failure === "transport")
+            return Promise.reject(new Error("Connection unavailable"));
+          return Promise.resolve(
+            input.schema.parse({ text: "林舟，你回来啦。" }),
+          );
+        });
+      const result = await runProductLifeLongRun({
+        runDirectory,
+        config,
+        userProvider: provider,
+        userMetrics: [],
+      });
+      expect(result).toMatchObject({ status: "failed", completedTurns: 0 });
+      expect(result.error).toContain(
+        failure === "transport"
+          ? "Connection unavailable"
+          : "simulated_user_input_rejected",
+      );
+      expect(generate).toHaveBeenCalledTimes(failure === "transport" ? 1 : 2);
+      expect(rows(runDirectory).messages).toEqual([]);
+    },
+  );
 });

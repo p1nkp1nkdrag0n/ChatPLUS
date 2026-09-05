@@ -12,6 +12,7 @@ import {
 } from "@personasim/contracts";
 import {
   createOpenAiCompatibleLlmProvider,
+  StructuredOutputError,
   type LlmCallMetric,
   type LlmProvider,
   type GenerateObjectInput,
@@ -43,22 +44,23 @@ import {
   PRODUCT_LIFE_USER_PERSONA,
 } from "./product-life-long-run-plan.js";
 import { auditProductLifeDatabase } from "./product-life-long-run-audit.js";
+import {
+  PRODUCT_LIFE_INPUT_PROTOCOL,
+  appendProductLifeHistory,
+  inspectProductLifeUserText,
+  productLifePublicContext,
+  productLifeRecallProbe,
+  productLifeUserTextSchema,
+  type ProductLifeHistoryMessage,
+} from "./product-life-long-run-input.js";
 
 const START = "2026-09-05T01:00:00.000Z";
-const TextSchema = z
-  .object({ text: z.string().trim().min(1).max(800) })
-  .strict();
 const LetterSchema = z
   .object({
     subject: z.string().trim().min(1).max(80),
     body: z.string().trim().min(1).max(2400),
   })
   .strict();
-type PublicMessage = {
-  role: "user" | "assistant";
-  content: string;
-  channel?: string;
-};
 interface Journal {
   steps: Record<string, unknown>;
   completedTurns: number;
@@ -71,6 +73,10 @@ export interface ProductLifeLongRunOptions {
   config: ServerConfig;
   userProvider: LlmProvider;
   userMetrics: LlmCallMetric[];
+  userConnection?: Pick<
+    ServerConfig["llm"],
+    "baseUrl" | "profileName" | "timeoutMs" | "maxRetries" | "maxOutputTokens"
+  >;
   explicitSecrets?: string[];
   resume?: boolean;
   onProgress?: (text: string) => void;
@@ -148,10 +154,12 @@ export async function runProductLifeLongRun(
   };
   const resumeIdentity: unknown = JSON.parse(
     JSON.stringify({
+      inputProtocol: PRODUCT_LIFE_INPUT_PROTOCOL,
       character: {
         provider: config.llm.provider,
         profile: config.llm.profileName,
         model: config.llm.model,
+        baseUrl: config.llm.baseUrl,
         capabilities: config.llm.capabilities,
         timeoutMs: config.llm.timeoutMs,
         maxRetries: config.llm.maxRetries,
@@ -161,6 +169,7 @@ export async function runProductLifeLongRun(
         provider: options.userProvider.name,
         model: options.userProvider.model,
         capabilities: options.userProvider.capabilities,
+        connection: options.userConnection,
       },
       conversationRetention: config.conversationRetention,
       simulatedStartUtc: START,
@@ -202,7 +211,7 @@ export async function runProductLifeLongRun(
   let database!: Database;
   let active = false;
   let activeStep = "initialization";
-  const history: PublicMessage[] = [];
+  const history: ProductLifeHistoryMessage[] = [];
   let userMetricCursor = 0;
   async function open(
     path = config.databasePath,
@@ -248,7 +257,7 @@ export async function runProductLifeLongRun(
       ...options.userMetrics,
     ]);
     await json("manifest.json", {
-      schema: "product-life-long-run-v1",
+      schema: "product-life-long-run-v2",
       status: journal.status,
       completedTurns: journal.completedTurns,
       plannedTurns: PRODUCT_LIFE_PLAN.length,
@@ -326,50 +335,112 @@ export async function runProductLifeLongRun(
     brief: string,
     purpose: string,
   ): Promise<T> {
-    const bounded = [...history];
-    while (bounded.reduce((n, m) => n + m.content.length, 0) > 48000)
-      bounded.shift();
+    const publicContext = productLifePublicContext(history, clock.nowUtc());
     const input = {
       purpose,
       schema,
       maxOutputTokens: 24576,
-      maxRetries: 1,
+      maxRetries: 0,
       system:
-        "你只扮演模拟用户林舟。根据给定生活情境与公开对话自然接话，只写自己说的内容，不代写顾澜的台词。保持人的口吻，通常80到220字，可以更短，不长篇说教。不报告测试、不评分、不提内部指导。情境是模拟外部生活事实，不是已发生对话；只能把公开对话中自己已经明确选择的计划作为后续执行前提。对方没有回答的内容不能当作已知。输出符合schema的JSON。",
+        "你只扮演模拟用户林舟，对方是顾澜。history中role=user/speakerName=林舟才是你过去说的话，assistant/顾澜是对方；你绝不能称呼对方为林舟、接管对方的经历或代写对方台词。只根据当前scene与已公开的有时间记录自然接话。当前scene优先决定这轮话题，但它不是已经发生的共同往事；没有历史依据的分歧、执行、结果要询问或承认尚未发生。今天/昨天以currentTimeLocal为准，信的写作时间与首次看到时间不同。只写你自己的内容，通常80到220字，可更短，不说教、不报告测试。计划、建议、已执行、已确认结果严格区分。若text的schema限定了枚举问题，只能选择一个原样输出，不附加答案或线索。输出符合schema的JSON。",
       prompt: JSON.stringify({
         persona: PRODUCT_LIFE_USER_PERSONA,
-        currentTimeUtc: clock.nowUtc(),
+        ...publicContext,
         scene: brief,
-        publicHistory: bounded,
-        omittedEarlierMessages: history.length - bounded.length,
+        controlledRecallProbe: /^user-\d+$/u.test(activeStep)
+          ? productLifeRecallProbe(Number(activeStep.slice(5)))
+          : undefined,
       }),
     };
-    append("model-io.jsonl", {
-      actor: "user",
-      step: activeStep,
-      system: input.system,
-      prompt: input.prompt,
-      stage: "started",
-    });
-    const output = schema.parse(
-      await options.userProvider.generateObject(input),
+    let repairIssues: string[] = [];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      if (
+        characterMetrics.length +
+          oldUserMetrics.length +
+          options.userMetrics.length >=
+        200
+      )
+        throw new Error("physical_request_budget_reached");
+      const attemptInput = {
+        ...input,
+        prompt: JSON.stringify({
+          ...JSON.parse(input.prompt),
+          ...(repairIssues.length
+            ? {
+                correction: {
+                  issues: repairIssues,
+                  instruction:
+                    "重新生成本轮内容。保持你是林舟、对方是顾澜；遵守schema中不带答案的提问约束。",
+                },
+              }
+            : {}),
+        }),
+      };
+      append("model-io.jsonl", {
+        actor: "user",
+        step: activeStep,
+        attempt,
+        system: input.system,
+        prompt: attemptInput.prompt,
+        stage: "started",
+      });
+      let output: T;
+      try {
+        output = schema.parse(
+          await options.userProvider.generateObject(attemptInput),
+        );
+      } catch (error) {
+        // A transport error should remain visible and must not restart a paid call here.
+        if (
+          !(error instanceof z.ZodError) &&
+          !(error instanceof StructuredOutputError)
+        )
+          throw error;
+        repairIssues = ["output_does_not_match_schema"];
+        append("user-input-checks.jsonl", {
+          step: activeStep,
+          attempt,
+          issues: repairIssues,
+        });
+        continue;
+      }
+      const content = output as { text?: string; body?: string };
+      repairIssues = inspectProductLifeUserText(
+        content.text ?? content.body ?? "",
+      );
+      append("model-io.jsonl", {
+        actor: "user",
+        step: activeStep,
+        attempt,
+        stage: "completed",
+        output,
+        metrics: options.userMetrics.slice(userMetricCursor),
+      });
+      userMetricCursor = options.userMetrics.length;
+      append("user-input-checks.jsonl", {
+        step: activeStep,
+        attempt,
+        issues: repairIssues,
+        accepted: repairIssues.length === 0,
+      });
+      if (repairIssues.length === 0) return output;
+    }
+    throw new Error(
+      `simulated_user_input_rejected: ${repairIssues.join(", ")}`,
     );
-    append("model-io.jsonl", {
-      actor: "user",
-      step: activeStep,
-      stage: "completed",
-      output,
-      metrics: options.userMetrics.slice(userMetricCursor),
-    });
-    userMetricCursor = options.userMetrics.length;
-    return output;
   }
   async function feature(
     id: string,
     work: () => Promise<ProductLifeFeatureResult>,
   ): Promise<ProductLifeFeatureResult> {
     const result = await step(id, work);
-    history.push(...result.publicMessages);
+    appendProductLifeHistory(
+      history,
+      result.publicMessages.map((message) => ({
+        ...message,
+        firstVisibleAtUtc: clock.nowUtc(),
+      })),
+    );
     await json(`${id}.json`, result);
     return result;
   }
@@ -496,7 +567,11 @@ export async function runProductLifeLongRun(
         }
       }
       const user = await step(`user-${turn}`, () =>
-        generate(TextSchema, planned.brief, "simulate_product_life_user"),
+        generate(
+          productLifeUserTextSchema(turn),
+          planned.brief,
+          "simulate_product_life_user",
+        ),
       );
       const evidence = await step(`turn-${turn}`, async () => {
         const before = auditProductLifeDatabase(database, character.id);
@@ -523,18 +598,27 @@ export async function runProductLifeLongRun(
         journal.completedTurns = turn;
         return result;
       });
-      history.push(
-        { role: "user", content: evidence.response.userMessage.content },
+      appendProductLifeHistory(history, [
         {
+          sourceId: evidence.response.userMessage.id,
+          role: "user",
+          content: evidence.response.userMessage.content,
+          authoredAtUtc: evidence.atUtc,
+          firstVisibleAtUtc: evidence.atUtc,
+        },
+        {
+          sourceId: evidence.response.assistantMessage.id,
           role: "assistant",
           content: evidence.response.assistantMessage.content,
+          authoredAtUtc: evidence.atUtc,
+          firstVisibleAtUtc: evidence.atUtc,
         },
-      );
+      ]);
       turns.push(evidence);
       await json("turns.json", turns);
       await writeFile(
         join(directory, "conversation.md"),
-        `# 45个模拟日的双模型对话\n\nQwen：林舟；GLM：顾澜。场景引导见plan.json，公开书信单独标明。\n\n${history.map((message) => `**${message.role === "user" ? "林舟" : "顾澜"}${message.channel ? ` · ${message.channel}` : ""}**\n\n${message.content}\n`).join("\n")}\n`,
+        `# 45个模拟日的双模型对话\n\n用户模型：林舟；角色模型：顾澜。场景引导见plan.json；盲测回忆问题为固定候选，不含答案提示。\n\n${history.map((message) => `**${message.role === "user" ? "林舟" : "顾澜"}${message.channel ? ` · ${message.channel}` : ""} · ${message.authoredAtUtc ?? message.authoredDisplayDate}**\n\n${message.content}\n`).join("\n")}\n`,
       );
       if (turn === 1) {
         await step("message-idempotence", async () => {
@@ -645,12 +729,22 @@ export async function runProductLifeLongRun(
   } finally {
     await close();
     await save();
+    await json("acceptance-status.json", productLifeAcceptanceStatus(journal));
   }
   return journal;
 }
 
 class FixtureProductLifeUser extends FixtureSimulationUser {
   override generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+    const context = JSON.parse(input.prompt) as {
+      controlledRecallProbe?: { questions: string[] };
+    };
+    if (context.controlledRecallProbe)
+      return Promise.resolve(
+        input.schema.parse({
+          text: context.controlledRecallProbe.questions[0],
+        }),
+      );
     if (input.purpose === "simulate_product_life_letter")
       return Promise.resolve(
         input.schema.parse({
@@ -660,6 +754,65 @@ class FixtureProductLifeUser extends FixtureSimulationUser {
       );
     return super.generateObject(input);
   }
+}
+
+export function productLifeAcceptanceStatus(journal: Journal) {
+  const checks = Object.entries(journal.steps).flatMap(([step, value]) => {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("checks" in value) ||
+      !Array.isArray(value.checks)
+    )
+      return [];
+    return value.checks.map(
+      (check: { id: string; passed: boolean | null; detail: string }) => ({
+        step,
+        ...check,
+      }),
+    );
+  });
+  const failedChecks = checks.filter((check) => check.passed === false);
+  return {
+    execution: journal.status,
+    completedTurns: journal.completedTurns,
+    featureChecks: {
+      status: failedChecks.length
+        ? "failed"
+        : journal.status === "completed"
+          ? "passed"
+          : "incomplete",
+      passed: checks.filter((check) => check.passed === true).length,
+      notCovered: checks.filter((check) => check.passed === null),
+      failed: failedChecks,
+    },
+    inputValidation: {
+      status: journal.error?.includes("simulated_user_input_rejected")
+        ? "rejected"
+        : "see_attempt_log",
+      artifact: "user-input-checks.jsonl",
+      scope:
+        "Only explicit role errors and constrained recall prompts; general factual and temporal grounding still needs review.",
+    },
+    sceneCoverage: PRODUCT_LIFE_PLAN.map((planned, index) => ({
+      turn: index + 1,
+      objective: planned.brief,
+      status: Object.hasOwn(journal.steps, `turn-${index + 1}`)
+        ? "pending_review"
+        : "not_executed",
+      evidence: `turn-${String(index + 1).padStart(2, "0")}.json`,
+      ...(productLifeRecallProbe(index + 1)
+        ? {
+            probe: productLifeRecallProbe(index + 1)!.kind,
+            promptConstraint: "answer_free_question_enum",
+          }
+        : {}),
+    })),
+    semanticQuality: "pending_review",
+    readmeGoals: "not_evaluated",
+    reviewInstructions:
+      "Review actual dialogue and durable state together. Completed execution and valid references do not establish scene coverage, genuine life changes, or relationship quality.",
+  };
 }
 
 export async function productLifeLongRunMain(
@@ -709,6 +862,21 @@ export async function productLifeLongRunMain(
     config: { ...base, llm: characterConfig },
     userProvider,
     userMetrics,
+    ...(userConfig
+      ? {
+          userConnection: {
+            baseUrl: userConfig.baseUrl,
+            ...(userConfig.profileName
+              ? { profileName: userConfig.profileName }
+              : {}),
+            timeoutMs: userConfig.timeoutMs,
+            maxRetries: userConfig.maxRetries,
+            ...(userConfig.maxOutputTokens !== undefined
+              ? { maxOutputTokens: userConfig.maxOutputTokens }
+              : {}),
+          },
+        }
+      : {}),
     explicitSecrets: [userConfig?.apiKey ?? ""],
     resume: command === "resume",
     onProgress: console.log,

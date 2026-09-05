@@ -120,13 +120,17 @@ describe("product long-run correspondence and relationship artifacts", () => {
     });
     expect(dispatched.status).toBe("completed");
     expect(dispatched.letterId).toBeTypeOf("string");
-    expect(dispatched.publicMessages).toEqual([
+    expect(dispatched.publicMessages).toMatchObject([
       {
+        sourceId: dispatched.letterId,
         role: "user",
         channel: "letter",
         content: `【我已寄出的信】\n一碗热面的小记\n${BODY}`,
       },
     ]);
+    expect(
+      dispatched.publicMessages[0]?.authoredDisplayDate.length,
+    ).toBeGreaterThan(0);
     expect(dispatched.evidence).toMatchObject({
       http: [
         { method: "POST", statusCode: 201 },

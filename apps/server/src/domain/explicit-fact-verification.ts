@@ -577,7 +577,7 @@ function parseUserBeverageAssertion(
   clause: string,
 ): { predicate: string; rawValue: string } | undefined {
   const chinese =
-    /^(?:(?:至于|说到)(?:饮品|饮料|喝的)?\s*[:：]?\s*)?(?:我|用户)(?:自己)?(?:通常|一般|平时|一直|仍然|还是|只是|只)?\s*(习惯喝|不饮用|不喜欢|不喝|不爱|讨厌|饮用|喜欢|偏好|喝|点|冲)\s*([^，,。；;！？!?]{1,48})$/u.exec(
+    /^(?:(?:至于|说到)(?:饮品|饮料|喝的)?\s*[:：]?\s*)?(?:我|用户)(?:自己)?(?:最近常|通常|一般|平时|一直|仍然|还是|只是|只)?\s*(习惯喝|不饮用|不喜欢|不喝|不爱|讨厌|饮用|喜欢|偏好|喝|点|冲)\s*([^，,。；;！？!?]{1,48})$/u.exec(
       clause,
     );
   if (chinese?.[1] !== undefined && chinese[2] !== undefined) {

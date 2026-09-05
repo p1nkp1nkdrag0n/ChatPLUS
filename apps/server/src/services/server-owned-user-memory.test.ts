@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { explicitFactValueResolution } from "../domain/explicit-fact-verification.js";
 import { companionLongRunV3Manifest } from "../scenarios/companion-long-run-v3-manifest.js";
 import {
   companionLongRunV3DelegatedDecision,
@@ -14,6 +15,24 @@ import {
 const NOW = "2026-09-01T01:00:00.000Z";
 
 describe("server-owned deterministic user memory extraction", () => {
+  it("emits a usual-drink fact that the explicit-fact reader can resolve", () => {
+    const candidate = deriveServerOwnedUserMemoryCandidates(
+      "我喝不加糖的红茶，我的铁盒标签写着“1998 / 潮声”。",
+      NOW,
+    ).find((item) => item.content.startsWith("用户最近常喝"));
+
+    expect(candidate?.content).toBe("用户最近常喝不加糖的红茶。");
+    expect(
+      explicitFactValueResolution(candidate?.content ?? "", {
+        kind: "beverage_preference",
+        selector: { scope: "family", family: "tea" },
+      }),
+    ).toEqual({
+      kind: "resolved",
+      valueKey: "affirmed:black_tea:unspecified:unsweetened",
+    });
+  });
+
   it("extracts every reviewed v3 durable fact with stable claim identities", () => {
     const expected = new Map<number, readonly string[]>([
       [12, ["user_fact:user:name"]],

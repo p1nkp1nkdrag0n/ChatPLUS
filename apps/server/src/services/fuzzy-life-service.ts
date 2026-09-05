@@ -772,7 +772,10 @@ export class FuzzyLifeService {
             `${input.assistantText} ${dilemmaEvidenceClassifyText}`,
           );
     let interventionId: string | undefined;
-    if (dilemma !== undefined || targetPressureId !== undefined) {
+    if (
+      input.assistantText.trim() !== "" &&
+      (dilemma !== undefined || targetPressureId !== undefined)
+    ) {
       interventionId = stableId(
         "support",
         `${input.sessionId}:${input.assistantMessageId}`,
@@ -840,7 +843,7 @@ export class FuzzyLifeService {
 
     const streamId =
       dilemma?.id ?? targetPressureId ?? interventionId ?? decisionId;
-    if (streamId !== undefined) {
+    if (streamId !== undefined && interventionId !== undefined) {
       this.recordEvent({
         agentId: input.agentId,
         streamType: "life_decision",
@@ -891,6 +894,7 @@ export class FuzzyLifeService {
     const outcomeEvidence = isOutcomeEvidence(classifyText);
     const userReflectionEvidence = isReflectionEvidence(classifyText);
     const characterReflectionRequest =
+      input.assistantText.trim() !== "" &&
       isCharacterReflectionRequest(classifyText);
     if (
       !actionEvidence &&
@@ -1173,8 +1177,10 @@ export class FuzzyLifeService {
       options: [
         {
           id: stableId("option", `${dilemmaId}:change`),
-          label: selected,
-          description: `按照本轮讨论形成的方向：${selected}`,
+          label: selected || "探索改变当前路径",
+          description: selected
+            ? `按照本轮讨论形成的方向：${selected}`
+            : "具体改变方向仍待讨论，当前尚无角色建议或决定。",
           likelyTradeoffs: ["会带来改变，也需要承担相应的不确定性"],
           valuesAtStake: inferDilemmaValues(classifyText),
         },
@@ -1344,7 +1350,7 @@ export class FuzzyLifeService {
       );
     }
 
-    if (!wantsOwnDecision) {
+    if (!wantsOwnDecision || input.assistantText.trim() === "") {
       return {
         dilemmaId: dilemma.id,
         ...(pressureEpisodeId === undefined ? {} : { pressureEpisodeId }),

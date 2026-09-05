@@ -762,6 +762,53 @@ describe("fuzzy-life language helpers", () => {
     expect(isOutcomeEvidence("明天这个决定的结果可能会让我很开心")).toBe(false);
   });
 
+  it("does not turn third-party consent modality or its correction into life action/outcome evidence", () => {
+    for (const text of [
+      "姨妈也许愿意让我单独看修复稿。",
+      "姨妈还没确认是否允许我查看修复稿。",
+      "刚才说了姨妈没有同意让我看修复稿，不能说她已经同意了。",
+      "更正一下：姨妈没有授权公开或转发修复稿。",
+    ]) {
+      expect(isActionEvidence(text), text).toBe(false);
+      expect(isOutcomeEvidence(text), text).toBe(false);
+      expect(isReflectionEvidence(text), text).toBe(false);
+    }
+  });
+
+  it.each([
+    [
+      "姨妈也许愿意让我看修复稿；另外我今天已经提交了副主编岗位的申请。",
+      true,
+      false,
+      false,
+    ],
+    [
+      "姨妈也许愿意让我看修复稿；另外，后来我拿到了副主编岗位，但收入比原来少，这是混合结果。",
+      false,
+      true,
+      false,
+    ],
+    [
+      "姨妈也许愿意让我看修复稿；另外我回头看接受副主编岗位这个决定，仍认同稳定收入的方向，但也担心创作时间减少的代价。",
+      false,
+      false,
+      true,
+    ],
+    [
+      "刚才说了姨妈没有同意让我看修复稿，不能说她已经同意了；另外我在考虑副主编岗位。",
+      false,
+      false,
+      false,
+    ],
+  ] as const)(
+    "classifies only independent life evidence: %s",
+    (text, action, outcome, reflection) => {
+      expect(isActionEvidence(text)).toBe(action);
+      expect(isOutcomeEvidence(text)).toBe(outcome);
+      expect(isReflectionEvidence(text)).toBe(reflection);
+    },
+  );
+
   it("distinguishes reflection evidence from a reflection request", () => {
     expect(isReflectionEvidence("回头看，我很庆幸做了这个决定")).toBe(true);
     expect(isReflectionEvidence("你现在怎么看自己的选择？")).toBe(false);

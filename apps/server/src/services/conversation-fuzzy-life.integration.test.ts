@@ -7,6 +7,7 @@ import {
   type DecisionRecord,
   type DilemmaEpisode,
   type PressureEpisode,
+  type OutcomeRecord,
   type ReflectionRecord,
   type SupportIntervention,
 } from "@personasim/contracts";
@@ -18,6 +19,7 @@ import { LifeRepository } from "../repositories/life-repository.js";
 import { FakeClock } from "../runtime/clock.js";
 import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
 import type { ChatTurnResult } from "./conversation-service.js";
+import type { FixtureTurnBehavior } from "./turn-decision-service.js";
 
 const START_UTC = "2026-09-01T01:00:00.000Z";
 
@@ -29,6 +31,235 @@ describe("fuzzy-life conversation integration", () => {
     app = undefined;
     vi.restoreAllMocks();
   });
+
+  it("keeps consent corrections out of a real decision-action-outcome-reflection trajectory", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "consent-life-decision",
+      "我最终决定了：选择接受影像平台副主编岗位。",
+    );
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    const milestonesBefore = scalarCount(app, "relationship_milestones");
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "consent-life-correction",
+      "刚才说了姨妈没有同意让我看修复稿，不能说她已经同意了；另外我在考虑副主编岗位。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(0);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+    expect(scalarCount(app, "reflection_records")).toBe(0);
+    expect(scalarCount(app, "relationship_milestones")).toBe(milestonesBefore);
+
+    const actionTurn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "consent-life-action",
+      "姨妈也许愿意让我看修复稿；另外我今天已经提交了副主编岗位的申请。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+    const action = latestJson<ActionRecord>(
+      app,
+      "action_records",
+      "action_json",
+    );
+    expect(action).toMatchObject({
+      decisionId: decision.id,
+      sourceEvidenceIds: [actionTurn.userMessage.id],
+    });
+    expect(action.summary).toContain("已经提交");
+    expect(action.summary).not.toMatch(/姨妈|也许/u);
+    expect(actionTurn.userMessage.content).toContain("姨妈也许");
+
+    const outcomeText =
+      "姨妈也许愿意让我看修复稿；另外，后来我拿到了副主编岗位，但收入比原来少，这是混合结果。";
+    const outcomeTurn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "consent-life-outcome",
+      outcomeText,
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(scalarCount(app, "outcome_records")).toBe(1);
+    const outcome = latestJson<OutcomeRecord>(
+      app,
+      "outcome_records",
+      "outcome_json",
+    );
+    expect(outcome).toMatchObject({
+      decisionId: decision.id,
+      actionIds: [action.id],
+      valence: "mixed",
+      sourceEvidenceIds: [outcomeTurn.userMessage.id],
+    });
+    expect(outcome.summary).not.toMatch(/姨妈|也许/u);
+
+    const reflectionTurn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "consent-life-reflection",
+      "姨妈也许愿意让我看修复稿；另外我回头看接受副主编岗位这个决定，仍认同稳定收入的方向，但也担心创作时间减少的代价。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(scalarCount(app, "outcome_records")).toBe(1);
+    expect(scalarCount(app, "reflection_records")).toBe(1);
+    expect(
+      latestJson<ReflectionRecord>(
+        app,
+        "reflection_records",
+        "reflection_json",
+      ),
+    ).toMatchObject({
+      decisionId: decision.id,
+      outcomeId: outcome.id,
+      stanceTowardDecision: "mixed",
+      sourceMessageIds: [reflectionTurn.userMessage.id],
+    });
+    const beforeReplay = [
+      scalarCount(app, "action_records"),
+      scalarCount(app, "outcome_records"),
+      scalarCount(app, "reflection_records"),
+      scalarCount(app, "relationship_milestones"),
+    ];
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionId}/messages`,
+      payload: {
+        agentId: character.id,
+        clientMessageId: "consent-life-outcome",
+        text: outcomeText,
+      },
+    });
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(jsonBody<ChatTurnResult>(replay).assistantMessage).toEqual(
+      outcomeTurn.assistantMessage,
+    );
+    expect([
+      scalarCount(app, "action_records"),
+      scalarCount(app, "outcome_records"),
+      scalarCount(app, "reflection_records"),
+      scalarCount(app, "relationship_milestones"),
+    ]).toEqual(beforeReplay);
+  });
+
+  it("preserves an independent explicit delegation after a consent boundary", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "mixed-consent-delegation",
+      "姨妈还没同意公开照片。现在我明确授权你，只在接受影像平台副主编岗位和启动独立影像项目之间替我作一次决定。",
+    );
+    expect(scalarCount(app, "decision_records")).toBe(1);
+    expect(scalarCount(app, "action_records")).toBe(0);
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    expect(decision).toMatchObject({
+      dilemmaId: "test-user-branch-dilemma",
+      supportMode: "delegated_decision",
+      authorizedByMessageId: turn.userMessage.id,
+    });
+    expect([
+      "test-user-branch-stable",
+      "test-user-branch-independent",
+    ]).toContain(decision.selectedOptionId);
+  });
+
+  it.each(["reflection", "character_decision", "user_support"] as const)(
+    "keeps user evidence without fabricating %s from an empty independent reply",
+    async (kind) => {
+      app = await createTestApp({
+        ...companionLongRunV3FixtureBehavior,
+        semanticReply: (input) =>
+          input.userText.startsWith("姨妈还没同意公开照片")
+            ? "姨妈还没同意公开照片。"
+            : companionLongRunV3FixtureBehavior.semanticReply?.(input),
+      });
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      if (kind !== "user_support") {
+        injectCharacterDilemma(app, character.id, sessionId);
+      }
+      if (kind === "reflection") {
+        await sendChat(
+          app,
+          sessionId,
+          character.id,
+          "before-empty-reflection",
+          "你现在愿意为《夜航》选一个方向吗？请按你自己的价值作决定。",
+        );
+        expect(scalarCount(app, "decision_records")).toBe(1);
+      }
+      const decisionsBefore = scalarCount(app, "decision_records");
+      const milestonesBefore = scalarCount(app, "relationship_milestones");
+      const independentText =
+        kind === "reflection"
+          ? "另外，回头看《夜航》保留克制结尾的决定，你现在怎么看自己的选择？"
+          : kind === "character_decision"
+            ? "另外，你现在愿意为《夜航》选一个方向吗？请按你自己的价值作决定。"
+            : "另外，我最近工作压力很大，要不要辞职？";
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `empty-independent-${kind}`,
+        `姨妈还没同意公开照片。${independentText}`,
+      );
+      expect(turn.userMessage.content).toContain(independentText);
+      expect(turn.assistantMessage.content).toContain("姨妈");
+      expect(scalarCount(app, "decision_records")).toBe(decisionsBefore);
+      expect(scalarCount(app, "reflection_records")).toBe(0);
+      expect(scalarCount(app, "relationship_milestones")).toBe(
+        milestonesBefore,
+      );
+      const assistantSupport = app.personasim.store.database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM support_interventions WHERE source_message_id = ?",
+        )
+        .get(turn.assistantMessage.id) as { count: number };
+      expect(assistantSupport.count).toBe(0);
+      if (kind === "user_support") {
+        expect(scalarCount(app, "pressure_episodes")).toBe(1);
+        expect(scalarCount(app, "dilemma_episodes")).toBe(1);
+      }
+      if (kind === "character_decision") {
+        expect(
+          rowJson<SupportIntervention>(
+            app,
+            "support_interventions",
+            "intervention_json",
+            "source_message_id",
+            turn.userMessage.id,
+          ),
+        ).toMatchObject({
+          offeredBy: "user",
+          receivedBy: "character",
+        });
+      }
+    },
+  );
 
   it("turns an explicitly delegated choice into one auditable decision without exact-life side effects", async () => {
     app = await createTestApp();
@@ -2066,7 +2297,9 @@ describe("fuzzy-life conversation integration", () => {
   });
 });
 
-async function createTestApp(): Promise<PersonaSimApp> {
+async function createTestApp(
+  fixtureTurnBehavior: FixtureTurnBehavior = companionLongRunV3FixtureBehavior,
+): Promise<PersonaSimApp> {
   const config = readConfig({
     nodeEnv: "test",
     profile: "fuzzy-life-conversation-test",
@@ -2096,7 +2329,7 @@ async function createTestApp(): Promise<PersonaSimApp> {
     seedDemo: false,
     startScheduler: false,
     logger: false,
-    fixtureTurnBehavior: companionLongRunV3FixtureBehavior,
+    fixtureTurnBehavior,
   });
 }
 

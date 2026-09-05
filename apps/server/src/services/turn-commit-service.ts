@@ -253,13 +253,18 @@ export class TurnCommitService {
               "Fuzzy life mode requires a composed FuzzyLifeService.",
             );
           }
+          const semanticMessages = contentDerivedMessages(
+            input,
+            userMessage,
+            assistantMessage,
+          );
           lifeImpact = this.fuzzyLife.recordConversationTurn({
             agentId: input.command.agentId,
             sessionId: input.sessionId,
             userMessageId: userMessage.id,
             assistantMessageId: assistantMessage.id,
-            userText: userMessage.content,
-            assistantText: assistantMessage.content,
+            userText: semanticMessages.userMessage.content,
+            assistantText: semanticMessages.assistantMessage.content,
             recordedAtUtc: input.nowUtc,
             correlationId: input.command.clientMessageId,
           });
@@ -373,24 +378,16 @@ export class TurnCommitService {
       return;
     }
     try {
-      const consentAudit = input.turn.consentModalityGuardAudit;
-      const independentText = consentAudit?.independentText.trim();
-      const continuityUserMessage =
-        consentAudit === undefined
-          ? input.userMessage
-          : { ...input.userMessage, content: independentText ?? "" };
-      const independentReplyText =
-        input.turn.consentModalityGuardAudit?.independentReplyText.trim();
-      const continuityAssistantMessage =
-        independentReplyText === undefined
-          ? input.assistantMessage
-          : { ...input.assistantMessage, content: independentReplyText };
+      const semanticMessages = contentDerivedMessages(
+        input,
+        input.userMessage,
+        input.assistantMessage,
+      );
       const continuity = await this.contexts.commitTurn({
         agentId: input.command.agentId,
         sessionId: input.sessionId,
         timezone: input.spec.identity.timezone,
-        userMessage: continuityUserMessage,
-        assistantMessage: continuityAssistantMessage,
+        ...semanticMessages,
         memoryIds: input.memoryIds,
         promptCueIds: input.preparedContext?.continuity.cueIds ?? [],
         ...(input.turn.continuityEffects === undefined
@@ -425,6 +422,24 @@ export class TurnCommitService {
       });
     }
   }
+}
+
+/** Persist original messages; only derived semantics use the audited slice.
+ * Both life records and continuity must see the same facts and message IDs. */
+function contentDerivedMessages(
+  input: TurnCommitInput,
+  userMessage: StoredMessage,
+  assistantMessage: StoredMessage,
+): { userMessage: StoredMessage; assistantMessage: StoredMessage } {
+  const audit = input.turn.consentModalityGuardAudit;
+  if (audit === undefined) return { userMessage, assistantMessage };
+  return {
+    userMessage: { ...userMessage, content: audit.independentText.trim() },
+    assistantMessage: {
+      ...assistantMessage,
+      content: audit.independentReplyText.trim(),
+    },
+  };
 }
 
 class DuplicateTurnError extends Error {

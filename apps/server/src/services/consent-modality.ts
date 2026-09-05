@@ -423,6 +423,14 @@ export function containsThirdPartyConsentSemantics(text: string): boolean {
   return analyzeThirdPartyConsentContainment(text).claims.length > 0;
 }
 
+/** Generic life evidence must not treat a consent assertion/correction as a
+ * new action or observed result. Keep independent evidence from mixed turns.
+ * A consent status alone is not an observed transition linked to a decision. */
+export function independentConsentEvidenceText(text: string): string {
+  const analysis = analyzeThirdPartyConsentContainment(text);
+  return analysis.claims.length === 0 ? text : analysis.independentText;
+}
+
 export function consentClaimsFromUnknown(value: unknown): string {
   const values: string[] = [];
   collectStrings(value, values, new Set<unknown>());

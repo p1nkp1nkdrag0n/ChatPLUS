@@ -7,6 +7,7 @@ import type {
 } from "@personasim/contracts";
 
 import { clamp01, inferDomain } from "./fuzzy-life-planning.js";
+import { independentConsentEvidenceText } from "./consent-modality.js";
 
 function analyzeDelegatedDecision(text: string): boolean {
   const sentences = semanticSentences(text);
@@ -1543,6 +1544,7 @@ function hasNonUserReflectionSubject(text: string): boolean {
 }
 
 export function isActionEvidence(text: string): boolean {
+  text = independentConsentEvidenceText(text);
   if (
     isSpeculativeLifeEvidence(text) ||
     actionEvidenceSubject(text) === "third_party" ||
@@ -1582,6 +1584,7 @@ export function inferActionKind(
 }
 
 export function isOutcomeEvidence(text: string): boolean {
+  text = independentConsentEvidenceText(text);
   if (
     isSpeculativeLifeEvidence(text) ||
     outcomeEvidenceSubject(text) === "third_party" ||
@@ -1640,6 +1643,7 @@ export function inferOutcomeValence(
 }
 
 export function isReflectionEvidence(text: string): boolean {
+  text = independentConsentEvidenceText(text);
   if (
     isSpeculativeLifeEvidence(text) ||
     hasNonUserReflectionSubject(text) ||

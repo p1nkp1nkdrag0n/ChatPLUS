@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +13,7 @@ import {
   type MemoryCandidate,
 } from "@personasim/contracts";
 import { resolveTemporalQuery } from "@personasim/features";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
@@ -21,6 +22,7 @@ import { ContinuityRepository } from "./continuity-repository.js";
 import { temporalAnchorsFromEventCards } from "./continuity-index-service.js";
 import type { MemoryRecallService } from "./memory-recall-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
+import { ScheduleNegotiationService } from "./schedule-negotiation-service.js";
 
 const SHANGHAI_NOW = "2026-08-21T04:00:00.000Z";
 const EXPLICIT_FACT_SOURCE_AT = "2026-09-04T10:00:00.000Z";
@@ -32,9 +34,11 @@ const EXPLICIT_FACT_SOURCE_TEXT =
 const TEA_FACT = "用户喝不加糖的红茶，不喜欢被替点甜的。";
 const BOX_FACT =
   "用户下周带来底片，装在钴蓝色铁盒里，盖子上写着“1998 / 潮声”。";
-const EXPLICIT_FACT_REPLY =
-  "你喝不加糖的红茶，不喜欢被替点甜的。那只钴蓝色铁盒的盖子上写着“1998 / 潮声”。";
+const EXPLICIT_FACT_REPLY = "饮品记录：红茶（不加糖）；铁盒标签：1998 / 潮声。";
 const EXPLICIT_FACT_REFUSAL = "现有可靠事实不足以完整核对这两项。";
+const ADVERSARIAL_EXPLICIT_FACT_REPLY =
+  "你喝不加糖的红茶。\n铁盒标签稍后再说。";
+const ADVERSARIAL_PARTIAL_FACT_REPLY = "你喝不加糖的红茶；木盒标签我不知道。";
 
 type StoredEvidenceRow = {
   id: string;
@@ -512,20 +516,61 @@ describe("continuity memory recall hierarchy", () => {
     app = await openHarnessApp({
       nowUtc: EXPLICIT_FACT_RECALL_AT,
       databasePath,
-      explicitFactReplies: true,
+      adversarialOpenAiCompatibleDecisionPath: true,
     });
+    expect(app.personasim.llm.providerName).toBe("openai-compatible");
+    const publish = vi.spyOn(app.personasim.sse, "publish");
+    await app.personasim.settlements.settleAndExtend(harness.agentId);
     const recallSession = app.personasim.conversations.createSession(
       harness.agentId,
       "Explicit fact recall after restart",
     );
+    const careCue = app.personasim.followUps.createCareCue({
+      agentId: harness.agentId,
+      sourceMessageId: sharedSourceMessageId,
+      timezone: "Asia/Shanghai",
+      ttlDays: 30,
+      maxMentions: 1,
+      candidate: {
+        contextSummary: "用户准备核对铁盒标签 1998 潮声。",
+        mentionGuidance: "只在铁盒标签话题中提起。",
+        evidenceQuotes: ["盖子上写着“1998/潮声”"],
+        reasonCode: "explicit_fact_context",
+        reasonSummary: "铁盒标签话题可在相关对话中自然提起。",
+      },
+    });
+    expect(careCue).toMatchObject({
+      accepted: true,
+      careCue: { status: "active", mentionCount: 0, maxMentions: 1 },
+    });
+    if (!careCue.accepted) throw new Error("Expected an accepted care cue");
+    expect(
+      app.personasim.followUps.selectCareCues({
+        agentId: harness.agentId,
+        userText: EXPLICIT_FACT_QUERY,
+      }),
+    ).toEqual([
+      expect.objectContaining({ id: careCue.careCue.id, mentionCount: 0 }),
+    ]);
+    const beforeGuardState = app.personasim.store.getRuntimeState(
+      harness.agentId,
+    );
+    const beforeGuardWrites = explicitFactSideEffectSnapshot(
+      app,
+      harness.agentId,
+    );
+    const requestPayload = {
+      agentId: harness.agentId,
+      clientMessageId: "explicit-fact-recall-after-restart",
+      text: EXPLICIT_FACT_QUERY,
+    };
+    const modelCallCountBeforeGuard = vi.mocked(app.personasim.llm)
+      .generateObject.mock.calls.length;
+    publish.mockClear();
     const response = await app.inject({
       method: "POST",
       url: `/api/sessions/${recallSession.id}/messages`,
-      payload: {
-        agentId: harness.agentId,
-        clientMessageId: "explicit-fact-recall-after-restart",
-        text: EXPLICIT_FACT_QUERY,
-      },
+      payload: requestPayload,
     });
     expect(response.statusCode).toBe(201);
     const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
@@ -544,6 +589,181 @@ describe("continuity memory recall hierarchy", () => {
     expect(exchange.assistantMessage.content).not.toMatch(
       /(?:人格|性格|象征|引申|意味着)/u,
     );
+    expect(exchange.assistantMessage.content).not.toContain("稍后再说");
+    expect(exchange.assistantMessage.metadata).toMatchObject({
+      chunks: [EXPLICIT_FACT_REPLY],
+      deliveryMode: "single_block",
+      reasonCode: "explicit_fact_reply_guard_selected",
+      decisionPath: "effects_rejected",
+      explicitFactReplyGuard: {
+        policyVersion: "explicit_fact_checklist_v1",
+        outcome: "selected",
+        reasonCode: "explicit_fact_reply_guard_selected",
+        expectedFacetCount: 2,
+        serverGuardApplied: true,
+        modelReplyContentChanged: true,
+        modelSideEffectsBlocked: true,
+        modelRepairAttempted: false,
+        modelGenerationFallbackUsed: false,
+        contentDerivedSemanticsSkipped: true,
+      },
+      continuityPromptCueIds: [careCue.careCue.id],
+    });
+    const guardMetadata = exchange.assistantMessage.metadata[
+      "explicitFactReplyGuard"
+    ] as {
+      selectedMemoryIds: string[];
+      selectedEvidenceIds: string[];
+      finalTextSha256: string;
+    };
+    expect(new Set(guardMetadata.selectedMemoryIds)).toEqual(
+      new Set([boxMemory.id, teaMemory.id]),
+    );
+    expect(guardMetadata.selectedEvidenceIds).toHaveLength(2);
+    expect(guardMetadata.finalTextSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(guardMetadata.finalTextSha256).toBe(
+      createHash("sha256")
+        .update(exchange.assistantMessage.content, "utf8")
+        .digest("hex"),
+    );
+    const turnAudit = latestEventPayload(
+      app,
+      harness.agentId,
+      "conversation.turn_committed",
+    );
+    expect(turnAudit).toMatchObject({
+      assistantMessageId: exchange.assistantMessage.id,
+      reasonCode: "explicit_fact_reply_guard_selected",
+    });
+    expect(turnAudit["explicitFactReplyGuard"]).toEqual(guardMetadata);
+    expect(exchange.decision).toMatchObject({
+      reasonCode: "explicit_fact_reply_guard_selected",
+      deliveryMode: "single_block",
+      chunks: [EXPLICIT_FACT_REPLY],
+    });
+    expect(exchange.scheduleChanges).toEqual([]);
+    const guardedModelCalls = vi
+      .mocked(app.personasim.llm)
+      .generateObject.mock.calls.slice(modelCallCountBeforeGuard)
+      .map(([request]) => request);
+    expect(guardedModelCalls).toHaveLength(1);
+    expect(guardedModelCalls[0]).toMatchObject({ purpose: "chat_turn" });
+    expect(guardedModelCalls[0]?.fixture).toBeUndefined();
+    expect(guardedModelCalls[0]?.prompt).toContain(TEA_FACT);
+    expect(guardedModelCalls[0]?.prompt).toContain(BOX_FACT);
+    const publishedEvents = publish.mock.calls.map(([event]) => event);
+    const publishedMessages = publishedEvents.filter(
+      (event) => event.type === "message.created",
+    );
+    expect(publishedMessages).toHaveLength(1);
+    expect(publishedMessages[0]?.data).toMatchObject({
+      content: EXPLICIT_FACT_REPLY,
+      metadata: {
+        chunks: [EXPLICIT_FACT_REPLY],
+        deliveryMode: "single_block",
+      },
+    });
+    expect(JSON.stringify(publishedMessages)).not.toContain("稍后再说");
+    expect(
+      publishedEvents.some((event) => event.type === "schedule.updated"),
+    ).toBe(false);
+    const publishCountAfterFirst = publish.mock.calls.length;
+    expect(explicitFactSideEffectSnapshot(app, harness.agentId)).toEqual(
+      beforeGuardWrites,
+    );
+    expect(
+      app.personasim.store.database
+        .prepare(
+          `SELECT status, mention_count AS mentionCount,
+                  last_mentioned_message_id AS lastMentionedMessageId
+           FROM care_cues WHERE id = ?`,
+        )
+        .get(careCue.careCue.id),
+    ).toEqual({
+      status: "active",
+      mentionCount: 0,
+      lastMentionedMessageId: null,
+    });
+    const afterGuardState = app.personasim.store.getRuntimeState(
+      harness.agentId,
+    );
+    expect(afterGuardState).toMatchObject({
+      moodValence: beforeGuardState?.moodValence,
+      moodArousal: beforeGuardState?.moodArousal,
+      energy: beforeGuardState?.energy,
+      stress: beforeGuardState?.stress,
+      socialBattery: beforeGuardState?.socialBattery,
+      focus: beforeGuardState?.focus,
+    });
+    expect(afterGuardState?.relationship.trust).toBe(
+      beforeGuardState?.relationship.trust,
+    );
+    const worldAudit = latestEventPayload(
+      app,
+      harness.agentId,
+      "conversation.world_effects_committed",
+    );
+    expect(worldAudit).toMatchObject({
+      llmProposalStatus: "blocked",
+      proposed: {
+        stateDelta: { stress: -0.2 },
+        relationshipDelta: { trust: 0.2 },
+      },
+      accepted: {
+        stateDelta: false,
+        relationshipDelta: false,
+        memoryCandidateCount: 0,
+        personalIntentCandidateCount: 0,
+      },
+    });
+    expect(worldAudit["rejectionCodes"]).toContain(
+      "explicit_fact_reply_guard_blocked",
+    );
+    expect(
+      (worldAudit["rejections"] as Array<{ reasonCode?: string }>).filter(
+        (rejection) =>
+          rejection.reasonCode === "explicit_fact_reply_guard_blocked",
+      ),
+    ).toHaveLength(4);
+    expect(chatTurnModelCallCount(app)).toBe(1);
+
+    const durableCountsAfterFirst = explicitFactReplaySnapshot(
+      app,
+      harness.agentId,
+    );
+    const replayResponse = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${recallSession.id}/messages`,
+      payload: requestPayload,
+    });
+    expect(replayResponse.statusCode).toBe(200);
+    const replayExchange = SendMessageResponseSchema.parse(
+      JSON.parse(replayResponse.body),
+    );
+    expect(replayExchange.idempotentReplay).toBe(true);
+    expect(replayExchange.assistantMessage).toEqual(exchange.assistantMessage);
+    expect(replayExchange.memoryRecall).toEqual(exchange.memoryRecall);
+    expect(replayExchange.decision).toEqual(exchange.decision);
+    expect(explicitFactReplaySnapshot(app, harness.agentId)).toEqual(
+      durableCountsAfterFirst,
+    );
+    expect(chatTurnModelCallCount(app)).toBe(1);
+    expect(publish).toHaveBeenCalledTimes(publishCountAfterFirst);
+    const idempotencyConflict = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${recallSession.id}/messages`,
+      payload: { ...requestPayload, text: `${EXPLICIT_FACT_QUERY}不同文本` },
+    });
+    expect(idempotencyConflict.statusCode).toBe(409);
+    expect(
+      (JSON.parse(idempotencyConflict.body) as { error: { code: string } })
+        .error.code,
+    ).toBe("idempotency_key_reused");
+    expect(explicitFactReplaySnapshot(app, harness.agentId)).toEqual(
+      durableCountsAfterFirst,
+    );
+    expect(chatTurnModelCallCount(app)).toBe(1);
+    expect(publish).toHaveBeenCalledTimes(publishCountAfterFirst);
 
     const successfulRun = latestRun(app, harness.agentId);
     expect(successfulRun.inputSnapshot.query.query).toBe(EXPLICIT_FACT_QUERY);
@@ -717,6 +937,10 @@ describe("continuity memory recall hierarchy", () => {
       latestRun(app, harness.agentId).id,
     );
 
+    const beforeIncompleteWrites = explicitFactSideEffectSnapshot(
+      app,
+      harness.agentId,
+    );
     const incompleteHttpResponse = await app.inject({
       method: "POST",
       url: `/api/sessions/${recallSession.id}/messages`,
@@ -739,6 +963,32 @@ describe("continuity memory recall hierarchy", () => {
     expect(incompleteExchange.assistantMessage.content).toBe(
       EXPLICIT_FACT_REFUSAL,
     );
+    expect(incompleteExchange.assistantMessage.content).not.toContain(
+      "不加糖的红茶",
+    );
+    expect(incompleteExchange.assistantMessage.content).not.toContain(
+      "木盒标签",
+    );
+    expect(incompleteExchange.assistantMessage.metadata).toMatchObject({
+      chunks: [EXPLICIT_FACT_REFUSAL],
+      deliveryMode: "single_block",
+      reasonCode: "explicit_fact_reply_guard_abstained",
+      explicitFactReplyGuard: {
+        outcome: "abstained",
+        reasonCode: "requested_fact_facets_incomplete",
+        expectedFacetCount: 2,
+        selectedMemoryIds: [],
+        selectedEvidenceIds: [],
+        serverGuardApplied: true,
+        modelReplyContentChanged: true,
+        modelGenerationFallbackUsed: false,
+        contentDerivedSemanticsSkipped: true,
+      },
+    });
+    expect(explicitFactSideEffectSnapshot(app, harness.agentId)).toEqual(
+      beforeIncompleteWrites,
+    );
+    expect(chatTurnModelCallCount(app)).toBe(2);
 
     for (const incompleteQuery of [
       "替我核对两件旧事：我喝茶的习惯，和那只木盒的标签。只答事实。",
@@ -1365,6 +1615,366 @@ describe("continuity memory recall hierarchy", () => {
       app,
       latestRun(app, harness.agentId).id,
     );
+  });
+
+  it("keeps an active schedule negotiation untouched during guarded fact verification", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      adversarialOpenAiCompatibleDecisionPath: true,
+      lifePlanningMode: "legacy_exact",
+      chatEffectsMode: "gated",
+      scheduleNegotiationMode: "enforced",
+    });
+    app = harness.app;
+    expect(app.personasim.llm.providerName).toBe("openai-compatible");
+    const sourceSession = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Fact source before schedule negotiation",
+    );
+    const sourceMessageId = "message-fact-source-before-pending-offer";
+    const sourceText = EXPLICIT_FACT_SOURCE_TEXT;
+    insertUserMessage(app, {
+      id: sourceMessageId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: sourceText,
+      createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+    });
+    const factMemories = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        MemoryCandidateSchema.parse({
+          ...explicitUserFact(
+            TEA_FACT,
+            ["user preference", "饮品", "偏好"],
+            0.4,
+            EXPLICIT_FACT_SOURCE_AT,
+          ),
+          evidence: [
+            {
+              sourceType: "message",
+              sourceId: sourceMessageId,
+              quote: "我喝红茶不加糖",
+            },
+          ],
+        }),
+        MemoryCandidateSchema.parse({
+          ...explicitUserFact(
+            BOX_FACT,
+            ["user fact", "底片", "潮痕", "下周约定"],
+            0.6,
+            EXPLICIT_FACT_SOURCE_AT,
+          ),
+          evidence: [
+            {
+              sourceType: "message",
+              sourceId: sourceMessageId,
+              quote: "盖子上写着“1998/潮声”",
+            },
+          ],
+        }),
+      ],
+      nowUtc: EXPLICIT_FACT_SOURCE_AT,
+      maxCandidates: 2,
+      authoritativeMessageId: sourceMessageId,
+    });
+    const teaMemory = factMemories.find(
+      (memory) => memory.content === TEA_FACT,
+    );
+    const boxMemory = factMemories.find(
+      (memory) => memory.content === BOX_FACT,
+    );
+    if (teaMemory === undefined || boxMemory === undefined) {
+      throw new Error("Expected both fact memories to persist");
+    }
+    const recallSession = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Fact verification with a pending offer",
+    );
+    const pendingId = "negotiation-pending-during-fact-verification";
+    const offerStartAtUtc = "2026-10-13T23:00:00.000Z";
+    const pendingNegotiation = {
+      id: pendingId,
+      status: "awaiting_confirmation" as const,
+      offerVersion: 1,
+      details: {
+        activity: "晨跑",
+        category: "exercise",
+        startAtUtc: offerStartAtUtc,
+        durationMinutes: 30,
+        timezone: "Asia/Shanghai",
+      },
+      offer: {
+        operation: "create" as const,
+        activity: "晨跑",
+        category: "exercise",
+        startAtUtc: offerStartAtUtc,
+        durationMinutes: 30,
+        timezone: "Asia/Shanghai",
+        version: 1,
+        offeredAtUtc: EXPLICIT_FACT_RECALL_AT,
+        validUntilUtc: "2026-10-12T10:30:00.000Z",
+        evidenceIds: [sourceMessageId],
+      },
+      evidenceIds: [sourceMessageId],
+      createdAtUtc: EXPLICIT_FACT_RECALL_AT,
+      updatedAtUtc: EXPLICIT_FACT_RECALL_AT,
+    };
+    const pending = app.personasim.store.upsertScheduleNegotiation({
+      id: pendingId,
+      agentId: harness.agentId,
+      sessionId: recallSession.id,
+      status: "awaiting_confirmation",
+      offerVersion: 1,
+      record: {
+        policyVersion: 2,
+        negotiation: pendingNegotiation,
+      },
+      createdAtUtc: EXPLICIT_FACT_RECALL_AT,
+      updatedAtUtc: EXPLICIT_FACT_RECALL_AT,
+    });
+    expect(
+      new ScheduleNegotiationService(
+        app.personasim.store,
+        app.personasim.schedules,
+      ).getActive(recallSession.id, EXPLICIT_FACT_RECALL_AT),
+    ).toMatchObject({
+      stored: pending,
+      state: pendingNegotiation,
+      expired: false,
+    });
+    const scheduleBefore = app.personasim.store.listSchedule(harness.agentId);
+    const commandEventCountBefore = app.personasim.store
+      .listDomainEvents(harness.agentId, 100)
+      .filter(
+        (event) => event.eventType === "schedule.command_committed",
+      ).length;
+    const negotiationEventCountBefore = app.personasim.store
+      .listDomainEvents(harness.agentId, 100)
+      .filter(
+        (event) =>
+          typeof event.eventType === "string" &&
+          event.eventType.startsWith("schedule.negotiation_"),
+      ).length;
+    const publish = vi.spyOn(app.personasim.sse, "publish");
+    const modelCallsBefore = vi.mocked(app.personasim.llm).generateObject.mock
+      .calls.length;
+
+    publish.mockClear();
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${recallSession.id}/messages`,
+      payload: {
+        agentId: harness.agentId,
+        clientMessageId: "fact-verification-with-pending-offer",
+        text: EXPLICIT_FACT_QUERY,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    expect(exchange.memoryRecall).toMatchObject({
+      rolloutMode: "enforced",
+      abstained: false,
+    });
+    expect(new Set(exchange.memoryRecall?.selectedMemoryIds)).toEqual(
+      new Set([teaMemory.id, boxMemory.id]),
+    );
+    expect(exchange.assistantMessage.metadata).toMatchObject({
+      explicitFactReplyGuard: {
+        outcome: "selected",
+      },
+    });
+    expect(exchange.assistantMessage.content).toBe(EXPLICIT_FACT_REPLY);
+    expect(exchange.assistantMessage.content).not.toContain("【待确认日程】");
+    expect(exchange.assistantMessage.metadata).toMatchObject({
+      deliveryMode: "single_block",
+      reasonCode: "explicit_fact_reply_guard_selected",
+      scheduleActionAudit: {
+        origin: "model_explicit_valid",
+        kind: "request_details",
+      },
+      explicitFactReplyGuard: {
+        outcome: "selected",
+        modelRepairAttempted: false,
+        modelSideEffectsBlocked: true,
+      },
+    });
+    expect(exchange.scheduleChanges).toEqual([]);
+    const modelCalls = vi
+      .mocked(app.personasim.llm)
+      .generateObject.mock.calls.slice(modelCallsBefore)
+      .map(([request]) => request);
+    expect(modelCalls).toHaveLength(1);
+    expect(modelCalls[0]).toMatchObject({ purpose: "chat_turn" });
+    expect(modelCalls[0]?.prompt).not.toContain(
+      "SCHEDULE_NEGOTIATION_CONTRACT",
+    );
+    expect(modelCalls[0]?.prompt).not.toContain(pendingId);
+    expect(
+      publish.mock.calls.some(([event]) => event.type === "schedule.updated"),
+    ).toBe(false);
+    expect(
+      app.personasim.store.getActiveScheduleNegotiation(recallSession.id),
+    ).toEqual(pending);
+    expect(app.personasim.store.listSchedule(harness.agentId)).toEqual(
+      scheduleBefore,
+    );
+    expect(
+      app.personasim.store
+        .listDomainEvents(harness.agentId, 100)
+        .filter((event) => event.eventType === "schedule.command_committed"),
+    ).toHaveLength(commandEventCountBefore);
+    expect(
+      app.personasim.store
+        .listDomainEvents(harness.agentId, 100)
+        .filter(
+          (event) =>
+            typeof event.eventType === "string" &&
+            event.eventType.startsWith("schedule.negotiation_"),
+        ),
+    ).toHaveLength(negotiationEventCountBefore);
+  });
+
+  it("does not apply the fact-reply guard to ordinary conversation", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      adversarialOpenAiCompatibleDecisionPath: true,
+    });
+    app = harness.app;
+    expect(app.personasim.llm.providerName).toBe("openai-compatible");
+    const session = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Ordinary conversation outside fact verification",
+    );
+    const callsBefore = vi.mocked(app.personasim.llm).generateObject.mock.calls
+      .length;
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${session.id}/messages`,
+      payload: {
+        agentId: harness.agentId,
+        clientMessageId: "ordinary-rain-conversation",
+        text: "今天压力很大，只想聊聊窗外的雨。",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    expect(exchange.assistantMessage.content).toBe(
+      "你喝不加糖的红茶；\n木盒标签我不知道。",
+    );
+    expect(exchange.assistantMessage.metadata).toMatchObject({
+      deliveryMode: "sequential",
+      chunks: ["你喝不加糖的红茶；", "木盒标签我不知道。"],
+    });
+    expect(
+      exchange.assistantMessage.metadata["explicitFactReplyGuard"],
+    ).toBeUndefined();
+    expect(exchange.decision.reasonCode).not.toMatch(
+      /^explicit_fact_reply_guard_/u,
+    );
+    const ordinaryCalls = vi
+      .mocked(app.personasim.llm)
+      .generateObject.mock.calls.slice(callsBefore)
+      .map(([request]) => request);
+    expect(ordinaryCalls).toHaveLength(1);
+    expect(ordinaryCalls[0]).toMatchObject({ purpose: "chat_turn" });
+    expect(ordinaryCalls[0]?.fixture).toBeUndefined();
+    expect(
+      latestEventPayload(
+        app,
+        harness.agentId,
+        "conversation.world_effects_committed",
+      )["llmProposalStatus"],
+    ).toBe("committed");
+  });
+
+  it("fails the whole checklist closed instead of strengthening a negative beverage preference", async () => {
+    const harness = await createHarness({
+      nowUtc: EXPLICIT_FACT_RECALL_AT,
+      timezone: "Asia/Shanghai",
+      adversarialOpenAiCompatibleDecisionPath: true,
+    });
+    app = harness.app;
+    const sourceSession = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Negative preference source",
+    );
+    const sourceMessageId = "message-negative-tea-and-box-label";
+    const sourceText = "我不喜欢红茶，我的铁盒标签写着“1998 / 潮声”。";
+    insertUserMessage(app, {
+      id: sourceMessageId,
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: sourceText,
+      createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+    });
+    const [factMemory] = validateMergeAndPersistMemories({
+      store: app.personasim.store,
+      agentId: harness.agentId,
+      candidates: [
+        MemoryCandidateSchema.parse({
+          ...explicitUserFact(
+            "用户不喜欢红茶，用户的铁盒标签写着“1998 / 潮声”。",
+            ["user preference", "饮品", "铁盒标签"],
+            0.9,
+            EXPLICIT_FACT_SOURCE_AT,
+          ),
+          evidence: [
+            {
+              sourceType: "message",
+              sourceId: sourceMessageId,
+              quote: sourceText,
+            },
+          ],
+        }),
+      ],
+      nowUtc: EXPLICIT_FACT_SOURCE_AT,
+      maxCandidates: 2,
+      authoritativeMessageId: sourceMessageId,
+    });
+    if (factMemory === undefined) {
+      throw new Error("Expected the negative preference memory to persist");
+    }
+    const recallSession = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Negative preference fact verification",
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/sessions/${recallSession.id}/messages`,
+      payload: {
+        agentId: harness.agentId,
+        clientMessageId: "negative-preference-fact-verification",
+        text: EXPLICIT_FACT_QUERY,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    expect(exchange.memoryRecall).toMatchObject({
+      rolloutMode: "enforced",
+      abstained: false,
+      selectedMemoryIds: [factMemory.id],
+    });
+    expect(exchange.assistantMessage.content).toBe(EXPLICIT_FACT_REFUSAL);
+    expect(exchange.assistantMessage.content).not.toMatch(/(?:红茶|潮声)/u);
+    expect(exchange.assistantMessage.metadata).toMatchObject({
+      deliveryMode: "single_block",
+      reasonCode: "explicit_fact_reply_guard_abstained",
+      explicitFactReplyGuard: {
+        outcome: "abstained",
+        reasonCode: "requested_fact_reply_contract_invalid",
+        selectedMemoryIds: [],
+        selectedEvidenceIds: [],
+      },
+    });
   });
 
   it("keeps EventCard first when one verified user source covers the complete fact checklist", async () => {
@@ -1995,8 +2605,8 @@ describe("continuity memory recall hierarchy", () => {
       scannedCandidateCount: 500,
       scanUnit: "candidate_pool",
       scanLimit: 500,
-      scanWitnessMemoryId: expect.any(String),
     });
+    expect(typeof blockedBasicAttempt?.scanWitnessMemoryId).toBe("string");
     const basicFrozenTiers =
       blockedSelectionRun.inputSnapshot.selectorAuditInput?.candidateTiers.filter(
         (candidate) => candidate.tier === "basic_memory",
@@ -2955,6 +3565,10 @@ async function createHarness(input: {
   timezone: string;
   databasePath?: string;
   explicitFactReplies?: boolean;
+  adversarialOpenAiCompatibleDecisionPath?: boolean;
+  lifePlanningMode?: "fuzzy" | "legacy_exact";
+  chatEffectsMode?: "off" | "gated";
+  scheduleNegotiationMode?: "legacy" | "enforced";
 }): Promise<{ app: PersonaSimApp; agentId: string }> {
   const app = await openHarnessApp(input);
   const generated = await app.inject({
@@ -2990,6 +3604,10 @@ async function openHarnessApp(input: {
   nowUtc: string;
   databasePath?: string;
   explicitFactReplies?: boolean;
+  adversarialOpenAiCompatibleDecisionPath?: boolean;
+  lifePlanningMode?: "fuzzy" | "legacy_exact";
+  chatEffectsMode?: "off" | "gated";
+  scheduleNegotiationMode?: "legacy" | "enforced";
 }): Promise<PersonaSimApp> {
   const databasePath = input.databasePath ?? ":memory:";
   const clock = new (await import("../runtime/clock.js")).FakeClock(
@@ -3001,17 +3619,32 @@ async function openHarnessApp(input: {
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
-    chatEffectsMode: "off",
-    scheduleNegotiationMode: "legacy",
-    liveWorldEffectsMode: "off",
+    lifePlanningMode: input.lifePlanningMode ?? "fuzzy",
+    chatEffectsMode: input.chatEffectsMode ?? "off",
+    scheduleNegotiationMode: input.scheduleNegotiationMode ?? "legacy",
+    selfInitiatedPlanningMode: "off",
+    liveWorldEffectsMode:
+      input.adversarialOpenAiCompatibleDecisionPath === true
+        ? "enforced"
+        : "off",
     memoryRecallMode: "enforced",
-    llm: {
-      provider: "fixture",
-      baseUrl: "https://example.invalid",
-      model: "personasim-fixture-v1",
-      timeoutMs: 1_000,
-      maxRetries: 0,
-    },
+    llm:
+      input.adversarialOpenAiCompatibleDecisionPath === true
+        ? {
+            provider: "openai-compatible",
+            baseUrl: "https://example.invalid",
+            apiKey: "test-api-key",
+            model: "test-live-model",
+            timeoutMs: 1_000,
+            maxRetries: 0,
+          }
+        : {
+            provider: "fixture",
+            baseUrl: "https://example.invalid",
+            model: "personasim-fixture-v1",
+            timeoutMs: 1_000,
+            maxRetries: 0,
+          },
   });
   const app = await buildApp({
     config,
@@ -3043,7 +3676,156 @@ async function openHarnessApp(input: {
         }
       : {}),
   });
+  if (input.adversarialOpenAiCompatibleDecisionPath === true) {
+    vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
+      (request) => {
+        if (request.purpose === "chat_turn") {
+          const selected =
+            request.prompt.includes(TEA_FACT) &&
+            request.prompt.includes(BOX_FACT);
+          const text = selected
+            ? ADVERSARIAL_EXPLICIT_FACT_REPLY
+            : ADVERSARIAL_PARTIAL_FACT_REPLY;
+          return Promise.resolve({
+            replyDecision: {
+              text,
+              deliveryMode: "sequential",
+              chunks: text.split("\n"),
+              scheduleAction: { kind: "request_details" },
+            },
+            worldEffects: {
+              stateDelta: { stress: -0.2 },
+              relationshipDelta: { trust: 0.2 },
+              memoryCandidates: [
+                {
+                  type: "semantic",
+                  content: "模型把旧事实核对误写成了新的解释性记忆。",
+                  tags: ["unsafe-explicit-fact-effect"],
+                },
+              ],
+              personalIntentCandidates: [
+                {
+                  activity: "整理暗房",
+                  category: "other",
+                  basisKind: "chat",
+                  evidenceQuotes: ["周末去暗房前"],
+                  reasonCode: "unsafe_explicit_fact_effect",
+                  reasonSummary: "Should be blocked by the reply guard.",
+                },
+              ],
+              continuityEffects: {
+                followUpCandidates: [],
+                followUpTransitions: [],
+                careCueCandidates: [],
+              },
+            },
+          } as never);
+        }
+        if (request.fixture !== undefined) {
+          return Promise.resolve(request.fixture as never);
+        }
+        return Promise.reject(
+          new Error(`No test fixture for ${request.purpose}`),
+        );
+      },
+    );
+  }
   return app;
+}
+
+function explicitFactSideEffectSnapshot(
+  app: PersonaSimApp,
+  agentId: string,
+): Record<string, string> {
+  return {
+    memories: agentRowsSnapshot(app, "memories", agentId),
+    personalIntentions: agentRowsSnapshot(app, "personal_intentions", agentId),
+    followUps: agentRowsSnapshot(app, "follow_up_intents", agentId),
+    careCues: agentRowsSnapshot(app, "care_cues", agentId),
+    dilemmas: agentRowsSnapshot(app, "dilemma_episodes", agentId),
+    pressures: agentRowsSnapshot(app, "pressure_episodes", agentId),
+    interventions: agentRowsSnapshot(app, "support_interventions", agentId),
+    decisions: agentRowsSnapshot(app, "decision_records", agentId),
+    actions: agentRowsSnapshot(app, "action_records", agentId),
+    outcomes: agentRowsSnapshot(app, "outcome_records", agentId),
+    reflections: agentRowsSnapshot(app, "reflection_records", agentId),
+    milestones: agentRowsSnapshot(app, "relationship_milestones", agentId),
+  };
+}
+
+function explicitFactReplaySnapshot(
+  app: PersonaSimApp,
+  agentId: string,
+): Record<string, number> {
+  return {
+    messages: agentRowCount(app, "messages", agentId),
+    retrievalRuns: agentRowCount(app, "retrieval_runs", agentId),
+    domainEvents: agentRowCount(app, "domain_events", agentId),
+    rejectedProposals: agentRowCount(app, "rejected_proposals", agentId),
+    stateRevision:
+      app.personasim.store.getRuntimeState(agentId)?.revision ?? -1,
+  };
+}
+
+function agentRowsSnapshot(
+  app: PersonaSimApp,
+  table:
+    | "memories"
+    | "personal_intentions"
+    | "follow_up_intents"
+    | "care_cues"
+    | "dilemma_episodes"
+    | "pressure_episodes"
+    | "support_interventions"
+    | "decision_records"
+    | "action_records"
+    | "outcome_records"
+    | "reflection_records"
+    | "relationship_milestones",
+  agentId: string,
+): string {
+  return JSON.stringify(
+    app.personasim.store.database
+      .prepare(`SELECT * FROM ${table} WHERE agent_id = ? ORDER BY rowid`)
+      .all(agentId),
+  );
+}
+
+function agentRowCount(
+  app: PersonaSimApp,
+  table: "messages" | "retrieval_runs" | "domain_events" | "rejected_proposals",
+  agentId: string,
+): number {
+  return (
+    app.personasim.store.database
+      .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE agent_id = ?`)
+      .get(agentId) as { count: number }
+  ).count;
+}
+
+function latestEventPayload(
+  app: PersonaSimApp,
+  agentId: string,
+  eventType: string,
+): Record<string, unknown> {
+  const row = app.personasim.store.database
+    .prepare(
+      `SELECT payload_json AS payloadJson
+       FROM domain_events
+       WHERE agent_id = ? AND event_type = ?
+       ORDER BY rowid DESC
+       LIMIT 1`,
+    )
+    .get(agentId, eventType) as { payloadJson: string } | undefined;
+  if (row === undefined) throw new Error(`Missing ${eventType} audit event`);
+  return JSON.parse(row.payloadJson) as Record<string, unknown>;
+}
+
+function chatTurnModelCallCount(app: PersonaSimApp): number {
+  const mockedLlm = vi.mocked(app.personasim.llm);
+  return mockedLlm.generateObject.mock.calls.filter(
+    ([request]) => request.purpose === "chat_turn",
+  ).length;
 }
 
 function explicitUserFact(

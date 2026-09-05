@@ -97,6 +97,11 @@ export class TurnCommitService {
         decisionPath: input.world.decisionPath,
         rejectedProposalCount: input.world.proposalRejections.length,
         scheduleActionAudit: input.world.scheduleActionAudit,
+        ...(input.turn.explicitFactReplyGuardAudit === undefined
+          ? {}
+          : {
+              explicitFactReplyGuard: input.turn.explicitFactReplyGuardAudit,
+            }),
         ...(input.recallDiagnostic === undefined
           ? {}
           : { memoryRecall: input.recallDiagnostic }),
@@ -112,6 +117,8 @@ export class TurnCommitService {
     };
 
     const fuzzyLifeEnabled = this.options.lifePlanningMode === "fuzzy";
+    const contentDerivedSemanticsAllowed =
+      input.turn.explicitFactReplyGuardAudit === undefined;
     let effectsToApply = fuzzyLifeEnabled
       ? []
       : input.world.validation.accepted;
@@ -233,7 +240,7 @@ export class TurnCommitService {
             }).map((memory) => memory.id)
           : [];
         this.store.insertMessage(assistantMessage);
-        if (fuzzyLifeEnabled) {
+        if (fuzzyLifeEnabled && contentDerivedSemanticsAllowed) {
           if (this.fuzzyLife === undefined) {
             throw new Error(
               "Fuzzy life mode requires a composed FuzzyLifeService.",
@@ -350,7 +357,12 @@ export class TurnCommitService {
       memoryIds: string[];
     },
   ): Promise<void> {
-    if (this.contexts === undefined) return;
+    if (
+      this.contexts === undefined ||
+      input.turn.explicitFactReplyGuardAudit !== undefined
+    ) {
+      return;
+    }
     try {
       const continuity = await this.contexts.commitTurn({
         agentId: input.command.agentId,

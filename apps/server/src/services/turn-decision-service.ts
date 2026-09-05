@@ -102,6 +102,22 @@ export interface ModelScheduleActionAudit {
   kind: ScheduleNegotiationAction["kind"];
 }
 
+export interface ExplicitFactReplyGuardAudit {
+  policyVersion: "explicit_fact_checklist_v1";
+  outcome: "selected" | "abstained";
+  reasonCode: string;
+  expectedFacetCount?: 2 | 3;
+  selectedMemoryIds: string[];
+  selectedEvidenceIds: string[];
+  serverGuardApplied: true;
+  modelReplyContentChanged: boolean;
+  modelSideEffectsBlocked: boolean;
+  modelRepairAttempted: boolean;
+  modelGenerationFallbackUsed: boolean;
+  contentDerivedSemanticsSkipped: true;
+  finalTextSha256: string;
+}
+
 export type ResolvedTurn = {
   decision: AgentTurnDecision;
   inspection: DecisionInspection;
@@ -115,6 +131,7 @@ export type ResolvedTurn = {
     mode: "shadow" | "enforced";
     validation: WorldEffectsValidationResult;
   };
+  explicitFactReplyGuardAudit?: ExplicitFactReplyGuardAudit;
 };
 
 const EnforcedScheduleTurnProviderEnvelopeSchema =

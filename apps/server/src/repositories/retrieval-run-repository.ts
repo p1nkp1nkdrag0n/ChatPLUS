@@ -2003,7 +2003,7 @@ export const RetrievalReplayInputSchema = z
                   if (expectedIneligibilityReason === undefined) {
                     const valueResolution = explicitFactValueResolution(
                       frozenMemory.content,
-                      facet.request as ExplicitFactFacetDescriptor,
+                      facet.request,
                     );
                     const requiresResolvedValue =
                       candidate.valueGroupId !== undefined ||
@@ -2198,7 +2198,7 @@ export const RetrievalReplayInputSchema = z
                     ) {
                       const sourceValue = explicitFactValueResolution(
                         frozen.quote,
-                        facet.request as ExplicitFactFacetDescriptor,
+                        facet.request,
                       );
                       if (
                         !isFactBearingUserStatement(frozen.quote) ||
@@ -2251,7 +2251,7 @@ export const RetrievalReplayInputSchema = z
                             memoryId: candidate.memoryId,
                             score: explicitFactCandidateScore(
                               memory,
-                              facet.request as ExplicitFactFacetDescriptor,
+                              facet.request,
                             ),
                             confidence: memory.confidence,
                           },
@@ -3545,7 +3545,7 @@ function orderedFactDiagnosticMemoryIds(
                   memoryId: candidate.memoryId,
                   score: explicitFactCandidateScore(
                     memory,
-                    facet.request as ExplicitFactFacetDescriptor,
+                    facet.request,
                   ),
                 },
               ];

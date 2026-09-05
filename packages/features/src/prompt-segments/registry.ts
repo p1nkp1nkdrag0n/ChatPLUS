@@ -80,8 +80,15 @@ function compactLabeledJson(
     [32, 1],
   ] as const;
   for (const [maximumString, maximumArray] of configurations) {
+    // Recent dialogue is chronological: discard its oldest messages first.
+    // Other arrays (including nested message metadata) retain their existing
+    // priority-first compaction semantics.
+    const selected =
+      label === "RECENT_VERBATIM_JSON" && Array.isArray(parsed)
+        ? parsed.slice(-maximumArray)
+        : parsed;
     const serialized = JSON.stringify(
-      compactJsonValue(parsed, maximumString, maximumArray),
+      compactJsonValue(selected, maximumString, maximumArray),
     );
     const candidate = `${label}\n${serialized}`;
     if (candidate.length <= maximumCharacters) return candidate;

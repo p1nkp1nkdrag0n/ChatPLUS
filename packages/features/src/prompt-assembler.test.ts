@@ -724,6 +724,16 @@ describe("assembleChatPrompt registry integration", () => {
     expect(result.segmentTrace.estimatedInputTokens).toBeLessThan(30_000);
     expect(result.system.length + result.prompt.length).toBeLessThan(120_000);
     expect(result.prompt).not.toContain("message-0-");
+    expect(result.prompt).toContain("message-9999-");
+    const retained = promptSegmentJson(
+      result.prompt,
+      "RECENT_VERBATIM_JSON",
+    ) as { content: string }[];
+    expect(retained.map((message) => message.content.split("-")[1])).toEqual(
+      history
+        .slice(-retained.length)
+        .map((message) => message.content.split("-")[1]),
+    );
     expect(JSON.stringify(result.segmentTrace)).not.toContain("message-9999-");
   });
   it("advertises grounded continuity effects in the canonical world envelope", () => {

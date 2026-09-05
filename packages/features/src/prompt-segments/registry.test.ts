@@ -208,6 +208,56 @@ describe("PromptSegmentRegistry", () => {
     expect(result.trace.segments[0]).toMatchObject({ truncated: true });
   });
 
+  it.each([
+    ["RECENT_VERBATIM_JSON", undefined],
+    ["RECENT_VERBATIM_JSON", 100],
+    ["OTHER_JSON", undefined],
+    ["OTHER_JSON", 100],
+  ] as const)(
+    "retains the correct end of %s under a global budget of %s",
+    (label, maxInputTokens) => {
+      const history = Array.from({ length: 30 }, (_, index) => ({
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message-${index}-${"x".repeat(500)}`,
+      }));
+      const registry = new PromptSegmentRegistry<TestContext>([
+        segment({
+          id: "01_history",
+          content: `${label}\n${JSON.stringify(history)}`,
+          tokenBudget: 300,
+        }),
+      ]);
+
+      const result = registry.render(
+        {},
+        maxInputTokens === undefined ? {} : { maxInputTokens },
+      );
+      const retained = JSON.parse(result.prompt.split("\n")[1] ?? "") as {
+        role: string;
+        content: string;
+      }[];
+      expect(retained.length).toBeGreaterThan(0);
+      expect(retained.length).toBeLessThan(history.length);
+      const expected =
+        label === "RECENT_VERBATIM_JSON"
+          ? history.slice(-retained.length)
+          : history.slice(0, retained.length);
+      expect(retained.map((message) => message.content.split("-")[1])).toEqual(
+        expected.map((message) => message.content.split("-")[1]),
+      );
+      expect(retained.map((message) => message.role)).toEqual(
+        expected.map((message) => message.role),
+      );
+      expect(result.trace.estimatedInputTokens).toBeLessThanOrEqual(
+        maxInputTokens ?? 300,
+      );
+      expect(result.trace.segments[0]).toMatchObject({
+        included: true,
+        truncated: true,
+      });
+    },
+  );
+
   it("drops an atomic optional segment when its own token budget is exceeded", () => {
     const registry = new PromptSegmentRegistry<TestContext>([
       segment({

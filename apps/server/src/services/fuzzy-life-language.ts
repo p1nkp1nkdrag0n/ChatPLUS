@@ -1,3 +1,4 @@
+import { matchDilemmaOption } from "./fuzzy-life-choice.js";
 import type {
   DecisionRecord,
   DilemmaEpisode,
@@ -1085,12 +1086,8 @@ export function parseScaleMetric(
 export function selectDilemmaOption(
   dilemma: DilemmaEpisode,
   evidenceText: string,
-): DilemmaEpisode["options"][number] {
-  return [...dilemma.options].sort(
-    (left, right) =>
-      optionRelevance(right, evidenceText) -
-      optionRelevance(left, evidenceText),
-  )[0]!;
+): DilemmaEpisode["options"][number] | undefined {
+  return matchDilemmaOption(dilemma, evidenceText);
 }
 
 function optionRelevance(
@@ -1451,11 +1448,7 @@ export function extractSelectedDirection(text: string): string {
     /(?:我的决定|我的建议|我建议你|我会选|就选)[：:\s]*([^。！？!\n]{1,160})/u,
   )?.[1];
   if (explicit?.trim()) return explicit.trim();
-  return text
-    .replace(/\s+/gu, " ")
-    .trim()
-    .split(/[。！？!]/u)[0]!
-    .slice(0, 160);
+  return "";
 }
 
 export function shortTitle(text: string): string {

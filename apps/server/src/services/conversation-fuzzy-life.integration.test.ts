@@ -20,8 +20,58 @@ import { FakeClock } from "../runtime/clock.js";
 import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { FixtureTurnBehavior } from "./turn-decision-service.js";
+import {
+  analyzeSupportSpeechAct,
+  isCharacterSubjectDecisionRequest,
+} from "./fuzzy-life-language.js";
+import {
+  extractDilemmaChoices,
+  isDilemmaContinuation,
+} from "./fuzzy-life-choice.js";
 
 const START_UTC = "2026-09-01T01:00:00.000Z";
+
+// Positive causal tests need an actual selected option from their fixture;
+// generic promises to decide cannot stand in for a completed choice.
+const groundedChoiceFixture: FixtureTurnBehavior = {
+  ...companionLongRunV3FixtureBehavior,
+  selectDelegatedDecision: (input) => {
+    const speech = analyzeSupportSpeechAct(input.userText);
+    if (
+      speech.delegated &&
+      (/副主编/u.test(speech.operativeDilemmaText) ||
+        (isDilemmaContinuation(speech.operativeDilemmaClassifyText) &&
+          /副主编/u.test(JSON.stringify(input.causalContext ?? {}))))
+    )
+      return "接受影像平台副主编岗位";
+    if (
+      speech.delegated &&
+      extractDilemmaChoices(
+        speech.operativeDilemmaText,
+        speech.operativeDilemmaClassifyText,
+      )?.labels.join("/") === "留下/离开"
+    )
+      return "离开";
+    return companionLongRunV3FixtureBehavior.selectDelegatedDecision?.(input);
+  },
+  semanticReply: (input) => {
+    const reviewed = companionLongRunV3FixtureBehavior.semanticReply?.(input);
+    if (reviewed) return reviewed;
+    if (isCharacterSubjectDecisionRequest(input.userText))
+      return "我选择保留克制的结尾，保护被摄者的尊严。这个决定由我承担。";
+    if (
+      analyzeSupportSpeechAct(input.userText).supportMode === "recommend" &&
+      /副主编/u.test(JSON.stringify(input.causalContext ?? {}))
+    )
+      return "我的建议：接受影像平台副主编岗位，决定权仍然在你。";
+    if (
+      analyzeSupportSpeechAct(input.userText).supportMode === "recommend" &&
+      /山鸣影像/u.test(JSON.stringify(input.causalContext ?? {}))
+    )
+      return "我的建议：选项 B，去杭州的山鸣影像。最终决定由你作出。";
+    return undefined;
+  },
+};
 
 describe("fuzzy-life conversation integration", () => {
   let app: PersonaSimApp | undefined;
@@ -30,6 +80,179 @@ describe("fuzzy-life conversation integration", () => {
     if (app !== undefined) await app.close();
     app = undefined;
     vi.restoreAllMocks();
+  });
+
+  it("keeps a new delegated scope separate and records the actually chosen second option", async () => {
+    app = await createTestApp({
+      selectDelegatedDecision: () => "整理十张照片",
+      semanticReply: () => "我明白你想留一点时间给自己，可以慢慢考虑。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "first-paint-choice",
+      "我今天要不要继续画完这幅画？",
+    );
+    const old = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    );
+    expect(old.options.map((option) => option.label)).toEqual([
+      "继续画完这幅画",
+      "不继续画完这幅画",
+    ]);
+    const delegated = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "new-small-choice",
+      "这次请你只在散步二十分钟和整理十张照片之间替我选一个。",
+    );
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    const current = rowJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+      "id",
+      decision.dilemmaId,
+    );
+    expect(current.id).not.toBe(old.id);
+    expect(current.options.map((option) => option.label)).toEqual([
+      "散步二十分钟",
+      "整理十张照片",
+    ]);
+    expect(decision).toMatchObject({
+      selectedOptionId: current.options[1]!.id,
+      selectionSummary: "整理十张照片",
+      authority: "delegated",
+      authorizedByMessageId: delegated.userMessage.id,
+    });
+    expect(
+      rowJson<DilemmaEpisode>(
+        app,
+        "dilemma_episodes",
+        "episode_json",
+        "id",
+        old.id,
+      ),
+    ).toMatchObject({ status: "open" });
+    expect(scalarCount(app, "dilemma_episodes")).toBe(2);
+  });
+
+  it.each(["改变现状，从能做的一步开始", "散步和整理照片都可以", "继续画画"])(
+    "does not turn an unresolved or out-of-scope reply into a delegated decision: %s",
+    async (reply) => {
+      app = await createTestApp({ selectDelegatedDecision: () => reply });
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "unselected-choice",
+        "这次请你只在散步和整理照片之间替我决定。",
+      );
+      expect(scalarCount(app, "decision_records")).toBe(0);
+      expect(scalarCount(app, "relationship_milestones")).toBe(0);
+      expect(
+        latestJson<DilemmaEpisode>(app, "dilemma_episodes", "episode_json"),
+      ).toMatchObject({ status: "open" });
+      expect(modeForSource(app, turn.assistantMessage.id)).toBe("deliberate");
+    },
+  );
+
+  it.each(["unrelated_turns", "elapsed_time", "new_session"] as const)(
+    "does not bind a bare delegation after %s",
+    async (boundary) => {
+      const clock = new FakeClock(START_UTC);
+      app = await createTestApp(
+        {
+          selectDelegatedDecision: () => "散步",
+          semanticReply: () => "我听着，你继续说。",
+        },
+        clock,
+      );
+      const character = await createAndPublish(app);
+      let sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "stale-choice",
+        "我在散步和整理照片之间拿不定主意。",
+      );
+      if (boundary === "unrelated_turns") {
+        for (let index = 0; index < 5; index += 1)
+          await sendChat(
+            app,
+            sessionId,
+            character.id,
+            `unrelated-${index}`,
+            "今天窗外有几只小鸟，叫声很清楚。",
+          );
+      } else if (boundary === "elapsed_time") {
+        clock.advance({ days: 2 });
+      } else {
+        sessionId = await createSession(app, character.id);
+      }
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "bare-stale-delegation",
+        "这次请你替我决定。",
+      );
+      expect(scalarCount(app, "decision_records")).toBe(0);
+      expect(scalarCount(app, "dilemma_episodes")).toBe(1);
+    },
+  );
+
+  it("allows an immediate reference to real conversation evidence", async () => {
+    app = await createTestApp({
+      selectDelegatedDecision: () => "散步",
+      semanticReply: () => "这两个方向可以再想一想。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    const source = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "recent-choice",
+      "我在散步和整理照片之间拿不定主意。",
+    );
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "recent-delegation",
+      "这次请你替我决定。",
+    );
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    const selected = rowJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+      "id",
+      decision.dilemmaId,
+    );
+    expect(selected.sourceMessageIds).toContain(source.userMessage.id);
+    expect(decision).toMatchObject({
+      selectionSummary: "散步",
+      authorizedByMessageId: turn.userMessage.id,
+    });
   });
 
   it("persists completed clauses without recording their future or negated neighbors", async () => {
@@ -472,9 +695,10 @@ describe("fuzzy-life conversation integration", () => {
       "retained-current-delegation",
       "现在我明确授权你，只在“接受影像平台副主编岗位”和“启动独立影像项目”之间替我作一次决定。这次授权只限今天这一件事。",
     );
-    expect(modeForSource(app, delegated.assistantMessage.id)).toBe(
-      "delegated_decision",
-    );
+    expect(
+      modeForSource(app, delegated.assistantMessage.id),
+      delegated.assistantMessage.content,
+    ).toBe("delegated_decision");
     const decision = latestJson<DecisionRecord>(
       app,
       "decision_records",
@@ -746,6 +970,10 @@ describe("fuzzy-life conversation integration", () => {
         `recommendation-only-${String(index + 1)}`,
         text,
       );
+      expect(
+        () => modeForSource(app!, turn.assistantMessage.id),
+        text,
+      ).not.toThrow();
       expect(modeForSource(app, turn.assistantMessage.id), text).toBe(
         "recommend",
       );
@@ -1515,7 +1743,9 @@ describe("fuzzy-life conversation integration", () => {
     expect(open.options[1]?.label).toContain("山鸣影像");
     expect(open.options[1]?.description).toContain("9 月 16 日");
     expect(open.options[1]?.description).not.toContain("9 月 14 日");
-    expect(open.sourceMessageIds).toHaveLength(7);
+    // The first actual option introduces the dilemma; the earlier request to
+    // analyze pressure does not invent a separate pair of alternatives.
+    expect(open.sourceMessageIds).toHaveLength(6);
 
     const recommend = await sendChat(
       app,
@@ -1524,7 +1754,10 @@ describe("fuzzy-life conversation integration", () => {
       "support-recommend",
       "现在请直接推荐一个方向，只推荐一个。此时我只是听建议，还没有接受。",
     );
-    expect(modeForSource(app, recommend.assistantMessage.id)).toBe("recommend");
+    expect(
+      modeForSource(app, recommend.assistantMessage.id),
+      recommend.assistantMessage.content,
+    ).toBe("recommend");
     const delegated = await sendChat(
       app,
       sessionId,
@@ -2416,7 +2649,8 @@ describe("fuzzy-life conversation integration", () => {
 });
 
 async function createTestApp(
-  fixtureTurnBehavior: FixtureTurnBehavior = companionLongRunV3FixtureBehavior,
+  fixtureTurnBehavior: FixtureTurnBehavior = groundedChoiceFixture,
+  clock: FakeClock = new FakeClock(START_UTC),
 ): Promise<PersonaSimApp> {
   const config = readConfig({
     nodeEnv: "test",
@@ -2443,11 +2677,16 @@ async function createTestApp(
   return buildApp({
     config,
     database: openDatabase(":memory:"),
-    clock: new FakeClock(START_UTC),
+    clock,
     seedDemo: false,
     startScheduler: false,
     logger: false,
-    fixtureTurnBehavior,
+    fixtureTurnBehavior: {
+      ...fixtureTurnBehavior,
+      semanticReply: (input) =>
+        fixtureTurnBehavior.semanticReply?.(input) ??
+        groundedChoiceFixture.semanticReply?.(input),
+    },
   });
 }
 
@@ -2607,6 +2846,16 @@ function injectCharacterDilemma(
   agentId: string,
   sessionId: string,
 ): void {
+  app.personasim.store.insertMessage({
+    id: "test-character-control-evidence",
+    sessionId,
+    agentId,
+    role: "assistant",
+    content: "我在《夜航》的结尾上拿不定主意：保留克制的结尾，还是强化冲突。",
+    messageKind: "assistant_reply",
+    metadata: {},
+    createdAtUtc: START_UTC,
+  });
   const repository = new LifeRepository(app.personasim.store.database);
   repository.insertDilemma(
     DilemmaEpisodeSchema.parse({
@@ -2651,6 +2900,16 @@ function injectUserBranchDilemma(
   agentId: string,
   sessionId: string,
 ): void {
+  app.personasim.store.insertMessage({
+    id: "test-user-branch-control-evidence",
+    sessionId,
+    agentId,
+    role: "user",
+    content: "我在接受影像平台副主编岗位和启动独立影像项目之间犹豫。",
+    messageKind: "user",
+    metadata: {},
+    createdAtUtc: START_UTC,
+  });
   const repository = new LifeRepository(app.personasim.store.database);
   repository.insertDilemma(
     DilemmaEpisodeSchema.parse({
@@ -2695,6 +2954,16 @@ function injectSecondUserBranchDilemma(
   agentId: string,
   sessionId: string,
 ): void {
+  app.personasim.store.insertMessage({
+    id: "test-user-branch-second-control-evidence",
+    sessionId,
+    agentId,
+    role: "user",
+    content: "我在接受长期影像顾问合同和参加半年驻留创作之间犹豫。",
+    messageKind: "user",
+    metadata: {},
+    createdAtUtc: START_UTC,
+  });
   const repository = new LifeRepository(app.personasim.store.database);
   repository.insertDilemma(
     DilemmaEpisodeSchema.parse({
@@ -2739,6 +3008,16 @@ function injectUserRelationshipDilemma(
   agentId: string,
   sessionId: string,
 ): void {
+  app.personasim.store.insertMessage({
+    id: "test-user-relationship-control-evidence",
+    sessionId,
+    agentId,
+    role: "user",
+    content: "我在结束当前关系和继续当前关系之间犹豫。",
+    messageKind: "user",
+    metadata: {},
+    createdAtUtc: START_UTC,
+  });
   const repository = new LifeRepository(app.personasim.store.database);
   repository.insertDilemma(
     DilemmaEpisodeSchema.parse({

@@ -1,0 +1,118 @@
+# 双模型动态对话测试
+
+这个入口让两个独立模型动态接话：一个扮演合成测试用户，一个扮演 ChatPLUS 项目角色。角色端经过现有消息路由、结构化验证、状态与关系变化、记忆与自传处理。监督者读取运行产物，判断生成内容的质量。
+
+## 填写模型配置
+
+在本机 `.env` 中填写 `LLM_PROFILE_QWEN_API_KEY`，使用阿里云百炼北京地域的 Key。Qwen 配置已提供 `qwen3.8-flash`、北京 OpenAI 兼容地址、JSON Object 输出及 `medium` 思考深度。完整字段见 `.env.example`。
+
+角色端默认使用 `bigmodel`，需要填写 `LLM_PROFILE_BIGMODEL_API_KEY`。也可使用已有 `claude`、`grok`、`gemini`、`gpt56-sol`，或自行添加完整的 `LLM_PROFILE_<NAME>_*` 命名档案。两端各自读取自己的 Key、模型和参数；空 Key 不会回退到另一端或旧式 Key。
+
+想用旧式 DeepSeek 配置作为其中一端时，先建立一个完整的命名档案（例如 `LLM_PROFILE_DEEPSEEK_*`），再传 `--user-profile deepseek` 或 `--character-profile deepseek`。本入口仅接受命名档案，不隐式借用 `OPENAI_COMPATIBLE_*`。
+
+先单独验证 Qwen 连通性：
+
+```powershell
+pnpm test:llm:smoke:qwen
+```
+
+没有 Key 时该命令显示 `SKIP`；有 Key 时会调用真实 API 并产生用量。普通单元测试和 fixture 演示不调用外部模型。
+
+## 启动测试
+
+从项目根目录运行离线流程演示：
+
+```powershell
+pnpm test:dual-model:fixture --turns 3
+```
+
+这个模式两端均使用确定性 fixture，验证编排和产物，不代表模型表达质量。
+
+真实测试示例：
+
+```powershell
+$env:RUN_PAID_DUAL_MODEL = "1"
+try {
+  pnpm test:dual-model --user-profile qwen --character-profile bigmodel --turns 6
+} finally {
+  Remove-Item Env:RUN_PAID_DUAL_MODEL
+}
+```
+
+默认一批 6 轮，每轮包括一条用户消息和一条项目角色回复。最多 20 轮；每轮间隔默认推进 30 分钟虚拟时间，实际请求仍按返回顺序执行。后台定时器关闭，由请求与虚拟时钟驱动生活推进。每轮可能触发记忆、自传或回复修复等额外模型调用，因此 6 轮不等于仅有 12 次 API 请求。
+
+两端可以互换，例如 `--user-profile claude --character-profile qwen`。本入口独立解析命名档案，无需切换日常应用的 `LLM_ACTIVE_PROFILE`，也不需要先启动 Web 或 Fastify 监听端口。
+
+## 调整人设与场景
+
+项目角色使用已发布的示例角色“林夏”（拟真模式），不会读取或修改日常应用数据库里的角色。合成测试用户默认是“陈默”，围绕加班、创作时间、互相关心展开对话。可以通过 UTF-8 文本文件覆盖用户人设和场景，每份文本限 1–8000 字符：
+
+```powershell
+pnpm test:dual-model --user-profile qwen --character-profile bigmodel --turns 10 --step-minutes 60 --user-persona-file tmp/user-persona.txt --scenario-file tmp/scenario.txt --run-id qwen-bigmodel-work-stress-01
+```
+
+| 参数                  | 含义                         | 默认值                 |
+| --------------------- | ---------------------------- | ---------------------- |
+| `--user-profile`      | 合成用户的命名模型配置       | `qwen`                 |
+| `--character-profile` | 项目角色的命名模型配置       | `bigmodel`             |
+| `--turns`             | 对话轮数，1–20               | `6`                    |
+| `--step-minutes`      | 两轮之间的虚拟分钟数，1–1440 | `30`                   |
+| `--user-persona-file` | 合成用户人设 UTF-8 文件      | 内置陈默设定           |
+| `--scenario-file`     | 场景与交流目标 UTF-8 文件    | 工作压力与创作时间     |
+| `--run-id`            | 产物目录名称                 | 带时间和随机后缀的名称 |
+
+同一 `run-id` 不允许覆盖；失败后的产物保留用于审阅。需要再次实验时使用新 ID。本入口不提供断点续跑，V3 的恢复命令也不能用于这里。
+
+## 审阅质量
+
+终端显示的目录为 `tmp/dual-model-simulation/<run-id>/`。其中保存对话 Markdown、逐轮 JSONL、运行配置摘要、独立 SQLite 数据库，以及标为待审阅的 `review.md`。每轮写入进度，运行失败时保留已经生成的内容。
+
+审阅时先阅读双方对话，再结合角色设定和状态、关系、记忆证据判断：
+
+1. 用户模型是否持续扮演同一个人、根据上一句接话，还是变成了评委或万能助手。
+2. 项目角色的语气、价值观、生活背景是否连贯，是否有自己的近况与关注点。
+3. 是否承接了情绪与明确诉求，例如用户要倾听时是否过早给建议。
+4. 是否准确记住本次交流已发生的事实，是否把意向误当成行动、把计划误当成结果。
+5. 状态和关系变化是否能由真实对话解释，是否出现无证据的突变。
+6. 是否反复使用套话、机械追问、迎合或重复上一轮。
+
+可以把运行目录交给当前 Codex 任务审阅；监督者只读证据并写质量结论，不进入两个角色的提示词。运行器的机械检查只说明结构与流程情况，`completed` 表示指定轮数完成，不能当作内容质量已经通过。
+
+用户模型仅获得自身人设、场景和公开对话，不获得项目角色隐藏状态、记忆库或评审结果。两端都是模型时可能互相迎合，因此这种动态测试适合发现自然互动问题；固定剧本回归仍用于可重复的比较。这个入口暂不包含网页控制面板、两名完整项目角色的独立人生模拟，或持续后台监督任务。
+
+## 产品人生长程实验
+
+`test:product-life` 是覆盖产品生活、关系与书信的独立长测入口。固定使用命名配置 `qwen` 扮演林舟、`bigmodel` 扮演通过真实角色生成接口创建的顾澜。情境只有目标和条件，不提供固定台词；每条消息和寄出的信由 Qwen 生成，顾澜的回复、记忆整理和书信由产品配置的 GLM 生成。
+
+```powershell
+pnpm test:product-life:fixture offline-01
+$env:RUN_PAID_DUAL_MODEL = "1"
+try {
+  pnpm test:product-life qwen-glm-life-01
+} finally {
+  Remove-Item Env:RUN_PAID_DUAL_MODEL
+}
+```
+
+实验在第 0、1、3、10、15、45 个模拟日各进行 7 轮，包含倾听、建议、自主选择、有限授权、行动后的结果、纠正事实、分歧修复、两次关闭与重启、三个聊天窗口，以及五日历日去程和返程的数字书信。它使用正常 HTTP 产品入口创建、编辑、恢复版本并发布角色；不会通过 SQL 填入困境、决定、行动、结果或纪念物资格。
+
+产物在 `tmp/product-life-long-run/<run-id>/`，使用独立 SQLite、资产目录和本次实验专用的本地实例密钥。日常 `.env` 与产品数据库不受影响。`plan.json` 保存冻结场景，`conversation.md` 保存公开对话，逐轮 JSON 和阶段 JSON 保存状态与证据，`model-io.jsonl` 保存逻辑调用输入和结构化输出，书信与纪念物检查各有单独文件。API Key 不写入产物；用于解密测试书信的 `.instance-secret` 留在本地忽略目录中，分享报告时不要附带该文件或整库。
+
+同名新运行禁止覆盖；失败后的已完成步骤可以在相同模型配置下恢复：
+
+```powershell
+$env:RUN_PAID_DUAL_MODEL = "1"
+try {
+  pnpm test:product-life:resume qwen-glm-life-01
+} finally {
+  Remove-Item Env:RUN_PAID_DUAL_MODEL
+}
+```
+
+恢复读取步骤日志，并通过同一消息请求 ID 重放尚未确认完成的提交。已持久化的模型失败回复不会被偷偷替换；该轮会保留为失败证据。程序在步骤边界检查累计请求预算，接近 200 次实际请求时停止；一个步骤中的重试与产品内部调用可能使最终数略超阈值。42 轮不等于 84 次请求，角色生成、自传整理与回信会产生额外调用。
+
+这轮实验特意把可配置上下文软/硬阈值设为 2,400/4,800 token，保留至少 6 轮、1,200 token 尾部和 24 小时逐字内容，使有限轮数内能实际观察整理与自传功能。这个设置只用于实验，不能当成产品默认配置的性能结果。没有触发的功能标为未达到条件，不能凭打开配置就算通过。
+
+没有互动的对照分支从角色发布后的同一数据库副本开始，只在第 45 天再次激活。它用于检查无需用户聊天也能结算已有生活并创建当天上下文；角色生活的离线恢复是访问时补算，不等于进程关闭期间仍持续运行，也不为每个未访问的日期补造日记。单个实验及这个对照不足以估计真实人的行为或心理变化。
+
+监督者应分别评价 README 的四个目标：时间是否产生可见进展；互动是否形成有来源的后果；关系是否在支持与分歧中积累；决定、行动、结果与回忆是否可追溯。当前角色自身正式困境缺少正常产品创建入口，不能以旧脚本的人工注入宣称该链路已覆盖。纪念物只有自然达到条件才生成，模板资产可验证；默认图像 Provider 仍是 Fixture，不能把其图片称为真实图像模型作品。网页布局、PNG 导出交互、部署和后台 worker 不属于这轮 HTTP 长测覆盖范围。

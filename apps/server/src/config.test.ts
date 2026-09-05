@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { readConfig } from "./config.js";
+import { readConfig, readLlmProfileConfig } from "./config.js";
 
 const workspaceRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -336,6 +336,109 @@ describe("server configuration", () => {
       supportsStreaming: false,
       maxOutputTokens: 8_192,
     });
+  });
+
+  it("loads the Qwen Flash profile with its own key and reasoning capabilities", () => {
+    clearLlmProfileEnvironment("QWEN");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "qwen");
+    vi.stubEnv(
+      "LLM_PROFILE_QWEN_BASE_URL",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+    );
+    vi.stubEnv("LLM_PROFILE_QWEN_API_KEY", "test-qwen-profile-key");
+    vi.stubEnv("LLM_PROFILE_QWEN_MODEL", "qwen3.8-flash");
+    vi.stubEnv("LLM_PROFILE_QWEN_TIMEOUT_MS", "300000");
+    vi.stubEnv("LLM_PROFILE_QWEN_MAX_RETRIES", "1");
+    vi.stubEnv("LLM_PROFILE_QWEN_STRUCTURED_OUTPUT_MODE", "json_object");
+    vi.stubEnv("LLM_PROFILE_QWEN_REASONING_EFFORT", "medium");
+    vi.stubEnv("LLM_PROFILE_QWEN_REASONING_FORMAT", "openai_reasoning_effort");
+    vi.stubEnv("LLM_PROFILE_QWEN_SUPPORTS_THINKING_CONTROL", "false");
+    vi.stubEnv("LLM_PROFILE_QWEN_SUPPORTS_STREAMING", "false");
+    vi.stubEnv("LLM_PROFILE_QWEN_MAX_CONTEXT_TOKENS", "1000000");
+    vi.stubEnv("LLM_PROFILE_QWEN_MAX_OUTPUT_TOKENS", "32768");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_API_KEY", "test-other-profile-key");
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "test-legacy-key");
+    vi.stubEnv("LLM_API_KEY", "test-alias-key");
+
+    expect(readConfig().llm).toEqual({
+      provider: "openai-compatible",
+      profileName: "qwen",
+      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      apiKey: "test-qwen-profile-key",
+      model: "qwen3.8-flash",
+      timeoutMs: 300_000,
+      maxRetries: 1,
+      maxOutputTokens: 32_768,
+      capabilities: {
+        structuredOutputMode: "json_object",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        reasoningEffort: "medium",
+        reasoningRequestFormat: "openai_reasoning_effort",
+        maxContextTokens: 1_000_000,
+        maxOutputTokens: 32_768,
+      },
+    });
+  });
+
+  it.each([undefined, "", "   "])(
+    "does not substitute another provider key for an absent Qwen key (%j)",
+    (apiKey) => {
+      clearLlmProfileEnvironment("QWEN");
+      vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+      vi.stubEnv("LLM_ACTIVE_PROFILE", "qwen");
+      vi.stubEnv(
+        "LLM_PROFILE_QWEN_BASE_URL",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      );
+      vi.stubEnv("LLM_PROFILE_QWEN_MODEL", "qwen3.8-flash");
+      vi.stubEnv("LLM_PROFILE_QWEN_API_KEY", apiKey);
+      vi.stubEnv("LLM_PROFILE_CLAUDE_API_KEY", "test-other-profile-key");
+      vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "test-legacy-key");
+      vi.stubEnv("LLM_API_KEY", "test-alias-key");
+
+      expect(readConfig().llm).toMatchObject({
+        profileName: "qwen",
+        model: "qwen3.8-flash",
+      });
+      expect(readConfig().llm.apiKey).toBeUndefined();
+    },
+  );
+
+  it("reads two independent model profiles without changing the active server profile", () => {
+    clearLlmProfileEnvironment("QWEN");
+    clearLlmProfileEnvironment("CLAUDE");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "claude");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_BASE_URL", "https://example.com/v1");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_API_KEY", "test-claude-profile-key");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_MODEL", "claude-test");
+    vi.stubEnv(
+      "LLM_PROFILE_QWEN_BASE_URL",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    );
+    vi.stubEnv("LLM_PROFILE_QWEN_API_KEY", "test-qwen-profile-key");
+    vi.stubEnv("LLM_PROFILE_QWEN_MODEL", "qwen3.8-flash");
+
+    const activeBefore = readConfig().llm;
+    const qwen = readLlmProfileConfig("qwen");
+    const claude = readLlmProfileConfig("claude");
+
+    expect(qwen).toMatchObject({
+      provider: "openai-compatible",
+      profileName: "qwen",
+      apiKey: "test-qwen-profile-key",
+      model: "qwen3.8-flash",
+    });
+    expect(claude).toMatchObject({
+      provider: "openai-compatible",
+      profileName: "claude",
+      apiKey: "test-claude-profile-key",
+      model: "claude-test",
+    });
+    expect(process.env.LLM_ACTIVE_PROFILE).toBe("claude");
+    expect(readConfig().llm).toEqual(activeBefore);
   });
 
   it("rejects a reasoning effort without a matching request format", () => {

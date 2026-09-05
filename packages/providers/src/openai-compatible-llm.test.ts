@@ -225,6 +225,98 @@ describe("OpenAI-compatible provider", () => {
     expect(JSON.stringify(value)).not.toContain("reasoning");
   });
 
+  it("uses the DashScope Qwen Flash endpoint and returns only the final Chinese JSON", async () => {
+    let requestUrl: Parameters<typeof fetch>[0] | undefined;
+    let requestInit: RequestInit | undefined;
+    const metrics: LlmCallMetric[] = [];
+    const hiddenReasoning = "QWEN_REASONING_SENTINEL：这不是角色的最终回复。";
+    const reply = { text: "今天过得怎么样？我想听听你的故事。" };
+    const provider = createOpenAiCompatibleLlmProvider({
+      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+      apiKey: "test-qwen-profile-key",
+      model: "qwen3.8-flash",
+      timeoutMs: 300_000,
+      maxRetries: 1,
+      maxOutputTokens: 32_768,
+      capabilities: {
+        structuredOutputMode: "json_object",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        reasoningEffort: "medium",
+        reasoningRequestFormat: "openai_reasoning_effort",
+        maxContextTokens: 1_000_000,
+        maxOutputTokens: 32_768,
+      },
+      fetch: (input, init) => {
+        requestUrl = input;
+        requestInit = init;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              model: "qwen3.8-flash",
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify(reply),
+                    reasoning_content: hiddenReasoning,
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: {
+                prompt_tokens: 40,
+                completion_tokens: 30,
+                total_tokens: 70,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      },
+      onMetric: (metric) => metrics.push(metric),
+      retryDelay: () => Promise.resolve(),
+    });
+
+    const value = await provider.generateObject({
+      purpose: "chat_turn",
+      system: "请扮演一位关心朋友的角色，以 JSON 返回回复。",
+      prompt: "今天有点累，想和你聊聊天。",
+      schema: z.object({ text: z.string() }).strict(),
+    });
+
+    expect(requestUrl).toBe(
+      "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    );
+    expect(requestInit?.method).toBe("POST");
+    expect(new Headers(requestInit?.headers).get("Authorization")).toBe(
+      "Bearer test-qwen-profile-key",
+    );
+    const body = JSON.parse(requestBody(requestInit)) as Record<
+      string,
+      unknown
+    >;
+    expect(body).toMatchObject({
+      model: "qwen3.8-flash",
+      reasoning_effort: "medium",
+      response_format: { type: "json_object" },
+      stream: false,
+      max_tokens: 32_768,
+    });
+    expect(body).not.toHaveProperty("thinking");
+    expect(body).not.toHaveProperty("output_config");
+    expect(value).toEqual(reply);
+    expect(JSON.stringify(value)).not.toContain(hiddenReasoning);
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]).toMatchObject({
+      responseModel: "qwen3.8-flash",
+      success: true,
+      inputTokens: 40,
+      outputTokens: 30,
+    });
+    expect(JSON.stringify(metrics)).not.toContain(hiddenReasoning);
+    expect(JSON.stringify(metrics)).not.toContain("test-qwen-profile-key");
+  });
+
   it("retries a reasoning-only stop without promoting hidden reasoning to the reply", async () => {
     const metrics: LlmCallMetric[] = [];
     let attempts = 0;

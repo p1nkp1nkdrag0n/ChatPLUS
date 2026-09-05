@@ -351,6 +351,52 @@ export type ResolvedServerConfig = Omit<
   CorrespondenceServerConfig &
   SelfHostedServerConfig;
 
+/** Resolve an independent named model without changing the active application
+ * profile. The returned credential is for in-memory use only. */
+export function readLlmProfileConfig(profileName: string): ServerConfig["llm"] {
+  const normalized = activeLlmProfileNameFromEnv.parse(profileName);
+  if (normalized === undefined) {
+    throw new TypeError("A named LLM profile is required.");
+  }
+  return resolveLlmConfig(
+    "openai-compatible",
+    readLiveProfileEnvironment(normalized),
+    normalized,
+  );
+}
+
+function resolveLlmConfig(
+  provider: ServerConfig["llm"]["provider"],
+  environment: z.infer<typeof legacyLlmEnvironmentSchema>,
+  profileName?: string,
+): ServerConfig["llm"] {
+  return {
+    provider,
+    ...(profileName === undefined ? {} : { profileName }),
+    baseUrl: environment.baseUrl.replace(/\/$/, ""),
+    ...(environment.apiKey ? { apiKey: environment.apiKey } : {}),
+    model: environment.model,
+    timeoutMs: environment.timeoutMs,
+    maxRetries: environment.maxRetries,
+    maxOutputTokens: environment.maxOutputTokens,
+    capabilities: LlmCapabilityProfileSchema.parse({
+      structuredOutputMode: environment.structuredOutputMode,
+      supportsThinkingControl: environment.supportsThinkingControl,
+      supportsStreaming: environment.supportsStreaming,
+      ...(environment.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: environment.reasoningEffort }),
+      ...(environment.reasoningRequestFormat === undefined
+        ? {}
+        : { reasoningRequestFormat: environment.reasoningRequestFormat }),
+      ...(environment.maxContextTokens === undefined
+        ? {}
+        : { maxContextTokens: environment.maxContextTokens }),
+      maxOutputTokens: environment.maxOutputTokens,
+    }),
+  };
+}
+
 export function readConfig(
   overrides: Partial<ServerConfig> = {},
 ): ResolvedServerConfig {
@@ -380,37 +426,11 @@ export function readConfig(
     databasePath: resolve(workspaceRoot, env.DATABASE_PATH),
     clockMode: env.CLOCK_MODE,
     fakeClockStart: env.FAKE_CLOCK_START,
-    llm: {
-      provider: env.LLM_PROVIDER,
-      ...(env.LLM_ACTIVE_PROFILE === undefined
-        ? {}
-        : { profileName: env.LLM_ACTIVE_PROFILE }),
-      baseUrl: llmEnvironment.baseUrl.replace(/\/$/, ""),
-      ...(llmEnvironment.apiKey ? { apiKey: llmEnvironment.apiKey } : {}),
-      model: llmEnvironment.model,
-      timeoutMs: llmEnvironment.timeoutMs,
-      maxRetries: llmEnvironment.maxRetries,
-      maxOutputTokens: llmEnvironment.maxOutputTokens,
-      capabilities: LlmCapabilityProfileSchema.parse({
-        structuredOutputMode: llmEnvironment.structuredOutputMode,
-        supportsThinkingControl: llmEnvironment.supportsThinkingControl,
-        supportsStreaming: llmEnvironment.supportsStreaming,
-        ...(llmEnvironment.reasoningEffort === undefined
-          ? {}
-          : { reasoningEffort: llmEnvironment.reasoningEffort }),
-        ...(llmEnvironment.reasoningRequestFormat === undefined
-          ? {}
-          : {
-              reasoningRequestFormat: llmEnvironment.reasoningRequestFormat,
-            }),
-        ...(llmEnvironment.maxContextTokens === undefined
-          ? {}
-          : {
-              maxContextTokens: llmEnvironment.maxContextTokens,
-            }),
-        maxOutputTokens: llmEnvironment.maxOutputTokens,
-      }),
-    },
+    llm: resolveLlmConfig(
+      env.LLM_PROVIDER,
+      llmEnvironment,
+      env.LLM_ACTIVE_PROFILE,
+    ),
     conversationRetention: {
       fullVerbatimHours: env.CONVERSATION_FULL_VERBATIM_HOURS,
       softTokenLimit: env.CONVERSATION_SOFT_TOKEN_LIMIT,

@@ -56,6 +56,15 @@ import {
   type ActiveScheduleNegotiation,
 } from "./schedule-negotiation-service.js";
 import { analyzeSupportSpeechAct } from "./fuzzy-life-language.js";
+import {
+  consentClaimsFromUnknown,
+  isConsentClaimEvidenceExcerpt,
+  isConsentControlledActivity,
+  isConsentDerivedSemanticCandidate,
+  type ThirdPartyConsentClaim,
+  type ThirdPartyConsentScopeKind,
+  type ThirdPartyConsentStatus,
+} from "./consent-modality.js";
 
 export interface TurnDecisionServiceOptions {
   chatEffectsMode?: "off" | "gated";
@@ -83,6 +92,10 @@ export interface TurnDecisionEffectContext {
   scheduleNegotiationEligible: boolean;
   negotiationEnforced: boolean;
   activeNegotiation?: ActiveScheduleNegotiation;
+  consentModality?: {
+    evidenceText: string;
+    claims: readonly ThirdPartyConsentClaim[];
+  };
 }
 
 export type DecisionInspection = {
@@ -118,6 +131,47 @@ export interface ExplicitFactReplyGuardAudit {
   finalTextSha256: string;
 }
 
+export interface ConsentModalityGuardAudit {
+  policyVersion: "third_party_consent_modality_v1";
+  sourceKind: "assertion" | "query" | "mixed";
+  subject: string;
+  status: ThirdPartyConsentStatus;
+  scopes: Array<{
+    kind: ThirdPartyConsentScopeKind;
+    label: string;
+    resource: string;
+    beneficiary?: string;
+    beneficiaryKey?: string;
+    restrictions?: string[];
+  }>;
+  primaryClaimKey: string;
+  claimCount: number;
+  claims: Array<{
+    claimKey: string;
+    sourceKind: "assertion" | "query";
+    subject: string;
+    subjectKey: string;
+    beneficiary?: string;
+    beneficiaryKey?: string;
+    status: ThirdPartyConsentStatus;
+    scopeKind: ThirdPartyConsentScopeKind;
+    scopeKey: string;
+    scopeLabel: string;
+    resource: string;
+    evidenceText: string;
+    restrictions?: string[];
+  }>;
+  consentOnly: boolean;
+  independentText: string;
+  independentReplyText: string;
+  evidenceText: string;
+  serverGuardApplied: true;
+  modelReplyContentChanged: boolean;
+  modelSideEffectsBlocked: boolean;
+  contentDerivedSemanticsSkipped: boolean;
+  finalTextSha256: string;
+}
+
 export type ResolvedTurn = {
   decision: AgentTurnDecision;
   inspection: DecisionInspection;
@@ -132,7 +186,99 @@ export type ResolvedTurn = {
     validation: WorldEffectsValidationResult;
   };
   explicitFactReplyGuardAudit?: ExplicitFactReplyGuardAudit;
+  consentModalityGuardAudit?: ConsentModalityGuardAudit;
 };
+
+function filterRawConsentScheduleEffects(input: {
+  effects: readonly Record<string, unknown>[];
+  schedule: readonly ScheduleItem[];
+  consentModality?: NonNullable<TurnDecisionEffectContext["consentModality"]>;
+}): {
+  retained: Record<string, unknown>[];
+  blocked: Record<string, unknown>[];
+} {
+  if (input.consentModality === undefined) {
+    return { retained: [...input.effects], blocked: [] };
+  }
+  const retained: Record<string, unknown>[] = [];
+  const blocked: Record<string, unknown>[] = [];
+  for (const effect of input.effects) {
+    if (
+      isRawConsentScheduleEffect(effect, input.schedule, input.consentModality)
+    ) {
+      blocked.push(effect);
+    } else {
+      retained.push(effect);
+    }
+  }
+  return { retained, blocked };
+}
+
+function isRawConsentScheduleEffect(
+  effect: Record<string, unknown>,
+  schedule: readonly ScheduleItem[],
+  consentModality: NonNullable<TurnDecisionEffectContext["consentModality"]>,
+): boolean {
+  const evidenceTexts = [
+    effect["justificationQuote"],
+    effect["justification"],
+    effect["quote"],
+    effect["evidence"],
+    effect["evidenceQuotes"],
+    effect["userQuote"],
+    effect["sourceQuote"],
+  ]
+    .map((value) => consentClaimsFromUnknown(value))
+    .filter((value) => value !== "");
+  const hasConsentProvenance = evidenceTexts.some(
+    (evidenceText) =>
+      isConsentClaimEvidenceExcerpt({
+        claims: consentModality.claims,
+        candidateText: evidenceText,
+      }) ||
+      isConsentDerivedSemanticCandidate({
+        authoritativeText: consentModality.evidenceText,
+        authoritativeClaims: consentModality.claims,
+        candidateText: evidenceText,
+      }),
+  );
+  if (!hasConsentProvenance) {
+    return false;
+  }
+  const targetText = rawScheduleEffectTargetText(effect, schedule);
+  return isConsentControlledActivity({
+    claims: consentModality.claims,
+    candidateText: targetText,
+  });
+}
+
+function rawScheduleEffectTargetText(
+  effect: Record<string, unknown>,
+  schedule: readonly ScheduleItem[],
+): string {
+  const targetParts: unknown[] = [
+    effect["itemTitle"],
+    effect["targetTitle"],
+    effect["title"],
+    effect["activity"],
+    effect["description"],
+    effect["item"],
+  ];
+  const itemId = [
+    effect["itemId"],
+    effect["item_id"],
+    effect["scheduleItemId"],
+    effect["id"],
+  ].find((value): value is string => typeof value === "string");
+  if (itemId !== undefined) {
+    targetParts.push(schedule.find((item) => item.id === itemId));
+  }
+  const rawIndex = effect["scheduleIndex"] ?? effect["itemIndex"];
+  if (typeof rawIndex === "number" && Number.isInteger(rawIndex)) {
+    targetParts.push(schedule[rawIndex], schedule[rawIndex - 1]);
+  }
+  return consentClaimsFromUnknown(targetParts);
+}
 
 const EnforcedScheduleTurnProviderEnvelopeSchema =
   StrictPersonaTurnProviderEnvelopeSchema.superRefine((value, context) => {
@@ -530,6 +676,9 @@ export class TurnDecisionService {
                 userText: input.userText,
                 legacyEffectsEnabled: input.effects.effectsEligible,
                 worldEffectsEnabled,
+                ...(input.effects.consentModality === undefined
+                  ? {}
+                  : { consentModality: input.effects.consentModality }),
                 ...(validatedWorldEffects === undefined
                   ? {}
                   : { validatedWorldEffects }),
@@ -659,6 +808,9 @@ export class TurnDecisionService {
       userText: string;
       legacyEffectsEnabled: boolean;
       worldEffectsEnabled: boolean;
+      consentModality?: NonNullable<
+        TurnDecisionEffectContext["consentModality"]
+      >;
       validatedWorldEffects?: ValidatedWorldEffects;
     },
     modelRejections: ModelEffectRejection[],
@@ -677,8 +829,26 @@ export class TurnDecisionService {
       spec,
       replyStrategy,
     );
+    const rawScheduleEffects = context.legacyEffectsEnabled
+      ? response.scheduleEffects
+      : [];
+    const consentFilteredEffects = filterRawConsentScheduleEffects({
+      effects: rawScheduleEffects,
+      schedule: context.schedule,
+      ...(context.consentModality === undefined
+        ? {}
+        : { consentModality: context.consentModality }),
+    });
+    for (const raw of consentFilteredEffects.blocked) {
+      modelRejections.push({
+        raw,
+        reasonCode: "consent_modality_effect_blocked",
+        reasonSummary:
+          "A schedule mutation derived from third-party consent was blocked before normalization.",
+      });
+    }
     const normalized = normalizeModelEffects({
-      effects: context.legacyEffectsEnabled ? response.scheduleEffects : [],
+      effects: consentFilteredEffects.retained,
       schedule: context.schedule,
       timezone: context.timezone,
       nowUtc: context.nowUtc,

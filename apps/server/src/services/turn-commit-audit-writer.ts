@@ -66,7 +66,11 @@ export class TurnCommitAuditWriter {
           mode: input.world.effectTrace.mode,
           interactionStatus: "committed",
           llmProposalStatus:
-            input.turn.explicitFactReplyGuardAudit !== undefined
+            input.turn.explicitFactReplyGuardAudit !== undefined ||
+            input.turn.consentModalityGuardAudit?.modelSideEffectsBlocked ===
+              true ||
+            input.turn.consentModalityGuardAudit
+              ?.contentDerivedSemanticsSkipped === true
               ? "blocked"
               : input.world.effectTrace.mode === "enforced"
                 ? "committed"
@@ -294,6 +298,11 @@ export class TurnCommitAuditWriter {
             : {
                 explicitFactReplyGuard:
                   input.turn.turn.explicitFactReplyGuardAudit,
+              }),
+          ...(input.turn.turn.consentModalityGuardAudit === undefined
+            ? {}
+            : {
+                consentModalityGuard: input.turn.turn.consentModalityGuardAudit,
               }),
           ...(input.lifeImpact === undefined
             ? {}

@@ -24,6 +24,14 @@ import type { Clock } from "../runtime/clock.js";
 import type { SseHub } from "../sse/hub.js";
 import type { ConversationContextService } from "./conversation-context-service.js";
 import {
+  applyConsentModalityGuard,
+  buildConsentModalityGuardContract,
+  consentModalityFollowUpClaimsFromAudit,
+  consentModalityEffectContext,
+  consentModalityPromptSegment,
+  finalizeConsentModalityWorld,
+} from "./consent-modality-guard.js";
+import {
   applyExplicitFactReplyGuard,
   buildExplicitFactReplyContract,
   explicitFactReplyEffectContext,
@@ -252,6 +260,20 @@ export class ConversationService {
             selectedRecallMemories,
             recallPreview,
           );
+    const storedContextMessages = this.store.listMessagesForContext(sessionId);
+    // Elliptical permission questions may inherit only the immediately
+    // preceding assistant turn. Searching farther back would let a generic
+    // "后来有回复吗" resurrect stale consent context after the conversation
+    // has already moved to another topic.
+    const mostRecentAssistantMessage = [...storedContextMessages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    const priorConsentClaims =
+      mostRecentAssistantMessage === undefined
+        ? []
+        : consentModalityFollowUpClaimsFromAudit(
+            mostRecentAssistantMessage.metadata["consentModalityGuard"],
+          );
     const explicitFactReplyContract =
       memoryRecallMode === "enforced"
         ? buildExplicitFactReplyContract({
@@ -261,8 +283,15 @@ export class ConversationService {
               : { recall: recallRecording.retrievalRun }),
           })
         : undefined;
+    const consentModalityGuardContract =
+      explicitFactReplyContract === undefined
+        ? buildConsentModalityGuardContract({
+            userText: input.text,
+            priorClaims: priorConsentClaims,
+          })
+        : undefined;
     const contextSelection = selectConversationRetention({
-      messages: this.store.listMessagesForContext(sessionId).map((message) => ({
+      messages: storedContextMessages.map((message) => ({
         id: message.id,
         role: message.role,
         text: message.content,
@@ -295,12 +324,20 @@ export class ConversationService {
       providerName: this.llm.providerName,
     });
     const turnEffectContext =
-      explicitFactReplyContract === undefined
-        ? effects
-        : explicitFactReplyEffectContext();
+      explicitFactReplyContract !== undefined
+        ? explicitFactReplyEffectContext()
+        : consentModalityGuardContract !== undefined
+          ? consentModalityEffectContext(effects, consentModalityGuardContract)
+          : effects;
     const lifeContext = fuzzyLifeEnabled
       ? this.fuzzyLife!.promptContext(input.agentId, nowUtc)
       : undefined;
+    const additionalPromptSegments = [
+      ...(preparedContext?.additionalPromptSegments ?? []),
+      ...(consentModalityGuardContract === undefined
+        ? []
+        : [consentModalityPromptSegment(consentModalityGuardContract)]),
+    ];
     const assembledPrompt = assembleChatPrompt({
       character: spec,
       state: toFeatureState(state),
@@ -318,8 +355,10 @@ export class ConversationService {
                     careCues: preparedContext.continuity.careCues,
                   },
                 }),
-            additionalPromptSegments: preparedContext.additionalPromptSegments,
           }),
+      ...(additionalPromptSegments.length === 0
+        ? {}
+        : { additionalPromptSegments }),
       maxInputTokens: calculateLlmPromptTokenBudget(this.llm.capabilities),
       schedule: toFeatureScheduleItems(schedule),
       memories,
@@ -369,10 +408,9 @@ export class ConversationService {
           },
         }
       : decidedTurn;
-    const turn =
-      explicitFactReplyContract === undefined
-        ? candidateTurn
-        : applyExplicitFactReplyGuard({
+    const guardedTurn =
+      explicitFactReplyContract !== undefined
+        ? applyExplicitFactReplyGuard({
             turn: candidateTurn,
             contract: explicitFactReplyContract,
             inspectDecision: (decision) =>
@@ -387,7 +425,25 @@ export class ConversationService {
                   ? {}
                   : { causalContext: lifeContext }),
               }),
-          });
+          })
+        : consentModalityGuardContract !== undefined
+          ? applyConsentModalityGuard({
+              turn: candidateTurn,
+              contract: consentModalityGuardContract,
+              inspectDecision: (decision) =>
+                this.decisions.inspect({
+                  agentId: input.agentId,
+                  spec,
+                  decision,
+                  nowUtc,
+                  capabilities,
+                  userText: input.text,
+                  ...(lifeContext === undefined
+                    ? {}
+                    : { causalContext: lifeContext }),
+                }),
+            })
+          : candidateTurn;
     const preparedWorld = await this.worldEffects.resolve({
       sessionId,
       agentId: input.agentId,
@@ -402,14 +458,22 @@ export class ConversationService {
       recentMessages,
       replyStrategy: assembledPrompt.replyStrategy,
       effects: turnEffectContext,
-      turn,
+      turn: guardedTurn,
     });
-    const world =
+    const guardedWorld =
       explicitFactReplyContract === undefined
         ? preparedWorld
         : finalizeExplicitFactWorld({
             world: preparedWorld,
             contract: explicitFactReplyContract,
+          });
+    const finalized =
+      consentModalityGuardContract === undefined
+        ? { turn: guardedTurn, world: guardedWorld }
+        : finalizeConsentModalityWorld({
+            turn: guardedTurn,
+            world: guardedWorld,
+            contract: consentModalityGuardContract,
           });
     return this.commits.commit({
       sessionId,
@@ -425,8 +489,8 @@ export class ConversationService {
       ...(recallDiagnostic === undefined ? {} : { recallDiagnostic }),
       promptSegmentTrace: assembledPrompt.segmentTrace,
       ...(preparedContext === undefined ? {} : { preparedContext }),
-      turn,
-      world,
+      turn: finalized.turn,
+      world: finalized.world,
     });
   }
 }

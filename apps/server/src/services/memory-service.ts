@@ -25,6 +25,7 @@ import {
 } from "@personasim/contracts";
 
 import type { DatabaseStore } from "../db/store.js";
+import { isConsentDerivedSemanticCandidate } from "./consent-modality.js";
 import {
   deriveServerOwnedContinuityMemoryCandidates,
   deriveServerOwnedUserMemoryCandidates,
@@ -426,13 +427,32 @@ export function validateMergeAndPersistMemories(
           ),
         ]
       : [];
-  const candidates = [
-    ...serverOwnedCandidates,
-    ...(authoritativeMessage?.role === "user" &&
-    blocksUnverifiedModelMemoryCandidates(authoritativeMessage.content)
+  let modelCandidates = input.candidates;
+  if (authoritativeMessage?.role === "user") {
+    modelCandidates = blocksUnverifiedModelMemoryCandidates(
+      authoritativeMessage.content,
+    )
       ? []
-      : input.candidates),
-  ];
+      : input.candidates.flatMap((candidate) => {
+          if (
+            isConsentDerivedSemanticCandidate({
+              authoritativeText: authoritativeMessage.content,
+              candidateText: candidate.content,
+            })
+          ) {
+            return [];
+          }
+          const tags = candidate.tags.filter(
+            (tag) =>
+              !isConsentDerivedSemanticCandidate({
+                authoritativeText: authoritativeMessage.content,
+                candidateText: tag,
+              }),
+          );
+          return [{ ...candidate, tags }];
+        });
+  }
+  const candidates = [...serverOwnedCandidates, ...modelCandidates];
   if (candidates.length === 0) return [];
   const existingRecords = readActiveMemoryRecords(
     input.store,

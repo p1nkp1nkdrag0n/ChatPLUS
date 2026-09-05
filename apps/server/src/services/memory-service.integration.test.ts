@@ -504,6 +504,97 @@ describe("memory service evidence integration", () => {
     ]);
   });
 
+  it("does not promote speculative third-party consent into an explicit stable memory", () => {
+    const messageId = "message-speculative-consent";
+    const userText = "姨妈也许愿意让我单独看修复稿。";
+    insertMessage(database, messageId, "user", userText);
+
+    const persisted = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "姨妈愿意让用户单独看修复稿。",
+          tags: ["user_fact", "third_party_consent"],
+          reasonCode: "model_consent_summary",
+          reasonSummary:
+            "The model incorrectly upgraded possible consent to granted consent.",
+        }),
+        stableUserCandidate({
+          content: "姨妈已经授权用户公开和转发修复稿。",
+          tags: ["user_fact", "third_party_consent", "scope_expansion"],
+          reasonCode: "model_consent_scope_expansion",
+          reasonSummary:
+            "The model expanded a possible private view into publication and forwarding.",
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 4,
+      authoritativeMessageId: messageId,
+    });
+
+    expect(persisted).toEqual([]);
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM memories WHERE agent_id = ? AND content LIKE '%修复稿%'",
+        )
+        .get(AGENT_ID),
+    ).toEqual({ count: 0 });
+  });
+
+  it("does not treat a third-party consent question as memory evidence", () => {
+    const messageId = "message-consent-question";
+    insertMessage(database, messageId, "user", "姨妈愿意让我看修复稿吗？");
+
+    const persisted = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "姨妈已经授权用户查看修复稿。",
+          tags: ["user_fact", "third_party_consent"],
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 4,
+      authoritativeMessageId: messageId,
+    });
+
+    expect(persisted).toEqual([]);
+  });
+
+  it("keeps an unrelated explicit fact from a mixed speculative-consent turn", () => {
+    const messageId = "message-mixed-speculative-consent";
+    const userText = "姨妈也许愿意让我单独看修复稿；我最近很喜欢在阳台画画。";
+    insertMessage(database, messageId, "user", userText);
+
+    const persisted = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [
+        stableUserCandidate({
+          content: "姨妈已经授权用户单独看修复稿。",
+          tags: ["user_fact", "third_party_consent"],
+        }),
+        stableUserCandidate({
+          content: "我最近很喜欢在阳台画画。",
+          tags: ["user_preference", "drawing"],
+        }),
+      ],
+      nowUtc: NOW,
+      maxCandidates: 4,
+      authoritativeMessageId: messageId,
+    });
+
+    expect(
+      persisted.some((memory) => memory.content.includes("阳台画画")),
+    ).toBe(true);
+    expect(persisted.some((memory) => memory.content.includes("修复稿"))).toBe(
+      false,
+    );
+  });
+
   it("rejects runtime and system context that lacks content-grounded formal evidence", () => {
     const runtimeCandidate = stableUserCandidate({
       content: "The character's current energy is low.",

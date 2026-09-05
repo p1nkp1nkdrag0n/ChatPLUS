@@ -102,6 +102,11 @@ export class TurnCommitService {
           : {
               explicitFactReplyGuard: input.turn.explicitFactReplyGuardAudit,
             }),
+        ...(input.turn.consentModalityGuardAudit === undefined
+          ? {}
+          : {
+              consentModalityGuard: input.turn.consentModalityGuardAudit,
+            }),
         ...(input.recallDiagnostic === undefined
           ? {}
           : { memoryRecall: input.recallDiagnostic }),
@@ -118,7 +123,9 @@ export class TurnCommitService {
 
     const fuzzyLifeEnabled = this.options.lifePlanningMode === "fuzzy";
     const contentDerivedSemanticsAllowed =
-      input.turn.explicitFactReplyGuardAudit === undefined;
+      input.turn.explicitFactReplyGuardAudit === undefined &&
+      input.turn.consentModalityGuardAudit?.contentDerivedSemanticsSkipped !==
+        true;
     let effectsToApply = fuzzyLifeEnabled
       ? []
       : input.world.validation.accepted;
@@ -359,17 +366,31 @@ export class TurnCommitService {
   ): Promise<void> {
     if (
       this.contexts === undefined ||
-      input.turn.explicitFactReplyGuardAudit !== undefined
+      input.turn.explicitFactReplyGuardAudit !== undefined ||
+      input.turn.consentModalityGuardAudit?.contentDerivedSemanticsSkipped ===
+        true
     ) {
       return;
     }
     try {
+      const consentAudit = input.turn.consentModalityGuardAudit;
+      const independentText = consentAudit?.independentText.trim();
+      const continuityUserMessage =
+        consentAudit === undefined
+          ? input.userMessage
+          : { ...input.userMessage, content: independentText ?? "" };
+      const independentReplyText =
+        input.turn.consentModalityGuardAudit?.independentReplyText.trim();
+      const continuityAssistantMessage =
+        independentReplyText === undefined
+          ? input.assistantMessage
+          : { ...input.assistantMessage, content: independentReplyText };
       const continuity = await this.contexts.commitTurn({
         agentId: input.command.agentId,
         sessionId: input.sessionId,
         timezone: input.spec.identity.timezone,
-        userMessage: input.userMessage,
-        assistantMessage: input.assistantMessage,
+        userMessage: continuityUserMessage,
+        assistantMessage: continuityAssistantMessage,
         memoryIds: input.memoryIds,
         promptCueIds: input.preparedContext?.continuity.cueIds ?? [],
         ...(input.turn.continuityEffects === undefined

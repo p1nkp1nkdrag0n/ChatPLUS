@@ -4,6 +4,7 @@ import {
   type KeepsakeKind,
   type KeepsakeVisualSpec,
 } from "@personasim/contracts";
+import { renderKeepsakeV2 } from "./template-layout.js";
 
 export interface RenderedKeepsakeTemplate {
   readonly bytes: Uint8Array;
@@ -35,7 +36,10 @@ export class KeepsakeTemplateEngine {
     const height = dimension(
       input.height ?? (kind === "postcard" ? 800 : 1100),
     );
-    const svg = renderByKind(kind, input.title, spec, width, height);
+    const svg =
+      spec.templateVersion === `${kind}-v2`
+        ? renderKeepsakeV2(kind, input.title, spec, width, height)
+        : renderByKind(kind, input.title, spec, width, height);
     return {
       bytes: new TextEncoder().encode(svg),
       mimeType: "image/svg+xml",

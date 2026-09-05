@@ -777,6 +777,19 @@ describe("keepsake HTTP lifecycle", () => {
       sourceId: string;
     }>;
     expect(sourceRows).toHaveLength(1);
+    const letterKeepsake = app.personasim.keepsakes.getDetail(
+      sourceRows[0]!.keepsakeId,
+    ).keepsake;
+    expect(letterKeepsake.visualSpecJson.templateVersion).toBe(
+      `${letterKeepsake.kind}-v2`,
+    );
+    expect(letterKeepsake.visualSpecJson.caption).toContain("已读的书信");
+    expect(letterKeepsake.visualSpecJson.caption).not.toBe(
+      letterKeepsake.visualSpecJson.theme,
+    );
+    expect(JSON.stringify(letterKeepsake.visualSpecJson)).not.toContain(
+      "这是一封会在抵达后成为纪念物证据的信。",
+    );
     expect(sourceRows[0]).toMatchObject({
       sourceType: "letter",
       sourceId: incomingLetterId,

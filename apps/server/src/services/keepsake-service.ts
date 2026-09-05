@@ -666,9 +666,14 @@ function buildVisualSpec(
   const materials = materialForKind(kind);
   return KeepsakeVisualSpecSchema.parse({
     version: "keepsake_visual_v1",
-    templateVersion: `${kind}-v1`,
+    templateVersion: `${kind}-v2`,
     theme: source.label.slice(0, 240),
-    caption: source.summary.slice(0, 500),
+    // A letter's public projection deliberately contains no private body.
+    // Preserve that boundary; the artifact may describe its provenance only.
+    caption:
+      source.sourceType === "letter"
+        ? "这份纪念物源自一封已读的书信。\n留作这次通信的纪念。"
+        : source.summary.slice(0, 500),
     palette,
     materials,
     visualPrompt: VisualPromptSpecSchema.parse({

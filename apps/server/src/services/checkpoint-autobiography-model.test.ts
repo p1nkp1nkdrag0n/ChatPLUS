@@ -1,4 +1,5 @@
 import { StructuredOutputError } from "@personasim/providers";
+import { projectPromptTemporalData } from "@personasim/features";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -311,10 +312,28 @@ describe("checkpoint atomic report boundary", () => {
       expect(entry.temporalStatus).toBe("unknown");
       expect(entry.content).toContain("【长消息来源索引，内容尚未提炼】");
       expect(entry.content).toContain(originals[index]!.id);
-      expect(entry.content).toContain(originals[index]!.createdAtUtc);
+      expect(entry.content).not.toContain(originals[index]!.createdAtUtc);
+      expect(entry.evidence[0]!.recordedAtUtc).toBe(
+        originals[index]!.createdAtUtc,
+      );
       expect(entry.content).not.toContain("目前并未成功");
       expect(entry.evidence[0]!.sourceId).toBe(originals[index]!.id);
     }
+    const projected = projectPromptTemporalData(
+      {
+        timezone: "Asia/Shanghai",
+        temporalFrame: {
+          mode: "anchored_story",
+          eraLabel: "1951 年",
+          storyAnchorLocalDate: "1951-09-01",
+          systemAnchorUtc: originals[0]!.createdAtUtc,
+        },
+      },
+      proposal,
+    );
+    expect(JSON.stringify(projected)).not.toContain("2026");
+    expect(JSON.stringify(projected)).toContain("1951-09-01");
+    expect(proposal.entries[0]!.evidence[0]!.recordedAtUtc).toContain("2026");
   });
 
   it("accepts reliable activity summaries and explicit event times", async () => {

@@ -86,7 +86,10 @@ export function checkpointLongMessageReceipts(
     return [
       {
         evidenceId: evidence.id,
-        content: `【长消息来源索引，内容尚未提炼】${message.role === "user" ? "对方" : "我"}于 ${message.createdAtUtc} 发来一则长消息。完整原文保存在消息 ${message.id}；此条只记录发言存在，不概括其中的经历、计划或关系变化。`,
+        // Recording time stays in typed evidence metadata so anchored-story
+        // prompts can project it. Embedding host UTC in prose bypasses that
+        // clock projection and can invent a date in the character's world.
+        content: `【长消息来源索引，内容尚未提炼】${message.role === "user" ? "对方" : "我"}曾发来一则长消息。完整原文保存在消息 ${message.id}；此条只记录发言存在，不概括其中的经历、计划或关系变化。`,
       },
     ];
   });

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ServerConfig } from "../config.js";
 import {
@@ -16,12 +16,66 @@ import { LongRunV2Runtime } from "./companion-long-run-v2-runtime.js";
 const cleanup: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
 });
 
 describe("LongRunV2Runtime", () => {
+  it("keeps real local HTTP independent of Fetch port restrictions and Provider tracing", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "chatplus-runtime-v2-port-"),
+    );
+    cleanup.push(directory);
+    const databasePath = join(directory, "run.sqlite");
+    await createCompanionLongRunV2Baseline(databasePath);
+    // Reproduce Fetch's pre-network failure deterministically without taking
+    // a fixed port that may already belong to another process on the host.
+    const restrictedFetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(
+        new TypeError("fetch failed", { cause: new Error("bad port") }),
+      );
+    const runtime = new LongRunV2Runtime({
+      databasePath,
+      config: fixtureConfig(databasePath),
+      startAtUtc: LONG_RUN_V2_START_UTC,
+      initialSessionId: LONG_RUN_V2_SESSION_ID,
+    });
+    try {
+      await runtime.open();
+      const result = await runtime.sendMessage({
+        agentId: LONG_RUN_V2_AGENT_ID,
+        sessionKey: "S1",
+        text: "这是一条经过真实本地 HTTP 的中文消息。",
+        clientMessageId: "fetch-restricted-port",
+      });
+      expect(result.http.status).toBe(201);
+      expect(result.parsed?.userMessage.content).toBe(
+        "这是一条经过真实本地 HTTP 的中文消息。",
+      );
+      expect(result.parsed?.assistantMessage.content).toBeTruthy();
+      expect(
+        result.observations.logicalCalls.map((call) => call.purpose),
+      ).toContain("chat_turn");
+      expect(result.observations.providerAttempts).toEqual([]);
+      expect(runtime.nativeFetch).toBe(restrictedFetch);
+      expect(restrictedFetch).not.toHaveBeenCalled();
+      await runtime.restart();
+      const restarted = await runtime.sendMessage({
+        agentId: LONG_RUN_V2_AGENT_ID,
+        sessionKey: "S1",
+        text: "重启后仍然通过真实 HTTP 发送。",
+        clientMessageId: "fetch-restricted-port-restarted",
+      });
+      expect(restarted.http.status).toBe(201);
+      expect(restrictedFetch).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("uses real HTTP, captures the logical prompt and survives restart", async () => {
     const directory = await mkdtemp(join(tmpdir(), "chatplus-runtime-v2-"));
     cleanup.push(directory);

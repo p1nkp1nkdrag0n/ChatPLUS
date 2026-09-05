@@ -6,6 +6,12 @@ import {
   matchDilemmaOption,
 } from "./fuzzy-life-choice.js";
 import {
+  analyzeCharacterSupportOffer,
+  analyzeSpeakerSelfDisclosure,
+  supportTopicScore,
+  supportTopicText,
+} from "./fuzzy-life-support.js";
+import {
   ActionRecordSchema,
   DecisionRecordSchema,
   DilemmaEpisodeSchema,
@@ -568,6 +574,16 @@ export class FuzzyLifeService {
     recordedAtUtc: string;
     correlationId: string;
   }): ConversationLifeImpact {
+    // A user's offer can only refer to disclosures already visible before
+    // this reply. New assistant disclosures are recorded afterwards.
+    const participantImpact = this.recordParticipantTurn(input);
+    const characterImpact = this.recordCharacterDisclosure(input);
+    return { ...characterImpact, ...participantImpact };
+  }
+
+  private recordParticipantTurn(
+    input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+  ): ConversationLifeImpact {
     const spec = this.store.getCharacterSpec(input.agentId);
     if (!spec) throw notFound("Character");
     const local = projectCharacterTime(spec.identity, input.recordedAtUtc);
@@ -577,9 +593,18 @@ export class FuzzyLifeService {
     const dilemmaEvidenceText = supportSpeechAct.operativeDilemmaText;
     const dilemmaEvidenceClassifyText =
       supportSpeechAct.operativeDilemmaClassifyText;
+    const userDisclosure = analyzeSpeakerSelfDisclosure(
+      dilemmaEvidenceText,
+      true,
+    );
+    const userPressureClassifyText = analyzeLifeEvidence(
+      [userDisclosure.pressureText, userDisclosure.feedbackText]
+        .filter(Boolean)
+        .join("，"),
+    ).classifyText;
     const pressureFollowUp = this.applyPressureFollowUp(
       input,
-      dilemmaEvidenceClassifyText,
+      userPressureClassifyText,
       localDate,
       period,
     );
@@ -596,16 +621,31 @@ export class FuzzyLifeService {
       period,
     );
 
-    const characterDilemma = this.selectOpenDilemma(
-      input,
-      "character",
-      dilemmaEvidenceClassifyText,
-      dilemmaEvidenceText,
-    );
+    const offer = analyzeCharacterSupportOffer(input.userText);
+    const characterScopeText = offer?.scopeText ?? dilemmaEvidenceText;
+    const characterDilemma =
+      this.selectOpenDilemma(
+        input,
+        "character",
+        analyzeLifeEvidence(characterScopeText).classifyText,
+        characterScopeText,
+      ) ??
+      (offer?.contextual
+        ? exactlyOne(
+            this.repository
+              .listOpenDilemmas(input.agentId, 32)
+              .filter(
+                (episode) =>
+                  episode.subject === "character" &&
+                  this.hasRecentDilemmaContext(episode, input),
+              ),
+          )
+        : undefined);
     if (
       dilemmaEvidenceClassifyText.trim() !== "" &&
       characterDilemma !== undefined &&
-      isCharacterDilemmaTurn(dilemmaEvidenceClassifyText, characterDilemma)
+      (offer !== undefined ||
+        isCharacterDilemmaTurn(dilemmaEvidenceClassifyText, characterDilemma))
     ) {
       const characterImpact = this.recordCharacterDirectedTurn(
         input,
@@ -615,13 +655,35 @@ export class FuzzyLifeService {
         localDate,
         period,
       );
-      return {
-        ...followUpImpact,
-        ...characterImpact,
-        ...(pressureFollowUp.episodeId === undefined
-          ? {}
-          : { pressureEpisodeId: pressureFollowUp.episodeId }),
-      };
+      if (!analyzeSpeakerSelfDisclosure(input.userText).pressureText)
+        return {
+          ...followUpImpact,
+          ...characterImpact,
+          ...(pressureFollowUp.episodeId === undefined
+            ? {}
+            : { pressureEpisodeId: pressureFollowUp.episodeId }),
+        };
+    }
+
+    if (offer !== undefined && characterDilemma === undefined) {
+      const pressure = this.selectCharacterPressure(
+        input,
+        offer.scopeText,
+        offer.contextual,
+      );
+      if (pressure !== undefined) {
+        const characterImpact = this.recordCharacterDirectedTurn(
+          input,
+          offer.sourceText,
+          offer.classifyText,
+          undefined,
+          localDate,
+          period,
+          pressure,
+        );
+        if (!analyzeSpeakerSelfDisclosure(input.userText).pressureText)
+          return { ...followUpImpact, ...characterImpact };
+      }
     }
 
     if (isUserOwnedDecision(dilemmaEvidenceClassifyText)) {
@@ -694,8 +756,7 @@ export class FuzzyLifeService {
       supportSpeechAct.dilemmaLike ||
       (explicitSupport && mode !== "listen_only");
     const pressureLike =
-      isPressureDisclosure(dilemmaEvidenceClassifyText) &&
-      !pressureFollowUp.updated;
+      userDisclosure.pressureText !== "" && !pressureFollowUp.updated;
     const shouldRecordSupport =
       dilemmaLike ||
       pressureLike ||
@@ -735,17 +796,17 @@ export class FuzzyLifeService {
         ...(dilemma === undefined ? {} : { dilemmaId: dilemma.id }),
         subject: "user",
         pressureKind: pressureKind(domain),
-        triggerSummary: dilemmaEvidenceText,
+        triggerSummary: userDisclosure.pressureText,
         status: "open",
         initialPressure:
-          parseScaleMetric(dilemmaEvidenceClassifyText, "pressure") ?? 0.72,
+          parseScaleMetric(userPressureClassifyText, "pressure") ?? 0.72,
         currentPressure:
-          parseScaleMetric(dilemmaEvidenceClassifyText, "pressure") ?? 0.72,
+          parseScaleMetric(userPressureClassifyText, "pressure") ?? 0.72,
         initialClarity:
-          parseScaleMetric(dilemmaEvidenceClassifyText, "clarity") ??
+          parseScaleMetric(userPressureClassifyText, "clarity") ??
           (dilemmaLike ? 0.3 : 0.45),
         currentClarity:
-          parseScaleMetric(dilemmaEvidenceClassifyText, "clarity") ??
+          parseScaleMetric(userPressureClassifyText, "clarity") ??
           (dilemmaLike ? 0.3 : 0.45),
         initialFeltUnderstood: 0.2,
         currentFeltUnderstood: 0.2,
@@ -1195,6 +1256,227 @@ export class FuzzyLifeService {
     };
   }
 
+  private recordCharacterDisclosure(
+    input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+  ): ConversationLifeImpact {
+    const evidence = analyzeSpeakerSelfDisclosure(input.assistantText);
+    if (
+      !evidence.dilemmaText &&
+      !evidence.pressureText &&
+      !evidence.feedbackText
+    )
+      return {};
+    const spec = this.store.getCharacterSpec(input.agentId);
+    if (!spec) throw notFound("Character");
+    const local = projectCharacterTime(spec.identity, input.recordedAtUtc);
+    const period = dayPeriod(local.hour);
+    let dilemma: DilemmaEpisode | undefined;
+    if (evidence.dilemmaText) {
+      const classifyText = analyzeLifeEvidence(
+        evidence.dilemmaText,
+      ).classifyText;
+      dilemma = this.selectOpenDilemma(
+        input,
+        "character",
+        classifyText,
+        evidence.dilemmaText,
+      );
+      if (dilemma === undefined) {
+        dilemma = this.createUserDilemma(
+          input,
+          evidence.dilemmaText,
+          classifyText,
+          inferDomain(classifyText),
+          local.localDate,
+          period,
+          "character",
+        );
+      } else if (!dilemma.sourceMessageIds.includes(input.assistantMessageId)) {
+        dilemma = DilemmaEpisodeSchema.parse({
+          ...dilemma,
+          sourceMessageIds: [
+            ...dilemma.sourceMessageIds,
+            input.assistantMessageId,
+          ],
+          updatedAtUtc: input.recordedAtUtc,
+        });
+        this.repository.updateDilemma(dilemma);
+      }
+    }
+    const pressureText = [evidence.pressureText, evidence.feedbackText]
+      .filter(Boolean)
+      .join("，");
+    if (!pressureText)
+      return dilemma === undefined ? {} : { dilemmaId: dilemma.id };
+    const classifyText = analyzeLifeEvidence(pressureText).classifyText;
+    const pressure = this.selectCharacterPressure(
+      input,
+      pressureText,
+      supportTopicText(classifyText) === "",
+      dilemma,
+    );
+    const sourceId = input.assistantMessageId;
+    if (pressure?.sourceMessageIds.includes(sourceId))
+      return {
+        ...(dilemma ? { dilemmaId: dilemma.id } : {}),
+        pressureEpisodeId: pressure.id,
+      };
+    const explicitPressure = parseScaleMetric(classifyText, "pressure");
+    const explicitClarity = parseScaleMetric(classifyText, "clarity");
+    if (pressure === undefined && !evidence.pressureText)
+      return dilemma === undefined ? {} : { dilemmaId: dilemma.id };
+    const feedback = analyzeLifeEvidence(evidence.feedbackText).clauses;
+    const improving = feedback.some(
+      (clause) => clause.pressureFeedback && clause.valence === "positive",
+    );
+    const worsening = feedback.some(
+      (clause) => clause.pressureFeedback && clause.valence === "negative",
+    );
+    const notUnderstood =
+      /没(?:有)?被(?:听见|理解)|没(?:有)?被你听见|你没听懂/u.test(classifyText);
+    const understood =
+      !notUnderstood &&
+      /被理解|被(?:你)?听见|谢谢你.*(?:听|陪)/u.test(classifyText);
+    const currentPressure =
+      explicitPressure ??
+      clamp01(
+        (pressure?.currentPressure ?? 0.72) +
+          (pressure && improving ? -0.2 : pressure && worsening ? 0.12 : 0),
+      );
+    const currentClarity =
+      explicitClarity ??
+      clamp01(
+        (pressure?.currentClarity ?? (dilemma ? 0.3 : 0.45)) +
+          (pressure && improving ? 0.22 : pressure && worsening ? -0.1 : 0),
+      );
+    const next = PressureEpisodeSchema.parse({
+      ...(pressure ?? {}),
+      id:
+        pressure?.id ?? stableId("pressure", `${input.sessionId}:${sourceId}`),
+      agentId: input.agentId,
+      sessionId: pressure?.sessionId ?? input.sessionId,
+      ...(dilemma === undefined ? {} : { dilemmaId: dilemma.id }),
+      subject: "character",
+      pressureKind:
+        pressure?.pressureKind ??
+        pressureKind(inferDomain(evidence.dilemmaText || classifyText)),
+      triggerSummary: pressure?.triggerSummary ?? evidence.pressureText,
+      status:
+        currentPressure === 0
+          ? "resolved"
+          : pressure && currentPressure < pressure.currentPressure
+            ? "improving"
+            : pressure && currentPressure > pressure.currentPressure
+              ? "worsening"
+              : (pressure?.status ?? "open"),
+      initialPressure: pressure?.initialPressure ?? currentPressure,
+      currentPressure,
+      initialClarity: pressure?.initialClarity ?? currentClarity,
+      currentClarity,
+      initialFeltUnderstood: pressure?.initialFeltUnderstood ?? 0.2,
+      currentFeltUnderstood: clamp01(
+        (pressure?.currentFeltUnderstood ?? 0.2) +
+          (pressure && understood
+            ? 0.2
+            : pressure && notUnderstood
+              ? -0.12
+              : 0),
+      ),
+      interventionIds: pressure?.interventionIds ?? [],
+      outcomeIds: pressure?.outcomeIds ?? [],
+      sourceMessageIds: [...(pressure?.sourceMessageIds ?? []), sourceId],
+      latestEvidenceMessageId: sourceId,
+      ...(currentPressure === 0
+        ? { resolutionEvidenceMessageId: sourceId }
+        : {}),
+      effectiveLocalDate: local.localDate,
+      effectivePeriod: period,
+      temporalPrecision: "period",
+      recordedAtUtc: pressure?.recordedAtUtc ?? input.recordedAtUtc,
+      updatedAtUtc: input.recordedAtUtc,
+      idempotencyKey:
+        pressure?.idempotencyKey ?? `pressure:${input.sessionId}:${sourceId}`,
+      schemaVersion: 1,
+    });
+    if (pressure) this.repository.updatePressure(next);
+    else this.repository.insertPressure(next);
+    this.recordEvent({
+      agentId: input.agentId,
+      streamType: "pressure_episode",
+      streamId: next.id,
+      eventType: pressure
+        ? "life.pressure_updated_from_character_evidence"
+        : "life.pressure_disclosed_by_character",
+      recordedAtUtc: input.recordedAtUtc,
+      effectiveAtUtc: input.recordedAtUtc,
+      payload: {
+        pressureEpisodeId: next.id,
+        dilemmaId: next.dilemmaId,
+        subject: "character",
+        evidenceMessageId: sourceId,
+        before: pressure ? pressureLifecycleSnapshot(pressure) : undefined,
+        after: pressureLifecycleSnapshot(next),
+      },
+      correlationId: input.correlationId,
+      causationId: sourceId,
+      idempotencyKey: `pressure-character-evidence:${next.id}:${sourceId}`,
+    });
+    return {
+      ...(dilemma ? { dilemmaId: dilemma.id } : {}),
+      pressureEpisodeId: next.id,
+    };
+  }
+
+  private selectCharacterPressure(
+    input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    text: string,
+    contextual: boolean,
+    dilemma?: DilemmaEpisode,
+  ): PressureEpisode | undefined {
+    const candidates = this.repository
+      .listOpenPressures(input.agentId, 32)
+      .filter(
+        (episode) =>
+          episode.subject === "character" &&
+          (dilemma === undefined || episode.dilemmaId === dilemma.id),
+      );
+    if (dilemma !== undefined) return exactlyOne(candidates);
+    const scored = candidates
+      .map((episode) => ({
+        episode,
+        score: supportTopicScore(text, episode.triggerSummary),
+      }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score);
+    if (scored[0] && (!scored[1] || scored[0].score > scored[1].score))
+      return scored[0].episode;
+    if (!contextual) return undefined;
+    const recent = this.store
+      .listMessages(input.sessionId, 18)
+      .filter(
+        (message) =>
+          message.id !== input.userMessageId &&
+          message.id !== input.assistantMessageId,
+      )
+      .slice(-8);
+    return exactlyOne(
+      candidates.filter(
+        (episode) =>
+          episode.sessionId === input.sessionId &&
+          recent.some(
+            (message) =>
+              episode.sourceMessageIds.includes(message.id) &&
+              Date.parse(input.recordedAtUtc) -
+                Date.parse(message.createdAtUtc) >=
+                0 &&
+              Date.parse(input.recordedAtUtc) -
+                Date.parse(message.createdAtUtc) <=
+                6 * 60 * 60 * 1_000,
+          ),
+      ),
+    );
+  }
+
   private createUserDilemma(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
     evidenceText: string,
@@ -1202,18 +1484,19 @@ export class FuzzyLifeService {
     domain: LifeDomain,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
+    subject: "user" | "character" = "user",
   ): DilemmaEpisode | undefined {
     const choices = extractDilemmaChoices(evidenceText, classifyText);
     if (choices === undefined) return undefined;
     const dilemmaId = stableId(
       "dilemma",
-      `${input.sessionId}:${input.userMessageId}`,
+      `${input.sessionId}:${subject === "user" ? input.userMessageId : input.assistantMessageId}`,
     );
     const dilemma = DilemmaEpisodeSchema.parse({
       id: dilemmaId,
       agentId: input.agentId,
       sessionId: input.sessionId,
-      subject: "user",
+      subject,
       title: shortTitle(evidenceText),
       summary: evidenceText,
       domain,
@@ -1221,19 +1504,21 @@ export class FuzzyLifeService {
         id: stableId("option", `${dilemmaId}:${index}`),
         label,
         description: isUnexplainedOption(label)
-          ? "用户尚未说明这个选项。"
+          ? `${subject === "user" ? "用户" : "角色"}尚未说明这个选项。`
           : label,
         likelyTradeoffs: ["具体收益与代价尚待讨论"],
         valuesAtStake: inferDilemmaValues(classifyText),
       })),
       status: "open",
-      sourceMessageIds: [input.userMessageId],
+      sourceMessageIds: [
+        subject === "user" ? input.userMessageId : input.assistantMessageId,
+      ],
       effectiveLocalDate: localDate,
       effectivePeriod: period,
       temporalPrecision: "period",
       recordedAtUtc: input.recordedAtUtc,
       updatedAtUtc: input.recordedAtUtc,
-      idempotencyKey: `dilemma:${input.sessionId}:${input.userMessageId}`,
+      idempotencyKey: `dilemma:${input.sessionId}:${subject === "user" ? input.userMessageId : input.assistantMessageId}`,
       schemaVersion: 1,
     });
     this.repository.insertDilemma(dilemma);
@@ -1334,31 +1619,38 @@ export class FuzzyLifeService {
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
     evidenceText: string,
     classifyText: string,
-    dilemma: DilemmaEpisode,
+    dilemma: DilemmaEpisode | undefined,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
+    pressure?: PressureEpisode,
   ): ConversationLifeImpact {
     const wantsOwnDecision = isCharacterSubjectDecisionRequest(classifyText);
+    const offer = analyzeCharacterSupportOffer(evidenceText);
     const offersSupport =
-      wantsOwnDecision || isUserAdviceToCharacter(classifyText);
-    if (!offersSupport) return { dilemmaId: dilemma.id };
+      wantsOwnDecision ||
+      offer !== undefined ||
+      isUserAdviceToCharacter(classifyText);
+    if (!offersSupport) return dilemma ? { dilemmaId: dilemma.id } : {};
 
     let mode: SupportMode = wantsOwnDecision
       ? "deliberate"
-      : userToCharacterSupportMode(classifyText);
-    const selectedOption = matchDilemmaOption(
-      dilemma,
-      classifyText,
-      mode === "recommend",
-    );
+      : (offer?.mode ?? userToCharacterSupportMode(classifyText));
+    const selectedOption =
+      dilemma === undefined
+        ? undefined
+        : matchDilemmaOption(dilemma, classifyText, mode === "recommend");
     if (mode === "recommend" && selectedOption === undefined)
       mode = "deliberate";
-    const pressureEpisodeId = this.repository
-      .listOpenPressures(input.agentId, 12)
-      .find(
-        (episode) =>
-          episode.subject === "character" && episode.dilemmaId === dilemma.id,
-      )?.id;
+    const pressureEpisodeId =
+      pressure?.id ??
+      this.repository
+        .listOpenPressures(input.agentId, 12)
+        .find(
+          (episode) =>
+            dilemma !== undefined &&
+            episode.subject === "character" &&
+            episode.dilemmaId === dilemma.id,
+        )?.id;
     const interventionId = stableId(
       "support",
       `${input.sessionId}:${input.userMessageId}:user-character`,
@@ -1368,12 +1660,12 @@ export class FuzzyLifeService {
         id: interventionId,
         agentId: input.agentId,
         sessionId: input.sessionId,
-        dilemmaId: dilemma.id,
+        ...(dilemma === undefined ? {} : { dilemmaId: dilemma.id }),
         ...(pressureEpisodeId === undefined ? {} : { pressureEpisodeId }),
         mode,
         offeredBy: "user",
         receivedBy: "character",
-        summary: evidenceText,
+        summary: offer?.sourceText ?? evidenceText,
         intendedEffect: supportIntendedEffect(mode, "character"),
         ...(mode === "recommend"
           ? { recommendationOptionId: selectedOption?.id }
@@ -1395,9 +1687,33 @@ export class FuzzyLifeService {
       );
     }
 
-    if (!wantsOwnDecision || input.assistantText.trim() === "") {
+    this.recordEvent({
+      agentId: input.agentId,
+      streamType: "life_decision",
+      streamId: dilemma?.id ?? pressureEpisodeId ?? interventionId,
+      eventType: "life.support_recorded",
+      recordedAtUtc: input.recordedAtUtc,
+      effectiveAtUtc: input.recordedAtUtc,
+      payload: {
+        dilemmaId: dilemma?.id,
+        pressureEpisodeId,
+        interventionId,
+        offeredBy: "user",
+        receivedBy: "character",
+        mode,
+      },
+      correlationId: input.correlationId,
+      causationId: input.userMessageId,
+      idempotencyKey: `support:user-character:${input.sessionId}:${input.userMessageId}`,
+    });
+
+    if (
+      dilemma === undefined ||
+      !wantsOwnDecision ||
+      input.assistantText.trim() === ""
+    ) {
       return {
-        dilemmaId: dilemma.id,
+        ...(dilemma === undefined ? {} : { dilemmaId: dilemma.id }),
         ...(pressureEpisodeId === undefined ? {} : { pressureEpisodeId }),
         interventionId,
       };

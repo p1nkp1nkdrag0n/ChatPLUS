@@ -1,4 +1,5 @@
 import { matchDilemmaOption } from "./fuzzy-life-choice.js";
+import { analyzeCharacterSupportOffer } from "./fuzzy-life-support.js";
 import type {
   DecisionRecord,
   DilemmaEpisode,
@@ -1043,9 +1044,7 @@ export function isCharacterSubjectDecisionRequest(text: string): boolean {
 }
 
 export function isUserAdviceToCharacter(text: string): boolean {
-  return /如果是我|我的建议|这是我的建议|建议你|我会优先|我会选择|我会选|你可以接受|部分接受|拒绝/u.test(
-    text,
-  );
+  return analyzeCharacterSupportOffer(text)?.mode === "recommend";
 }
 
 export function isCharacterDilemmaTurn(

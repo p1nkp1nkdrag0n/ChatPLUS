@@ -443,7 +443,7 @@ function topicTokens(text: string): Set<string> {
   );
 }
 
-function topicOverlap(left: string, right: string): number {
+export function topicOverlap(left: string, right: string): number {
   const leftTokens = topicTokens(left);
   const rightTokens = topicTokens(right);
   return [...leftTokens]

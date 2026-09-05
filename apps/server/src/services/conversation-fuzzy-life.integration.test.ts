@@ -82,6 +82,373 @@ describe("fuzzy-life conversation integration", () => {
     vi.restoreAllMocks();
   });
 
+  it("records a naturally disclosed character dilemma, user support, and the character's own choice", async () => {
+    app = await createTestApp({
+      semanticReply: ({ userText }) =>
+        userText.includes("最近怎么样")
+          ? "我最近为《夜航》的剪辑发愁。我在重剪结尾和保留原版之间犹豫，压力是 7/10。"
+          : userText.includes("作决定")
+            ? "我选择保留原版，先守住这部片子的节奏。这个决定由我承担。"
+            : "我现在轻松多了，谢谢你陪我。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    const disclosure = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "natural-character-disclosure",
+      "最近怎么样？",
+    );
+    const dilemma = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    );
+    const pressure = latestJson<PressureEpisode>(
+      app,
+      "pressure_episodes",
+      "episode_json",
+    );
+    expect(dilemma).toMatchObject({
+      subject: "character",
+      sourceMessageIds: [disclosure.assistantMessage.id],
+    });
+    expect(dilemma.options.map((option) => option.label)).toEqual([
+      "重剪结尾",
+      "保留原版",
+    ]);
+    expect(dilemma.summary).toContain("《夜航》");
+    expect(pressure).toMatchObject({
+      subject: "character",
+      dilemmaId: dilemma.id,
+      sourceMessageIds: [disclosure.assistantMessage.id],
+      currentPressure: 0.7,
+    });
+    expect(scalarCount(app, "support_interventions")).toBe(0);
+    const support = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "natural-user-listening",
+      "关于《夜航》，你可以慢慢说，我在听。",
+    );
+    const intervention = latestJson<SupportIntervention>(
+      app,
+      "support_interventions",
+      "intervention_json",
+    );
+    expect(intervention).toMatchObject({
+      offeredBy: "user",
+      receivedBy: "character",
+      mode: "listen_only",
+      dilemmaId: dilemma.id,
+      pressureEpisodeId: pressure.id,
+      sourceMessageId: support.userMessage.id,
+    });
+    const after = latestJson<PressureEpisode>(
+      app,
+      "pressure_episodes",
+      "episode_json",
+    );
+    expect(after.id).toBe(pressure.id);
+    expect(after.currentPressure).toBeLessThan(pressure.currentPressure);
+    expect(after.sourceMessageIds).toContain(support.assistantMessage.id);
+    expect(after.sourceMessageIds).not.toContain(support.userMessage.id);
+    const choice = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "natural-character-choice",
+      "关于《夜航》的结尾，请按你自己的价值作决定。",
+    );
+    expect(choice.assistantMessage.content).toContain("保留原版");
+    expect(
+      latestJson<DecisionRecord>(app, "decision_records", "decision_json"),
+    ).toMatchObject({
+      dilemmaId: dilemma.id,
+      subject: "character",
+      authority: "subject",
+      decidedBy: "character",
+      selectedOptionId: dilemma.options[1]!.id,
+    });
+    expect(scalarCount(app, "dilemma_episodes")).toBe(1);
+  });
+
+  it("supports character pressure without inventing a dilemma or retroactive support", async () => {
+    let replies = 0;
+    app = await createTestApp({
+      semanticReply: () =>
+        ++replies === 1
+          ? "我今天剪片有点累，肩膀一直绷着。"
+          : "我现在轻松多了，谢谢你听我说。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "before-disclosure-offer",
+      "你可以慢慢说，我在听。",
+    );
+    expect(scalarCount(app, "support_interventions")).toBe(0);
+    expect(scalarCount(app, "dilemma_episodes")).toBe(0);
+    const initial = latestJson<PressureEpisode>(
+      app,
+      "pressure_episodes",
+      "episode_json",
+    );
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "after-disclosure-offer",
+      "你不用急着解决，我陪着你。",
+    );
+    const intervention = latestJson<SupportIntervention>(
+      app,
+      "support_interventions",
+      "intervention_json",
+    );
+    expect(intervention).toMatchObject({
+      offeredBy: "user",
+      receivedBy: "character",
+      mode: "listen_only",
+      pressureEpisodeId: initial.id,
+      sourceMessageId: turn.userMessage.id,
+    });
+    expect(intervention.dilemmaId).toBeUndefined();
+    expect(scalarCount(app, "pressure_episodes")).toBe(1);
+    expect(
+      latestJson<PressureEpisode>(app, "pressure_episodes", "episode_json")
+        .sourceMessageIds,
+    ).toContain(turn.assistantMessage.id);
+  });
+
+  it("keeps both speakers' pressure scales and support sources separate in one turn", async () => {
+    let replies = 0;
+    app = await createTestApp({
+      semanticReply: () =>
+        ++replies === 1
+          ? "我最近剪片很累，压力 6/10。"
+          : "我现在压力 3/10。你的考试也很辛苦，我在听你说。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "mixed-initial",
+      "最近轮到你聊聊了。",
+    );
+    const initial = latestJson<PressureEpisode>(
+      app,
+      "pressure_episodes",
+      "episode_json",
+    );
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "mixed-both",
+      "你可以慢慢说，我在听。我也因为考试焦虑，压力 8/10。",
+    );
+    const rows = new LifeRepository(
+      app.personasim.store.database,
+    ).listOpenPressures(character.id, 10);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.subject === "character")).toMatchObject({
+      id: initial.id,
+      currentPressure: 0.3,
+      latestEvidenceMessageId: turn.assistantMessage.id,
+    });
+    expect(rows.find((row) => row.subject === "user")).toMatchObject({
+      currentPressure: 0.8,
+      sourceMessageIds: [turn.userMessage.id],
+    });
+    const supports = new LifeRepository(
+      app.personasim.store.database,
+    ).listRecentInterventions(character.id, 10);
+    expect(supports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          offeredBy: "user",
+          receivedBy: "character",
+          sourceMessageId: turn.userMessage.id,
+        }),
+        expect.objectContaining({
+          offeredBy: "character",
+          receivedBy: "user",
+          sourceMessageId: turn.assistantMessage.id,
+        }),
+      ]),
+    );
+  });
+
+  it.each([
+    "如果我是你，我在重剪结尾和保留原版之间犹豫，也会很焦虑。",
+    "你说你在重剪结尾和保留原版之间犹豫，你最近很焦虑。",
+    "我听朋友说他在重剪结尾和保留原版之间犹豫，他最近很焦虑。",
+    "我知道你最近很累，压力很大。",
+    "我觉得你最近很焦虑。",
+    "我听得出你很累。",
+  ])(
+    "does not publish hypothetical or reported character disclosures: %s",
+    async (reply) => {
+      app = await createTestApp({ semanticReply: () => reply });
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "non-owned-character",
+        "聊聊你刚才想到的事情。",
+      );
+      expect(scalarCount(app, "dilemma_episodes")).toBe(0);
+      expect(scalarCount(app, "pressure_episodes")).toBe(0);
+      expect(scalarCount(app, "support_interventions")).toBe(0);
+    },
+  );
+
+  it.each([
+    "我陪你梳理外包申请的事情。",
+    "关于外包申请，你可以慢慢说，我在听。",
+  ])(
+    "does not redirect a newly named offer to the character's old pressure: %s",
+    async (text) => {
+      let replies = 0;
+      app = await createTestApp({
+        semanticReply: () =>
+          ++replies === 1 ? "我最近剪片很累。" : "我听见你的意思了。",
+      });
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "old-character-pressure",
+        "今天忙什么？",
+      );
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "different-character-support",
+        text,
+      );
+      expect(scalarCount(app, "support_interventions")).toBe(0);
+      expect(scalarCount(app, "pressure_episodes")).toBe(1);
+    },
+  );
+
+  it.each(["elapsed_time", "new_session"] as const)(
+    "does not attach bare listening to stale character evidence after %s",
+    async (boundary) => {
+      const clock = new FakeClock(START_UTC);
+      let replies = 0;
+      app = await createTestApp(
+        {
+          semanticReply: () =>
+            ++replies === 1 ? "我最近剪片很累。" : "谢谢你。",
+        },
+        clock,
+      );
+      const character = await createAndPublish(app);
+      let sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "stale-character-pressure",
+        "今天忙什么？",
+      );
+      if (boundary === "elapsed_time") clock.advance({ days: 2 });
+      else sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "stale-character-offer",
+        "你可以慢慢说，我在听。",
+      );
+      expect(scalarCount(app, "support_interventions")).toBe(0);
+      expect(scalarCount(app, "pressure_episodes")).toBe(1);
+    },
+  );
+
+  it.each(["我没有被理解。", "我没被你听见。"])(
+    "uses negative character feedback without inflating felt understanding: %s",
+    async (reply) => {
+      let replies = 0;
+      app = await createTestApp({
+        semanticReply: () => (++replies === 1 ? "我最近剪片很累。" : reply),
+      });
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "negative-feedback-initial",
+        "最近怎么样？",
+      );
+      const initial = latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      );
+      const feedback = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "negative-feedback-reply",
+        "你可以慢慢说，我在听。",
+      );
+      const after = latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      );
+      expect(after.id).toBe(initial.id);
+      expect(after.currentFeltUnderstood).toBeLessThan(
+        initial.currentFeltUnderstood,
+      );
+      expect(after.sourceMessageIds).toContain(feedback.assistantMessage.id);
+    },
+  );
+
+  it("does not label the user's separate self-directed choice as support for the character", async () => {
+    let replies = 0;
+    app = await createTestApp({
+      semanticReply: () =>
+        ++replies === 1
+          ? "我在重剪结尾和保留原版之间犹豫，压力 6/10。"
+          : "我听到了。",
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "self-choice-role-context",
+      "最近怎么样？",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "self-choice-user",
+      "我会选择先解决我自己的考试压力。",
+    );
+    expect(scalarCount(app, "support_interventions")).toBe(0);
+    expect(scalarCount(app, "decision_records")).toBe(0);
+  });
+
   it("keeps a new delegated scope separate and records the actually chosen second option", async () => {
     app = await createTestApp({
       selectDelegatedDecision: () => "整理十张照片",

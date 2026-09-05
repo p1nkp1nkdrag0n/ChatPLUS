@@ -7,7 +7,11 @@ import type {
 } from "@personasim/contracts";
 
 import { clamp01, inferDomain } from "./fuzzy-life-planning.js";
-import { independentConsentEvidenceText } from "./consent-modality.js";
+import {
+  analyzeLifeEvidence,
+  evidenceSubject,
+  evidenceValence,
+} from "./fuzzy-life-evidence.js";
 
 function analyzeDelegatedDecision(text: string): boolean {
   const sentences = semanticSentences(text);
@@ -581,8 +585,8 @@ export function isIdentityFacetOfLifeChoice(text: string): boolean {
 }
 
 export function isPressureFeedbackText(text: string): boolean {
-  return /好多了|轻松多了|没那么(?:焦虑|难受|乱)|想清楚了|清楚多了|被(?:你)?听见|被理解|谢谢你.*(?:听|陪)|更焦虑|更难受|更糟|还是很乱|完全没用|压力更大|没(?:有)?被(?:听见|理解)/u.test(
-    text,
+  return analyzeLifeEvidence(text).clauses.some(
+    (clause) => clause.pressureFeedback,
   );
 }
 
@@ -1488,88 +1492,16 @@ function isSpeculativeLifeEvidence(text: string): boolean {
   );
 }
 
-const ACTION_SUBJECT_CUE =
-  /提交|办理|报名|申请|搬走|搬家|分手|辞职|离职|答应|拒绝|开始做|完成|做了|去了|联系|签了|取消|执行|行动|发(?:出|给|了)|提出|确认|启动/u;
-const OUTCOME_SUBJECT_CUE =
-  /决定|选择|提交|申请|搬走|搬家|分手|辞职|离职|行动|执行|结果|反馈|后果|同意|拒绝|通过|失败|成功|变得|收到|通知|轻松|开心|难受|后悔|更好|更糟/u;
-
 export function actionEvidenceSubject(text: string): LifeEvidenceSubject {
-  return inferLeadingEvidenceSubject(text, ACTION_SUBJECT_CUE, true);
+  return evidenceSubject(analyzeLifeEvidence(text), "action");
 }
 
 export function outcomeEvidenceSubject(text: string): LifeEvidenceSubject {
-  const outcomeSubject = inferLeadingEvidenceSubject(
-    text,
-    OUTCOME_SUBJECT_CUE,
-    false,
-  );
-  return outcomeSubject === "unspecified"
-    ? inferLeadingEvidenceSubject(text, ACTION_SUBJECT_CUE, false)
-    : outcomeSubject;
-}
-
-function inferLeadingEvidenceSubject(
-  text: string,
-  cue: RegExp,
-  includeOrganizationActors: boolean,
-): LifeEvidenceSubject {
-  const subjects = new Set<Exclude<LifeEvidenceSubject, "unspecified">>();
-  for (const rawClause of text.split(/[，,。；;：:!?！？\n]+/u)) {
-    if (!cue.test(rawClause)) continue;
-    const clause = rawClause
-      .trim()
-      .replace(/^(?:但(?:是)?|不过|可是|而且|然后|随后)\s*/u, "")
-      .replace(
-        /^(?:(?:后来|今天|现在|目前|最终|正式|刚刚|刚才|这次|几天后|一周后)\s*)+/u,
-        "",
-      );
-    const thirdParty = includeOrganizationActors
-      ? /^(?:我(?:的)?(?:朋友|同事|家人|伴侣|父母|母亲|父亲)|朋友|同事|家人|伴侣|父母|母亲|父亲|老师|医生|经理|公司|团队|平台|对方|他|她)/u
-      : /^(?:我(?:的)?(?:朋友|同事|家人|伴侣|父母|母亲|父亲)|朋友|同事|家人|伴侣|父母|母亲|父亲|老师|医生|经理|他|她)/u;
-    if (thirdParty.test(clause)) {
-      subjects.add("third_party");
-    } else if (
-      /^(?:我(?!的?(?:朋友|同事|家人|伴侣|父母|母亲|父亲))|我们)/u.test(clause)
-    ) {
-      subjects.add("user");
-    } else if (/^(?:你|角色)/u.test(clause)) {
-      subjects.add("character");
-    }
-  }
-  if (subjects.size === 0) return "unspecified";
-  if (subjects.size > 1) return "third_party";
-  return [...subjects][0]!;
-}
-
-function hasNonUserReflectionSubject(text: string): boolean {
-  return /(?:我(?:的)?(?:朋友|同事|家人|伴侣|父母|母亲|父亲)|朋友|同事|家人|伴侣|父母|母亲|父亲|老师|医生|经理|他|她|你|角色)[^，,。；;!?！？\n]{0,24}(?:回头看|现在想想|觉得这个决定|对这个选择|后悔|庆幸|才明白|想明白|理解是|重新想)/u.test(
-    text,
-  );
+  return evidenceSubject(analyzeLifeEvidence(text), "outcome");
 }
 
 export function isActionEvidence(text: string): boolean {
-  text = independentConsentEvidenceText(text);
-  if (
-    isSpeculativeLifeEvidence(text) ||
-    actionEvidenceSubject(text) === "third_party" ||
-    isCausalRecapOrProvenanceRequest(text) ||
-    /(?:还没|没有|尚未|并未|不会|不等于).{0,20}(?:提交|办理|报名|申请|搬|分手|开始|完成|联系|签|执行|行动|发邮件|辞职|答应)|(?:只是|仍是).{0,12}(?:计划|打算)|如果.{0,16}(?:行动|已经做)|(?:吗|是否|有没有).{0,12}(?:行动|做了|迈出)|没有新的确认|事实没有变化/u.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-  const strongEvidence =
-    /(?:已经|刚刚|刚|后来|今天|最终|正式).{0,48}(?:提交(?:了)?|办理(?:了)?|报名(?:了)?|申请(?:了)?|搬走(?:了)?|分手了|答应了|拒绝了|开始做|完成(?:了)?|做了|去了|说了|联系(?:了)?|签了|取消(?:了)?|执行(?:了)?|行动(?:了)?|发(?:出|了)|提出(?:了)?|确认(?:了)?|启动(?:了)?)/u;
-  if (strongEvidence.test(text)) return true;
-  if (
-    /只是想|(?:决定|打算|计划|准备|考虑|想要).{0,12}(?:辞职|离职|搬|分手|报名|申请)/u.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-  return /(?:已经|刚刚|后来|最终).{0,8}(?:辞职|离职|搬家)/u.test(text);
+  return analyzeLifeEvidence(text).clauses.some((clause) => clause.action);
 }
 
 export function isActionRestatement(text: string): boolean {
@@ -1581,45 +1513,14 @@ export function isActionRestatement(text: string): boolean {
 export function inferActionKind(
   text: string,
 ): "initiated" | "advanced" | "completed" | "abandoned" {
-  if (/完成|办完|做完|结束|落实/u.test(text)) return "completed";
-  if (/取消|放弃|没再继续|停下/u.test(text)) return "abandoned";
-  if (/继续|推进|又做|第二步/u.test(text)) return "advanced";
-  return "initiated";
+  return (
+    analyzeLifeEvidence(text).clauses.find((clause) => clause.action)
+      ?.actionKind ?? "initiated"
+  );
 }
 
 export function isOutcomeEvidence(text: string): boolean {
-  text = independentConsentEvidenceText(text);
-  if (
-    isSpeculativeLifeEvidence(text) ||
-    outcomeEvidenceSubject(text) === "third_party" ||
-    isCausalRecapOrProvenanceRequest(text) ||
-    isCharacterReflectionRequest(text) ||
-    /没有(?:最终)?结果|还没有.{0,16}(?:反馈|确认|结果)|仍然不是最终结果|仍不是最终结果|只有行动.{0,8}没有结果|事实没有变化|没有新的确认|(?:什么|哪些|现在).{0,8}(?:反馈|结果).{0,4}(?:是|吗)|如果.{0,12}(?:出现|有了).{0,8}结果|(?:这个|该|上述)结果.{0,8}(?:让我|使我|令我|带给我)|听到.{0,8}结果.{0,8}(?:我|感觉)/u.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-  if (
-    parseScaleMetric(text, "pressure") !== undefined &&
-    parseScaleMetric(text, "clarity") !== undefined &&
-    !/(?:资金|薪资|公司|合同|接受|拒绝|通过|失败|成功|通知|反馈|确认收件|混合结果)/u.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-  return (
-    /(?:结果|后来|因此|所以|最终|现在).{0,28}(?:同意|拒绝|通过|失败|成功|变得|让我|轻松|开心|难受|后悔|更好|更糟|收到|有了)|(?:同意|拒绝|通过|失败|成功|收到).{0,20}(?:了|结果|通知)/u.test(
-      text,
-    ) || /几天后的结果是|这是混合结果|出现的实际反馈/u.test(text)
-  );
-}
-
-function isCausalRecapOrProvenanceRequest(text: string): boolean {
-  return /请.{0,16}(?:区分|回顾|总结).{0,40}(?:决定|行动|结果)|目前停在哪一步.{0,24}(?:决定|行动|结果)|哪段对话.{0,32}(?:影响|决定).{0,48}哪条消息|哪条消息.{0,24}(?:证明|行动|结果)|按顺序回顾/u.test(
-    text,
-  );
+  return analyzeLifeEvidence(text).clauses.some((clause) => clause.outcome);
 }
 
 export function hasMixedCausation(text: string): boolean {
@@ -1631,33 +1532,11 @@ export function hasMixedCausation(text: string): boolean {
 export function inferOutcomeValence(
   text: string,
 ): "positive" | "negative" | "mixed" | "neutral" {
-  if (/混合结果|不是纯好消息|好的一面和坏的一面/u.test(text)) {
-    return "mixed";
-  }
-  const positive =
-    /成功|通过|同意|轻松|开心|更好|庆幸|值得|满意|稳定|放心|动力/u.test(text);
-  const negative =
-    /失败|拒绝|难受|更糟|后悔|失望|痛苦|损失|不稳定|担心|变少|减少|延迟|麻木/u.test(
-      text,
-    );
-  if (positive && negative) return "mixed";
-  if (positive) return "positive";
-  if (negative) return "negative";
-  return "neutral";
+  return evidenceValence(text);
 }
 
 export function isReflectionEvidence(text: string): boolean {
-  text = independentConsentEvidenceText(text);
-  if (
-    isSpeculativeLifeEvidence(text) ||
-    hasNonUserReflectionSubject(text) ||
-    /有没有改变你|请.{0,8}(?:回顾|总结|区分)|你现在怎么看/u.test(text)
-  ) {
-    return false;
-  }
-  return /回头看|现在想想|我觉得这个决定|我对这个选择|我后悔|我很庆幸|我才明白|我想明白|我(?:现在)?的理解是|重新想/u.test(
-    text,
-  );
+  return analyzeLifeEvidence(text).clauses.some((clause) => clause.reflection);
 }
 
 export function reflectionLesson(text: string): string {

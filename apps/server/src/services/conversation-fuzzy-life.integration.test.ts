@@ -32,6 +32,116 @@ describe("fuzzy-life conversation integration", () => {
     vi.restoreAllMocks();
   });
 
+  it("persists completed clauses without recording their future or negated neighbors", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "clause-choice",
+      "我最终决定了：选择接受影像平台副主编岗位。",
+    );
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+
+    const completed = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "clause-completed",
+      "我今天已经提交了副主编岗位的申请；明天会联系公司，结果还没出来。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+    expect(
+      latestJson<ActionRecord>(app, "action_records", "action_json"),
+    ).toMatchObject({
+      decisionId: decision.id,
+      performedBy: "user",
+      summary: "我今天已经提交了副主编岗位的申请",
+      sourceEvidenceIds: [completed.userMessage.id],
+    });
+    expect(completed.userMessage.content).toContain("明天会联系公司");
+
+    for (const [index, text] of [
+      "我今天准备提交副主编岗位的申请，但还没有实际提交。",
+      "副主编岗位的合同尚未签署；接下来两周我先观察执行情况。",
+      "我是否已经提交了副主编岗位的申请？",
+      "信收到了，别担心。",
+    ].entries()) {
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `clause-non-occurrence-${index}`,
+        text,
+      );
+    }
+    expect(scalarCount(app, "decision_records")).toBe(1);
+    expect(scalarCount(app, "action_records")).toBe(1);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+    expect(scalarCount(app, "reflection_records")).toBe(0);
+  });
+
+  it("records natural completed activity and reported relief through the messages route", async () => {
+    app = await createTestApp();
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    injectUserBranchDilemma(app, character.id, sessionId);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "natural-choice",
+      "我最终决定了：选择接受影像平台副主编岗位。",
+    );
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    const actionTurn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "natural-activity",
+      "去办副主编岗位的入职手续，我刚换好鞋出门了。",
+    );
+    expect(scalarCount(app, "action_records")).toBe(1);
+    const action = latestJson<ActionRecord>(
+      app,
+      "action_records",
+      "action_json",
+    );
+    expect(action).toMatchObject({
+      decisionId: decision.id,
+      performedBy: "user",
+      sourceEvidenceIds: [actionTurn.userMessage.id],
+    });
+    const relieved = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "natural-relief",
+      "副主编岗位这件事让我现在松快了不少。",
+    );
+    expect(
+      latestJson<OutcomeRecord>(app, "outcome_records", "outcome_json"),
+    ).toMatchObject({
+      decisionId: decision.id,
+      actionIds: [action.id],
+      valence: "positive",
+      sourceEvidenceIds: [relieved.userMessage.id],
+      summary: "副主编岗位这件事让我现在松快了不少",
+    });
+  });
+
   it("keeps consent corrections out of a real decision-action-outcome-reflection trajectory", async () => {
     app = await createTestApp();
     const character = await createAndPublish(app);

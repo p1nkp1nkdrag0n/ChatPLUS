@@ -41,6 +41,10 @@ import {
 } from "../repositories/life-repository.js";
 import type { Clock } from "../runtime/clock.js";
 import {
+  analyzeLifeEvidence,
+  evidenceSubject as inferEvidenceSubject,
+} from "./fuzzy-life-evidence.js";
+import {
   assertTimelinePlanHash,
   buildDailyIntents,
   buildDeterministicLifeOutcome,
@@ -63,7 +67,6 @@ import {
   DILEMMA_CONTEXT_EVIDENCE_RELEVANCE_THRESHOLD,
   PRESSURE_DILEMMA_RELEVANCE_THRESHOLD,
   REFLECTION_CONTINUITY_RELEVANCE_THRESHOLD,
-  actionEvidenceSubject,
   analyzeSupportSpeechAct,
   compactLifePromptText,
   decisionEvidenceSemanticRelevance,
@@ -79,13 +82,11 @@ import {
   hasMixedCausation,
   inferActionKind,
   inferOutcomeValence,
-  isActionEvidence,
   isActionRestatement,
   isCharacterDilemmaTurn,
   isCharacterReflectionRequest,
   isCharacterSubjectDecisionRequest,
   isIdentityFacetOfLifeChoice,
-  isOutcomeEvidence,
   isPressureDisclosure,
   isPressureFeedbackText,
   isPressureTrajectoryContinuation,
@@ -93,7 +94,6 @@ import {
   isUserAdviceToCharacter,
   isUserOwnedDecision,
   isUserPressureEvidenceSubject,
-  outcomeEvidenceSubject,
   parseScaleMetric,
   pressureDilemmaSemanticRelevance,
   pressureKind,
@@ -579,8 +579,6 @@ export class FuzzyLifeService {
     );
     const followUpImpact = this.recordDecisionFollowUp(
       input,
-      dilemmaEvidenceText,
-      dilemmaEvidenceClassifyText,
       localDate,
       period,
     );
@@ -883,16 +881,34 @@ export class FuzzyLifeService {
 
   private recordDecisionFollowUp(
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
-    evidenceText: string,
-    classifyText: string,
     localDate: string,
     period: Exclude<DayPeriod, "anytime">,
   ): ConversationLifeImpact {
-    const actionSubject = actionEvidenceSubject(classifyText);
-    const outcomeSubject = outcomeEvidenceSubject(classifyText);
-    const actionEvidence = isActionEvidence(classifyText);
-    const outcomeEvidence = isOutcomeEvidence(classifyText);
-    const userReflectionEvidence = isReflectionEvidence(classifyText);
+    // Occurrence evidence has its own modality rules. The support analyzer
+    // deliberately discards past narration, which may be a real action here.
+    const analysis = analyzeLifeEvidence(input.userText);
+    const assertedClauses = analysis.clauses.filter(
+      (clause) => clause.modality === "asserted",
+    );
+    const evidenceText = assertedClauses
+      .map((clause) => clause.sourceText)
+      .join("；");
+    const actionText = analysis.clauses
+      .filter((clause) => clause.action)
+      .map((clause) => clause.sourceText)
+      .join("；");
+    const outcomeText = analysis.clauses
+      .filter((clause) => clause.outcome)
+      .map((clause) => clause.sourceText)
+      .join("；");
+    const classifyText = analysis.classifyText;
+    const actionSubject = inferEvidenceSubject(analysis, "action");
+    const outcomeSubject = inferEvidenceSubject(analysis, "outcome");
+    const actionEvidence = analysis.clauses.some((clause) => clause.action);
+    const outcomeEvidence = analysis.clauses.some((clause) => clause.outcome);
+    const userReflectionEvidence = analysis.clauses.some(
+      (clause) => clause.reflection,
+    );
     const characterReflectionRequest =
       input.assistantText.trim() !== "" &&
       isCharacterReflectionRequest(classifyText);
@@ -958,8 +974,8 @@ export class FuzzyLifeService {
                   : decision.subject === "character"
                     ? "character"
                     : "joint",
-          actionKind: inferActionKind(classifyText),
-          summary: evidenceText,
+          actionKind: inferActionKind(actionText),
+          summary: actionText,
           sourceEvidenceIds: [input.userMessageId],
           effectiveLocalDate: localDate,
           effectivePeriod: period,
@@ -996,9 +1012,9 @@ export class FuzzyLifeService {
             : hasMixedCausation(classifyText)
               ? "mixed"
               : "action",
-        valence: inferOutcomeValence(classifyText),
-        summary: evidenceText,
-        consequenceFacts: [evidenceText],
+        valence: inferOutcomeValence(outcomeText),
+        summary: outcomeText,
+        consequenceFacts: [outcomeText],
         sourceEvidenceIds: [input.userMessageId],
         confidence: 0.82,
         status: "observed",

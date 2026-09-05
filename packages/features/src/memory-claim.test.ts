@@ -168,6 +168,43 @@ describe("verified user memory claim derivation", () => {
     });
   });
 
+  it.each([
+    ["我把护照放在玄关柜第二层。", "护照"],
+    ["我有一本很重要的采访笔记，放在帆布包的内层。", "notes"],
+    ["备用钥匙的位置是书桌右侧抽屉。", "备用钥匙"],
+    ["不锈钢杯收在橱柜里。", "不锈钢杯"],
+    ["合同保管于档案室。", "合同"],
+    ["今天有点累。我在想怎么休息。护照放在抽屉里。", "护照"],
+    ["护照放在哪里？钥匙收在柜子里。", "钥匙"],
+    ["更正：包是灰色，不是白色。笔记仍在内层。", "notes"],
+  ])("binds storage to the item in its own assertion: %s", (text, item) => {
+    expect(extractExplicitStoredItemFact(text)).toEqual({
+      item,
+      subjectKey: `user_fact:item:${item}:storage`,
+    });
+  });
+
+  it.each([
+    "我在想休息一下，还是说，对于这件事你有别的看法。",
+    "拿笔在纸上蹭了几下，还是说，对于画画我没那么紧张了。",
+    "我还在想今天的会议。",
+    "护照放在柜子里吗？",
+    "护照放在柜子里，还是抽屉里？",
+    "护照放在哪里。",
+    "如果护照放在柜子里，明天就容易找了。",
+    "朋友说护照放在柜子里。",
+    "听说护照放在柜子里。",
+    "别把护照放在柜子里当成我的事实。",
+    "护照没有放在柜子里。",
+    "我没把护照放在柜子里。",
+    "我想把护照放在柜子里。",
+    "我准备把护照放在柜子里。",
+    "护照可能放在柜子里。",
+    "我有一本笔记。放在包的内层。",
+  ])("does not infer item storage from unsupported language: %s", (text) => {
+    expect(extractExplicitStoredItemFact(text)).toBeUndefined();
+  });
+
   it("uses candidate content to select a supported fact from compound evidence", () => {
     const evidenceText = "小林是我大学同学，现在住在苏州。";
     expect(

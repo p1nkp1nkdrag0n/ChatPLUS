@@ -231,26 +231,40 @@ export function extractExplicitStoredItemFact(
   const text = stripTerminalPunctuation(
     stripCorrectionPrefix(sourceText.normalize("NFKC").trim()),
   );
-  if (
-    !/(?:放|收|存|搁|保存|保管).{0,8}(?:在|于)|(?:仍|还|依然).{0,8}(?:在|于)|(?:位置|存放处)(?:是|为)/u.test(
-      text,
-    )
-  ) {
-    return undefined;
+  if (!isExplicitUserMemoryStatement(text)) return undefined;
+
+  // Keep the item and its storage predicate in the same assertion. A storage
+  // hint elsewhere in a message must not turn unrelated "我在想" / "拿笔在…"
+  // clauses into item facts. A comma may separate an item from its predicate
+  // ("我有一本笔记，放在…"), but a sentence boundary may not.
+  const statements = text.match(/[^。！？!?；;\r\n]+[。！？!?；;]?/gu) ?? [];
+  for (const statement of statements) {
+    if (
+      !isExplicitUserMemoryStatement(statement) ||
+      UNCERTAIN_ASSERTION.test(statement)
+    ) {
+      continue;
+    }
+    const match = statement.match(
+      /(?:^|[，,:：])\s*(?:我(?:有|的|(?:已经|刚刚|刚才)?把))?(?:一[本份个把串件])?(?:(?:很)?重要的?)?([^，,。！？!?；;:：]{1,24}?)(?:[，,]\s*)?(?:(?:现在|目前|一直|仍然|依然|仍|还)?(?:存放|保存|保管|放|收|存|搁)(?:在|于)|(?:一直|仍然|依然|仍|还)在|(?:的)?(?:位置|存放处)(?:是|为))([^，,。！？!?；;:：]+)/u,
+    );
+    const rawItem = match?.[1]?.trim();
+    const location = match?.[2]?.trim();
+    if (
+      rawItem === undefined ||
+      location === undefined ||
+      /^(?:我|你|他|她|它)(?:们)?$/u.test(rawItem) ||
+      /(?:不是|并非|不再|没有|没|不|别|不要)$|(?:打算|计划|准备|想要|假如|如果)|^(?:我|你|他|她|它)(?:们)?(?:想|要|不|没)/u.test(
+        rawItem,
+      ) ||
+      /(?:哪里|哪儿|何处|什么地方)/u.test(location)
+    ) {
+      continue;
+    }
+    const item = /笔记/u.test(rawItem) ? "notes" : keyPart(rawItem);
+    return { item, subjectKey: `user_fact:item:${item}:storage` };
   }
-  const direct = text.match(
-    /(?:^|[，,。；;])(?:我(?:有|的))?(?:一[本份个把串件])?(?:重要的?)?([^，,。；;]{1,24}?)(?:[，,]?\s*)?(?:一直|仍|还|依然)?(?:放|收|存|搁|保存|保管|在)(?:在|于)?[^，,。；;]+/u,
-  )?.[1];
-  const fallback = text.match(
-    /(?:^|[，,。；;])([^，,。；;]{1,16}?)(?:的)?(?:位置|存放处)(?:是|为)[^，,。；;]+/u,
-  )?.[1];
-  const rawItem = (direct ?? fallback)?.trim();
-  if (rawItem === undefined || rawItem.length === 0) return undefined;
-  const item = /笔记/u.test(rawItem) ? "notes" : keyPart(rawItem);
-  return {
-    item,
-    subjectKey: `user_fact:item:${item}:storage`,
-  };
+  return undefined;
 }
 
 function parseClaims(

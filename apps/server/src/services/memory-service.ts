@@ -1,7 +1,8 @@
 import {
   boundedRecallQueryTokens,
   deriveExplicitUserMemoryClaim,
-  hasExplicitMemoryCorrection,
+  extractExplicitWeeklyPlanFacts,
+  hasExplicitMemoryCorrectionForClaim,
   isExplicitUserMemoryStatement,
   recallExactIdentifierAnchors,
   judgeMemoryCandidate,
@@ -691,6 +692,31 @@ function normalizeCandidateForJudge(
   const stability =
     candidate.stability ??
     (hasActivity || candidate.kind === "episodic" ? "one_off" : "situational");
+  const claim = materializeVerifiedClaim({
+    candidate,
+    evidence,
+    catalog,
+    nowUtc,
+    namespace,
+    attribution,
+  });
+  const weeklyPlan =
+    candidate.kind === "semantic" &&
+    namespace === "user_model" &&
+    attribution === "user_explicit" &&
+    claim?.subjectKey.startsWith("user_fact:weekly_plan:") === true;
+  if (
+    (candidate.claim?.subjectKey.startsWith("user_fact:weekly_plan:") ===
+      true ||
+      (candidate.claim === undefined &&
+        extractExplicitWeeklyPlanFacts(candidate.content).length > 0)) &&
+    (!weeklyPlan ||
+      candidate.occurredAtUtc !== undefined ||
+      (candidate.temporalMetadata ?? candidate.temporal)?.temporalStatus ===
+        "occurred")
+  ) {
+    return undefined;
+  }
   if (
     candidate.kind === "semantic" &&
     namespace === "user_model" &&
@@ -700,24 +726,22 @@ function normalizeCandidateForJudge(
       const message = catalog.messages.get(item.sourceId);
       return (
         message?.role === "user" &&
-        isExplicitUserMemoryStatement(message.content)
+        (isExplicitUserMemoryStatement(message.content) || weeklyPlan)
       );
     })
   ) {
     return undefined;
   }
-  const claim = materializeVerifiedClaim({
-    candidate,
-    evidence,
-    catalog,
-    nowUtc,
-    namespace,
-    attribution,
-  });
   const suppliedTemporal = candidate.temporalMetadata ?? candidate.temporal;
   const temporalMetadata = TemporalMetadataSchema.parse({
-    ...(suppliedTemporal ??
-      defaultTemporalMetadata(candidate, catalog, nowUtc, evidence)),
+    ...(weeklyPlan
+      ? {
+          mentionedAtUtc: nowUtc,
+          temporalCertainty: "unknown",
+          temporalStatus: "planned",
+        }
+      : (suppliedTemporal ??
+        defaultTemporalMetadata(candidate, catalog, nowUtc, evidence))),
     recordedAtUtc: nowUtc,
   });
   const normalizedInput: Record<string, unknown> = {
@@ -734,6 +758,7 @@ function normalizeCandidateForJudge(
     shouldWrite: candidate.shouldWrite ?? true,
     forbiddenOverclaims: candidate.forbiddenOverclaims ?? [],
   };
+  if (claim === undefined) delete normalizedInput["claim"];
   delete normalizedInput["temporal"];
   const normalized = MemoryCandidateSchema.safeParse(normalizedInput);
   return normalized.success ? normalized.data : undefined;
@@ -761,6 +786,39 @@ function materializeVerifiedClaim(input: {
     const message = catalog.messages.get(item.sourceId);
     return message?.role === "user" ? [message.content] : [];
   });
+  if (
+    candidate.claim?.subjectKey.startsWith("user_fact:weekly_plan:") === true ||
+    (candidate.claim === undefined &&
+      extractExplicitWeeklyPlanFacts(candidate.content).length > 0)
+  ) {
+    for (const evidenceText of userEvidenceTexts) {
+      const derived = deriveExplicitUserMemoryClaim({
+        category: "user_fact",
+        evidenceText,
+        candidateContent: candidate.content,
+      });
+      if (
+        derived === undefined ||
+        !derived.subjectKey.startsWith("user_fact:weekly_plan:") ||
+        (candidate.claim !== undefined &&
+          candidate.claim.subjectKey !== derived.subjectKey)
+      )
+        continue;
+      return {
+        ...derived,
+        recordedAtUtc: nowUtc,
+        ...(hasExplicitMemoryCorrectionForClaim({
+          category: "user_fact",
+          evidenceText,
+          subjectKey: derived.subjectKey,
+          candidateContent: candidate.content,
+        })
+          ? { revisionIntent: "explicit_correction" as const }
+          : {}),
+      };
+    }
+    return undefined;
+  }
   const assertiveEvidenceTexts = userEvidenceTexts.filter(
     isExplicitUserMemoryStatement,
   );
@@ -772,6 +830,7 @@ function materializeVerifiedClaim(input: {
       assertiveEvidenceTexts,
       categories,
       candidate.claim.subjectKey,
+      candidate.content,
     );
     return {
       subjectKey: candidate.claim.subjectKey,
@@ -793,6 +852,7 @@ function materializeVerifiedClaim(input: {
         assertiveEvidenceTexts,
         categories,
         derived.subjectKey,
+        candidate.content,
       );
       return {
         ...derived,
@@ -808,15 +868,18 @@ function verifiedCorrectionAppliesToClaim(
   evidenceTexts: readonly string[],
   categories: readonly ("user_fact" | "user_preference")[],
   subjectKey: string,
+  candidateContent: string,
 ): boolean {
-  return evidenceTexts.some((evidenceText) => {
-    if (!hasExplicitMemoryCorrection(evidenceText)) return false;
-    return categories.some(
-      (category) =>
-        deriveExplicitUserMemoryClaim({ category, evidenceText })
-          ?.subjectKey === subjectKey,
-    );
-  });
+  return evidenceTexts.some((evidenceText) =>
+    categories.some((category) =>
+      hasExplicitMemoryCorrectionForClaim({
+        category,
+        evidenceText,
+        subjectKey,
+        candidateContent,
+      }),
+    ),
+  );
 }
 
 function memoryClaimCategories(

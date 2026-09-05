@@ -19,6 +19,14 @@ export interface ExplicitStoredItemFact {
   subjectKey: string;
 }
 
+export interface ExplicitWeeklyPlanFact {
+  activity: string;
+  weekday: string;
+  timeOfDay: string;
+  subjectKey: string;
+  explicitCorrection: boolean;
+}
+
 const CORRECTION_PREFIX =
   /^(?:(?:更正(?:一下|一个事实|另一件事)?|纠正|修正|更新(?:一下)?|改(?:正|一下)|补充更正)|(?:我|前面|刚才|之前)?(?:刚才|之前|前面)?说错了|correction|update|i\s+(?:was|got\s+that)\s+wrong)\s*[:：,，。.!！-]?\s*/iu;
 const EXPLICIT_REPLACEMENT =
@@ -39,6 +47,14 @@ const ASSERTIVE_CONDITIONAL_PREFERENCE =
  * The model-facing memory proposal cannot set this durable lifecycle signal.
  */
 export function hasExplicitMemoryCorrection(text: string): boolean {
+  return (
+    extractExplicitWeeklyPlanFacts(text).some(
+      (fact) => fact.explicitCorrection,
+    ) || hasLegacyMemoryCorrection(text)
+  );
+}
+
+function hasLegacyMemoryCorrection(text: string): boolean {
   const normalized = text.normalize("NFKC").trim();
   if (!isExplicitUserMemoryStatement(normalized)) return false;
   return (
@@ -68,7 +84,32 @@ export function deriveExplicitUserMemoryClaim(input: {
   evidenceText: string;
   candidateContent?: string;
 }): DerivedExplicitUserMemoryClaim | undefined {
-  const explicitCorrection = hasExplicitMemoryCorrection(input.evidenceText);
+  const weeklyFacts = extractExplicitWeeklyPlanFacts(input.evidenceText);
+  if (input.category === "user_fact") {
+    if (input.candidateContent === undefined && weeklyFacts[0] !== undefined) {
+      return claim(weeklyFacts[0].subjectKey);
+    }
+    const candidateWeeklyFacts = extractExplicitWeeklyPlanFacts(
+      input.candidateContent ?? "",
+    );
+    if (candidateWeeklyFacts.length > 0) {
+      const verified = weeklyFacts.find((fact) =>
+        candidateWeeklyFacts.some((candidate) =>
+          weeklyPlanValuesMatch(fact, candidate),
+        ),
+      );
+      return verified === undefined ? undefined : claim(verified.subjectKey);
+    }
+  }
+  return deriveLegacyExplicitUserMemoryClaim(input);
+}
+
+function deriveLegacyExplicitUserMemoryClaim(input: {
+  category: ExplicitUserMemoryClaimCategory;
+  evidenceText: string;
+  candidateContent?: string;
+}): DerivedExplicitUserMemoryClaim | undefined {
+  const explicitCorrection = hasLegacyMemoryCorrection(input.evidenceText);
   const evidence = stripTerminalPunctuation(
     stripMemoryInstructionPrefix(stripCorrectionPrefix(input.evidenceText)),
   );
@@ -101,6 +142,166 @@ export function deriveExplicitUserMemoryClaim(input: {
     }
   }
   return evidenceClaims[0];
+}
+
+/** Correction authority is tied to the same verified fact, never another topic. */
+export function hasExplicitMemoryCorrectionForClaim(input: {
+  evidenceText: string;
+  category: ExplicitUserMemoryClaimCategory;
+  subjectKey: string;
+  candidateContent?: string;
+}): boolean {
+  if (input.subjectKey.startsWith("user_fact:weekly_plan:")) {
+    return extractExplicitWeeklyPlanFacts(input.evidenceText).some(
+      (fact) =>
+        fact.subjectKey === input.subjectKey &&
+        fact.explicitCorrection &&
+        (input.candidateContent === undefined ||
+          extractExplicitWeeklyPlanFacts(input.candidateContent).some(
+            (candidate) => weeklyPlanValuesMatch(fact, candidate),
+          )),
+    );
+  }
+  return (
+    hasLegacyMemoryCorrection(input.evidenceText) &&
+    deriveLegacyExplicitUserMemoryClaim(input)?.subjectKey === input.subjectKey
+  );
+}
+
+function weeklyPlanValuesMatch(
+  left: ExplicitWeeklyPlanFact,
+  right: ExplicitWeeklyPlanFact,
+): boolean {
+  return (
+    left.subjectKey === right.subjectKey &&
+    left.weekday === right.weekday &&
+    left.timeOfDay === right.timeOfDay
+  );
+}
+
+/**
+ * Recognizes an explicitly stated weekly arrangement, not its execution. Each
+ * activity has its own slot. Questions, alternatives and attributed quotations
+ * are not arrangements, even when another sentence is assertive.
+ */
+export function extractExplicitWeeklyPlanFacts(
+  sourceText: string,
+): ExplicitWeeklyPlanFact[] {
+  const text = sourceText.normalize("NFKC").trim();
+  if (
+    /(?:别|不要).{0,20}(?:记住|记录|当成|当作).{0,20}(?:事实|计划|安排|记忆)|(?:只是举例|别据此改(?:记忆|记录))/u.test(
+      text,
+    )
+  ) {
+    return [];
+  }
+  const weekday = "(?:每(?:周|星期|礼拜))([一二三四五六日天])";
+  const period = "(早上|上午|中午|下午|晚上|夜里|晚间)?";
+  const activity = "([^，,。！？!?；;:：的]{1,24}?)";
+  const timeFirst = new RegExp(
+    `(?:^|[，,:：])\\s*(?:我|用户)(?:计划|打算|决定)(?:在)?${weekday}${period}(?:去)?${activity}(?=[，,。！？!?；;]|$)`,
+    "gu",
+  );
+  const activityFirst = new RegExp(
+    `(?:^|[，,:：])\\s*(?:(?:我|用户)(?:的|把|将))?(?:留给)?${activity}(?:的)?(?:时间|时段)?(?:其实|现在|目前)?(定在|安排在|固定在|改到|改为|改成)(?:每(?:周|星期|礼拜))([一二三四五六日天])${period}(?=[，,。！？!?；;]|$)`,
+    "gu",
+  );
+  const facts = new Map<string, ExplicitWeeklyPlanFact>();
+  const ambiguousActivities = new Set<string>();
+  // Remove complete quoted passages before splitting sentences, so a quoted
+  // second sentence cannot become a new first-person user assertion.
+  const unquotedText = text.replace(
+    /“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|"[^"]*"|'[^']*'/gu,
+    " ",
+  );
+  for (const rawStatement of unquotedText.match(
+    /[^。！？!?；;\r\n]+[。！？!?；;]?/gu,
+  ) ?? []) {
+    const statement = rawStatement.trim();
+    if (
+      !isExplicitUserMemoryStatement(statement) ||
+      UNCERTAIN_ASSERTION.test(statement) ||
+      /[“”"‘’'「」『』]|(?:能不能|可不可以|要不要|还没(?:有)?定|尚未决定|没有决定|或者|或是|还是|还在犹豫)/u.test(
+        statement,
+      )
+    ) {
+      continue;
+    }
+    const parseableStatement = statement.replace(
+      /(?:不是|并非)(每)?(?:周|星期|礼拜)([一二三四五六日天])(早上|上午|中午|下午|晚上|夜里|晚间)?[，,]?\s*(?:而是|应该是)(每)?(?:周|星期|礼拜)([一二三四五六日天])(早上|上午|中午|下午|晚上|夜里|晚间)?/gu,
+      (
+        original: string,
+        oldRecurring: string | undefined,
+        oldDay: string,
+        oldTime: string | undefined,
+        newRecurring: string | undefined,
+        newDay: string,
+        newTime: string | undefined,
+      ) =>
+        oldRecurring === undefined && newRecurring === undefined
+          ? original
+          : `改为每周${newDay}${newTime ?? ""}，不是每周${oldDay}${oldTime ?? ""}`,
+    );
+    for (const [pattern, order] of [
+      [activityFirst, "activity"],
+      [timeFirst, "time"],
+    ] as const) {
+      for (const match of parseableStatement.matchAll(pattern)) {
+        const rawActivity = (
+          order === "activity" ? match[1] : match[3]
+        )?.trim();
+        const day = order === "activity" ? match[3] : match[1];
+        const timeOfDay = (order === "activity" ? match[4] : match[2]) ?? "";
+        if (
+          rawActivity === undefined ||
+          day === undefined ||
+          /^(?:我|用户|你|他|她|它|朋友|同事|不|没|别|假设|假如|如果|例如|比如|可能|打算|计划|准备)|(?:每周|星期|礼拜)/u.test(
+            rawActivity,
+          )
+        ) {
+          continue;
+        }
+        const prefix = parseableStatement.slice(0, match.index).trim();
+        const suffix = parseableStatement
+          .slice(match.index + match[0].length)
+          .trim();
+        // A local "new weekday, not old weekday" belongs to this activity.
+        // A correction elsewhere in the message does not.
+        const replacement =
+          /^[，,]\s*(?:而)?(?:不是|并非)(?:每)?(?:周|星期|礼拜)[一二三四五六日天]/u.test(
+            suffix,
+          );
+        const localCorrection =
+          /(?:^|[，,:：])\s*(?:更正(?:一下|一个事实|另一件事)?|纠正|修正|更新(?:一下)?|我(?:刚才|之前)?说错了)\s*[:：]?$/u.test(
+            prefix,
+          );
+        const subjectKey = `user_fact:weekly_plan:${keyPart(rawActivity)}`;
+        const fact: ExplicitWeeklyPlanFact = {
+          activity: rawActivity,
+          weekday: day === "天" ? "日" : day,
+          timeOfDay: timeOfDay === "晚间" ? "晚上" : timeOfDay,
+          subjectKey,
+          explicitCorrection:
+            replacement ||
+            localCorrection ||
+            (order === "activity" && /^改/u.test(match[2] ?? "")),
+        };
+        const previous = facts.get(subjectKey);
+        if (
+          previous !== undefined &&
+          !weeklyPlanValuesMatch(previous, fact) &&
+          !fact.explicitCorrection
+        ) {
+          ambiguousActivities.add(subjectKey);
+        }
+        if (fact.explicitCorrection) ambiguousActivities.delete(subjectKey);
+        facts.set(subjectKey, fact);
+      }
+    }
+  }
+  return [...facts.values()].filter(
+    (fact) => !ambiguousActivities.has(fact.subjectKey),
+  );
 }
 
 type ClaimParser = (text: string) => DerivedExplicitUserMemoryClaim | undefined;

@@ -4,7 +4,9 @@ import {
   deriveExplicitUserMemoryClaim,
   extractExplicitDeadlineFact,
   extractExplicitStoredItemFact,
+  extractExplicitWeeklyPlanFacts,
   hasExplicitMemoryCorrection,
+  hasExplicitMemoryCorrectionForClaim,
 } from "./memory-claim.js";
 import {
   mergeMemoryProposal,
@@ -279,6 +281,172 @@ describe("verified user memory claim derivation", () => {
         evidenceText: text,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("activity-scoped weekly plans", () => {
+  const initial = "我把画画的时间安排在每周四晚上。";
+  const subjectKey = "user_fact:weekly_plan:画画";
+
+  it.each([
+    "早啊。你昨天休息了吗？留给画画的时间其实定在每周二晚上，不是周四。只是还没真正稳定执行。你今天忙吗？",
+    "更正：我计划每周二晚上画画。",
+    "画画的时间不是每周四晚上，而是每周二晚上。",
+    "我将画画时间改到每星期二晚上。",
+  ])(
+    "verifies a local correction without relying on the whole message: %s",
+    (evidenceText) => {
+      const [fact] = extractExplicitWeeklyPlanFacts(evidenceText);
+      expect(fact).toEqual({
+        activity: "画画",
+        weekday: "二",
+        timeOfDay: "晚上",
+        subjectKey,
+        explicitCorrection: true,
+      });
+      expect(
+        deriveExplicitUserMemoryClaim({
+          category: "user_fact",
+          evidenceText: initial,
+        }),
+      ).toEqual({ subjectKey, disposition: "affirmed" });
+      expect(
+        deriveExplicitUserMemoryClaim({
+          category: "user_fact",
+          evidenceText,
+          candidateContent: "用户将画画的时间安排在每周二晚上。",
+        }),
+      ).toEqual({ subjectKey, disposition: "affirmed" });
+      expect(hasExplicitMemoryCorrection(evidenceText)).toBe(true);
+      expect(
+        hasExplicitMemoryCorrectionForClaim({
+          category: "user_fact",
+          evidenceText,
+          subjectKey,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it("keeps activities and correction authority separate", () => {
+    const evidenceText =
+      "游泳的时间改到每周三晚上。我计划每周四晚上画画。护照放在书桌抽屉里。";
+    expect(extractExplicitWeeklyPlanFacts(evidenceText)).toEqual([
+      {
+        activity: "游泳",
+        weekday: "三",
+        timeOfDay: "晚上",
+        subjectKey: "user_fact:weekly_plan:游泳",
+        explicitCorrection: true,
+      },
+      {
+        activity: "画画",
+        weekday: "四",
+        timeOfDay: "晚上",
+        subjectKey,
+        explicitCorrection: false,
+      },
+    ]);
+    for (const otherSubject of [subjectKey, "user_fact:item:护照:storage"]) {
+      expect(
+        hasExplicitMemoryCorrectionForClaim({
+          category: "user_fact",
+          evidenceText,
+          subjectKey: otherSubject,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      hasExplicitMemoryCorrectionForClaim({
+        category: "user_fact",
+        evidenceText: "更正：护照放在玄关柜里。我计划每周四晚上画画。",
+        subjectKey,
+      }),
+    ).toBe(false);
+  });
+
+  it("derives the activity from grammar without excluding ordinary activity words", () => {
+    expect(extractExplicitWeeklyPlanFacts("我计划每周三早上冥想。")).toEqual([
+      {
+        activity: "冥想",
+        weekday: "三",
+        timeOfDay: "早上",
+        subjectKey: "user_fact:weekly_plan:冥想",
+        explicitCorrection: false,
+      },
+    ]);
+  });
+
+  it("does not attach an unrelated or wrong-value model proposal to the weekly slot", () => {
+    for (const candidateContent of [
+      "用户将游泳的时间安排在每周四晚上。",
+      "用户将画画的时间安排在每周二晚上。",
+      "用户将画画的时间安排在每周四上午。",
+      "用户喜欢咖啡。",
+    ]) {
+      expect(
+        deriveExplicitUserMemoryClaim({
+          category: "user_fact",
+          evidenceText: initial,
+          candidateContent,
+        }),
+      ).toBeUndefined();
+    }
+  });
+
+  it("leaves an unqualified multi-day activity unresolved and permits an explicit replacement", () => {
+    expect(
+      extractExplicitWeeklyPlanFacts(
+        "我计划每周二晚上画画。我计划每周四晚上画画。",
+      ),
+    ).toEqual([]);
+    expect(
+      extractExplicitWeeklyPlanFacts(
+        "我计划每周四晚上画画。画画的时间改到每周二晚上。",
+      ),
+    ).toEqual([
+      {
+        activity: "画画",
+        weekday: "二",
+        timeOfDay: "晚上",
+        subjectKey,
+        explicitCorrection: true,
+      },
+    ]);
+  });
+
+  it("keeps a legacy correction available when a separate weekly plan is present", () => {
+    const evidenceText = "更正：护照放在玄关柜里。我计划每周四晚上画画。";
+    expect(
+      hasExplicitMemoryCorrectionForClaim({
+        category: "user_fact",
+        evidenceText,
+        subjectKey: "user_fact:item:护照:storage",
+      }),
+    ).toBe(true);
+    expect(
+      hasExplicitMemoryCorrectionForClaim({
+        category: "user_fact",
+        evidenceText,
+        subjectKey,
+      }),
+    ).toBe(false);
+  });
+
+  it.each([
+    "我在想，能不能把画画的时间定在每周四晚上？",
+    "我计划每周四晚上画画吗？",
+    "如果我计划每周四晚上画画，可能会很轻松。",
+    "朋友说：我计划每周四晚上画画。",
+    "朋友说：“我计划每周四晚上画画。每周二安排游泳。”",
+    "朋友说：“我计划每周二晚上游泳。我计划每周四晚上画画。谢谢。”",
+    "我没有把画画的时间安排在每周四晚上。",
+    "我计划每周四晚上画画，或者每周二，尚未决定。",
+    "我计划每周四晚上画画，别把这个当成我的事实。",
+    "她将画画的时间安排在每周四晚上。",
+    "我计划下周四晚上画画。",
+  ])("does not invent an established weekly arrangement: %s", (text) => {
+    expect(extractExplicitWeeklyPlanFacts(text)).toEqual([]);
   });
 });
 

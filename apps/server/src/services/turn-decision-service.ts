@@ -17,6 +17,7 @@ import {
   deriveExplicitUserMemoryClaim,
   extractExplicitDeadlineFact,
   extractExplicitStoredItemFact,
+  extractExplicitWeeklyPlanFacts,
   guardPersonaReply,
   hasExplicitMemoryCorrection,
   isExplicitUserMemoryStatement,
@@ -1724,9 +1725,31 @@ export function deriveServerOwnedUserMemoryCandidates(
   nowUtc: string,
 ): MemoryCandidate[] {
   const normalized = text.normalize("NFKC").trim();
-  if (fixtureMemoryStatementIsUnsafe(normalized)) return [];
+  const candidates: MemoryCandidate[] = extractExplicitWeeklyPlanFacts(
+    normalized,
+  ).map((plan) => ({
+    ...explicitUserSemanticCandidate({
+      content: `用户将${plan.activity}的时间安排在每周${plan.weekday}${plan.timeOfDay}；这是每周计划，不代表已经执行。`,
+      tags: [
+        "user_fact",
+        "weekly_plan",
+        ...(plan.explicitCorrection ? ["explicit_correction"] : []),
+      ],
+      subjectKey: plan.subjectKey,
+      nowUtc,
+      importance: 0.76,
+      stability: "situational",
+      correction: plan.explicitCorrection,
+    }),
+    temporalMetadata: {
+      mentionedAtUtc: nowUtc,
+      recordedAtUtc: nowUtc,
+      temporalCertainty: "unknown",
+      temporalStatus: "planned",
+    },
+  }));
+  if (fixtureMemoryStatementIsUnsafe(normalized)) return candidates;
 
-  const candidates: MemoryCandidate[] = [];
   const correction = hasExplicitMemoryCorrection(normalized);
 
   const userName = normalized.match(

@@ -269,6 +269,166 @@ describe("memory service evidence integration", () => {
     );
   });
 
+  it("persists and reconciles an activity-specific weekly correction without claiming execution", () => {
+    const firstId = "message-weekly-initial";
+    insertMessage(
+      database,
+      firstId,
+      "user",
+      "我计划每周四晚上画画。我计划每周六上午游泳。",
+    );
+    const originals = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [],
+      nowUtc: NOW,
+      maxCandidates: 4,
+      authoritativeMessageId: firstId,
+    });
+    const original = originals.find(
+      (memory) => memory.claim?.subjectKey === "user_fact:weekly_plan:画画",
+    );
+    const otherActivity = originals.find(
+      (memory) => memory.claim?.subjectKey === "user_fact:weekly_plan:游泳",
+    );
+    expect(original).toBeDefined();
+    expect(otherActivity).toBeDefined();
+
+    const correctionId = "message-weekly-correction";
+    const correctedAt = offsetNow(1);
+    insertMessage(
+      database,
+      correctionId,
+      "user",
+      "早啊。你昨晚休息了吗？留给画画的时间其实定在每周二晚上，不是周四。只是还没真正稳定执行。你今天忙吗？",
+    );
+    const [corrected] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [],
+      nowUtc: correctedAt,
+      maxCandidates: 4,
+      authoritativeMessageId: correctionId,
+    });
+    expect(corrected?.id).not.toBe(original?.id);
+    expect(corrected?.claim).toEqual({
+      subjectKey: "user_fact:weekly_plan:画画",
+      disposition: "affirmed",
+      recordedAtUtc: correctedAt,
+      revisionIntent: "explicit_correction",
+    });
+    expect(corrected?.temporalMetadata?.temporalStatus).toBe("planned");
+    expect(corrected?.occurredAtUtc).toBeUndefined();
+    const lifecycle = new MemoryLifecycleService(
+      new ContinuityMemoryRepository(store),
+      new FakeClock(correctedAt),
+    );
+    expect(
+      lifecycle.reconcileNewMemories(AGENT_ID, [corrected!.id])[0]
+        ?.reconciliation.kind,
+    ).toBe("supersede");
+    const repository = new ContinuityMemoryRepository(store);
+    expect(repository.getLifecycleMemory(original!.id)?.memory).toMatchObject({
+      status: "superseded",
+      supersededById: corrected!.id,
+    });
+    expect(
+      repository.getLifecycleMemory(otherActivity!.id)?.memory.status,
+    ).toBe("active");
+    expect(
+      readMemoryEvidence(store, [original!.id, corrected!.id]).map(
+        (evidence) => evidence.sourceId,
+      ),
+    ).toEqual(expect.arrayContaining([firstId, correctionId]));
+    const beforeConflicts = database
+      .prepare("SELECT COUNT(*) AS count FROM memory_conflicts")
+      .get();
+    lifecycle.reconcileNewMemories(AGENT_ID, [corrected!.id]);
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM memory_conflicts").get(),
+    ).toEqual(beforeConflicts);
+  });
+
+  it("does not grant another topic a weekly correction's authority", () => {
+    const sourceId = "message-weekly-other-topic";
+    insertMessage(
+      database,
+      sourceId,
+      "user",
+      "画画的时间改到每周二晚上。我计划每周六上午游泳。护照放在玄关柜的抽屉里。",
+    );
+    const memories = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      candidates: [],
+      nowUtc: NOW,
+      maxCandidates: 5,
+      authoritativeMessageId: sourceId,
+    });
+    expect(
+      memories.find(
+        (memory) => memory.claim?.subjectKey === "user_fact:weekly_plan:画画",
+      )?.claim?.revisionIntent,
+    ).toBe("explicit_correction");
+    for (const subjectKey of [
+      "user_fact:weekly_plan:游泳",
+      "user_fact:item:护照:storage",
+    ]) {
+      const memory = memories.find(
+        (item) => item.claim?.subjectKey === subjectKey,
+      );
+      expect(memory, subjectKey).toBeDefined();
+      expect(memory?.claim?.revisionIntent, subjectKey).toBeUndefined();
+    }
+  });
+
+  it("rejects a forged weekly slot or execution status despite a real user source", () => {
+    const sourceId = "message-weekly-proposal-source";
+    insertMessage(database, sourceId, "user", "我计划每周四晚上画画。");
+    for (const overrides of [
+      {
+        namespace: "canon" as const,
+        claim: {
+          subjectKey: "user_fact:weekly_plan:画画",
+          disposition: "affirmed" as const,
+          recordedAtUtc: NOW,
+        },
+      },
+      {
+        claim: {
+          subjectKey: "user_fact:weekly_plan:游泳",
+          disposition: "affirmed" as const,
+          recordedAtUtc: NOW,
+          revisionIntent: "explicit_correction" as const,
+        },
+      },
+      {
+        temporalMetadata: {
+          recordedAtUtc: NOW,
+          occurredStartAtUtc: NOW,
+          temporalCertainty: "exact" as const,
+          temporalStatus: "occurred" as const,
+        },
+      },
+    ]) {
+      const result = validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        candidates: [
+          stableUserCandidate({
+            content: "用户将画画的时间安排在每周四晚上。",
+            tags: ["user_fact", "weekly_plan"],
+            sourceMessageIds: [sourceId],
+            ...overrides,
+          }),
+        ],
+        nowUtc: NOW,
+        maxCandidates: 3,
+      });
+      expect(result).toEqual([]);
+    }
+  });
+
   it("persists every reviewed v3 fact from authoritative user evidence", () => {
     for (const candidateNumber of [12, 13, 15, 16, 17, 37, 38, 39, 40, 41]) {
       const messageId = `message-v3-${candidateNumber}`;

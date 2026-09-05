@@ -45,6 +45,25 @@ describe("server-owned deterministic user memory extraction", () => {
     expect(candidates[0]?.content).toContain("用户的护照现在存放在");
   });
 
+  it("preserves the live correction as a weekly plan even when execution is unsettled", () => {
+    const candidates = deriveServerOwnedUserMemoryCandidates(
+      "早啊。昨晚拿笔在纸上蹭了两下。不过有个小事得更正一下：我后来仔细想了想，留给画画的时间其实定在每周二晚上，不是周四。只是还没真正稳定执行。你今天忙吗？",
+      NOW,
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: "semantic",
+      claim: {
+        subjectKey: "user_fact:weekly_plan:画画",
+        revisionIntent: "explicit_correction",
+      },
+      temporalMetadata: { temporalStatus: "planned" },
+    });
+    expect(candidates[0]?.content).toContain("每周二晚上");
+    expect(candidates[0]?.content).toContain("不代表已经执行");
+    expect(candidates[0]?.occurredAtUtc).toBeUndefined();
+  });
+
   it("emits a usual-drink fact that the explicit-fact reader can resolve", () => {
     const candidate = deriveServerOwnedUserMemoryCandidates(
       "我喝不加糖的红茶，我的铁盒标签写着“1998 / 潮声”。",

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PRODUCT_LIFE_INPUT_PROTOCOL = "named-public-history-v2";
+export const PRODUCT_LIFE_INPUT_PROTOCOL = "named-public-history-v3";
 export const PRODUCT_LIFE_USER_NAME = "林舟";
 export const PRODUCT_LIFE_CHARACTER_NAME = "顾澜";
 

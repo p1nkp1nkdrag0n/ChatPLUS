@@ -257,7 +257,7 @@ export async function runProductLifeLongRun(
       ...options.userMetrics,
     ]);
     await json("manifest.json", {
-      schema: "product-life-long-run-v2",
+      schema: "product-life-long-run-v3",
       status: journal.status,
       completedTurns: journal.completedTurns,
       plannedTurns: PRODUCT_LIFE_PLAN.length,
@@ -433,14 +433,17 @@ export async function runProductLifeLongRun(
     id: string,
     work: () => Promise<ProductLifeFeatureResult>,
   ): Promise<ProductLifeFeatureResult> {
-    const result = await step(id, work);
-    appendProductLifeHistory(
-      history,
-      result.publicMessages.map((message) => ({
-        ...message,
-        firstVisibleAtUtc: clock.nowUtc(),
-      })),
-    );
+    const result = await step(id, async () => {
+      const observed = await work();
+      return {
+        ...observed,
+        publicMessages: observed.publicMessages.map((message) => ({
+          ...message,
+          firstVisibleAtUtc: clock.nowUtc(),
+        })),
+      };
+    });
+    appendProductLifeHistory(history, result.publicMessages);
     await json(`${id}.json`, result);
     return result;
   }

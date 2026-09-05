@@ -18,6 +18,7 @@ import {
 
 class FullRunFixtureUser extends FixtureLlmProvider {
   calls = 0;
+  interruptOpenRecallOnce = false;
   prompts: Record<string, unknown>[] = [];
   constructor() {
     super({ model: "product-life-user-offline" });
@@ -25,9 +26,16 @@ class FullRunFixtureUser extends FixtureLlmProvider {
   override generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
     this.calls += 1;
     const context = JSON.parse(input.prompt) as {
-      controlledRecallProbe?: { questions: string[] };
+      controlledRecallProbe?: { kind: string; questions: string[] };
     };
     this.prompts.push(context);
+    if (
+      this.interruptOpenRecallOnce &&
+      context.controlledRecallProbe?.kind === "open_recall"
+    ) {
+      this.interruptOpenRecallOnce = false;
+      return Promise.reject(new Error("deliberate_validation_interrupt"));
+    }
     if (this.calls === 1)
       return Promise.resolve(
         input.schema.parse({ text: "林舟，你回来啦，我刚剪完片。" }),
@@ -343,6 +351,63 @@ describe("42-turn product life long-run", () => {
     expect(report.sceneCoverage[1]?.status).toBe("not_executed");
     expect(report.readmeGoals).toBe("not_evaluated");
   });
+
+  it("preserves original letter visibility across a day-45 interrupted-run resume", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "product-life-full-test-"));
+    directories.push(parent);
+    const runDirectory = join(parent, "resume-visibility");
+    const config = readConfig({
+      nodeEnv: "test",
+      profile: "test",
+      seedDemo: false,
+      llm: {
+        provider: "fixture",
+        model: "personasim-fixture-v1",
+        baseUrl: "https://fixture.invalid",
+        timeoutMs: 1000,
+        maxRetries: 0,
+      },
+    });
+    const userProvider = new FullRunFixtureUser();
+    userProvider.interruptOpenRecallOnce = true;
+    const stopped = await runProductLifeLongRun({
+      runDirectory,
+      config,
+      userProvider,
+      userMetrics: [],
+    });
+    expect(stopped).toMatchObject({
+      status: "failed",
+      completedTurns: 35,
+      error: "deliberate_validation_interrupt",
+    });
+    const before = userProvider.prompts.at(-1)!.publicHistory as Array<{
+      sourceId: string;
+      firstVisibleAtUtc: string;
+      channel?: string;
+    }>;
+    const originalLetters = before.filter(
+      (message) => message.channel === "letter",
+    );
+    expect(originalLetters.map((message) => message.firstVisibleAtUtc)).toEqual(
+      ["2026-09-08T04:00:00.000Z", "2026-09-20T01:00:00.000Z"],
+    );
+    const promptBoundary = userProvider.prompts.length;
+    const resumed = await runProductLifeLongRun({
+      runDirectory,
+      config,
+      userProvider,
+      userMetrics: [],
+      resume: true,
+    });
+    expect(resumed).toMatchObject({ status: "completed", completedTurns: 42 });
+    const after = userProvider.prompts[promptBoundary]!
+      .publicHistory as typeof before;
+    expect(after.filter((message) => message.channel === "letter")).toEqual(
+      originalLetters,
+    );
+    expect(rows(runDirectory).messages).toHaveLength(84);
+  }, 90_000);
 
   it.each(["role", "schema", "transport"])(
     "stops invalid %s input before persisting a user message",

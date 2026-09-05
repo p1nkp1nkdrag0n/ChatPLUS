@@ -13,6 +13,7 @@ import {
 } from "@personasim/contracts";
 import {
   canonicalCheckpointSource,
+  groupCheckpointTurns,
   selectConversationRetentionWindow,
   type RetentionSelectionReason,
 } from "@personasim/features";
@@ -25,6 +26,11 @@ import {
   type VerifiedContinuityEvidence,
 } from "./autobiography-service.js";
 import { CheckpointAutobiographyError } from "./checkpoint-autobiography-model.js";
+import {
+  checkpointEntryCardTitle,
+  checkpointLongMessageReceipts,
+  MAXIMUM_CHECKPOINT_REPORT_ENTRIES,
+} from "./checkpoint-report-excerpts.js";
 import type { ContinuityIndexService } from "./continuity-index-service.js";
 import type {
   ArchivedMessage,
@@ -149,6 +155,21 @@ export class CheckpointService {
           .join("; "),
       );
     }
+    const sourceIndexOnlyEvidenceIds = checkpointLongMessageReceipts(started)
+      .filter((receipt) =>
+        preparedAutobiography.bundle.entries.some(
+          (entry) =>
+            entry.content === receipt.content &&
+            entry.evidence.length === 1 &&
+            entry.evidence[0]?.id === receipt.evidenceId,
+        ),
+      )
+      .map((receipt) => receipt.evidenceId);
+    const reportCoverage = {
+      sourceIndexOnlyEvidenceIds,
+      hasUnrefinedContent: sourceIndexOnlyEvidenceIds.length > 0,
+      note: "Source-index-only entries confirm a message exists; their life content has not been summarized or evaluated.",
+    };
     const cardDrafts = preparedAutobiography.bundle.entries.map((entry) =>
       eventCardDraft(started.checkpoint.id, entry),
     );
@@ -200,6 +221,7 @@ export class CheckpointService {
         }
         this.continuityIndex.persistPrepared(preparedCards);
         const artifact = {
+          reportCoverage,
           summaryFirstPerson:
             preparedAutobiography.bundle.snapshot.summaryFirstPerson,
           autobiography: preparedAutobiography.bundle.snapshot,
@@ -227,6 +249,7 @@ export class CheckpointService {
           eventType: "conversation.checkpoint.committed",
           recordedAtUtc: nowUtc,
           payload: {
+            reportCoverage,
             sessionId: input.sessionId,
             sourceRevision: checkpoint.sourceRevision,
             sourceHash: checkpoint.sourceHash,
@@ -280,7 +303,20 @@ export class CheckpointService {
     if (!selection.shouldCheckpoint) {
       return { status: "skipped", reason: selection.reason };
     }
-    const selected = selection.checkpointMessages as ArchivedMessage[];
+    const selected: ArchivedMessage[] = [];
+    let sourceTokenEstimate = 0;
+    // Retention limits tokens, but a category may still receive more than 40
+    // complete reports. Preserve turn boundaries and drain the oldest sources
+    // over successive checkpoints without enlarging the stored schema.
+    for (const turn of groupCheckpointTurns(selection.checkpointMessages)) {
+      if (
+        selected.length + turn.messages.length >
+        MAXIMUM_CHECKPOINT_REPORT_ENTRIES
+      )
+        break;
+      selected.push(...(turn.messages as ArchivedMessage[]));
+      sourceTokenEstimate += turn.tokenEstimate;
+    }
     const first = selected[0];
     const last = selected.at(-1);
     if (first === undefined || last === undefined) {
@@ -317,7 +353,7 @@ export class CheckpointService {
       sourceHash: checkpointSourceHash(selected),
       sourceRevision: session.revision,
       sourceMessageCount: selected.length,
-      sourceTokenEstimate: selection.sourceTokenEstimate,
+      sourceTokenEstimate,
       status: "pending",
       createdAtUtc: nowUtc,
       updatedAtUtc: nowUtc,
@@ -427,7 +463,7 @@ function eventCardDraft(
     sourceKind: "checkpoint",
     sourceId: checkpointId,
     dedupeKey: `${checkpointId}:${entry.entryKind}:${entry.ordinal}`,
-    title: entry.content.slice(0, 240),
+    title: checkpointEntryCardTitle(entry),
     summary: entry.content,
     tags: [entry.entryKind],
     namespace: "character_self",

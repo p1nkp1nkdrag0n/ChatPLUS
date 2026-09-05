@@ -883,6 +883,49 @@ export class FixtureLlmProvider implements LlmProvider {
     if (
       input.purpose === "checkpoint_autobiography" &&
       parseFixturePrompt(input.prompt)["outputContractVersion"] ===
+        "checkpoint_atomic_reports_v2"
+    ) {
+      const prompt = parseFixturePrompt(input.prompt);
+      const excerpts = Array.isArray(prompt["reportExcerpts"])
+        ? prompt["reportExcerpts"].map(asRecord)
+        : [];
+      const proposal = asRecord(response.data ?? {});
+      const entries = Array.isArray(proposal["entries"])
+        ? proposal["entries"]
+        : [];
+      return input.schema.parse({
+        entries: entries.map((value) => {
+          const entry = asRecord(value);
+          const evidence = Array.isArray(entry["evidence"])
+            ? entry["evidence"].map(asRecord)
+            : [];
+          if (
+            evidence.some((item) => item["sourceType"] === "message_archive")
+          ) {
+            const excerpt =
+              excerpts.find(
+                (item) => item["evidenceId"] === evidence[0]?.["id"],
+              ) ?? excerpts[0];
+            return {
+              basis: "reported_excerpt",
+              entryKind: entry["entryKind"],
+              temporalStatus: entry["temporalStatus"],
+              excerptId: excerpt?.["id"],
+            };
+          }
+          const fields = { ...entry };
+          delete fields["evidence"];
+          return {
+            ...fields,
+            basis: "evidence_summary",
+            evidenceIds: evidence.map((item) => item["id"]),
+          };
+        }),
+      });
+    }
+    if (
+      input.purpose === "checkpoint_autobiography" &&
+      parseFixturePrompt(input.prompt)["outputContractVersion"] ===
         "checkpoint_evidence_ids_v1"
     ) {
       const proposal = asRecord(response.data ?? {});

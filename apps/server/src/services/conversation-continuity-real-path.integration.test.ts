@@ -387,18 +387,28 @@ describe("conversation continuity real path", () => {
       throw new Error("Expected a committed autobiography snapshot");
     }
 
-    const entry = app.personasim.store.database
+    const entries = app.personasim.store.database
       .prepare(
-        "SELECT source_evidence_ids_json, evidence_json " +
+        "SELECT content, source_evidence_ids_json, evidence_json " +
           "FROM autobiography_entries WHERE snapshot_id = ?",
       )
-      .get(checkpoint.autobiography_snapshot_id) as
-      | {
-          source_evidence_ids_json: string;
-          evidence_json: string;
-        }
-      | undefined;
+      .all(checkpoint.autobiography_snapshot_id) as Array<{
+      content: string;
+      source_evidence_ids_json: string;
+      evidence_json: string;
+    }>;
+    const entry = entries.find((candidate) =>
+      (JSON.parse(candidate.evidence_json) as Array<{ sourceId: string }>).some(
+        (item) => item.sourceId === archivedTurn.userMessage.id,
+      ),
+    );
     expect(entry).toBeDefined();
+    expect(entry?.content).toContain("【长消息来源索引，内容尚未提炼】");
+    expect(
+      entries.some((candidate) =>
+        candidate.content.startsWith("我在对话中说过：「"),
+      ),
+    ).toBe(true);
     const evidence = JSON.parse(entry?.evidence_json ?? "[]") as Array<{
       id: string;
       sourceType: string;

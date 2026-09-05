@@ -17,6 +17,8 @@ export interface AutobiographyEvidenceCatalogItemLike extends AutobiographyEvide
   temporalStatus?:
     "planned" | "in_progress" | "occurred" | "cancelled" | "unknown";
   reliability: AutobiographyEvidenceReliabilityLike;
+  /** A server-derived receipt for an oversized archived message. Never model-authored. */
+  sourceReceipt?: string;
 }
 
 export type AutobiographyEntryKindLike =
@@ -178,8 +180,16 @@ export function validateAutobiographyRevision(input: {
       }
     }
 
+    const sourceReceipt =
+      resolved.length === 1 &&
+      entry.temporalStatus === "unknown" &&
+      resolved[0]?.sourceType === "message_archive" &&
+      resolved[0].reliability === "reported" &&
+      resolved[0].temporalStatus === "unknown" &&
+      resolved[0].sourceReceipt === entry.content;
     if (
       resolved.length > 0 &&
+      !sourceReceipt &&
       !resolved.some((evidence) => isGrounded(entry.content, evidence.text))
     ) {
       issues.push({

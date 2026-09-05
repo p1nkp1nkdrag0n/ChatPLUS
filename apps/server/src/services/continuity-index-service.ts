@@ -10,6 +10,7 @@ import { stableId, type TemporalAnchorLike } from "@personasim/features";
 import type { StoredActivityEvent } from "../db/store.js";
 import type { Clock } from "../runtime/clock.js";
 import type { VerifiedContinuityEvidence } from "./autobiography-service.js";
+import { checkpointEntryCardTitle } from "./checkpoint-report-excerpts.js";
 import type {
   ArchivedMessage,
   ContinuityRepository,
@@ -219,7 +220,7 @@ export class ContinuityIndexService {
             "continuity",
             `${agentId}:autobiography_entry:${entry.id}`,
           ),
-          title: entry.content.slice(0, 240),
+          title: checkpointEntryCardTitle(entry),
           summary: entry.content,
           tags: [entry.entryKind],
           namespace: "character_self",

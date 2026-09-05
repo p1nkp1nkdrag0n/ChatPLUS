@@ -1,10 +1,35 @@
+# Generated content belongs in the directory roots below, not beside source.
+# Directory rules cover every run name, nesting level, and generated file type.
+
+# Dependencies, build output, and local tool caches (all workspaces).
 node_modules/
 .pnpm-store/
 dist/
+.cache/
+.vite/
+.vite-temp/
+.eslintcache
+*.tsbuildinfo
+
+# Test output (all workspaces).
 coverage/
 playwright-report/
 test-results/
 blob-report/
+
+# Runtime data and generated assets. Keep only the empty directory marker.
+# Ignoring each immediate child also excludes its complete subtree.
+/data/*
+!/data/.gitkeep
+
+# Conventional local output directories, including package-local runs.
+# New simulations and tools must use these directories instead of per-run rules.
+tmp/
+temp/
+artifacts/
+instances/
+logs/
+backups/
 
 # Local secrets. Keep only the documented template.
 .env
@@ -13,19 +38,6 @@ blob-report/
 !.env.selfhosted.example
 *.local
 
-# Runtime data
-data/*.db
-data/*.db-*
-data/*.sqlite
-data/*.sqlite-*
-data/test-*/
-data/selfhosted/
-data/selfhosted-assets/
-instances/
-logs/
-backups/
-tmp/
-
 # Editor and OS noise
 .DS_Store
 Thumbs.db
@@ -33,12 +45,17 @@ Thumbs.db
 .vscode/
 *.log
 
-# Generated real-network acceptance transcripts stay local.
+# Compatibility for legacy generators that still write into docs/reports.
+# Do not ignore all reports or image files: reviewed docs/design assets are source.
+# New generated reports belong in /tmp/ or /artifacts/.
 /docs/reports/ChatPLUS_Real_Network_Acceptance_*.md
+/docs/reports/ChatPLUS_DeepSeek_State_Acceptance_*.md
+/docs/reports/ChatPLUS_DeepSeek_State_Acceptance_*.json
+/docs/reports/ChatPLUS_DeepSeek_State_Continuation_*.md
+/docs/reports/ChatPLUS_DeepSeek_State_Continuation_*.json
 
 # Local unresolved issues and investigation notes.
 /docs/issue/
 
 # Local-only planning drafts.
 /docs/plans/ChatPLUS_书信与关系纪念物系统分阶段实施计划书_v1.0.md
-

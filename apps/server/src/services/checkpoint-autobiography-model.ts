@@ -9,6 +9,7 @@ import {
   type TemporalStatus,
 } from "@personasim/contracts";
 import { validateAutobiographyRevision } from "@personasim/features";
+import { StructuredOutputError } from "@personasim/providers";
 import { z } from "zod";
 
 import type { VerifiedContinuityEvidence } from "./autobiography-service.js";
@@ -77,6 +78,18 @@ function proposalSchema(evidence: readonly VerifiedContinuityEvidence[]) {
     .strict();
 }
 
+export class CheckpointAutobiographyError extends Error {
+  constructor(
+    readonly failureCode: "generation_failed" | "artifact_validation_failed",
+    readonly attemptCount: number,
+    readonly issues: readonly string[],
+    options?: ErrorOptions,
+  ) {
+    super(issues.join("; "), options);
+    this.name = "CheckpointAutobiographyError";
+  }
+}
+
 export class LlmCheckpointAutobiographyModel implements CheckpointAutobiographyModel {
   constructor(private readonly llm: Pick<LlmService, "generateObject">) {}
 
@@ -84,75 +97,155 @@ export class LlmCheckpointAutobiographyModel implements CheckpointAutobiographyM
     input: CheckpointAutobiographyModelInput,
   ): Promise<AutobiographyRevisionProposal> {
     const schema = proposalSchema(input.evidence);
-    const draft = schema.parse(
-      await this.llm.generateObject({
-        purpose: "checkpoint_autobiography",
-        system: SYSTEM,
-        prompt: JSON.stringify({
-          outputContractVersion: "checkpoint_evidence_ids_v1",
-          checkpointId: input.checkpointId,
-          previousAutobiography: input.previousAutobiography ?? null,
-          messages: input.messages,
-          evidence: input.evidence.map(evidenceRef),
-        }),
-        schema,
-        agentId: input.agentId,
-      }),
-    );
-    const catalog = new Map(input.evidence.map((item) => [item.id, item]));
-    const proposal = AutobiographyRevisionProposalSchema.parse({
-      summaryFirstPerson: draft.summaryFirstPerson,
-      entries: draft.entries.map(({ evidenceIds, ...entry }) => {
-        const evidence = evidenceIds.map((id) => {
-          const source = catalog.get(id);
-          if (source === undefined)
-            throw new Error(`evidence_not_found: ${id}`);
-          return source;
-        });
-        if (
-          entry.temporalStatus === "in_progress" &&
-          !evidence.some(supportsOccurrence)
-        ) {
-          throw new Error("in_progress_without_occurrence_evidence");
+    let repairIssues: readonly string[] | undefined;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const draft = schema.parse(
+          await this.llm.generateObject({
+            purpose: "checkpoint_autobiography",
+            system: SYSTEM,
+            prompt: JSON.stringify({
+              outputContractVersion: "checkpoint_evidence_ids_v1",
+              checkpointId: input.checkpointId,
+              previousAutobiography: input.previousAutobiography ?? null,
+              messages: input.messages,
+              evidence: input.evidence.map(evidenceRef),
+              ...(repairIssues === undefined
+                ? {}
+                : {
+                    repair: {
+                      attempt,
+                      issues: repairIssues,
+                      instruction:
+                        "上一份提案未通过校验。这是唯一一次修复机会，请按原证据重新生成完整提案，纠正列出的问题；不得放宽证据要求、伪造编号或改写时间状态来绕过校验。",
+                    },
+                  }),
+            }),
+            schema,
+            agentId: input.agentId,
+            // This layer owns the single repair budget. Provider retries would
+            // otherwise multiply the physical requests for the same window.
+            maxRetries: 0,
+          }),
+        );
+        return restoreProposal(draft, input);
+      } catch (error) {
+        const issues = validationIssues(error);
+        if (issues === undefined) {
+          throw new CheckpointAutobiographyError(
+            "generation_failed",
+            attempt,
+            [error instanceof Error ? error.message : String(error)],
+            { cause: error },
+          );
         }
-        return { ...entry, evidence: evidence.map(evidenceRef) };
-      }),
-    });
-    // Validate the model's words before adding attribution, so the common
-    // reporting prefix cannot accidentally satisfy lexical grounding checks.
-    const validation = validateAutobiographyRevision({
-      proposal,
-      evidenceCatalog: input.evidence.map((item) => ({
-        id: item.id,
-        sourceType: item.sourceType,
-        sourceId: item.sourceId,
-        text: item.text,
-        reliability: item.reliability,
-        ...(item.temporalStatus === undefined
-          ? {}
-          : { temporalStatus: item.temporalStatus }),
-      })),
-    });
-    if (!validation.accepted) {
-      throw new Error(
-        validation.issues
-          .map((issue) => `${issue.code}: ${issue.message}`)
-          .join("; "),
-      );
+        if (attempt === 2) {
+          throw new CheckpointAutobiographyError(
+            "artifact_validation_failed",
+            attempt,
+            issues,
+            { cause: error },
+          );
+        }
+        repairIssues = issues;
+      }
     }
-    const hasReports = proposal.entries.some((entry) =>
-      entry.evidence.some((item) => item.reliability !== "fact"),
-    );
-    return AutobiographyRevisionProposalSchema.parse({
-      summaryFirstPerson: hasReports
-        ? `我记得这些记录中提到：${proposal.summaryFirstPerson}`
-        : proposal.summaryFirstPerson,
-      entries: proposal.entries.map((entry) => ({
-        ...entry,
-        content: `${reportAttribution(entry.evidence, input)}${entry.content}`,
-      })),
-    });
   }
+}
+
+function validationIssues(error: unknown): readonly string[] | undefined {
+  if (
+    error instanceof CheckpointAutobiographyError &&
+    error.failureCode === "artifact_validation_failed"
+  ) {
+    return error.issues.slice(0, 12).map((issue) => issue.slice(0, 400));
+  }
+  if (error instanceof StructuredOutputError) {
+    return (error.issues.length > 0 ? error.issues : [error.message])
+      .slice(0, 12)
+      .map((issue) => `INVALID_STRUCTURED_OUTPUT: ${issue}`.slice(0, 400));
+  }
+  if (error instanceof z.ZodError) {
+    return error.issues
+      .slice(0, 12)
+      .map((issue) =>
+        `invalid_proposal: ${issue.path.join(".") || "<root>"}: ${issue.message}`.slice(
+          0,
+          400,
+        ),
+      );
+  }
+  return undefined;
+}
+
+function restoreProposal(
+  draft: z.infer<ReturnType<typeof proposalSchema>>,
+  input: CheckpointAutobiographyModelInput,
+): AutobiographyRevisionProposal {
+  const catalog = new Map(input.evidence.map((item) => [item.id, item]));
+  const proposal = AutobiographyRevisionProposalSchema.parse({
+    summaryFirstPerson: draft.summaryFirstPerson,
+    entries: draft.entries.map(({ evidenceIds, ...entry }) => {
+      const evidence = evidenceIds.map((id) => {
+        const source = catalog.get(id);
+        if (source === undefined)
+          throw new CheckpointAutobiographyError(
+            "artifact_validation_failed",
+            1,
+            [`evidence_not_found: ${id}`],
+          );
+        return source;
+      });
+      if (
+        entry.temporalStatus === "in_progress" &&
+        !evidence.some(supportsOccurrence)
+      ) {
+        throw new CheckpointAutobiographyError(
+          "artifact_validation_failed",
+          1,
+          ["in_progress_without_occurrence_evidence"],
+        );
+      }
+      return { ...entry, evidence: evidence.map(evidenceRef) };
+    }),
+  });
+  // Validate the model's words before adding attribution, so the common
+  // reporting prefix cannot accidentally satisfy lexical grounding checks.
+  const validation = validateAutobiographyRevision({
+    proposal,
+    evidenceCatalog: input.evidence.map((item) => ({
+      id: item.id,
+      sourceType: item.sourceType,
+      sourceId: item.sourceId,
+      text: item.text,
+      reliability: item.reliability,
+      ...(item.temporalStatus === undefined
+        ? {}
+        : { temporalStatus: item.temporalStatus }),
+    })),
+  });
+  if (!validation.accepted) {
+    throw new CheckpointAutobiographyError(
+      "artifact_validation_failed",
+      1,
+      validation.issues.map(
+        (issue) =>
+          `${issue.code} (entry ${issue.entryIndex ?? "summary"}): ${issue.message}`,
+      ),
+    );
+  }
+  const hasReports = proposal.entries.some((entry) =>
+    entry.evidence.some((item) => item.reliability !== "fact"),
+  );
+  return AutobiographyRevisionProposalSchema.parse({
+    summaryFirstPerson: hasReports
+      ? `我记得这些记录中提到：${proposal.summaryFirstPerson}`
+      : proposal.summaryFirstPerson,
+    entries: proposal.entries.map((entry) => ({
+      ...entry,
+      content: `${reportAttribution(entry.evidence, input)}${entry.content}`,
+    })),
+  });
 }
 
 function reportAttribution(

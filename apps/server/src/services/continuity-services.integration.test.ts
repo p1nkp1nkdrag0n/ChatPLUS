@@ -58,6 +58,305 @@ describe("continuity services", () => {
     database.close();
   });
 
+  it("persists repeated failures, backs off across service restarts, and commits the original window after recovery", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    const model = new FakeCheckpointModel();
+    let generations = 0;
+    model.beforeReturn = () => {
+      generations += 1;
+      throw new Error("Provider unavailable");
+    };
+    const attempt = () =>
+      createServices(
+        new ContinuityRepository(store),
+        model,
+        clock,
+      ).checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      });
+
+    expect((await attempt()).status).toBe("failed");
+    const original =
+      repository.getCheckpointRecoveryState(SESSION_ID)!.checkpoint;
+    expect(store.listDomainEvents(AGENT_ID)).toMatchObject([
+      {
+        eventType: "conversation.checkpoint.failed",
+        streamVersion: 1,
+        payload: {
+          sessionId: SESSION_ID,
+          failureCode: "generation_failed",
+          sourceHash: original.sourceHash,
+          fromMessageId: original.fromMessageId,
+          throughMessageId: original.throughMessageId,
+        },
+      },
+    ]);
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      reason: "failure_cooldown",
+      retryAtUtc: "2026-08-21T12:05:00.000Z",
+    });
+    expect(generations).toBe(1);
+    expect(store.listDomainEvents(AGENT_ID)).toHaveLength(1);
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(8);
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)).toBeUndefined();
+
+    clock.advance({ minutes: 5 });
+    expect((await attempt()).status).toBe("failed");
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toMatchObject({
+      consecutiveFailures: 2,
+      checkpoint: { id: original.id },
+    });
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      retryAtUtc: "2026-08-21T12:20:00.000Z",
+    });
+    clock.advance({ minutes: 15 });
+    expect((await attempt()).status).toBe("failed");
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toMatchObject({
+      consecutiveFailures: 3,
+    });
+    clock.advance({ minutes: 30 });
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      retryAtUtc: "2026-08-21T13:20:00.000Z",
+    });
+    expect(generations).toBe(3);
+
+    clock.advance({ minutes: 30 });
+    model.beforeReturn = () => {
+      generations += 1;
+    };
+    const recovered = await attempt();
+    expect(recovered).toMatchObject({
+      status: "committed",
+      checkpoint: {
+        id: original.id,
+        fromMessageId: original.fromMessageId,
+        throughMessageId: original.throughMessageId,
+      },
+    });
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+    expect(
+      store
+        .listDomainEvents(AGENT_ID)
+        .map((event) => [event.eventType, event.streamVersion]),
+    ).toEqual([
+      ["conversation.checkpoint.committed", 4],
+      ["conversation.checkpoint.failed", 3],
+      ["conversation.checkpoint.failed", 2],
+      ["conversation.checkpoint.failed", 1],
+    ]);
+    expect(repository.getLatestAutobiography(AGENT_ID)).toBeDefined();
+  });
+
+  it("cools down a legacy failed row even when an older committed event exists", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    const model = new FakeCheckpointModel();
+    const attempt = () =>
+      createServices(
+        new ContinuityRepository(store),
+        model,
+        clock,
+      ).checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      });
+    expect((await attempt()).status).toBe("committed");
+    const previous = repository.getLatestCommittedCheckpoint(SESSION_ID)!;
+    clock.advance({ minutes: 1 });
+    model.beforeReturn = () => {
+      throw new Error("Legacy failure");
+    };
+    expect((await attempt()).status).toBe("failed");
+    // Reproduce the pre-upgrade database shape, which had failed rows but
+    // emitted only committed events. This database is private and in memory.
+    database
+      .prepare(
+        "DELETE FROM domain_events WHERE event_type = 'conversation.checkpoint.failed'",
+      )
+      .run();
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toMatchObject({
+      consecutiveFailures: 1,
+    });
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      reason: "failure_cooldown",
+      retryAtUtc: "2026-08-21T12:06:00.000Z",
+    });
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)?.id).toBe(
+      previous.id,
+    );
+    clock.advance({ minutes: 5 });
+    model.beforeReturn = undefined;
+    expect((await attempt()).status).toBe("committed");
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+  });
+
+  it("allows fresh messages to recover sooner without bypassing the minimum interval or dropping skipped messages", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    const model = new FakeCheckpointModel();
+    model.beforeReturn = () => {
+      throw new Error("Provider unavailable");
+    };
+    const services = createServices(repository, model, clock);
+    const attempt = () =>
+      services.checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      });
+    await attempt();
+    clock.advance({ minutes: 5 });
+    await attempt();
+    clock.advance({ minutes: 15 });
+    await attempt();
+    const failed =
+      repository.getCheckpointRecoveryState(SESSION_ID)!.checkpoint;
+    for (let index = 4; index < 6; index += 1) insertLargeTurn(store, index);
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      reason: "failure_cooldown",
+      retryAtUtc: "2026-08-21T12:25:00.000Z",
+    });
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)).toBeUndefined();
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(12);
+    clock.advance({ minutes: 5 });
+    model.beforeReturn = undefined;
+    const recovered = await attempt();
+    expect(recovered).toMatchObject({
+      status: "committed",
+      checkpoint: {
+        fromMessageId: failed.fromMessageId,
+        sourceMessageCount: failed.sourceMessageCount,
+      },
+    });
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(12);
+    expect(
+      store
+        .listDomainEvents(AGENT_ID)
+        .filter(
+          (event) => event.eventType === "conversation.checkpoint.failed",
+        ),
+    ).toHaveLength(3);
+    // Bounded checkpoint windows drain oldest first. New messages wait behind
+    // that boundary and remain available; the last complete turn stays live.
+    for (let index = 0; index < 5; index += 1) {
+      if ((await attempt()).status === "skipped") break;
+    }
+    expect(
+      repository.getLatestCommittedCheckpoint(SESSION_ID)?.throughMessageId,
+    ).toBe("msg_assistant_4");
+    expect(repository.listCommittedCheckpoints(AGENT_ID)).toHaveLength(5);
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(12);
+  });
+
+  it("records exhausted semantic repair details without creating snapshots or event cards", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    let calls = 0;
+    const model = new LlmCheckpointAutobiographyModel({
+      generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+        calls += 1;
+        expect(input.maxRetries).toBe(0);
+        return Promise.resolve(
+          input.schema.parse({
+            summaryFirstPerson: "Mountain hiking memory.",
+            entries: [
+              {
+                entryKind: "important_experience",
+                content: "Mountain hiking memory.",
+                temporalStatus: "unknown",
+                evidenceIds: ["invented_id"],
+              },
+            ],
+          }),
+        );
+      },
+    });
+    const result = await createServices(
+      repository,
+      model,
+      clock,
+    ).checkpoints.createIfNeeded({ agentId: AGENT_ID, sessionId: SESSION_ID });
+    expect(result).toMatchObject({
+      status: "failed",
+      reason: "artifact_validation_failed",
+    });
+    expect(calls).toBe(2);
+    expect(store.listDomainEvents(AGENT_ID)).toMatchObject([
+      {
+        eventType: "conversation.checkpoint.failed",
+        payload: {
+          failureCode: "artifact_validation_failed",
+          attemptCount: 2,
+          repairAttempted: true,
+          issues: ["evidence_not_found: invented_id"],
+        },
+      },
+    ]);
+    expect(repository.getLatestAutobiography(AGENT_ID)).toBeUndefined();
+    expect(readIndexedCards(database)).toEqual([]);
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)).toBeUndefined();
+  });
+
+  it("keeps the source revision fence when a new message arrives during semantic repair", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    let calls = 0;
+    const model = new LlmCheckpointAutobiographyModel({
+      generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+        calls += 1;
+        const { evidence } = JSON.parse(input.prompt) as {
+          evidence: ContinuityEvidenceRef[];
+        };
+        if (calls === 2)
+          insertMessage(store, {
+            id: "message_during_repair",
+            role: "user",
+            messageKind: "user",
+            content: "我又想起一件事。",
+            createdAtUtc: "2026-08-21T11:00:00.000Z",
+          });
+        return Promise.resolve(
+          input.schema.parse({
+            summaryFirstPerson: "Mountain hiking memory.",
+            entries: [
+              {
+                entryKind: "important_experience",
+                content: "Mountain hiking memory.",
+                temporalStatus: "unknown",
+                evidenceIds: [calls === 1 ? "invented_id" : evidence[0]!.id],
+              },
+            ],
+          }),
+        );
+      },
+    });
+    const services = createServices(repository, model, clock);
+    expect(
+      await services.checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      }),
+    ).toMatchObject({ status: "invalidated", reason: "source_changed" });
+    expect(calls).toBe(2);
+    expect(repository.getLatestAutobiography(AGENT_ID)).toBeUndefined();
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+    expect(
+      (
+        await services.checkpoints.createIfNeeded({
+          agentId: AGENT_ID,
+          sessionId: SESSION_ID,
+        })
+      ).status,
+    ).toBe("committed");
+  });
+
   it("commits reported conversations through the model DTO without inventing occurrence evidence", async () => {
     insertMessage(store, {
       id: "msg_report_user",

@@ -212,6 +212,71 @@ export class ContinuityRepository {
     return row === undefined ? undefined : mapCheckpoint(row);
   }
 
+  getCheckpointRecoveryState(sessionId: string):
+    | {
+        checkpoint: ConversationCheckpoint;
+        consecutiveFailures: number;
+      }
+    | undefined {
+    // Terminal events retain repeated failures even when beginCheckpoint
+    // reuses the same source-window row. A commit resets the failure streak.
+    const events = this.store.database
+      .prepare(
+        `SELECT event.stream_id AS checkpointId, event.event_type AS eventType,
+         json_extract(event.payload_json, '$.failureCode') AS failureCode
+       FROM domain_events AS event
+       JOIN conversation_checkpoints AS checkpoint ON checkpoint.id = event.stream_id
+       WHERE event.stream_type = 'conversation_checkpoint' AND checkpoint.session_id = ?
+         AND event.event_type IN ('conversation.checkpoint.failed', 'conversation.checkpoint.committed')
+       ORDER BY event.recorded_at_utc DESC, event.rowid DESC LIMIT 3`,
+      )
+      .all(sessionId) as Array<{
+      checkpointId: string;
+      eventType: string;
+      failureCode: string | null;
+    }>;
+    const latest = events[0];
+    if (latest?.eventType === "conversation.checkpoint.failed") {
+      const checkpoint = this.getCheckpoint(latest.checkpointId);
+      if (checkpoint?.status !== "failed") return undefined;
+      let consecutiveFailures = 0;
+      for (const event of events) {
+        if (
+          event.eventType !== latest.eventType ||
+          event.failureCode !== latest.failureCode
+        )
+          break;
+        consecutiveFailures += 1;
+      }
+      return { checkpoint, consecutiveFailures };
+    }
+    // Databases created before failure events existed still get an initial
+    // cooldown; their failed row never becomes a committed boundary.
+    const legacy = this.store.database
+      .prepare(
+        `SELECT * FROM conversation_checkpoints AS failed
+       WHERE session_id = ? AND status = 'failed'
+         AND NOT EXISTS (SELECT 1 FROM conversation_checkpoints AS committed
+           WHERE committed.session_id = failed.session_id AND committed.status = 'committed'
+             AND committed.committed_at_utc >= failed.updated_at_utc)
+       ORDER BY updated_at_utc DESC, rowid DESC LIMIT 1`,
+      )
+      .get(sessionId) as SqlRow | undefined;
+    return legacy === undefined
+      ? undefined
+      : { checkpoint: mapCheckpoint(legacy), consecutiveFailures: 1 };
+  }
+
+  nextCheckpointEventVersion(checkpointId: string): number {
+    const row = this.store.database
+      .prepare(
+        `SELECT COALESCE(MAX(stream_version), 0) + 1 AS version FROM domain_events
+       WHERE stream_type = 'conversation_checkpoint' AND stream_id = ?`,
+      )
+      .get(checkpointId) as { version: number };
+    return row.version;
+  }
+
   getCheckpoint(checkpointId: string): ConversationCheckpoint | undefined {
     const row = this.store.database
       .prepare("SELECT * FROM conversation_checkpoints WHERE id = ?")

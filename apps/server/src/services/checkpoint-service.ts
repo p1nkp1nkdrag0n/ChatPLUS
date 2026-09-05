@@ -24,6 +24,7 @@ import {
   messageEvidence,
   type VerifiedContinuityEvidence,
 } from "./autobiography-service.js";
+import { CheckpointAutobiographyError } from "./checkpoint-autobiography-model.js";
 import type { ContinuityIndexService } from "./continuity-index-service.js";
 import type {
   ArchivedMessage,
@@ -50,7 +51,8 @@ export interface CheckpointAutobiographyModel {
 export type CheckpointServiceResult =
   | {
       status: "skipped";
-      reason: RetentionSelectionReason;
+      reason: RetentionSelectionReason | "failure_cooldown";
+      retryAtUtc?: string;
     }
   | {
       status: "busy";
@@ -116,8 +118,16 @@ export class CheckpointService {
     } catch (error) {
       return this.fail(
         started.checkpoint.id,
-        "generation_failed",
+        error instanceof CheckpointAutobiographyError
+          ? error.failureCode
+          : "generation_failed",
         errorMessage(error),
+        error instanceof CheckpointAutobiographyError
+          ? {
+              attemptCount: error.attemptCount,
+              issues: error.issues,
+            }
+          : undefined,
       );
     }
 
@@ -134,7 +144,9 @@ export class CheckpointService {
       return this.fail(
         started.checkpoint.id,
         "artifact_validation_failed",
-        preparedAutobiography.issues.map((issue) => issue.message).join("; "),
+        preparedAutobiography.issues
+          .map((issue) => `${issue.code}: ${issue.message}`)
+          .join("; "),
       );
     }
     const cardDrafts = preparedAutobiography.bundle.entries.map((entry) =>
@@ -209,7 +221,9 @@ export class CheckpointService {
           agentId: input.agentId,
           streamType: "conversation_checkpoint",
           streamId: checkpoint.id,
-          streamVersion: 1,
+          streamVersion: this.repository.nextCheckpointEventVersion(
+            checkpoint.id,
+          ),
           eventType: "conversation.checkpoint.committed",
           recordedAtUtc: nowUtc,
           payload: {
@@ -273,6 +287,26 @@ export class CheckpointService {
       return { status: "skipped", reason: "no_visible_messages" };
     }
     const nowUtc = this.clock.nowUtc();
+    const recovery = this.repository.getCheckpointRecoveryState(sessionId);
+    if (recovery !== undefined) {
+      const delaysMinutes = [5, 15, 60] as const;
+      const backoffMinutes =
+        delaysMinutes[Math.min(recovery.consecutiveFailures, 3) - 1] ?? 60;
+      const newSourceChanges =
+        session.revision - recovery.checkpoint.sourceRevision;
+      // Fresh evidence may earn an earlier attempt, but never less than five
+      // minutes after failure. Message bursts cannot bypass the API backoff.
+      const waitMinutes = newSourceChanges >= 4 ? 5 : backoffMinutes;
+      const retryAt =
+        Date.parse(recovery.checkpoint.updatedAtUtc) + waitMinutes * 60_000;
+      if (Date.parse(nowUtc) < retryAt) {
+        return {
+          status: "skipped",
+          reason: "failure_cooldown",
+          retryAtUtc: new Date(retryAt).toISOString(),
+        };
+      }
+    }
     const checkpoint = ConversationCheckpointSchema.parse({
       id: createEntityId("checkpoint"),
       agentId,
@@ -324,15 +358,49 @@ export class CheckpointService {
     checkpointId: string,
     reason: "generation_failed" | "artifact_validation_failed",
     errorSummary: string,
+    generation?: { attemptCount: number; issues: readonly string[] },
   ): Extract<CheckpointServiceResult, { status: "failed" }> {
     const nowUtc = this.clock.nowUtc();
     this.repository.transaction(() => {
-      this.repository.failCheckpoint({
+      const failed = this.repository.failCheckpoint({
         checkpointId,
         failedAtUtc: nowUtc,
         failureCode: reason,
-        failureSummary: errorSummary.slice(0, 1_000),
+        failureSummary:
+          errorSummary.slice(0, 1_000) || "Checkpoint generation failed.",
       });
+      const checkpoint = this.repository.getCheckpoint(checkpointId);
+      if (failed && checkpoint !== undefined) {
+        const version =
+          this.repository.nextCheckpointEventVersion(checkpointId);
+        this.repository.store.insertDomainEvent({
+          agentId: checkpoint.agentId,
+          streamType: "conversation_checkpoint",
+          streamId: checkpointId,
+          streamVersion: version,
+          eventType: "conversation.checkpoint.failed",
+          recordedAtUtc: nowUtc,
+          payload: {
+            sessionId: checkpoint.sessionId,
+            failureCode: reason,
+            errorSummary: checkpoint.failureSummary,
+            sourceRevision: checkpoint.sourceRevision,
+            sourceHash: checkpoint.sourceHash,
+            fromMessageId: checkpoint.fromMessageId,
+            throughMessageId: checkpoint.throughMessageId,
+            ...(generation === undefined
+              ? {}
+              : {
+                  attemptCount: generation.attemptCount,
+                  repairAttempted: generation.attemptCount > 1,
+                  issues: generation.issues
+                    .slice(0, 12)
+                    .map((issue) => issue.slice(0, 400)),
+                }),
+          },
+          idempotencyKey: `checkpoint:${checkpointId}:failed:${version}`,
+        });
+      }
     });
     const checkpoint = this.repository.getCheckpoint(checkpointId);
     if (checkpoint === undefined) {

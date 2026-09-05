@@ -1,11 +1,15 @@
 import { type AutobiographyRevisionProposal } from "@personasim/contracts";
+import { StructuredOutputError } from "@personasim/providers";
 import { describe, expect, it } from "vitest";
 
 import {
   messageEvidence,
   type VerifiedContinuityEvidence,
 } from "./autobiography-service.js";
-import { LlmCheckpointAutobiographyModel } from "./checkpoint-autobiography-model.js";
+import {
+  CheckpointAutobiographyError,
+  LlmCheckpointAutobiographyModel,
+} from "./checkpoint-autobiography-model.js";
 import type { CheckpointAutobiographyModelInput } from "./checkpoint-service.js";
 import type { ArchivedMessage } from "./continuity-repository.js";
 import type { GenerateObjectInput } from "./llm-service.js";
@@ -26,7 +30,7 @@ const messages: ArchivedMessage[] = [
     agentId: "agent",
     role: "assistant",
     messageKind: "assistant_reply",
-    content: "我刚剪完粗剪，明天想再检查一次粗剪。",
+    content: "我刚剪完粗剪，明天 UTC 04:00 想再检查一次粗剪。",
     createdAtUtc: "2026-08-21T04:01:00.000Z",
   },
 ];
@@ -65,12 +69,26 @@ function draft(override: Record<string, unknown> = {}) {
 }
 
 function model(output: unknown) {
+  return modelSequence([output]);
+}
+
+function promptData(prompt: string): {
+  evidence: unknown;
+  messages: unknown;
+  repair?: { attempt: number; issues: string[] };
+} {
+  return JSON.parse(prompt) as ReturnType<typeof promptData>;
+}
+
+function modelSequence(outputs: readonly unknown[]) {
   const calls: GenerateObjectInput<unknown>[] = [];
   return {
     calls,
     model: new LlmCheckpointAutobiographyModel({
       generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
         calls.push(input);
+        const output = outputs[Math.min(calls.length - 1, outputs.length - 1)];
+        if (output instanceof Error) return Promise.reject(output);
         return Promise.resolve(input.schema.parse(output));
       },
     }),
@@ -78,6 +96,98 @@ function model(output: unknown) {
 }
 
 describe("checkpoint autobiography model boundary", () => {
+  it("repairs an unknown evidence ID once against the unchanged catalog", async () => {
+    const runner = modelSequence([
+      draft({ evidenceIds: ["invented_id"] }),
+      draft(),
+    ]);
+    const proposal = await runner.model.generateAutobiography(modelInput);
+    expect(proposal.entries[0]!.evidence[0]!.id).toBe(evidence[0]!.id);
+    expect(runner.calls).toHaveLength(2);
+    expect(runner.calls.map((call) => call.maxRetries)).toEqual([0, 0]);
+    const first = promptData(runner.calls[0]!.prompt);
+    const second = promptData(runner.calls[1]!.prompt);
+    expect(second.evidence).toEqual(first.evidence);
+    expect(second.messages).toEqual(first.messages);
+    expect(first.repair).toBeUndefined();
+    expect(second.repair).toMatchObject({
+      attempt: 2,
+      issues: ["evidence_not_found: invented_id"],
+    });
+  });
+
+  it("uses the same single repair budget for provider schema errors", async () => {
+    const runner = modelSequence([
+      new StructuredOutputError("Invalid DTO", [
+        "entries.0: evidenceIds required",
+      ]),
+      draft(),
+    ]);
+    await expect(
+      runner.model.generateAutobiography(modelInput),
+    ).resolves.toBeDefined();
+    expect(runner.calls).toHaveLength(2);
+    expect(promptData(runner.calls[1]!.prompt).repair!.issues).toEqual([
+      "INVALID_STRUCTURED_OUTPUT: entries.0: evidenceIds required",
+    ]);
+  });
+
+  it("stops after the one repair and preserves structured semantic failure details", async () => {
+    const runner = model(draft({ evidenceIds: ["invented_id"] }));
+    await expect(
+      runner.model.generateAutobiography(modelInput),
+    ).rejects.toMatchObject({
+      name: "CheckpointAutobiographyError",
+      failureCode: "artifact_validation_failed",
+      attemptCount: 2,
+      issues: ["evidence_not_found: invented_id"],
+    });
+    expect(runner.calls).toHaveLength(2);
+  });
+
+  it("does not spend a semantic repair on a transport failure", async () => {
+    const runner = model(new Error("HTTP 429"));
+    await expect(
+      runner.model.generateAutobiography(modelInput),
+    ).rejects.toMatchObject({
+      failureCode: "generation_failed",
+      attemptCount: 1,
+      issues: ["HTTP 429"],
+    });
+    expect(runner.calls).toHaveLength(1);
+  });
+
+  it("preserves attempt count when transport fails during the one repair", async () => {
+    const runner = modelSequence([
+      draft({ evidenceIds: ["invented_id"] }),
+      new Error("Timed out"),
+    ]);
+    await expect(
+      runner.model.generateAutobiography(modelInput),
+    ).rejects.toMatchObject({
+      failureCode: "generation_failed",
+      attemptCount: 2,
+      issues: ["Timed out"],
+    });
+    expect(runner.calls).toHaveLength(2);
+  });
+
+  it("bounds repair diagnostics without replaying a rejected autobiography", async () => {
+    const runner = modelSequence([
+      new CheckpointAutobiographyError(
+        "artifact_validation_failed",
+        1,
+        Array.from({ length: 30 }, () => "failure".repeat(200)),
+      ),
+      draft(),
+    ]);
+    await runner.model.generateAutobiography(modelInput);
+    const repair = promptData(runner.calls[1]!.prompt).repair!;
+    expect(repair.issues).toHaveLength(12);
+    expect(repair.issues.every((issue) => issue.length <= 400)).toBe(true);
+    expect(repair).not.toHaveProperty("previousProposal");
+  });
+
   it("restores the exact catalog references and attributes reported corrections to the user", async () => {
     const runner = model(draft());
     const proposal = await runner.model.generateAutobiography(modelInput);

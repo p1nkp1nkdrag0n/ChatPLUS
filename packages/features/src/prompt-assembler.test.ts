@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EvidenceBundle } from "@personasim/contracts";
+import { buildConversationContextPlan } from "./conversation-context-plan.js";
 
 import {
   assembleChatPrompt,
@@ -48,6 +49,69 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
 };
 
 describe("complete evidence budgets", () => {
+  it.each([undefined, 3_000, 4_000, 8_000])(
+    "keeps use permissions with evidence at %s tokens",
+    (budget) => {
+      const item = MEMORY_EVIDENCE.evidence[0]!;
+      const result = assembleChatPrompt(
+        baseInput({
+          memoryEvidence: MEMORY_EVIDENCE,
+          memoryUse: {
+            backgroundEvidenceIds: [item.evidence.id],
+            behavioralPreferenceEvidenceIds: [],
+            explicitMentionEvidenceIds: [],
+            omissions: [],
+          },
+          ...(budget === undefined ? {} : { maxInputTokens: budget }),
+        }),
+      );
+      const lines = result.prompt.split("\n");
+      const index = lines.indexOf("RETRIEVED_EVIDENCE_JSON");
+      if (index >= 0) {
+        const payload = JSON.parse(lines[index + 1]!) as {
+          evidence: { allowedUses: string[]; memoryContent: string }[];
+        };
+        for (const evidence of payload.evidence) {
+          expect(evidence.allowedUses).toEqual(["background"]);
+          expect(evidence.memoryContent).toBe(item.memoryContent);
+        }
+      }
+      const reference = lines.indexOf("REFERENCE_CONTEXT_JSON");
+      if (reference >= 0)
+        expect(JSON.parse(lines[reference + 1]!)).not.toHaveProperty(
+          "memoryEvidence",
+        );
+    },
+  );
+
+  it("does not render excluded evidence or unrelated initial goals in ordinary sharing", () => {
+    const original = baseInput({ memoryEvidence: MEMORY_EVIDENCE });
+    const userMessage = "今天路上看到一只小猫，挺开心。";
+    const result = assembleChatPrompt({
+      ...original,
+      userMessage,
+      conversationPlan: buildConversationContextPlan({
+        originalQuery: userMessage,
+        agentId: "agent-test",
+        sessionId: "session-test",
+        recentMessages: [],
+      }),
+      memoryUse: {
+        backgroundEvidenceIds: [],
+        behavioralPreferenceEvidenceIds: [],
+        explicitMentionEvidenceIds: [],
+        omissions: [],
+      },
+    });
+    expect(result.prompt).not.toContain("The user enjoys hiking.");
+    expect(promptSegmentJson(result.system, "CORE_PERSONA_JSON")).toMatchObject(
+      { goals: [] },
+    );
+    expect(
+      promptSegmentJson(result.system, "VALUES_CONFLICTS_JSON"),
+    ).toMatchObject({ contradictions: [] });
+    expect(original.character.persona.goals.length).toBeGreaterThan(0);
+  });
   it.each([undefined, 4_000, 8_000])(
     "keeps late qualifications intact at %s tokens",
     (budget) => {

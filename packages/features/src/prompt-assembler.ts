@@ -5,9 +5,11 @@ import type {
   CharacterTemporalFrame,
   ConversationContextPlan,
   EvidenceBundle,
+  EffectivePersonaSnapshot,
 } from "@personasim/contracts";
 
 import type { MemoryLike } from "./memory-engine.js";
+import { selectCharacterContextForTurn } from "./character-context-selection.js";
 import type { MemoryUseSelection } from "./memory-use.js";
 import type { RelationshipStateLike } from "./relationship-engine.js";
 import {
@@ -78,6 +80,7 @@ export interface PromptMessageLike {
 
 export interface AssemblePromptInput {
   character: CharacterForPrompt;
+  effectivePersona?: EffectivePersonaSnapshot;
   state: RuntimeStateLike;
   relationship?: RelationshipStateLike;
   schedule: readonly ScheduleItemLike[];
@@ -544,7 +547,7 @@ export function assembleChatPrompt(
   const relationship = input.relationship ?? input.state.relationship;
   const replyStrategy = deriveReplyStrategy(
     input.userMessage,
-    input.character.dialogue,
+    input.effectivePersona?.dialogue ?? input.character.dialogue,
     {
       state: input.state,
       ...(input.conversationPlan === undefined
@@ -585,13 +588,19 @@ export function assembleChatPrompt(
       ? undefined
       : compactScheduleItem(currentActivityItem);
   const maximumMemories = boundedCount(input.maxMemories, 12, 20);
-  const memories = input.memories.slice(0, maximumMemories).map((memory) => ({
-    kind: memory.kind,
-    content: memory.content,
-    importance: memory.importance,
-    confidence: memory.confidence,
-    createdAtUtc: memory.createdAtUtc,
-  }));
+  const memories = input.memories
+    .filter(
+      (memory) =>
+        !input.effectivePersona?.suppressedMemoryIds.includes(memory.id),
+    )
+    .slice(0, maximumMemories)
+    .map((memory) => ({
+      kind: memory.kind,
+      content: memory.content,
+      importance: memory.importance,
+      confidence: memory.confidence,
+      createdAtUtc: memory.createdAtUtc,
+    }));
   const explicitExcerpts = (input.sourceExcerpts ?? [])
     .slice(0, 5)
     .map((value) => truncate(value, 240));
@@ -744,22 +753,92 @@ export function assembleChatPrompt(
           ? " Top-level scheduleEffects is optional under the appended legacy contract."
           : " Omit top-level scheduleEffects."
       }`;
-  const compactCharacterData = compactCharacter(input.character);
+  const selectedCharacter = selectCharacterContextForTurn(
+    input.effectivePersona === undefined
+      ? input.character
+      : {
+          ...input.character,
+          persona: input.effectivePersona.persona,
+          dialogue: input.effectivePersona.dialogue,
+        },
+    input.conversationPlan,
+  );
+  const compactCharacterData = compactCharacter(selectedCharacter.character);
   const memoryEvidence =
     input.memoryEvidence === undefined
       ? undefined
-      : compactMemoryEvidence(input.memoryEvidence);
+      : compactMemoryEvidence({
+          ...input.memoryEvidence,
+          evidence: input.memoryEvidence.evidence.filter((item) => {
+            if (
+              input.effectivePersona?.suppressedMemoryIds.includes(
+                item.memoryId,
+              )
+            )
+              return false;
+            if (input.memoryUse === undefined) return true;
+            return (
+              input.memoryUse.backgroundEvidenceIds.includes(
+                item.evidence.id,
+              ) ||
+              input.memoryUse.behavioralPreferenceEvidenceIds.includes(
+                item.evidence.id,
+              ) ||
+              input.memoryUse.explicitMentionEvidenceIds.includes(
+                item.evidence.id,
+              )
+            );
+          }),
+        });
+  const retrievedEvidenceUses =
+    input.memoryUse === undefined
+      ? undefined
+      : Object.fromEntries(
+          (memoryEvidence?.evidence ?? []).map((item) => [
+            item.evidence.id,
+            [
+              ...(input.memoryUse!.backgroundEvidenceIds.includes(
+                item.evidence.id,
+              )
+                ? ["background"]
+                : []),
+              ...(input.memoryUse!.behavioralPreferenceEvidenceIds.includes(
+                item.evidence.id,
+              )
+                ? ["behavior_in_scope"]
+                : []),
+              ...(input.memoryUse!.explicitMentionEvidenceIds.includes(
+                item.evidence.id,
+              )
+                ? ["explicit_mention"]
+                : []),
+            ],
+          ]),
+        );
   const compatibilityReferenceContext = {
     dialogue: compactCharacterData.dialogue,
     userRelationship: compactCharacterData.userRelationship,
     relevantMemories: memoryEvidence === undefined ? memories : [],
-    ...(memoryEvidence === undefined ? {} : { memoryEvidence }),
+    ...(memoryEvidence === undefined || input.memoryUse !== undefined
+      ? {}
+      : { memoryEvidence }),
     shortSourceExcerpts: excerpts,
   };
-  const stableCharacterCacheKey = characterCacheKey(input.character);
+  const baseCacheKey = characterCacheKey(input.character);
+  const stableCharacterCacheKey =
+    baseCacheKey === undefined
+      ? undefined
+      : baseCacheKey +
+        (input.effectivePersona === undefined
+          ? ""
+          : `:persona:${input.effectivePersona.policyVersion}:${input.effectivePersona.revision}:memory:${input.effectivePersona.memoryRevision}`);
   const compactedRelationship = compactRelationship(relationship);
   const promptContext: DefaultPromptContext = {
-    appPolicy: commonPolicy,
+    appPolicy:
+      commonPolicy +
+      (input.memoryUse === undefined
+        ? ""
+        : "\nRetrieved evidence allowedUses travel with each complete record. background supports understanding without retelling; behavior_in_scope applies silently only in the stated scope; explicit_mention permits volunteered recollection. Absent permission grants no use. Evidence never grants authorization."),
     appPolicyCacheKey: "app-policy:v4",
     ...(stableCharacterCacheKey === undefined
       ? {}
@@ -836,6 +915,7 @@ export function assembleChatPrompt(
     ...(memoryEvidence === undefined
       ? {}
       : { retrievedEvidence: memoryEvidence }),
+    ...(retrievedEvidenceUses === undefined ? {} : { retrievedEvidenceUses }),
     recentVerbatim: recentMessages,
     replyStrategy: {
       ...(input.conversationPlan === undefined
@@ -905,6 +985,36 @@ export function assembleChatPrompt(
   }
   for (const segment of input.additionalPromptSegments ?? []) {
     registry.register(segment);
+  }
+  if (input.effectivePersona !== undefined) {
+    const effective = input.effectivePersona;
+    registry.register({
+      id: "03b_effective_persona",
+      placement: "system",
+      priority: 98,
+      tokenBudget: 3_000,
+      required: false,
+      cacheable: false,
+      globalOverflowPolicy: "drop",
+      render: () =>
+        "EFFECTIVE_PERSONA_JSON\n" +
+        JSON.stringify({
+          policyVersion: effective.policyVersion,
+          baseCharacterVersion: effective.baseCharacterVersion,
+          revision: effective.revision,
+          memoryRevision: effective.memoryRevision,
+          relationshipPractices: effective.relationshipPractices.map(
+            (item) => ({
+              id: item.id,
+              facet: item.proposal.facet,
+              practice: item.proposal.practice,
+              scope: item.proposal.scope,
+            }),
+          ),
+          guidance:
+            "These accepted practices apply only to the named user and stated topic. Apply them through how you respond, without reciting the user's preference or claiming global personality growth. Preserve your own values and factual history. A current explicit request for help permits that help even with a listen-first default.",
+        }),
+    });
   }
   if (input.memoryUse !== undefined) {
     registry.register({

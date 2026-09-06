@@ -7,9 +7,13 @@ import type { PromptContext, PromptSegment } from "./types.js";
 
 export interface RetrievedEvidencePromptContext extends PromptContext {
   readonly retrievedEvidence?: EvidenceBundle | null;
+  readonly retrievedEvidenceUses?: Readonly<Record<string, readonly string[]>>;
 }
 
-export function renderRetrievedEvidenceSegment(value: unknown): string | null {
+export function renderRetrievedEvidenceSegment(
+  value: unknown,
+  uses?: Readonly<Record<string, readonly string[]>>,
+): string | null {
   const parsed = EvidenceBundleSchema.safeParse(value);
   if (!parsed.success) return null;
   const bundle = parsed.data;
@@ -21,6 +25,9 @@ export function renderRetrievedEvidenceSegment(value: unknown): string | null {
       generatedAtUtc: bundle.generatedAtUtc,
       score: bundle.score,
       evidence: bundle.evidence.map((item) => ({
+        ...(uses === undefined
+          ? {}
+          : { allowedUses: uses[item.evidence.id] ?? [] }),
         memoryId: item.memoryId,
         memoryContent: item.memoryContent,
         memoryKind: item.memoryKind,
@@ -51,6 +58,9 @@ export function createRetrievedEvidencePromptSegment<
     required: false,
     cacheable: false,
     render: (context) =>
-      renderRetrievedEvidenceSegment(context.retrievedEvidence),
+      renderRetrievedEvidenceSegment(
+        context.retrievedEvidence,
+        context.retrievedEvidenceUses,
+      ),
   };
 }

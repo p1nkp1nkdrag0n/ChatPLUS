@@ -72,6 +72,8 @@ import {
   createDailyLifeContext,
   dayPeriod,
   freezeTimelinePlan,
+  createEvidenceDrivenGoalThread,
+  projectGoalThreadOutcome,
   inferDomain,
   localCalendarDayDifference,
   milestoneEffectiveLocalDate,
@@ -299,6 +301,7 @@ export class FuzzyLifeService {
           });
           if (this.repository.insertLifeOutcome(outcome)) {
             createdOutcomeIds.push(outcome.id);
+            this.applyGoalThreadOutcome(outcome, toUtc);
           }
           outcomeIds.push(outcome.id);
         }
@@ -343,7 +346,13 @@ export class FuzzyLifeService {
         actionsAreNotOutcomes: true,
         characterTimePrecision: "day_or_period",
         characterLifeOwner: "character",
-        lifeThreadStagesAdvanceByCharacterLocalDate: true,
+        lifeThreadStagesAdvanceByCharacterLocalDate:
+          snapshot.threads.length > 0
+            ? snapshot.threads.every(
+                (thread) => thread.progressionPolicy !== "evidence_driven_v2",
+              )
+            : this.store.getCharacterSpec(agentId)?.compilationPolicyVersion !==
+              "companion_character_v2",
         lifeThreadStageIsNotDailyOutcome: true,
         lifeThreadStageIsNotProofOfExternalSuccess: true,
       },
@@ -364,6 +373,7 @@ export class FuzzyLifeService {
         subject: "character",
         title: thread.title,
         currentStage: thread.currentStage,
+        progressionPolicy: thread.progressionPolicy ?? "legacy_calendar_v1",
         progressNote: thread.progressNote,
         nextStepHint: thread.nextStepHint,
       })),
@@ -2446,11 +2456,68 @@ export class FuzzyLifeService {
     return undefined;
   }
 
+  private applyGoalThreadOutcome(outcome: LifeOutcome, atUtc: string): void {
+    for (const threadId of outcome.threadIds) {
+      const thread = this.repository.findThreadById(threadId);
+      if (thread === undefined) continue;
+      const updated = projectGoalThreadOutcome(thread, outcome, atUtc);
+      if (updated === undefined) continue;
+      this.repository.updateThread(updated, thread.revision);
+      this.recordEvent({
+        agentId: outcome.agentId,
+        streamType: "life_thread",
+        streamId: thread.id,
+        streamVersion: updated.revision,
+        eventType: "life.thread_observation_applied",
+        recordedAtUtc: atUtc,
+        effectiveAtUtc: atUtc,
+        payload: {
+          threadId: thread.id,
+          outcomeId: outcome.id,
+          sourceEvidenceIds: outcome.sourceEvidenceIds,
+          progressionBasis: "evidence_driven_v2",
+          origin: outcome.origin,
+          previousStage: thread.currentStage,
+          currentStage: updated.currentStage,
+          status: updated.status,
+          effectiveLocalDate: outcome.effectiveLocalDate,
+          temporalPrecision: "day",
+        },
+        idempotencyKey: `life-thread:${thread.id}:outcome:${outcome.id}`,
+      });
+    }
+  }
+
   private ensureGoalThreads(spec: CharacterSpec, atUtc: string): LifeThread[] {
     for (const goal of spec.persona.goals.slice(0, 4)) {
       const key = `life-thread:${spec.id}:goal:${goal.id}`;
       const existing = this.repository.findThreadByIdempotencyKey(key);
       if (existing === undefined) {
+        if (spec.compilationPolicyVersion === "companion_character_v2") {
+          const thread = createEvidenceDrivenGoalThread(spec, goal, atUtc);
+          this.store.transaction(() => {
+            if (!this.repository.insertThread(thread)) return;
+            this.recordEvent({
+              agentId: spec.id,
+              streamType: "life_thread",
+              streamId: thread.id,
+              streamVersion: thread.revision,
+              eventType: "life.thread_created",
+              recordedAtUtc: atUtc,
+              effectiveAtUtc: atUtc,
+              payload: {
+                threadId: thread.id,
+                sourceGoalId: goal.id,
+                sourceCharacterVersion: spec.version,
+                progressionBasis: "evidence_driven_v2",
+                effectiveLocalDate: thread.startedLocalDate,
+                temporalPrecision: "day",
+              },
+              idempotencyKey: `life-thread:${thread.id}:created`,
+            });
+          });
+          continue;
+        }
         const timelinePlan = freezeTimelinePlan(spec, goal, atUtc);
         const milestones = timelinePlan.milestones;
         const firstMilestone = milestones[0]!;
@@ -2518,7 +2585,12 @@ export class FuzzyLifeService {
       try {
         this.store.transaction(() => {
           const thread = this.repository.findThreadById(threadId);
-          if (thread === undefined || thread.status !== "active") return;
+          if (
+            thread === undefined ||
+            thread.status !== "active" ||
+            thread.progressionPolicy === "evidence_driven_v2"
+          )
+            return;
           const migration =
             thread.timelinePlan === undefined
               ? resolveLegacyTimelinePlan(this.store, thread)

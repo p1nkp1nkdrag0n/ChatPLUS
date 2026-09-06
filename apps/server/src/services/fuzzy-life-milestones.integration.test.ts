@@ -6,6 +6,7 @@ import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
 import { openDatabase, type Database } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
+import { buildTimeBasedGoalMilestones } from "../domain/defaults.js";
 
 const START_UTC = "2026-09-01T01:00:00.000Z";
 
@@ -270,6 +271,14 @@ async function createPublishedCharacter(app: PersonaSimApp): Promise<{
   const character = body<{ character: { id: string; version: number } }>(
     generated,
   ).character;
+  // This suite replays historical calendar-policy threads. New HTTP creations
+  // intentionally use evidence-driven policy; seed the historical snapshot
+  // explicitly instead of treating today's compiler as an old fixture.
+  const legacy = app.personasim.store.getCharacterSpec(character.id)!;
+  delete legacy.compilationPolicyVersion;
+  for (const goal of legacy.persona.goals)
+    goal.milestones = buildTimeBasedGoalMilestones(goal.id, goal.title);
+  app.personasim.store.replaceVersion(legacy);
   await app.inject({
     method: "POST",
     url: `/api/characters/${character.id}/publish`,

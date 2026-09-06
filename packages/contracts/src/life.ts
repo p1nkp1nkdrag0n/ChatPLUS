@@ -293,6 +293,11 @@ export const LifeThreadStatusSchema = z.enum([
 ]);
 export type LifeThreadStatus = z.infer<typeof LifeThreadStatusSchema>;
 
+export const LifeThreadProgressionPolicySchema = z.enum([
+  "legacy_calendar_v1",
+  "evidence_driven_v2",
+]);
+
 export const LifeThreadMilestoneSchema = z
   .object({
     id: EntityIdSchema,
@@ -383,6 +388,9 @@ export const LifeThreadSchema = z
     summary: NonEmptyTextSchema,
     domain: LifeDomainSchema,
     status: LifeThreadStatusSchema,
+    progressionPolicy: LifeThreadProgressionPolicySchema.optional(),
+    sourceGoalId: EntityIdSchema.optional(),
+    sourceCharacterVersion: z.number().int().positive().optional(),
     currentStage: ShortTextSchema,
     progressNote: NonEmptyTextSchema.optional(),
     nextStepHint: ShortTextSchema.optional(),
@@ -400,6 +408,27 @@ export const LifeThreadSchema = z
   .strict()
   .superRefine((value, context) => {
     addDuplicateIssue(value.sourceMessageIds, "sourceMessageIds", context);
+    if (value.progressionPolicy === "evidence_driven_v2") {
+      if (
+        value.sourceGoalId === undefined ||
+        value.sourceCharacterVersion === undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Evidence-driven goal threads require their immutable goal source",
+          path: ["sourceGoalId"],
+        });
+      }
+      if (value.timelinePlan !== undefined) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Evidence-driven threads do not own a calendar milestone plan",
+          path: ["timelinePlan"],
+        });
+      }
+    }
     if (
       (value.timelinePlan === undefined) !==
       (value.currentMilestoneId === undefined)

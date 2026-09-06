@@ -45,6 +45,11 @@ import {
 } from "./product-life-long-run-plan.js";
 import { auditProductLifeDatabase } from "./product-life-long-run-audit.js";
 import {
+  captureContinuityRunIdentity,
+  continuityHash,
+  freezeContinuityManifest,
+} from "./continuity-run-identity.js";
+import {
   providerMetricsReport,
   renderProviderMetricsReport,
   type ProfiledLlmCallMetric,
@@ -158,8 +163,9 @@ export async function runProductLifeLongRun(
     persona: PRODUCT_LIFE_USER_PERSONA,
     turns: PRODUCT_LIFE_PLAN,
   };
-  const resumeIdentity: unknown = JSON.parse(
-    JSON.stringify({
+  const resumeIdentity = await captureContinuityRunIdentity({
+    config,
+    experiment: {
       inputProtocol: PRODUCT_LIFE_INPUT_PROTOCOL,
       character: {
         provider: config.llm.provider,
@@ -179,8 +185,12 @@ export async function runProductLifeLongRun(
       },
       conversationRetention: config.conversationRetention,
       simulatedStartUtc: START,
-    }),
-  );
+      scenarioSha256: continuityHash(currentPlan),
+      characterInputSha256: continuityHash(buildGuLanV3CharacterInput()),
+      physicalRequestBudget: 200,
+      scheduler: false,
+    },
+  });
   if (options.resume) {
     const savedManifest = JSON.parse(
       await readFile(join(directory, "manifest.json"), "utf8"),
@@ -197,6 +207,11 @@ export async function runProductLifeLongRun(
       );
     }
   }
+  await freezeContinuityManifest(
+    join(directory, "frozen-manifest.json"),
+    resumeIdentity,
+    options.resume === true,
+  );
   const characterMetrics: ProfiledLlmCallMetric[] = existsSync(
     join(directory, "character-metrics.jsonl"),
   )
@@ -307,6 +322,8 @@ export async function runProductLifeLongRun(
         life: "fuzzy",
         memoryRecall: "enforced",
         autobiography: "enforced",
+        companionContextMode: config.companionContextMode,
+        personaRuntimeMode: config.personaRuntimeMode,
       },
       limitations: [
         "Simulated elapsed time, not 45 real days",
@@ -535,6 +552,16 @@ export async function runProductLifeLongRun(
       await database.backup(join(directory, "control.sqlite"));
       return published.character;
     });
+    await freezeContinuityManifest(
+      join(directory, "character-baseline.json"),
+      {
+        characterId: character.id,
+        publishedVersion: character.version,
+        compiledBaselineSha256: continuityHash(character),
+      },
+      options.resume === true &&
+        existsSync(join(directory, "character-baseline.json")),
+    );
     await json("character.json", character);
     let sessionId = "";
     let letterId: string | undefined;

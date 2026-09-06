@@ -2,6 +2,7 @@ import type {
   ConversationContextPlan,
   EffectivePersonaSnapshot,
   FuzzyLifePromptContext,
+  InteractionEvidenceSnapshot,
 } from "@personasim/contracts";
 
 import {
@@ -10,6 +11,8 @@ import {
 } from "@personasim/contracts";
 import {
   selectCharacterContextForTurn,
+  deriveAdvicePolicy,
+  interactionEvidencePromptView,
   type ReplyStrategy,
 } from "@personasim/features";
 
@@ -23,6 +26,15 @@ import {
   resolveChatOutputTokenBudget,
 } from "./chat-output-budget.js";
 import type { LlmService } from "./llm-service.js";
+import type { ReplyRepairBudget } from "./semantic-reply-guard.js";
+
+function reserveRepair(budget: ReplyRepairBudget | undefined): boolean {
+  if (budget === undefined) return true;
+  if (budget.remaining <= 0) return false;
+  budget.remaining -= 1;
+  budget.attempts += 1;
+  return true;
+}
 
 function practiceContext(effective: EffectivePersonaSnapshot | undefined) {
   if (effective === undefined) return undefined;
@@ -49,8 +61,9 @@ function requestContext(plan: ConversationContextPlan | undefined) {
     supportStyle: plan.supportStyle,
     adviceRequested: plan.adviceRequested,
     helpTiming: plan.helpTiming,
+    advicePolicy: deriveAdvicePolicy(plan),
     guidance:
-      "Current explicit requests override stored defaults. For after_user_finishes, listen now and provide the requested help only after the user finishes. If timing is unspecified, do not impose either conflicting style.",
+      "Current explicit requests override stored defaults. For after_user_finishes, listen now and provide the requested help only after the user finishes. none_now permits no action instructions; optional_light permits at most one light optional suggestion, not a task list. If timing is unspecified, do not impose either conflicting style.",
   };
 }
 
@@ -62,6 +75,8 @@ export class ReplyRepairService {
   constructor(private readonly llm: LlmService) {}
 
   async repairFixtureDecision(input: {
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget?: ReplyRepairBudget;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -71,6 +86,7 @@ export class ReplyRepairService {
     issues: unknown;
     fallback: AgentTurnDecision;
   }): Promise<AgentTurnDecision> {
+    if (!reserveRepair(input.repairBudget)) return input.fallback;
     try {
       return await this.llm.generateObject({
         purpose: "repair_chat_turn",
@@ -92,6 +108,10 @@ export class ReplyRepairService {
             ).character.persona,
             effectivePersona: practiceContext(input.effectivePersona),
             currentRequest: requestContext(input.conversationPlan),
+            interactionEvidence:
+              input.interactionEvidence === undefined
+                ? undefined
+                : interactionEvidencePromptView(input.interactionEvidence),
             lifeContext: input.lifeContext,
           },
         )}`,
@@ -104,6 +124,8 @@ export class ReplyRepairService {
   }
 
   async repairPersonaReply(input: {
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget?: ReplyRepairBudget;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -113,6 +135,7 @@ export class ReplyRepairService {
     issues: unknown;
     replyStrategy: ReplyStrategy;
   }): Promise<PersonaChatResponse | undefined> {
+    if (!reserveRepair(input.repairBudget)) return undefined;
     try {
       const repaired = await this.llm.generateObject({
         purpose: "repair_chat_turn",
@@ -124,7 +147,7 @@ export class ReplyRepairService {
           input.replyStrategy.maxOutputTokens,
         ),
         system:
-          "Repair only the in-character conversational reply. Return one JSON object containing the complete required text plus optional toneTags and deliveryMode. chunks is optional and intended only for sequential delivery; omit chunks for single_block so the complete reply is not duplicated. Do not propose actions, schedules, memories, state changes, relationship changes, or hidden reasoning. Length guidance is soft: preserve useful substance and never pad merely to hit a number.",
+          "Repair only the in-character conversational reply. Return one JSON object containing the complete required text plus optional toneTags and deliveryMode. chunks is optional and intended only for sequential delivery; omit chunks for single_block so the complete reply is not duplicated. Do not emit structured effect proposals for schedules, memories, state changes, relationship changes, or hidden reasoning. Conversational advice is allowed according to currentRequest.advicePolicy; preserve explicitly requested help. Length guidance is soft: preserve useful substance and never pad merely to hit a number.",
         prompt:
           `Character role and persona: ${JSON.stringify({
             identity: input.spec.identity,
@@ -137,6 +160,10 @@ export class ReplyRepairService {
             ).character.persona,
             effectivePersona: practiceContext(input.effectivePersona),
             currentRequest: requestContext(input.conversationPlan),
+            interactionEvidence:
+              input.interactionEvidence === undefined
+                ? undefined
+                : interactionEvidencePromptView(input.interactionEvidence),
             lifeContext: input.lifeContext,
             dialogue: input.effectivePersona?.dialogue ?? input.spec.dialogue,
             forbiddenMetaKnowledge: input.spec.knowledge.forbiddenMetaKnowledge,

@@ -6,8 +6,11 @@ import type {
   ConversationContextPlan,
   EvidenceBundle,
   EffectivePersonaSnapshot,
+  InteractionEvidenceSnapshot,
 } from "@personasim/contracts";
 
+import { deriveAdvicePolicy } from "./advice-policy.js";
+import { interactionEvidencePromptView } from "./interaction-attribution.js";
 import type { MemoryLike } from "./memory-engine.js";
 import { selectCharacterContextForTurn } from "./character-context-selection.js";
 import type { MemoryUseSelection } from "./memory-use.js";
@@ -87,6 +90,7 @@ export interface AssemblePromptInput {
   memories: readonly MemoryLike[];
   memoryEvidence?: EvidenceBundle;
   conversationPlan?: ConversationContextPlan;
+  interactionEvidence?: InteractionEvidenceSnapshot;
   memoryUse?: MemoryUseSelection;
   autobiography?: AgentAutobiographySnapshot;
   calendarContext?: readonly CalendarPromptItem[];
@@ -925,6 +929,9 @@ export function assembleChatPrompt(
             supportStyle: input.conversationPlan.supportStyle,
             adviceRequested: input.conversationPlan.adviceRequested,
             helpTiming: input.conversationPlan.helpTiming,
+            advicePolicy: deriveAdvicePolicy(input.conversationPlan),
+            adviceGuidance:
+              "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
             guidance:
               "Sharing and venting need not become analysis, advice, a follow-up question, a goal update or relationship growth. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
           }),
@@ -1014,6 +1021,25 @@ export function assembleChatPrompt(
           ),
           guidance:
             "These accepted practices apply only to the named user and stated topic. Apply them through how you respond, without reciting the user's preference or claiming global personality growth. Preserve your own values and factual history. A current explicit request for help permits that help even with a listen-first default.",
+        }),
+    });
+  }
+  if (input.interactionEvidence !== undefined) {
+    const evidence = interactionEvidencePromptView(input.interactionEvidence);
+    registry.register({
+      id: "03c_interaction_evidence",
+      placement: "system",
+      priority: 98,
+      tokenBudget: 3_000,
+      required: false,
+      cacheable: false,
+      globalOverflowPolicy: "drop",
+      render: () =>
+        "INTERACTION_EVIDENCE_JSON\n" +
+        JSON.stringify({
+          ...evidence,
+          guidance:
+            "Historical requests are evidence of requests, not observed fulfillment. Keep requestedBy, expectedActor and recipient distinct. Missing adherence evidence does not prove an event never happened, but cannot support claiming it repeatedly happened. Historical anchors do not activate a practice outside its current topic. Do not recite these records unprompted.",
         }),
     });
   }

@@ -26,6 +26,21 @@ export interface BuildInteractionEvidenceInput {
   activePractices?: readonly InteractionPracticeReference[];
 }
 
+/** Generation and repair share complete sources for the actual anchors only. */
+export function interactionEvidencePromptView(
+  evidence: InteractionEvidenceSnapshot,
+): InteractionEvidenceSnapshot {
+  const sourceIds = new Set(
+    evidence.historicalAnchors.flatMap((anchor) => anchor.sourceMessageIds),
+  );
+  return {
+    ...evidence,
+    sourceMessages: evidence.sourceMessages.filter((message) =>
+      sourceIds.has(message.id),
+    ),
+  };
+}
+
 export type InteractionAttributionViolationCode =
   | "INTERACTION_DIRECTION_INVERTED"
   | "REQUEST_PROMOTED_TO_HISTORY"

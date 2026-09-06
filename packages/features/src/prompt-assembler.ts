@@ -451,37 +451,9 @@ function compactTextList(values: readonly string[]): string[] {
 }
 
 function compactMemoryEvidence(bundle: EvidenceBundle): EvidenceBundle {
-  return {
-    query: truncate(bundle.query, 1_000),
-    mode: bundle.mode,
-    generatedAtUtc: bundle.generatedAtUtc,
-    score: bundle.score,
-    evidence: bundle.evidence.slice(0, 3).map((item) => ({
-      memoryId: item.memoryId,
-      memoryContent: truncate(item.memoryContent, 1_000),
-      memoryKind: item.memoryKind,
-      namespace: item.namespace,
-      certainty: item.certainty,
-      attribution: item.attribution,
-      stability: item.stability,
-      ...(item.temporalMetadata === undefined
-        ? {}
-        : { temporalMetadata: item.temporalMetadata }),
-      evidence: {
-        ...item.evidence,
-        ...(item.evidence.quote === undefined
-          ? {}
-          : { quote: truncate(item.evidence.quote, 1_000) }),
-        ...(item.evidence.contextSummary === undefined
-          ? {}
-          : {
-              contextSummary: truncate(item.evidence.contextSummary, 1_000),
-            }),
-      },
-      score: item.score,
-      scoreBreakdown: item.scoreBreakdown,
-    })),
-  };
+  // Retrieval owns the item count. The final segment budget selects whole
+  // records, including qualifiers, source spans and attribution.
+  return { ...bundle, evidence: [...bundle.evidence] };
 }
 
 function compactScheduleItem(item: ScheduleItemLike) {
@@ -608,7 +580,7 @@ export function assembleChatPrompt(
   const maximumMemories = boundedCount(input.maxMemories, 12, 20);
   const memories = input.memories.slice(0, maximumMemories).map((memory) => ({
     kind: memory.kind,
-    content: truncate(memory.content, 360),
+    content: memory.content,
     importance: memory.importance,
     confidence: memory.confidence,
     createdAtUtc: memory.createdAtUtc,
@@ -628,10 +600,7 @@ export function assembleChatPrompt(
   const recentMessages =
     maximumRecentMessages === 0
       ? []
-      : input.recentMessages.slice(-maximumRecentMessages).map((message) => ({
-          ...message,
-          content: truncate(message.content, 1_500),
-        }));
+      : input.recentMessages.slice(-maximumRecentMessages);
 
   const decisionMode = input.decisionMode ?? "reply_only";
   const fuzzyLife = input.lifePlanningMode === "fuzzy";
@@ -874,7 +843,7 @@ export function assembleChatPrompt(
       deliveryGuidance: replyStrategy.deliveryGuidance,
       stateGuidance: replyStrategy.stateGuidance,
     },
-    userMessage: { content: truncate(input.userMessage, 8_000) },
+    userMessage: { content: input.userMessage },
     outputContract: [
       outputContract,
       outputGuidance +
@@ -892,7 +861,22 @@ export function assembleChatPrompt(
   };
 
   const registry = new PromptSegmentRegistry<DefaultPromptContext>(
-    createDefaultPromptSegments(),
+    createDefaultPromptSegments().map((segment) =>
+      segment.id === "16_user_message"
+        ? {
+            ...segment,
+            tokenBudget: Math.max(
+              segment.tokenBudget,
+              Math.ceil(
+                (
+                  "CURRENT_USER_MESSAGE_JSON\n" +
+                  JSON.stringify(promptContext.userMessage)
+                ).length / 4,
+              ),
+            ),
+          }
+        : segment,
+    ),
   );
   if (input.followUpContext !== undefined) {
     registry.register(createFollowUpContextPromptSegment());

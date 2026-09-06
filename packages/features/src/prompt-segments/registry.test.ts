@@ -43,6 +43,50 @@ function segment(input: {
 }
 
 describe("PromptSegmentRegistry", () => {
+  it.each([90, 300, 1_000])(
+    "never slices evidence or recent messages at %s tokens",
+    (budget) => {
+      const quote = "我本来想去。".repeat(90) + "但是我最后没有去。";
+      for (const label of ["RETRIEVED_EVIDENCE_JSON", "RECENT_VERBATIM_JSON"]) {
+        const record = { id: "source", content: quote, quote };
+        const payload =
+          label === "RECENT_VERBATIM_JSON" ? [record] : { evidence: [record] };
+        for (const global of [false, true]) {
+          const registry = new PromptSegmentRegistry([
+            segment({
+              id: "01_evidence",
+              content: `${label}\n${JSON.stringify(payload)}`,
+              tokenBudget: global ? 10_000 : budget,
+            }),
+          ]);
+          const result = registry.render(
+            {},
+            global ? { maxInputTokens: budget } : {},
+          );
+          const retained = JSON.parse(result.prompt.split("\n")[1]!) as
+            unknown[] | { evidence?: unknown[] };
+          for (const item of Array.isArray(retained)
+            ? retained
+            : (retained.evidence ?? []))
+            expect(item).toEqual(record);
+        }
+      }
+    },
+  );
+
+  it("rejects an impossible budget instead of removing the end of a user command", () => {
+    const registry = new PromptSegmentRegistry([
+      segment({
+        id: "16_user_message",
+        content: 'CURRENT_USER_MESSAGE_JSON\n{"content":"我没有同意执行。"}',
+        tokenBudget: 100,
+        required: true,
+      }),
+    ]);
+    expect(() => registry.render({}, { maxInputTokens: 5 })).toThrow(
+      PromptSegmentRegistryError,
+    );
+  });
   it("emits selected segments in stable id order rather than priority order", () => {
     const registry = new PromptSegmentRegistry<TestContext>([
       segment({ id: "03_third", content: "third", priority: 100 }),
@@ -346,6 +390,10 @@ describe("PromptSegmentRegistry", () => {
         role: string;
         content: string;
       }[];
+      if (label === "RECENT_VERBATIM_JSON" && maxInputTokens === 100) {
+        expect(retained).toEqual([]);
+        return;
+      }
       expect(retained.length).toBeGreaterThan(0);
       expect(retained.length).toBeLessThan(history.length);
       const expected =

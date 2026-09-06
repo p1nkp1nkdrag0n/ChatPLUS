@@ -47,6 +47,65 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
   ],
 };
 
+describe("complete evidence budgets", () => {
+  it.each([undefined, 4_000, 8_000])(
+    "keeps late qualifications intact at %s tokens",
+    (budget) => {
+      const quote =
+        "我原来以为她已经答应了。".repeat(100) +
+        "后来才发现没有，这只是我的猜想。";
+      const item = {
+        ...MEMORY_EVIDENCE.evidence[0]!,
+        memoryContent: quote,
+        evidence: {
+          ...MEMORY_EVIDENCE.evidence[0]!.evidence,
+          quote,
+          contextSummary: quote,
+        },
+      };
+      const result = assembleChatPrompt(
+        baseInput({
+          memoryEvidence: { ...MEMORY_EVIDENCE, evidence: [item] },
+          ...(budget === undefined ? {} : { maxInputTokens: budget }),
+        }),
+      );
+      const lines = result.prompt.split("\n");
+      for (const label of [
+        "RETRIEVED_EVIDENCE_JSON",
+        "REFERENCE_CONTEXT_JSON",
+      ]) {
+        const index = lines.indexOf(label);
+        if (index < 0) continue;
+        const payload = JSON.parse(lines[index + 1]!) as {
+          evidence?: EvidenceBundle["evidence"];
+          memoryEvidence?: EvidenceBundle;
+        };
+        const evidence =
+          payload.evidence ?? payload.memoryEvidence?.evidence ?? [];
+        for (const retained of evidence) {
+          expect(retained.memoryContent).toBe(quote);
+          expect(retained.evidence.quote).toBe(quote);
+          expect(retained.evidence.contextSummary).toBe(quote);
+        }
+      }
+    },
+  );
+
+  it("retains the complete accepted current message, including its final denial", () => {
+    const userMessage =
+      "这只是一个设想。".repeat(2_000) + "不要执行，我没有同意。";
+    const result = assembleChatPrompt(baseInput({ userMessage }));
+    const lines = result.prompt.split("\n");
+    expect(
+      (
+        JSON.parse(lines[lines.indexOf("CURRENT_USER_MESSAGE_JSON") + 1]!) as {
+          content: string;
+        }
+      ).content,
+    ).toBe(userMessage);
+  });
+});
+
 function baseInput(
   overrides: Partial<AssemblePromptInput> = {},
 ): AssemblePromptInput {
@@ -871,7 +930,7 @@ describe("assembleChatPrompt registry integration", () => {
   it("honors the global input budget without dropping required segments", () => {
     const result = assembleChatPrompt(
       baseInput({
-        userMessage: "u".repeat(20_000),
+        userMessage: "我没有同意执行。",
         recentMessages: Array.from({ length: 300 }, (_, index) => ({
           role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
           content: "m".repeat(2_000),

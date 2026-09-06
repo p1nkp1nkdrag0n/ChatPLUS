@@ -30,22 +30,29 @@ export function continuityRunIdentity(input: {
   git: GitFingerprint;
   lockSha256: string;
   experiment: unknown;
+  explicitSecrets?: readonly string[];
 }): Record<string, unknown> {
-  const actualConfig = redactLongRunArtifact(input.config, [
+  const secrets = [
     input.config.instanceSecret ?? "",
     input.config.llm.apiKey ?? "",
-  ]);
+    ...(input.explicitSecrets ?? []),
+  ];
   return JSON.parse(
-    JSON.stringify({
-      schemaVersion: CONTINUITY_IDENTITY_VERSION,
-      git: input.git,
-      lockSha256: input.lockSha256,
-      actualConfig,
-      // Git + dirty content fingerprint freezes every participating policy,
-      // including policies that do not yet export an explicit version constant.
-      participatingPolicySource: input.git,
-      experiment: input.experiment,
-    }),
+    JSON.stringify(
+      redactLongRunArtifact(
+        {
+          schemaVersion: CONTINUITY_IDENTITY_VERSION,
+          git: input.git,
+          lockSha256: input.lockSha256,
+          actualConfig: input.config,
+          // Git + dirty content fingerprint freezes every participating policy,
+          // including policies that do not yet export an explicit version constant.
+          participatingPolicySource: input.git,
+          experiment: input.experiment,
+        },
+        secrets,
+      ),
+    ),
   ) as Record<string, unknown>;
 }
 
@@ -53,6 +60,7 @@ export async function captureContinuityRunIdentity(input: {
   config: ServerConfig;
   experiment: unknown;
   workspaceRoot?: string;
+  explicitSecrets?: readonly string[];
 }): Promise<Record<string, unknown>> {
   const root = input.workspaceRoot ?? CONTINUITY_WORKSPACE_ROOT;
   const [git, lock] = await Promise.all([

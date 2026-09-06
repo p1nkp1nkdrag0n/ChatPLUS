@@ -106,8 +106,47 @@ describe("continuity experiment identity", () => {
     expect(JSON.stringify(first)).toContain('"maxOutputTokens":8192');
   });
 
+  it("redacts experiment credentials and embedded secrets while freezing every non-secret setting", () => {
+    const make = (key: string, maxOutputTokens = 4096) =>
+      continuityRunIdentity({
+        ...base,
+        explicitSecrets: [key],
+        experiment: {
+          userConnection: {
+            apiKey: key,
+            baseUrl: "https://fixture.invalid",
+            maxOutputTokens,
+            timeoutMs: 5000,
+          },
+          debug: `provider echoed ${key}`,
+          requestBudget: {
+            maxPhysicalRequests: 10,
+            maxReservedTokenUnits: 50000,
+          },
+        },
+      });
+    const first = make("opaque-first-credential");
+    expect(JSON.stringify(first)).not.toContain("opaque-first-credential");
+    expect(continuityHash(first)).toBe(
+      continuityHash(make("opaque-second-credential")),
+    );
+    expect(continuityHash(first)).not.toBe(
+      continuityHash(make("opaque-first-credential", 8192)),
+    );
+    expect(first.experiment).toMatchObject({
+      userConnection: { maxOutputTokens: 4096, timeoutMs: 5000 },
+      requestBudget: { maxPhysicalRequests: 10, maxReservedTokenUnits: 50000 },
+    });
+  });
+
   it("never rewrites a frozen manifest when resuming or rejects a changed identity", async () => {
     const directory = await mkdtemp(join(tmpdir(), "continuity-identity-"));
+    const contained = relative(resolve(tmpdir()), resolve(directory));
+    if (
+      contained.startsWith("..") ||
+      !contained.startsWith("continuity-identity-")
+    )
+      throw new Error("Unexpected cleanup path");
     try {
       const path = join(directory, "manifest.json");
       await freezeContinuityManifest(path, base.experiment, false);
@@ -121,12 +160,6 @@ describe("continuity experiment identity", () => {
       ).rejects.toThrow();
       expect(await readFile(path, "utf8")).toBe(original);
     } finally {
-      const contained = relative(resolve(tmpdir()), resolve(directory));
-      if (
-        contained.startsWith("..") ||
-        !contained.startsWith("continuity-identity-")
-      )
-        throw new Error("Unexpected cleanup path");
       await rm(directory, { recursive: true, force: true });
     }
   });

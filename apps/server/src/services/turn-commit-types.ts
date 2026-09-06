@@ -34,6 +34,7 @@ export interface TurnCommitInput {
   capabilities: SimulationCapabilities;
   recallDiagnostic?: MemoryRecallRuntimeDiagnostic;
   promptSegmentTrace: unknown;
+  companionContextDiagnostic?: unknown;
   preparedContext?: PreparedConversationContext;
   turn: ResolvedTurn;
   world: PreparedWorldEffectTurn;

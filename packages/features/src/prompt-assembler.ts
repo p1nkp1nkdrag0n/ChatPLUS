@@ -3,10 +3,12 @@ import type {
   CalendarPromptItem,
   CharacterAppearance,
   CharacterTemporalFrame,
+  ConversationContextPlan,
   EvidenceBundle,
 } from "@personasim/contracts";
 
 import type { MemoryLike } from "./memory-engine.js";
+import type { MemoryUseSelection } from "./memory-use.js";
 import type { RelationshipStateLike } from "./relationship-engine.js";
 import {
   deriveReplyStrategy,
@@ -81,6 +83,8 @@ export interface AssemblePromptInput {
   schedule: readonly ScheduleItemLike[];
   memories: readonly MemoryLike[];
   memoryEvidence?: EvidenceBundle;
+  conversationPlan?: ConversationContextPlan;
+  memoryUse?: MemoryUseSelection;
   autobiography?: AgentAutobiographySnapshot;
   calendarContext?: readonly CalendarPromptItem[];
   followUpContext?: unknown;
@@ -543,6 +547,9 @@ export function assembleChatPrompt(
     input.character.dialogue,
     {
       state: input.state,
+      ...(input.conversationPlan === undefined
+        ? {}
+        : { conversationPlan: input.conversationPlan }),
       ...(relationship === undefined ? {} : { relationship }),
     },
   );
@@ -831,6 +838,15 @@ export function assembleChatPrompt(
       : { retrievedEvidence: memoryEvidence }),
     recentVerbatim: recentMessages,
     replyStrategy: {
+      ...(input.conversationPlan === undefined
+        ? {}
+        : {
+            conversationIntent: input.conversationPlan.intent,
+            supportStyle: input.conversationPlan.supportStyle,
+            adviceRequested: input.conversationPlan.adviceRequested,
+            guidance:
+              "Sharing and venting need not become analysis, advice, a follow-up question, a goal update or relationship growth. Give concrete help when explicitly requested. Maintain the character's own values without reciting them or agreeing merely to please.",
+          }),
       complexity: replyStrategy.complexity,
       softTargetCharacters: {
         minimum: replyStrategy.targetMinChars,
@@ -889,6 +905,25 @@ export function assembleChatPrompt(
   }
   for (const segment of input.additionalPromptSegments ?? []) {
     registry.register(segment);
+  }
+  if (input.memoryUse !== undefined) {
+    registry.register({
+      id: "13b_memory_use",
+      placement: "prompt",
+      priority: 95,
+      tokenBudget: 1_200,
+      required: false,
+      cacheable: false,
+      globalOverflowPolicy: "drop",
+      render: () =>
+        "MEMORY_USE_JSON\n" +
+        JSON.stringify({
+          policyVersion: "continuity_context_v2",
+          ...input.memoryUse,
+          guidance:
+            "Only use complete evidence actually retained in this prompt. backgroundEvidenceIds help understanding without retelling; behavioralPreferenceEvidenceIds guide behavior only in their stated scope, silently; only explicitMentionEvidenceIds permit volunteered recollection. Omitted, absent, superseded or invalid evidence cannot support a fact. These uses never grant authorization.",
+        }),
+    });
   }
   const promptSafeContext = projectPromptTemporalData(
     input.character.identity,

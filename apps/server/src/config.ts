@@ -271,6 +271,8 @@ const envSchema = z.object({
     .enum(["legacy", "shadow", "enforced"])
     .default("enforced"),
   AUTOBIOGRAPHY_MODE: z.enum(["off", "shadow", "enforced"]).default("enforced"),
+  COMPANION_CONTEXT_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
+  PERSONA_RUNTIME_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
   CORRESPONDENCE_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
   CORRESPONDENCE_EXECUTION: z
     .enum(["lazy", "resident", "worker"])
@@ -340,6 +342,8 @@ export type ServerConfig = {
   liveWorldEffectsMode: "off" | "shadow" | "enforced";
   memoryRecallMode: "legacy" | "shadow" | "enforced";
   autobiographyMode: "off" | "shadow" | "enforced";
+  companionContextMode?: "off" | "shadow" | "enforced";
+  personaRuntimeMode?: "off" | "shadow" | "enforced";
   // Keep Stage 0 injection source-compatible with historical test/scenario
   // fixtures. readConfig() returns ResolvedServerConfig with these defaults.
 } & Partial<CorrespondenceServerConfig & SelfHostedServerConfig>;
@@ -451,6 +455,8 @@ export function readConfig(
     liveWorldEffectsMode: env.LIVE_WORLD_EFFECTS,
     memoryRecallMode: env.MEMORY_RECALL_MODE,
     autobiographyMode: env.AUTOBIOGRAPHY_MODE,
+    companionContextMode: env.COMPANION_CONTEXT_MODE,
+    personaRuntimeMode: env.PERSONA_RUNTIME_MODE,
     correspondenceMode: env.CORRESPONDENCE_MODE,
     correspondenceExecution: env.CORRESPONDENCE_EXECUTION,
     correspondenceTransitPolicy: env.CORRESPONDENCE_TRANSIT_POLICY,

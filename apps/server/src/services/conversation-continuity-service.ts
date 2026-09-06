@@ -78,6 +78,15 @@ export class ConversationContinuityService {
     };
   }
 
+  /** Called inside the message/memory transaction; background checkpoint
+   * generation must never be responsible for current-fact correctness. */
+  reconcileMemories(
+    agentId: string,
+    memoryIds: readonly string[],
+  ): MemoryReconciliationResult[] {
+    return this.memoryLifecycle.reconcileNewMemories(agentId, memoryIds);
+  }
+
   async commitTurn(input: {
     agentId: string;
     sessionId: string;
@@ -85,6 +94,7 @@ export class ConversationContinuityService {
     userMessage: StoredMessage;
     assistantMessage: StoredMessage;
     memoryIds: readonly string[];
+    preReconciled?: MemoryReconciliationResult[];
     promptCueIds: readonly string[];
     rawEffects?: unknown;
   }): Promise<ConversationContinuityCommitResult> {
@@ -242,10 +252,9 @@ export class ConversationContinuityService {
       messageId: input.assistantMessage.id,
       cueIds: input.promptCueIds,
     });
-    const memoryReconciliations = this.memoryLifecycle.reconcileNewMemories(
-      input.agentId,
-      input.memoryIds,
-    );
+    const memoryReconciliations =
+      input.preReconciled ??
+      this.reconcileMemories(input.agentId, input.memoryIds);
     const checkpoint =
       this.autobiographyMode === "off"
         ? undefined

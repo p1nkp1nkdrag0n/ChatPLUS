@@ -3,6 +3,8 @@ import type { MemoryRecallRuntimeDiagnostic } from "@personasim/contracts";
 import {
   DEFAULT_CONVERSATION_RETENTION_POLICY,
   assembleChatPrompt,
+  buildConversationContextPlan,
+  selectMemoryUseForTurn,
   selectConversationRetention,
   type ConversationRetentionPolicy,
 } from "@personasim/features";
@@ -66,6 +68,8 @@ export interface ConversationServiceOptions {
   liveWorldEffectsMode?: "off" | "shadow" | "enforced";
   memoryRecallMode?: "legacy" | "shadow" | "enforced";
   lifePlanningMode?: "fuzzy" | "legacy_exact";
+  companionContextMode?: "off" | "shadow" | "enforced";
+  personaRuntimeMode?: "off" | "shadow" | "enforced";
   conversationRetention?: ConversationRetentionPolicy;
 }
 
@@ -221,6 +225,50 @@ export class ConversationService {
           toUtc: DateTime.fromISO(nowUtc).plus({ hours: 72 }).toUTC().toISO()!,
         })
       : [];
+    const storedContextMessages = this.store.listMessagesForContext(sessionId);
+    const contextSelection = selectConversationRetention({
+      messages: storedContextMessages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        text: message.content,
+        createdAtUtc: message.createdAtUtc,
+        origin:
+          message.messageKind === "assistant_proactive"
+            ? "proactive"
+            : message.role === "user"
+              ? "user"
+              : message.messageKind === "system_notice"
+                ? "deterministic_fallback"
+                : "reactive",
+        stored: message,
+      })),
+      nowUtc,
+      policy:
+        this.options.conversationRetention ??
+        DEFAULT_CONVERSATION_RETENTION_POLICY,
+    });
+    const recentMessages = contextSelection.messages.map((message) => ({
+      ...message.stored,
+      content: message.text,
+    }));
+    const companionContextMode = this.options.companionContextMode ?? "off";
+    const contextPlan =
+      companionContextMode === "off"
+        ? undefined
+        : buildConversationContextPlan({
+            originalQuery: input.text,
+            agentId: input.agentId,
+            sessionId,
+            recentMessages: recentMessages.map((message) => ({
+              id: message.id,
+              agentId: message.agentId,
+              sessionId: message.sessionId,
+              role: message.role === "user" ? "user" : "assistant",
+              text: message.content,
+            })),
+          });
+    const appliedContextPlan =
+      companionContextMode === "enforced" ? contextPlan : undefined;
     const legacyMemories = capabilities.longTermMemory
       ? readActiveMemories(this.store, input.agentId, nowUtc)
       : [];
@@ -234,6 +282,9 @@ export class ConversationService {
             nowUtc,
             timezone: spec.identity.timezone,
             requireDurableEvidence: memoryRecallMode === "enforced",
+            ...(appliedContextPlan === undefined
+              ? {}
+              : { contextPlan: appliedContextPlan }),
           })
         : undefined;
     const recallPreview = recallRecording?.preview;
@@ -251,6 +302,13 @@ export class ConversationService {
       !recallPreview.result.abstained
         ? recallPreview.result.evidenceBundle
         : undefined;
+    const memoryUse =
+      contextPlan === undefined
+        ? undefined
+        : selectMemoryUseForTurn({
+            plan: contextPlan,
+            evidence: memoryEvidence?.evidence ?? [],
+          });
     const recallDiagnostic: MemoryRecallRuntimeDiagnostic | undefined =
       recallPreview === undefined
         ? undefined
@@ -260,7 +318,6 @@ export class ConversationService {
             selectedRecallMemories,
             recallPreview,
           );
-    const storedContextMessages = this.store.listMessagesForContext(sessionId);
     // Elliptical permission questions may inherit only the immediately
     // preceding assistant turn. Searching farther back would let a generic
     // "后来有回复吗" resurrect stale consent context after the conversation
@@ -290,31 +347,6 @@ export class ConversationService {
             priorClaims: priorConsentClaims,
           })
         : undefined;
-    const contextSelection = selectConversationRetention({
-      messages: storedContextMessages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        text: message.content,
-        createdAtUtc: message.createdAtUtc,
-        origin:
-          message.messageKind === "assistant_proactive"
-            ? "proactive"
-            : message.role === "user"
-              ? "user"
-              : message.messageKind === "system_notice"
-                ? "deterministic_fallback"
-                : "reactive",
-        stored: message,
-      })),
-      nowUtc,
-      policy:
-        this.options.conversationRetention ??
-        DEFAULT_CONVERSATION_RETENTION_POLICY,
-    });
-    const recentMessages = contextSelection.messages.map((message) => ({
-      ...message.stored,
-      content: message.text,
-    }));
     const effects = this.worldEffects.prepareDecisionContext({
       sessionId,
       nowUtc,
@@ -340,6 +372,12 @@ export class ConversationService {
     ];
     const assembledPrompt = assembleChatPrompt({
       character: spec,
+      ...(appliedContextPlan === undefined
+        ? {}
+        : { conversationPlan: appliedContextPlan }),
+      ...(companionContextMode !== "enforced" || memoryUse === undefined
+        ? {}
+        : { memoryUse }),
       state: toFeatureState(state),
       ...(preparedContext?.autobiography === undefined
         ? {}
@@ -488,6 +526,15 @@ export class ConversationService {
       capabilities,
       ...(recallDiagnostic === undefined ? {} : { recallDiagnostic }),
       promptSegmentTrace: assembledPrompt.segmentTrace,
+      ...(contextPlan === undefined
+        ? {}
+        : {
+            companionContextDiagnostic: {
+              mode: companionContextMode,
+              plan: contextPlan,
+              memoryUse,
+            },
+          }),
       ...(preparedContext === undefined ? {} : { preparedContext }),
       turn: finalized.turn,
       world: finalized.world,

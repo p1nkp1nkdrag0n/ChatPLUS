@@ -119,6 +119,13 @@ export class ConversationContextService {
   ): ReturnType<ConversationContinuityService["commitTurn"]> {
     return this.continuity.commitTurn(input);
   }
+
+  reconcileMemories(
+    agentId: string,
+    memoryIds: readonly string[],
+  ): ReturnType<ConversationContinuityService["reconcileMemories"]> {
+    return this.continuity.reconcileMemories(agentId, memoryIds);
+  }
 }
 
 function relationshipArtifactSegments(

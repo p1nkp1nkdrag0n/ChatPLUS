@@ -574,6 +574,8 @@ function createDomainPlugin(
         liveWorldEffectsMode: config.liveWorldEffectsMode,
         scheduleNegotiationMode: config.scheduleNegotiationMode,
         memoryRecallMode: config.memoryRecallMode,
+        companionContextMode: config.companionContextMode ?? "off",
+        personaRuntimeMode: config.personaRuntimeMode ?? "off",
         conversationRetention: config.conversationRetention,
         ...(fixtureTurnBehavior === undefined ? {} : { fixtureTurnBehavior }),
       };

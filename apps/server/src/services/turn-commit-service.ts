@@ -9,6 +9,7 @@ import type {
   FuzzyLifeService,
 } from "./fuzzy-life-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
+import type { MemoryReconciliationResult } from "./memory-lifecycle-service.js";
 import type { PersonalIntentService } from "./personal-intent-service.js";
 import type { ScheduleService } from "./schedule-service.js";
 import { deliveryModeForDecision } from "./turn-decision-service.js";
@@ -111,6 +112,9 @@ export class TurnCommitService {
           ? {}
           : { memoryRecall: input.recallDiagnostic }),
         promptSegmentTrace: input.promptSegmentTrace,
+        ...(input.companionContextDiagnostic === undefined
+          ? {}
+          : { companionContext: input.companionContextDiagnostic }),
         ...(input.preparedContext === undefined
           ? {}
           : {
@@ -131,6 +135,7 @@ export class TurnCommitService {
       : input.world.validation.accepted;
     let scheduleChanges: ScheduleItem[] = [];
     let memoryIds: string[] = [];
+    let memoryReconciliations: MemoryReconciliationResult[] = [];
     let personalIntentIds: string[] = [];
     let lifeImpact: ConversationLifeImpact | undefined;
     try {
@@ -246,6 +251,9 @@ export class TurnCommitService {
               authoritativeMessageId: userMessage.id,
             }).map((memory) => memory.id)
           : [];
+        memoryReconciliations =
+          this.contexts?.reconcileMemories(input.command.agentId, memoryIds) ??
+          [];
         this.store.insertMessage(assistantMessage);
         if (fuzzyLifeEnabled && contentDerivedSemanticsAllowed) {
           if (this.fuzzyLife === undefined) {
@@ -301,6 +309,7 @@ export class TurnCommitService {
       userMessage,
       assistantMessage,
       memoryIds,
+      memoryReconciliations,
     });
     this.publisher.publish({
       ...input,
@@ -367,6 +376,7 @@ export class TurnCommitService {
       userMessage: StoredMessage;
       assistantMessage: StoredMessage;
       memoryIds: string[];
+      memoryReconciliations: MemoryReconciliationResult[];
     },
   ): Promise<void> {
     if (
@@ -389,6 +399,7 @@ export class TurnCommitService {
         timezone: input.spec.identity.timezone,
         ...semanticMessages,
         memoryIds: input.memoryIds,
+        preReconciled: input.memoryReconciliations,
         promptCueIds: input.preparedContext?.continuity.cueIds ?? [],
         ...(input.turn.continuityEffects === undefined
           ? {}

@@ -19,6 +19,7 @@ export * from "./memory-recall-preview.js";
 export * from "./retrieval.js";
 export * from "./messages.js";
 export * from "./persona-chat-decision.js";
+export * from "./persona-runtime.js";
 export * from "./personal-intent.js";
 export * from "./plugin.js";
 export * from "./primitives.js";

@@ -4,6 +4,7 @@ import type {
 } from "@personasim/contracts";
 
 import { recallQueryTokens } from "./memory-recall.js";
+import { matchesConversationTopic } from "./conversation-topic.js";
 
 export interface MemoryUseSelection {
   backgroundEvidenceIds: string[];
@@ -71,7 +72,7 @@ export function selectMemoryUseForTurn(
     )?.[1];
     const behaviorApplies =
       scope === undefined ||
-      recallQueryTokens(scope).some((token) => queryTokens.has(token));
+      matchesConversationTopic(scope, input.plan.originalQuery);
     if (behavior && !behaviorApplies) {
       output.omissions.push({ evidenceId, reason: "not_relevant" });
       continue;

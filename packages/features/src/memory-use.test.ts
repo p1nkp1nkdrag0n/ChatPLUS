@@ -42,6 +42,16 @@ function plan(originalQuery: string) {
 }
 
 describe("memory use permissions", () => {
+  it("does not let a shared distress word transfer a work preference to family", () => {
+    const result = selectMemoryUseForTurn({
+      plan: plan("今天有点家庭烦恼"),
+      evidence: [
+        evidence("work", "我谈工作烦恼时，希望先听我说，别急着建议。"),
+      ],
+    });
+    expect(result.backgroundEvidenceIds).toEqual([]);
+    expect(result.behavioralPreferenceEvidenceIds).toEqual([]);
+  });
   it("applies global and matching topical preferences without mechanically repeating them", () => {
     const result = selectMemoryUseForTurn({
       plan: plan("今天工作有点累。"),

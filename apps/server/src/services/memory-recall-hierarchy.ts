@@ -6,6 +6,7 @@ import {
   MemoryRecallQuerySchema,
   MemoryRecallResultSchema,
   MemorySchema,
+  type ConversationContextPlan,
   type EventCard,
   type JsonValue,
   type Memory,
@@ -17,6 +18,7 @@ import {
 } from "@personasim/contracts";
 import {
   recallExactIdentifiers,
+  recallCandidateQueries,
   recallMemory,
   stableId,
   type DateDigest,
@@ -183,7 +185,7 @@ export function inspectContinuityRecall(
   input: AgentMemoryRecallInput,
 ): ContinuityRecallInspection {
   const started = performance.now();
-  const query = normalizeQuery(input.query);
+  const query = normalizeQuery(input.query, input.contextPlan);
   const explicitFactParse =
     input.requireDurableEvidence === true
       ? parseExplicitFactVerificationRequest(query.query)
@@ -197,17 +199,27 @@ export function inspectContinuityRecall(
     500,
   );
   const maxEvidence = boundedInteger(
-    input.maxEvidence ?? DEFAULT_MAX_EVIDENCE,
+    input.maxEvidence ??
+      query.contextPlan?.maxRecallEvidence ??
+      DEFAULT_MAX_EVIDENCE,
     1,
-    3,
+    query.contextPlan?.maxRecallEvidence ?? 3,
   );
   const minimumScore = query.minimumScore ?? DEFAULT_MINIMUM_SCORE;
   const searchLimit = Math.min(100, candidateLimit);
-  const searchedCards = dependencies.continuityIndex.searchEventCards({
-    agentId: input.agentId,
-    query: query.query,
-    limit: searchLimit,
-  });
+  const searchedCards = [
+    ...new Map(
+      recallCandidateQueries(query)
+        .flatMap((candidateQuery) =>
+          dependencies.continuityIndex.searchEventCards({
+            agentId: input.agentId,
+            query: candidateQuery,
+            limit: searchLimit,
+          }),
+        )
+        .map((card) => [card.id, card]),
+    ).values(),
+  ].slice(0, searchLimit);
   const temporal = temporalContext(
     store,
     dependencies,
@@ -708,7 +720,7 @@ export function inspectContinuityRecall(
   const allBasicCandidates = basicMemoryCandidates(
     store,
     input.agentId,
-    query.query,
+    recallCandidateQueries(query).join("\n"),
     input.nowUtc,
     candidateLimit,
   );
@@ -1792,7 +1804,9 @@ function buildInspection(input: {
     evidence: selectedEvidence,
     rejections: [...input.prepared.evidenceRejections, ...memoryRejections],
     strategy: {
-      name: "continuity_hierarchy_v1",
+      name:
+        input.prepared.query.contextPlan?.policyVersion ??
+        "continuity_hierarchy_v1",
       minimumScore: input.prepared.minimumScore,
       maxEvidence: input.prepared.maxEvidence,
       candidateLimit: input.prepared.candidateLimit,
@@ -3776,10 +3790,14 @@ function reliabilityRank(
   return 0;
 }
 
-function normalizeQuery(query: string | MemoryRecallQuery): MemoryRecallQuery {
-  return MemoryRecallQuerySchema.parse(
-    typeof query === "string" ? { query } : query,
-  );
+function normalizeQuery(
+  query: string | MemoryRecallQuery,
+  contextPlan?: ConversationContextPlan,
+): MemoryRecallQuery {
+  return MemoryRecallQuerySchema.parse({
+    ...(typeof query === "string" ? { query } : query),
+    ...(contextPlan === undefined ? {} : { contextPlan }),
+  });
 }
 
 function withoutTimeRange(query: MemoryRecallQuery): MemoryRecallQuery {

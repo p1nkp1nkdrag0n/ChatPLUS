@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ConversationContextPlanSchema } from "./conversation-context-plan.js";
+
 import {
   MemoryAttributionSchema,
   MemoryCertaintySchema,
@@ -60,8 +62,19 @@ export const MemoryRecallQuerySchema = z
       .optional(),
     timeRange: TemporalQueryRangeSchema.optional(),
     minimumScore: UnitIntervalSchema.optional(),
+    /** Retrieval-only candidates; query remains the original fact/intent input. */
+    contextPlan: ConversationContextPlanSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (query) =>
+      query.contextPlan === undefined ||
+      query.contextPlan.originalQuery.trim() === query.query,
+    {
+      message: "Recall context must preserve the original query",
+      path: ["contextPlan", "originalQuery"],
+    },
+  );
 export type MemoryRecallQuery = z.infer<typeof MemoryRecallQuerySchema>;
 
 export const RetrievalScoreBreakdownSchema = z
@@ -103,7 +116,7 @@ export const EvidenceBundleSchema = z
     mode: EvidenceBundleModeSchema,
     generatedAtUtc: UtcDateTimeSchema,
     score: UnitIntervalSchema,
-    evidence: z.array(RetrievedMemoryEvidenceSchema).min(1).max(3),
+    evidence: z.array(RetrievedMemoryEvidenceSchema).min(1).max(8),
   })
   .strict()
   .refine(
@@ -120,8 +133,8 @@ export type EvidenceBundle = z.infer<typeof EvidenceBundleSchema>;
 const SelectedMemoryRecallResultSchema = z
   .object({
     mode: EvidenceBundleModeSchema,
-    selectedMemoryIds: z.array(EntityIdSchema).min(1).max(3),
-    selectedEvidenceIds: z.array(EntityIdSchema).min(1).max(3),
+    selectedMemoryIds: z.array(EntityIdSchema).min(1).max(8),
+    selectedEvidenceIds: z.array(EntityIdSchema).min(1).max(8),
     score: UnitIntervalSchema,
     abstained: z.literal(false),
     evidenceBundle: EvidenceBundleSchema,

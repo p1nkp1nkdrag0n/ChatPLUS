@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import {
   MemoryRecallPreviewResponseSchema,
   MemoryRecallQuerySchema,
+  type ConversationContextPlan,
   type JsonValue,
   type Memory,
   type MemoryEvidence,
@@ -13,7 +14,7 @@ import {
   type MemoryRecallResult,
   type RetrievalScoreBreakdown,
 } from "@personasim/contracts";
-import { recallMemory } from "@personasim/features";
+import { recallCandidateQueries, recallMemory } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
 import {
@@ -51,6 +52,7 @@ export type AgentMemoryRecallInput = {
   timezone?: string;
   limit?: number;
   maxEvidence?: number;
+  contextPlan?: ConversationContextPlan;
   /**
    * Enforced chat prompts require every selected candidate to resolve to a
    * persisted, supported evidence source. Verified persisted EventCards
@@ -128,7 +130,7 @@ export class MemoryRecallService {
   }
 
   replay(input: RetrievalReplayInput): MemoryRecallResult {
-    if (input.strategyVersion === "continuity_hierarchy_v1") {
+    if (input.hierarchy !== undefined) {
       return replayContinuityRecall(input);
     }
     return recallMemory({
@@ -244,7 +246,7 @@ function inspectAgentMemoryRecall(
     evidence: selectedEvidence,
     rejections: [...prepared.evidenceRejections, ...memoryRejections],
     strategy: {
-      name: "keyword_evidence_v1",
+      name: prepared.query.contextPlan?.policyVersion ?? "keyword_evidence_v1",
       minimumScore: prepared.minimumScore,
       maxEvidence: prepared.maxEvidence,
       candidateLimit: prepared.candidateLimit,
@@ -275,17 +277,25 @@ function toRetrievalRunInput(
     ...(inspection.hierarchy === undefined
       ? {}
       : {
-          strategyVersion: "continuity_hierarchy_v1",
+          strategyVersion:
+            inspection.prepared.query.contextPlan?.policyVersion ??
+            "continuity_hierarchy_v1",
           hierarchy: inspection.hierarchy,
+        }),
+    ...(inspection.prepared.query.contextPlan === undefined
+      ? {}
+      : {
+          strategyVersion: inspection.prepared.query.contextPlan.policyVersion,
         }),
     ...(inspection.selectorAuditInput === undefined
       ? {}
       : { selectorAuditInput: inspection.selectorAuditInput }),
   };
   const strategyName =
-    inspection.hierarchy === undefined
+    inspection.prepared.query.contextPlan?.policyVersion ??
+    (inspection.hierarchy === undefined
       ? "keyword_evidence_v1"
-      : "continuity_hierarchy_v1";
+      : "continuity_hierarchy_v1");
   const relationshipScore = runtimeRelationshipScore(store, input.agentId);
   const renderedPromptFragment = renderRetrievalPromptFragment(
     inspection.preview.result,
@@ -381,7 +391,19 @@ function retrievalRunStages(
       inputCount: 1,
       outputCount: 1,
       durationMs: 0,
-      snapshot: jsonSnapshot({ query: input.query }),
+      snapshot: jsonSnapshot({
+        query: input.query,
+        ...(input.query.contextPlan === undefined
+          ? {}
+          : {
+              policyVersion: input.query.contextPlan.policyVersion,
+              originalQuery: input.query.contextPlan.originalQuery,
+              expandedQueries: input.query.contextPlan.expandedQueries,
+              contextMessageIds: input.query.contextPlan.contextMessageIds,
+              unresolvedReferences:
+                input.query.contextPlan.unresolvedReferences,
+            }),
+      }),
     },
     {
       status: hasTemporalResolution ? "completed" : "skipped",
@@ -606,16 +628,18 @@ function prepareRecall(
   store: DatabaseStore,
   input: AgentMemoryRecallInput,
 ): PreparedRecall {
-  const query = normalizeQuery(input.query);
+  const query = normalizeQuery(input.query, input.contextPlan);
   const candidateLimit = boundedInteger(
     input.limit ?? DEFAULT_MEMORY_RECALL_CANDIDATE_LIMIT,
     1,
     500,
   );
   const maxEvidence = boundedInteger(
-    input.maxEvidence ?? DEFAULT_MEMORY_RECALL_MAX_EVIDENCE,
+    input.maxEvidence ??
+      query.contextPlan?.maxRecallEvidence ??
+      DEFAULT_MEMORY_RECALL_MAX_EVIDENCE,
     1,
-    3,
+    query.contextPlan?.maxRecallEvidence ?? 3,
   );
   const minimumScore =
     query.minimumScore ?? DEFAULT_MEMORY_RECALL_MINIMUM_SCORE;
@@ -625,7 +649,7 @@ function prepareRecall(
     input.nowUtc,
     {
       candidateLimit,
-      query: query.query,
+      query: recallCandidateQueries(query).join("\n"),
       keywordLimit: DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT,
     },
   );
@@ -764,8 +788,12 @@ function roundMilliseconds(value: number): number {
   return Math.round(Math.max(0, value) * 1_000) / 1_000;
 }
 
-function normalizeQuery(query: string | MemoryRecallQuery): MemoryRecallQuery {
-  return MemoryRecallQuerySchema.parse(
-    typeof query === "string" ? { query } : query,
-  );
+function normalizeQuery(
+  query: string | MemoryRecallQuery,
+  contextPlan?: ConversationContextPlan,
+): MemoryRecallQuery {
+  return MemoryRecallQuerySchema.parse({
+    ...(typeof query === "string" ? { query } : query),
+    ...(contextPlan === undefined ? {} : { contextPlan }),
+  });
 }

@@ -58,6 +58,7 @@ describe("PersonaSim server integration", () => {
         "019_correspondence_key_metadata.sql",
         "020_keepsakes.sql",
         "021_correspondence_reply_recovery.sql",
+        "022_retrieval_context_budget.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database

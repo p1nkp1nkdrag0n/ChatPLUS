@@ -3,6 +3,7 @@ import type { DilemmaEpisode } from "@personasim/contracts";
 import {
   dilemmaScopeScore,
   extractDilemmaChoices,
+  isDilemmaContinuation,
   matchDilemmaOption,
 } from "./fuzzy-life-choice.js";
 
@@ -37,6 +38,16 @@ function dilemma(
 }
 
 describe("grounded dilemma choices", () => {
+  it("distinguishes a request to explain the existing choice from a new named topic", () => {
+    expect(
+      isDilemmaContinuation(
+        "现在请直接推荐一个方向，只推荐一个，并说明它最符合我哪项长期价值。此时我只是听建议，还没有接受。",
+      ),
+    ).toBe(true);
+    expect(
+      isDilemmaContinuation("请推荐一个晚餐，并说明它最符合我哪项长期价值。"),
+    ).toBe(false);
+  });
   it.each([
     ["我该不该辞职？", ["辞职", "不辞职"]],
     ["今晚散步二十分钟还是整理十张照片？", ["散步二十分钟", "整理十张照片"]],

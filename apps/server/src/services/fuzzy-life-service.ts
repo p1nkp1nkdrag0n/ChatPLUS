@@ -63,6 +63,7 @@ import {
   selectLifeEvidenceAssociation,
   type LifeEvidenceAssociation,
 } from "./fuzzy-life-association.js";
+import { readStructuredLifeEvidenceSources } from "./fuzzy-life-structured-evidence.js";
 import {
   assertTimelinePlanHash,
   buildDailyIntents,
@@ -771,6 +772,59 @@ export class FuzzyLifeService {
           dilemmaEvidenceText,
         )
       : undefined;
+    // A named recommendation is fresh evidence of what the character is
+    // offering, even after the original conversation context has expired.
+    // It cannot grant authority: a later delegation still needs its own
+    // explicit request and a recent, uniquely linked intervention.
+    if (
+      dilemma === undefined &&
+      mode === "recommend" &&
+      explicitSupport &&
+      isDilemmaContinuation(dilemmaEvidenceClassifyText)
+    ) {
+      const recommendationScope = exactlyOne(
+        input.assistantText
+          .split(/[。.!！？?\n]+/u)
+          .filter(
+            (sentence) =>
+              analyzeCharacterSupportOffer(sentence)?.mode === "recommend",
+          )
+          .map((sentence) =>
+            analyzeLifeEvidence(sentence)
+              .clauses.filter(
+                (clause) =>
+                  clause.modality === "asserted" &&
+                  clause.subject !== "third_party",
+              )
+              .map((clause) => clause.classifyText)
+              .join("，"),
+          ),
+      );
+      if (recommendationScope !== undefined) {
+        // A/B alone cannot identify an expired conversation scope. Require
+        // the affirmative named choice to agree with any option marker;
+        // negations and incidental mentions in other sentences do not count.
+        const namedChoice = recommendationScope.replace(
+          /(?:选项\s*)?\b[AB]\b/giu,
+          "",
+        );
+        dilemma = exactlyOne(
+          this.repository
+            .listOpenDilemmas(input.agentId, 32)
+            .filter((episode) => {
+              const selected = selectDilemmaOption(episode, namedChoice);
+              return (
+                episode.subject === "user" &&
+                episode.sessionId === input.sessionId &&
+                selected !== undefined &&
+                dilemmaScopeScore(episode, namedChoice) > 0 &&
+                selectDilemmaOption(episode, input.assistantText)?.id ===
+                  selected.id
+              );
+            }),
+        );
+      }
+    }
     if (dilemmaLike && dilemma === undefined) {
       dilemma = this.createUserDilemma(
         input,
@@ -1005,6 +1059,11 @@ export class FuzzyLifeService {
     // instant. A later assistant action cannot cause the earlier user result.
     for (const message of messages) {
       for (const stage of ["action", "outcome", "reflection"] as const) {
+        const stageClauses = collectLifeAssociationEvidence(
+          message.analysis,
+          stage,
+        );
+        if (stageClauses.length === 0) continue;
         const candidates = this.repository
           .listCurrentDecisions(input.agentId, 32)
           // A decision established by this reply is not yet available to the
@@ -1022,6 +1081,16 @@ export class FuzzyLifeService {
               .listRecentOutcomeRecords(input.agentId, 128)
               .filter((outcome) => outcome.decisionId === decision.id),
           }));
+        const structuredSources = readStructuredLifeEvidenceSources({
+          database: this.store.database,
+          agentId: input.agentId,
+          atUtc: input.recordedAtUtc,
+          sourceEvidenceIds: candidates.flatMap((candidate) =>
+            [...candidate.actions, ...candidate.outcomes].flatMap(
+              (record) => record.sourceEvidenceIds,
+            ),
+          ),
+        });
         const groups = new Map<
           string,
           {
@@ -1031,10 +1100,7 @@ export class FuzzyLifeService {
             outcomeIds: Set<string>;
           }
         >();
-        for (const clause of collectLifeAssociationEvidence(
-          message.analysis,
-          stage,
-        )) {
+        for (const clause of stageClauses) {
           // An assistant's second-person description is about its listener;
           // only the character's own reported experience can extend its life.
           if (
@@ -1061,6 +1127,7 @@ export class FuzzyLifeService {
             atUtc: input.recordedAtUtc,
             subject,
             recentMessages,
+            structuredSources,
           });
           if (association === undefined) continue;
           const key = association.decision.id;

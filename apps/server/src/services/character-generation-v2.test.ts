@@ -37,6 +37,10 @@ describe("companion character compilation", () => {
     ).toBe(true);
     expect(draft.compilationPolicyVersion).toBe(POLICY);
     expect(buildCompilePrompt(INPUT)).toContain("goals=[] is valid");
+    expect(buildCompilePrompt(INPUT)).toContain(
+      '"field":"coreTraits.0","ruleId":"trait-1"',
+    );
+    expect(buildCompilePrompt(INPUT)).not.toContain('"field":"mainGoal"');
   });
 
   it("matches author fields by identity after reordering and keeps unrelated model values and goals", () => {
@@ -46,6 +50,10 @@ describe("companion character compilation", () => {
       coreContradiction: "想独处，也想见朋友",
     };
     const fallback = buildOriginalDraft(input, POLICY);
+    expect(fallback.persona.goals[0]?.progress).toBe(0);
+    expect(buildCompilePrompt(input)).toContain(
+      '"field":"mainGoal","ruleId":"goal-1"',
+    );
     const candidate = structuredClone(fallback);
     candidate.persona.values = [
       {

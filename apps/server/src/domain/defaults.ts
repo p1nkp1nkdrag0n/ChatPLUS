@@ -177,7 +177,7 @@ export function buildOriginalDraft(
               title: input.mainGoal,
               description: `持续推进：${input.mainGoal}`,
               priority: 0.9,
-              progress: 0.05,
+              progress: legacy ? 0.05 : 0,
               origin: "user_spec",
               sourceRefs: ["original-form"],
               ...(legacy

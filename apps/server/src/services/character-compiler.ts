@@ -56,8 +56,28 @@ const CHARACTER_IMPORT_STRATEGY = [
 ].join("\n");
 
 export function buildCompilePrompt(input: OriginalCharacterInput): string {
+  const authorFieldBindings = [
+    ...input.coreTraits.map((_, index) => ({
+      field: `coreTraits.${index}`,
+      ruleId: `trait-${index + 1}`,
+      sourceId: "original-form",
+    })),
+    ...(input.coreContradiction
+      ? [
+          {
+            field: "coreContradiction",
+            ruleId: "contradiction-1",
+            sourceId: "original-form",
+          },
+        ]
+      : []),
+    ...(input.mainGoal
+      ? [{ field: "mainGoal", ruleId: "goal-1", sourceId: "original-form" }]
+      : []),
+  ];
   return (
     `Compile the following author input into CharacterSpecDraft JSON:\n${JSON.stringify(input)}\n\n` +
+    `Compilation policy: ${CHARACTER_COMPILATION_POLICY_VERSION}. Use the server-provided rule IDs only for their corresponding supplied author fields. Values have no binding to mainGoal.\nAUTHOR_FIELD_BINDINGS_JSON\n${JSON.stringify(authorFieldBindings)}\n\n` +
     CHARACTER_COMPILATION_STRATEGY
   );
 }

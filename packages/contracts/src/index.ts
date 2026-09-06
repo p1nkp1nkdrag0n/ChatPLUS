@@ -55,3 +55,4 @@ export {
   ActivityEnrichmentProposalSchema as activityEnrichmentSchema,
 } from "./llm.js";
 export { ServerChatMessageInputSchema as chatMessageInputSchema } from "./messages.js";
+export * from "./interaction-evidence.js";

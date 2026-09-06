@@ -336,4 +336,3 @@ describe("companion retrieval policy and frozen audit", () => {
     ).toThrow(/immutable/iu);
   });
 });
-

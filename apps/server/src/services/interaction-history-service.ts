@@ -23,8 +23,16 @@ export function loadInteractionEvidence(input: {
   effectivePersona?: EffectivePersonaSnapshot;
   currentUser?: { id: string; text: string };
 }): InteractionEvidenceSnapshot {
-  const origins = new PersonaRuntimeRepository(input.store)
-    .listAdaptations(input.agentId)
+  const adaptations = new PersonaRuntimeRepository(input.store).listAdaptations(
+    input.agentId,
+  );
+  const excludedSources = new Set(
+    adaptations
+      .filter((item) => item.status !== "accepted")
+      .map((item) => item.sourceMessageId),
+  );
+  const origins = adaptations
+    .filter((item) => !excludedSources.has(item.sourceMessageId))
     .map((item) => item.sourceMessageId);
   const recent = input.store.database
     .prepare(
@@ -53,7 +61,11 @@ export function loadInteractionEvidence(input: {
       [...historical, ...recent.reverse()].map((row) => [row.id, row]),
     ).values(),
   ]
-    .filter((row) => !validity.messageSourceNeedsReview(input.agentId, row.id))
+    .filter(
+      (row) =>
+        !excludedSources.has(row.id) &&
+        !validity.messageSourceNeedsReview(input.agentId, row.id),
+    )
     .sort((a, b) => a.createdAtUtc.localeCompare(b.createdAtUtc));
   return buildInteractionEvidence({
     userId: LOCAL_USER_ID,

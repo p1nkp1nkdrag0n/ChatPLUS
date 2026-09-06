@@ -1,6 +1,7 @@
 import type {
   ConversationContextPlan,
   EffectivePersonaSnapshot,
+  InteractionEvidenceSnapshot,
 } from "@personasim/contracts";
 import { DateTime } from "luxon";
 
@@ -24,6 +25,10 @@ import type {
   RuntimeState,
 } from "../domain/schemas.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
+import {
+  sharedSemanticContext,
+  type ReplyRepairBudget,
+} from "./semantic-reply-guard.js";
 import {
   loadDailyRelationshipSignedUsage,
   type RelationshipDailySignedUsage,
@@ -189,6 +194,8 @@ export class WorldEffectService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget?: ReplyRepairBudget;
     state: RuntimeState;
     capabilities: SimulationCapabilities;
     recentMessages: StoredMessage[];
@@ -310,6 +317,7 @@ export class WorldEffectService {
           reasonSummary: negotiationReason.reasonSummary,
         };
         inspection = this.decisions.inspect({
+          ...sharedSemanticContext(input),
           agentId: input.agentId,
           spec: input.spec,
           ...(input.effectivePersona === undefined
@@ -331,6 +339,7 @@ export class WorldEffectService {
         if (inspection.issues.length > 0 && controlledReply === undefined) {
           repairAttempted = true;
           const repaired = await this.repairs.repairPersonaReply({
+            ...sharedSemanticContext(input),
             spec: input.spec,
             ...(input.effectivePersona === undefined
               ? {}
@@ -377,6 +386,7 @@ export class WorldEffectService {
             committedWorldEffects,
           );
           inspection = this.decisions.inspect({
+            ...sharedSemanticContext(input),
             agentId: input.agentId,
             spec: input.spec,
             ...(input.effectivePersona === undefined
@@ -421,6 +431,7 @@ export class WorldEffectService {
               committedWorldEffects,
             );
             inspection = this.decisions.inspect({
+              ...sharedSemanticContext(input),
               agentId: input.agentId,
               spec: input.spec,
               ...(input.effectivePersona === undefined

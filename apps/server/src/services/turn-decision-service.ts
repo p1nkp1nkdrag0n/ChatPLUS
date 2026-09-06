@@ -2,6 +2,7 @@ import type {
   ConversationContextPlan,
   EffectivePersonaSnapshot,
   FuzzyLifePromptContext,
+  InteractionEvidenceSnapshot,
 } from "@personasim/contracts";
 import { DateTime } from "luxon";
 import {
@@ -49,6 +50,15 @@ import {
 } from "./chat-output-budget.js";
 import type { LlmService } from "./llm-service.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
+import {
+  conservativeSemanticReply,
+  inspectSemanticReply,
+  replyTextHash,
+  semanticReplyAudit,
+  sharedSemanticContext,
+  type ReplyRepairBudget,
+  type SemanticReplyAudit,
+} from "./semantic-reply-guard.js";
 import type {
   PartialProposalValidation,
   ScheduleService,
@@ -187,6 +197,7 @@ export type ResolvedTurn = {
   scheduleAction: ScheduleNegotiationAction;
   modelScheduleActionAudit: ModelScheduleActionAudit;
   continuityEffects?: unknown;
+  semanticGuardAudit?: SemanticReplyAudit;
   worldEffectsAudit?: {
     mode: "shadow" | "enforced";
     validation: WorldEffectsValidationResult;
@@ -313,6 +324,8 @@ export class TurnDecisionService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget?: ReplyRepairBudget;
     lifeContext?: FuzzyLifePromptContext;
     userText: string;
     agentId: string;
@@ -325,6 +338,7 @@ export class TurnDecisionService {
     effects: TurnDecisionEffectContext;
     causalContext?: unknown;
   }): Promise<ResolvedTurn> {
+    input.repairBudget ??= { remaining: 1, attempts: 0 };
     if (this.llm.providerName === "fixture") {
       const rawFixture = fixtureDecision(
         input.spec,
@@ -351,6 +365,8 @@ export class TurnDecisionService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget?: ReplyRepairBudget;
     decision: AgentTurnDecision;
     nowUtc: string;
     capabilities: SimulationCapabilities;
@@ -366,6 +382,7 @@ export class TurnDecisionService {
       input.capabilities,
       input.effectivePersona,
     );
+    inspection.issues.push(...inspectSemanticReply(input).issues);
     if (input.userText === undefined) return inspection;
     return {
       ...inspection,
@@ -405,6 +422,8 @@ export class TurnDecisionService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget?: ReplyRepairBudget;
     lifeContext?: FuzzyLifePromptContext;
     userText: string;
     agentId: string;
@@ -465,8 +484,14 @@ export class TurnDecisionService {
         )
       : undefined;
 
+    const semanticOriginalDecision = decision;
+    const initialSemanticIssues =
+      decision === undefined
+        ? []
+        : inspectSemanticReply({ ...input, decision }).issues;
     let inspection = decision
       ? this.inspect({
+          ...sharedSemanticContext(input),
           agentId: input.agentId,
           spec: input.spec,
           ...(input.effectivePersona === undefined
@@ -489,6 +514,7 @@ export class TurnDecisionService {
     if (!decision || !inspection || inspection.issues.length > 0) {
       repairAttempted = true;
       const repaired = await this.repairs.repairFixtureDecision({
+        ...sharedSemanticContext(input),
         spec: input.spec,
         ...(input.lifeContext === undefined
           ? {}
@@ -502,13 +528,21 @@ export class TurnDecisionService {
         userText: input.userText,
         invalidDecision: decision,
         issues: inspection?.issues ?? initialIssues,
-        fallback: safeScheduleDecision(input.spec),
+        fallback:
+          initialSemanticIssues.length > 0 &&
+          semanticOriginalDecision !== undefined
+            ? conservativeSemanticReply({
+                ...input,
+                decision: semanticOriginalDecision,
+              })
+            : safeScheduleDecision(input.spec),
       });
       decision = attachValidatedWorldEffects(
         withoutWorldEffects(repaired),
         validatedWorldEffects,
       );
       inspection = this.inspect({
+        ...sharedSemanticContext(input),
         agentId: input.agentId,
         spec: input.spec,
         ...(input.effectivePersona === undefined
@@ -529,7 +563,13 @@ export class TurnDecisionService {
     if (inspection.issues.length > 0) {
       decision = attachValidatedWorldEffects(
         withCausalReplyFallback(
-          withoutWorldEffects(safeScheduleDecision(input.spec)),
+          initialSemanticIssues.length > 0 &&
+            semanticOriginalDecision !== undefined
+            ? conservativeSemanticReply({
+                ...input,
+                decision: semanticOriginalDecision,
+              })
+            : withoutWorldEffects(safeScheduleDecision(input.spec)),
           input.userText,
           input.causalContext,
           decision.reply.text,
@@ -538,6 +578,7 @@ export class TurnDecisionService {
       );
       usedFallback = true;
       inspection = this.inspect({
+        ...sharedSemanticContext(input),
         agentId: input.agentId,
         spec: input.spec,
         ...(input.effectivePersona === undefined
@@ -561,6 +602,17 @@ export class TurnDecisionService {
       inspection,
       repairAttempted,
       usedFallback,
+      ...(input.interactionEvidence === undefined &&
+      input.conversationPlan === undefined
+        ? {}
+        : {
+            semanticGuardAudit: semanticReplyAudit({
+              ...input,
+              originalText: semanticOriginalDecision?.reply.text ?? "",
+              finalDecision: decision,
+              initialIssues: initialSemanticIssues,
+            }),
+          }),
       ...(worldValidation === undefined ||
       this.options.liveWorldEffectsMode === undefined ||
       this.options.liveWorldEffectsMode === "off"
@@ -594,6 +646,8 @@ export class TurnDecisionService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget?: ReplyRepairBudget;
     lifeContext?: FuzzyLifePromptContext;
     userText: string;
     agentId: string;
@@ -732,9 +786,15 @@ export class TurnDecisionService {
             )
         : safePersonaDecision(input.spec);
     let usedFallback = materializedResponse === undefined;
+    const semanticOriginalDecision = decision;
+    const initialSemanticIssues = inspectSemanticReply({
+      ...input,
+      decision,
+    }).issues;
     let inspection = usedFallback
       ? undefined
       : this.inspect({
+          ...sharedSemanticContext(input),
           agentId: input.agentId,
           spec: input.spec,
           ...(input.effectivePersona === undefined
@@ -760,6 +820,7 @@ export class TurnDecisionService {
     if (!inspection || inspection.issues.length > 0) {
       repairAttempted = true;
       const repaired = await this.repairs.repairPersonaReply({
+        ...sharedSemanticContext(input),
         spec: input.spec,
         ...(input.lifeContext === undefined
           ? {}
@@ -790,6 +851,7 @@ export class TurnDecisionService {
           validatedWorldEffects,
         );
         inspection = this.inspect({
+          ...sharedSemanticContext(input),
           agentId: input.agentId,
           spec: input.spec,
           ...(input.effectivePersona === undefined
@@ -816,7 +878,12 @@ export class TurnDecisionService {
     if (!inspection || inspection.issues.length > 0) {
       decision = attachValidatedWorldEffects(
         withCausalReplyFallback(
-          safePersonaDecision(input.spec),
+          initialSemanticIssues.length > 0
+            ? conservativeSemanticReply({
+                ...input,
+                decision: semanticOriginalDecision,
+              })
+            : safePersonaDecision(input.spec),
           input.userText,
           input.causalContext,
           decision.reply.text,
@@ -825,6 +892,7 @@ export class TurnDecisionService {
       );
       usedFallback = true;
       inspection = this.inspect({
+        ...sharedSemanticContext(input),
         agentId: input.agentId,
         spec: input.spec,
         ...(input.effectivePersona === undefined
@@ -847,6 +915,17 @@ export class TurnDecisionService {
       inspection,
       repairAttempted,
       usedFallback,
+      ...(input.interactionEvidence === undefined &&
+      input.conversationPlan === undefined
+        ? {}
+        : {
+            semanticGuardAudit: semanticReplyAudit({
+              ...input,
+              originalText: semanticOriginalDecision?.reply.text ?? "",
+              finalDecision: decision,
+              initialIssues: initialSemanticIssues,
+            }),
+          }),
       ...(worldValidation === undefined ||
       this.options.liveWorldEffectsMode === undefined ||
       this.options.liveWorldEffectsMode === "off"
@@ -867,6 +946,103 @@ export class TurnDecisionService {
           }
         : {}),
     };
+  }
+
+  /** Last textual boundary, after world/causal/fact presentation. Pure checks may
+   * repeat; all model repairs consume the same per-turn allowance. */
+  async finalizeSemanticReply(input: {
+    spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
+    interactionEvidence?: InteractionEvidenceSnapshot;
+    repairBudget: ReplyRepairBudget;
+    lifeContext?: FuzzyLifePromptContext;
+    userText: string;
+    agentId: string;
+    nowUtc: string;
+    capabilities: SimulationCapabilities;
+    replyStrategy: ReplyStrategy;
+    decision: AgentTurnDecision;
+    priorAudit?: SemanticReplyAudit;
+    allowModelRepair?: boolean;
+    causalContext?: unknown;
+  }): Promise<{
+    decision: AgentTurnDecision;
+    audit: SemanticReplyAudit;
+    usedFallback: boolean;
+    rejections: ModelEffectRejection[];
+  }> {
+    let decision = input.decision;
+    let usedFallback = false;
+    const initial = inspectSemanticReply(input);
+    if (initial.issues.length > 0) {
+      const repaired =
+        input.allowModelRepair === false
+          ? undefined
+          : await this.repairs.repairPersonaReply({
+              ...input,
+              invalidResponse: {
+                text: decision.reply.text,
+                chunks: decision.reply.chunks,
+              },
+              issues: initial.issues,
+            });
+      if (repaired !== undefined) {
+        const materialized = materializePersonaReply(
+          repaired,
+          input.spec,
+          input.replyStrategy,
+        );
+        decision = { ...decision, reply: materialized.reply };
+      }
+      if (
+        repaired === undefined ||
+        this.inspect({ ...input, decision }).issues.length > 0
+      ) {
+        decision = conservativeSemanticReply(input);
+        usedFallback = true;
+      }
+    }
+    // Dependent claims must not survive simply because the old envelope parsed.
+    // Continuity proposals are separately re-grounded against final stored messages.
+    const rejections: ModelEffectRejection[] = [];
+    decision = {
+      ...decision,
+      memoryCandidates: decision.memoryCandidates.filter((candidate) => {
+        const semantic = inspectSemanticReply({
+          ...sharedSemanticContext(input),
+          decision: {
+            ...decision,
+            reply: {
+              text: candidate.content,
+              chunks: [candidate.content],
+              toneTags: [],
+            },
+          },
+        });
+        if (semantic.issues.length === 0) return true;
+        rejections.push({
+          raw: candidate,
+          reasonCode: "unsupported_interaction_memory",
+          reasonSummary:
+            "A reply-derived memory conflicts with the frozen interaction evidence.",
+        });
+        return false;
+      }),
+    };
+    const audit = semanticReplyAudit({
+      ...input,
+      originalText: input.decision.reply.text,
+      finalDecision: decision,
+      initialIssues: [
+        ...(input.priorAudit?.initialIssues ?? []),
+        ...initial.issues,
+      ],
+    });
+    if (input.priorAudit !== undefined)
+      audit.originalTextSha256 = input.priorAudit.originalTextSha256;
+    audit.finalTextSha256 = replyTextHash(decision.reply.text);
+    return { decision, audit, usedFallback, rejections };
   }
 
   private materializeDecisionResponse(

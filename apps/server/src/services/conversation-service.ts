@@ -1,4 +1,9 @@
 import { DateTime } from "luxon";
+import {
+  loadInteractionEvidence,
+  projectInteractionHistory,
+} from "./interaction-history-service.js";
+import type { ReplyRepairBudget } from "./semantic-reply-guard.js";
 import type { MemoryRecallRuntimeDiagnostic } from "@personasim/contracts";
 import {
   DEFAULT_CONVERSATION_RETENTION_POLICY,
@@ -227,8 +232,22 @@ export class ConversationService {
         })
       : [];
     const storedContextMessages = this.store.listMessagesForContext(sessionId);
+    const semanticEnabled =
+      this.options.companionContextMode === "enforced" ||
+      this.options.personaRuntimeMode === "enforced";
+    const historicalEvidence = semanticEnabled
+      ? loadInteractionEvidence({
+          store: this.store,
+          agentId: input.agentId,
+          nowUtc,
+        })
+      : undefined;
+    const historyProjection =
+      historicalEvidence === undefined
+        ? { messages: storedContextMessages, annotations: [] }
+        : projectInteractionHistory(storedContextMessages, historicalEvidence);
     const contextSelection = selectConversationRetention({
-      messages: storedContextMessages.map((message) => ({
+      messages: historyProjection.messages.map((message) => ({
         id: message.id,
         role: message.role,
         text: message.content,
@@ -289,6 +308,23 @@ export class ConversationService {
           });
     const effectivePersona =
       personaRuntimeMode === "enforced" ? personaSnapshot : undefined;
+    const interactionEvidence = semanticEnabled
+      ? loadInteractionEvidence({
+          store: this.store,
+          agentId: input.agentId,
+          nowUtc,
+          ...(effectivePersona === undefined ? {} : { effectivePersona }),
+          currentUser: { id: userMessageId, text: input.text },
+        })
+      : undefined;
+    const repairBudget: ReplyRepairBudget = { remaining: 1, attempts: 0 };
+    const semanticContext = {
+      ...(interactionEvidence === undefined ? {} : { interactionEvidence }),
+      ...(appliedContextPlan === undefined
+        ? {}
+        : { conversationPlan: appliedContextPlan }),
+      repairBudget,
+    };
     const memoryRevision = new MemoryValidityRepository(
       this.store,
     ).currentRevision(input.agentId);
@@ -426,6 +462,7 @@ export class ConversationService {
         : [consentModalityPromptSegment(consentModalityGuardContract)]),
     ];
     const assembledPrompt = assembleChatPrompt({
+      ...semanticContext,
       character: spec,
       ...(effectivePersona === undefined ? {} : { effectivePersona }),
       ...(appliedContextPlan === undefined
@@ -482,6 +519,7 @@ export class ConversationService {
         : { liveWorldEffectsMode: this.options.liveWorldEffectsMode }),
     });
     const decidedTurn = await this.decisions.decide({
+      ...semanticContext,
       ...(selectedLifeContext.context === undefined
         ? {}
         : { lifeContext: selectedLifeContext.context }),
@@ -518,6 +556,7 @@ export class ConversationService {
             contract: explicitFactReplyContract,
             inspectDecision: (decision) =>
               this.decisions.inspect({
+                ...semanticContext,
                 agentId: input.agentId,
                 spec,
                 ...(effectivePersona === undefined ? {} : { effectivePersona }),
@@ -536,6 +575,7 @@ export class ConversationService {
               contract: consentModalityGuardContract,
               inspectDecision: (decision) =>
                 this.decisions.inspect({
+                  ...semanticContext,
                   agentId: input.agentId,
                   spec,
                   ...(effectivePersona === undefined
@@ -552,6 +592,7 @@ export class ConversationService {
             })
           : candidateTurn;
     const preparedWorld = await this.worldEffects.resolve({
+      ...semanticContext,
       ...(appliedContextPlan === undefined
         ? {}
         : { conversationPlan: appliedContextPlan }),
@@ -578,7 +619,7 @@ export class ConversationService {
             world: preparedWorld,
             contract: explicitFactReplyContract,
           });
-    const finalized =
+    let finalized =
       consentModalityGuardContract === undefined
         ? { turn: guardedTurn, world: guardedWorld }
         : finalizeConsentModalityWorld({
@@ -586,6 +627,46 @@ export class ConversationService {
             world: guardedWorld,
             contract: consentModalityGuardContract,
           });
+    if (semanticEnabled) {
+      const last = await this.decisions.finalizeSemanticReply({
+        ...semanticContext,
+        spec,
+        agentId: input.agentId,
+        userText: input.text,
+        nowUtc,
+        capabilities,
+        ...(effectivePersona === undefined ? {} : { effectivePersona }),
+        ...(selectedLifeContext.context === undefined
+          ? {}
+          : { lifeContext: selectedLifeContext.context }),
+        replyStrategy: assembledPrompt.replyStrategy,
+        // Deterministic fact/consent presentations are already authoritative;
+        // a later semantic check may remove a bad sentence, never ask another
+        // model to rewrite those verified facts or permission boundaries.
+        allowModelRepair:
+          explicitFactReplyContract === undefined &&
+          consentModalityGuardContract === undefined,
+        ...(lifeContext === undefined ? {} : { causalContext: lifeContext }),
+        decision: finalized.world.decision,
+        ...(finalized.turn.semanticGuardAudit === undefined
+          ? {}
+          : { priorAudit: finalized.turn.semanticGuardAudit }),
+      });
+      finalized = {
+        turn: { ...finalized.turn, semanticGuardAudit: last.audit },
+        world: {
+          ...finalized.world,
+          decision: last.decision,
+          repairAttempted:
+            finalized.world.repairAttempted || repairBudget.attempts > 0,
+          usedFallback: finalized.world.usedFallback || last.usedFallback,
+          proposalRejections: [
+            ...finalized.world.proposalRejections,
+            ...last.rejections,
+          ],
+        },
+      };
+    }
     return this.commits.commit({
       memoryRevision,
       sessionId,

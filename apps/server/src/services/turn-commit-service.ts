@@ -101,6 +101,9 @@ export class TurnCommitService {
         decisionPath: input.world.decisionPath,
         rejectedProposalCount: input.world.proposalRejections.length,
         scheduleActionAudit: input.world.scheduleActionAudit,
+        ...(input.turn.semanticGuardAudit === undefined
+          ? {}
+          : { semanticReplyGuard: input.turn.semanticGuardAudit }),
         ...(input.turn.explicitFactReplyGuardAudit === undefined
           ? {}
           : {

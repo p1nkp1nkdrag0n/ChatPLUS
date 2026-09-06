@@ -662,7 +662,17 @@ describe("persona runtime through committed HTTP turns", () => {
       ([input]) => input.purpose === "repair_chat_turn",
     )?.[0];
     expect(repairedPrompt?.prompt).toContain('"practice":"listen_first"');
-    expect(repairedPrompt?.prompt).not.toContain(PREFERENCE);
+    // Practice instructions remain finite; complete source quotes live only in
+    // separately directed evidence and establish a request, never its fulfillment.
+    const generatedEvidence = decide.mock.calls[0]?.[0].interactionEvidence;
+    expect(repair.mock.calls[0]?.[0].interactionEvidence).toBe(
+      generatedEvidence,
+    );
+    expect(repairedPrompt?.prompt).toContain(PREFERENCE);
+    expect(repairedPrompt?.prompt).toContain('"modality":"requested"');
+    expect(repairedPrompt?.prompt).toContain(
+      '"observedAdherenceEvidenceIds":[]',
+    );
     expect(
       response.json<ChatTurnResult>().assistantMessage.metadata[
         "personaRuntime"

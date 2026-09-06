@@ -79,4 +79,213 @@ describe("life context for conversation", () => {
     });
     expect(result.context).toEqual(CONTEXT);
   });
+
+  it.each([
+    "城市速写画得怎么样了？",
+    "你最近的城市速写进度如何？",
+    "城市速写完成了吗？",
+  ])(
+    "selects the named project and its evidence without unrelated life: %s",
+    (query) => {
+      const source = projectContext();
+      const before = structuredClone(source);
+      const result = selectLifeContextForTurn({
+        context: source,
+        plan: planFor(query),
+      });
+      expect(result.context?.ongoingThreads.map((item) => item.title)).toEqual([
+        "城市速写",
+      ]);
+      expect(result.context?.today.currentFocus).toBeUndefined();
+      expect(
+        result.context?.today.intentions.map((item) => item.title),
+      ).toEqual(["城市速写：画桥边的树"]);
+      expect(
+        result.context?.verifiedRecentOutcomes.map((item) => item.summary),
+      ).toEqual(["城市速写只画了一页，还没有完成"]);
+      expect(result.context?.canonicalCausalFacts).toHaveLength(1);
+      expect(
+        result.context?.canonicalCausalFacts[0]?.outcomes[0]?.summary,
+      ).toBe("编辑说还需要修改，尚未采用");
+      expect(result.context?.evidencedActions.map((item) => item.id)).toEqual([
+        "sketch-action",
+      ]);
+      expect(
+        result.context?.evidencedConsequences.map((item) => item.id),
+      ).toEqual(["sketch-outcome"]);
+      expect(result.context?.reflections.map((item) => item.id)).toEqual([
+        "sketch-reflection",
+      ]);
+      expect(JSON.stringify(result.context)).not.toContain("吉他");
+      expect(result.omittedSections).toContain("ongoingThreads");
+      expect(source).toEqual(before);
+      expect(FuzzyLifePromptContextSchema.parse(result.context)).toEqual(
+        result.context,
+      );
+    },
+  );
+
+  it("resolves a familiar manuscript alias only when exactly one existing title matches", () => {
+    const context = projectContext();
+    context.ongoingThreads.push({
+      subject: "character",
+      title: "修改短篇稿件",
+      currentStage: "修改中",
+    });
+    const selected = selectLifeContextForTurn({
+      context,
+      plan: planFor("稿子后来怎样了？"),
+    });
+    expect(selected.context?.ongoingThreads.map((item) => item.title)).toEqual([
+      "修改短篇稿件",
+    ]);
+    context.ongoingThreads.push({
+      subject: "character",
+      title: "整理另一份文稿",
+      currentStage: "整理中",
+    });
+    expect(
+      selectLifeContextForTurn({ context, plan: planFor("稿子后来怎样了？") })
+        .context,
+    ).toBeUndefined();
+  });
+
+  it.each([
+    "我看见别人有本城市速写。",
+    "别人的城市速写画得怎么样了？",
+    "先别聊你的项目。",
+    "先别聊你的城市速写最近进度。",
+    "我今天想买一本城市速写。",
+    "她问我“城市速写画得怎么样了”，我觉得挺意外。",
+    "我想到城市速写这个词。",
+  ])(
+    "does not authorize project disclosure from mentions, exclusions, or other owners: %s",
+    (query) => {
+      expect(
+        selectLifeContextForTurn({
+          context: projectContext(),
+          plan: planFor(query),
+        }).context,
+      ).toBeUndefined();
+    },
+  );
+
+  it("does not authorize a life topic from unresolved retrieval expansions", () => {
+    const plan = planFor("那件事我该怎么办？");
+    plan.expandedQueries = ["城市速写画得怎么样了？"];
+    plan.contextMessageIds = ["sketch-message"];
+    expect(
+      selectLifeContextForTurn({ context: projectContext(), plan }).context,
+    ).toBeUndefined();
+  });
 });
+
+function projectContext() {
+  const facts = ["sketch", "guitar"].map((id) => ({
+    dilemmaId: `${id}-dilemma`,
+    subject: "character",
+    decision: {
+      decisionId: `${id}-decision`,
+      subject: "character",
+      authority: "subject",
+      decidedBy: "character",
+      selectionSummary: id === "sketch" ? "城市速写先画一页" : "吉他先练一首",
+      sourceMessageIds: [`${id}-message`],
+    },
+    actions: [
+      {
+        actionId: `${id}-action`,
+        decisionId: `${id}-decision`,
+        subject: "character",
+        performedBy: "character",
+        actionKind: "advanced",
+        summary: "只试了一遍",
+        sourceEvidenceIds: [`${id}-action-message`],
+      },
+    ],
+    outcomes: [
+      {
+        outcomeId: `${id}-outcome`,
+        decisionId: `${id}-decision`,
+        subject: "character",
+        actionIds: [`${id}-action`],
+        causeKind: "mixed",
+        valence: "mixed",
+        summary:
+          id === "sketch" ? "编辑说还需要修改，尚未采用" : "吉他弹奏不太顺利",
+        sourceEvidenceIds: [`${id}-outcome-message`],
+      },
+    ],
+    reflections: [],
+  }));
+  return FuzzyLifePromptContextSchema.parse({
+    ...CONTEXT,
+    today: {
+      ...CONTEXT.today,
+      currentFocus: "练吉他",
+      intentions: [
+        {
+          title: "城市速写：画桥边的树",
+          period: "afternoon",
+          commitmentLevel: "optional",
+          status: "intended",
+        },
+        {
+          title: "吉他练习",
+          period: "evening",
+          commitmentLevel: "optional",
+          status: "intended",
+        },
+      ],
+    },
+    ongoingThreads: [
+      {
+        subject: "character",
+        title: "城市速写",
+        currentStage: "尝试中",
+        progressNote: "还未完成",
+      },
+      { subject: "character", title: "学吉他", currentStage: "练习中" },
+    ],
+    verifiedRecentOutcomes: [
+      {
+        subject: "character",
+        effectiveLocalDate: "2026-09-05",
+        outcomeKind: "partial",
+        summary: "城市速写只画了一页，还没有完成",
+      },
+      {
+        subject: "character",
+        effectiveLocalDate: "2026-09-05",
+        outcomeKind: "partial",
+        summary: "吉他只练习了十分钟",
+      },
+    ],
+    canonicalCausalFacts: facts,
+    evidencedActions: facts.flatMap((fact) =>
+      fact.actions.map(({ actionId, ...action }) => ({
+        ...action,
+        id: actionId,
+        effectiveLocalDate: "2026-09-05",
+      })),
+    ),
+    evidencedConsequences: facts.flatMap((fact) =>
+      fact.outcomes.map(({ outcomeId, ...outcome }) => ({
+        ...outcome,
+        id: outcomeId,
+        status: "observed",
+        effectiveLocalDate: "2026-09-05",
+      })),
+    ),
+    reflections: facts.map((fact) => ({
+      id: fact.dilemmaId.replace("dilemma", "reflection"),
+      decisionId: fact.decision.decisionId,
+      subject: "character",
+      reflectedBy: "character",
+      stanceTowardDecision: "mixed",
+      summary: "下次慢慢来，不急着证明自己",
+      sourceMessageIds: [],
+      effectiveLocalDate: "2026-09-06",
+    })),
+  });
+}

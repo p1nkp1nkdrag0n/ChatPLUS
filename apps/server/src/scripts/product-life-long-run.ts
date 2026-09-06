@@ -45,6 +45,11 @@ import {
 } from "./product-life-long-run-plan.js";
 import { auditProductLifeDatabase } from "./product-life-long-run-audit.js";
 import {
+  providerMetricsReport,
+  renderProviderMetricsReport,
+  type ProfiledLlmCallMetric,
+} from "./provider-metrics-summary.js";
+import {
   PRODUCT_LIFE_INPUT_PROTOCOL,
   appendProductLifeHistory,
   inspectProductLifeUserText,
@@ -191,20 +196,20 @@ export async function runProductLifeLongRun(
       );
     }
   }
-  const characterMetrics: LlmCallMetric[] = existsSync(
+  const characterMetrics: ProfiledLlmCallMetric[] = existsSync(
     join(directory, "character-metrics.jsonl"),
   )
     ? readFileSync(join(directory, "character-metrics.jsonl"), "utf8")
         .trim()
         .split("\n")
         .filter(Boolean)
-        .map((line) => JSON.parse(line) as LlmCallMetric)
+        .map((line) => JSON.parse(line) as ProfiledLlmCallMetric)
     : [];
-  const oldUserMetrics: LlmCallMetric[] =
+  const oldUserMetrics: ProfiledLlmCallMetric[] =
     options.resume && existsSync(join(directory, "user-metrics.json"))
       ? (JSON.parse(
           await readFile(join(directory, "user-metrics.json"), "utf8"),
-        ) as LlmCallMetric[])
+        ) as ProfiledLlmCallMetric[])
       : [];
   const clock = new FakeClock(journal.nowUtc);
   let app: PersonaSimApp;
@@ -227,9 +232,11 @@ export async function runProductLifeLongRun(
       startScheduler: false,
       logger: false,
       llmObservation: {
+        promptDiagnostics: true,
         onMetric: (metric) => {
-          characterMetrics.push(metric);
-          append("character-metrics.jsonl", metric);
+          const recorded = { ...metric, profile: config.llm.profileName };
+          characterMetrics.push(recorded);
+          append("character-metrics.jsonl", recorded);
         },
         onLogicalCall: (event) =>
           append("model-io.jsonl", {
@@ -252,10 +259,28 @@ export async function runProductLifeLongRun(
   async function save(): Promise<void> {
     journal.nowUtc = clock.nowUtc();
     await json("journal.json", journal);
-    await json("user-metrics.json", [
+    const userMetrics = [
       ...oldUserMetrics,
-      ...options.userMetrics,
-    ]);
+      ...options.userMetrics.map((metric) => ({
+        ...metric,
+        profile: options.userConnection?.profileName,
+      })),
+    ];
+    await json("user-metrics.json", userMetrics);
+    const accounting = {
+      user: providerMetricsReport(userMetrics),
+      character: providerMetricsReport(characterMetrics),
+    };
+    await json("provider-metrics.json", accounting);
+    await writeFile(
+      join(directory, "provider-metrics.md"),
+      safe(
+        renderProviderMetricsReport(
+          providerMetricsReport([...characterMetrics, ...userMetrics]),
+        ),
+      ) as string,
+      "utf8",
+    );
     await json("manifest.json", {
       schema: "product-life-long-run-v3",
       status: journal.status,
@@ -271,6 +296,7 @@ export async function runProductLifeLongRun(
       resumeIdentity,
       physicalCharacterAttempts: characterMetrics.length,
       physicalUserAttempts: oldUserMetrics.length + options.userMetrics.length,
+      accounting,
       experimentConfiguration: {
         conversationRetention: config.conversationRetention,
         correspondence: "enforced/lazy/fixed_5d_v1",
@@ -390,6 +416,14 @@ export async function runProductLifeLongRun(
           await options.userProvider.generateObject(attemptInput),
         );
       } catch (error) {
+        append("model-io.jsonl", {
+          actor: "user",
+          step: activeStep,
+          attempt,
+          stage: "failed",
+          metrics: options.userMetrics.slice(userMetricCursor),
+        });
+        userMetricCursor = options.userMetrics.length;
         // A transport error should remain visible and must not restart a paid call here.
         if (
           !(error instanceof z.ZodError) &&
@@ -855,6 +889,7 @@ export async function productLifeLongRunMain(
         ...userConfig,
         apiKey: userConfig.apiKey!,
         onMetric: (metric) => userMetrics.push(metric),
+        promptDiagnostics: true,
       })
     : new FixtureProductLifeUser();
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");

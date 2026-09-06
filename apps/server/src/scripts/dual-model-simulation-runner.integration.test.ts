@@ -62,6 +62,10 @@ function userProvider(
         usageSource: "provider",
         inputTokens: 19,
         outputTokens: 11,
+        logicalCallId: `simulated-user-${calls.length}`,
+        cacheReadTokens: 10,
+        cacheReadSource: "usage.prompt_tokens_details.cached_tokens",
+        cacheWriteTokens: 0,
       });
       return Promise.resolve(
         input.schema.parse({ text: respond(calls.length) }),
@@ -237,6 +241,15 @@ describe("dual-model simulation through real application routes", () => {
           physicalAttempts: 2,
           inputTokens: 38,
           outputTokens: 22,
+          providerMetrics: {
+            total: {
+              physicalAttempts: 2,
+              logicalCalls: 2,
+              cacheRead: { tokens: 20, knownAttempts: 2, unknownAttempts: 0 },
+              cacheWrite: { tokens: 0, knownAttempts: 2 },
+              cacheReadRate: { cacheReadTokens: 20, inputTokens: 38 },
+            },
+          },
         },
         character: {
           physicalAttempts: 0,
@@ -244,6 +257,12 @@ describe("dual-model simulation through real application routes", () => {
         },
       },
     });
+    expect(turns[0]).toMatchObject({
+      userProviderAttempts: [{ cacheReadTokens: 10, cacheWriteTokens: 0 }],
+    });
+    expect(
+      await readJson(join(input.runDirectory, "provider-metrics.json")),
+    ).toMatchObject({ total: { cacheRead: { tokens: 20 } } });
     expect(
       await readFile(join(input.runDirectory, "review.md"), "utf8"),
     ).toContain("待人工审阅");

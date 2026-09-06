@@ -52,6 +52,37 @@ describe("product long-run input boundaries", () => {
     expect(context.publicHistory.map((item) => item.sourceId)).toEqual(["new"]);
     expect(context.omittedEarlierMessages).toBe(1);
   });
+  it("keeps the visible-history prefix stable across time changes and restart serialization", () => {
+    const first = productLifePublicContext(
+      [message],
+      "2026-09-15T01:00:00.000Z",
+    );
+    const restored = JSON.parse(
+      JSON.stringify([message]),
+    ) as ProductLifeHistoryMessage[];
+    const later = productLifePublicContext(
+      restored,
+      "2026-09-16T01:00:00.000Z",
+    );
+    const text = JSON.stringify(first);
+    const boundary = text.indexOf('"currentTimeUtc"');
+    expect(boundary).toBeGreaterThan(text.indexOf('"publicHistory"'));
+    expect(JSON.stringify(later).slice(0, boundary)).toBe(
+      text.slice(0, boundary),
+    );
+    expect(later.currentTimeUtc).toBe("2026-09-16T01:00:00.000Z");
+    expect(later.currentTimeLocal).toBe("2026-09-16T09:00:00.000+08:00");
+    expect(later.publicHistory).toEqual(first.publicHistory);
+    const future = {
+      ...message,
+      sourceId: "future",
+      firstVisibleAtUtc: "2026-09-17T01:00:00.000Z",
+    };
+    expect(
+      productLifePublicContext([...restored, future], later.currentTimeUtc)
+        .publicHistory,
+    ).toEqual(first.publicHistory);
+  });
   it.each([
     "林舟，你回来啦。",
     "早上好。林舟，别担心。",

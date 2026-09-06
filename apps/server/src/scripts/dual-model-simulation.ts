@@ -187,6 +187,7 @@ export async function dualModelSimulationMain(
       ...userConfig,
       apiKey: userKey,
       onMetric: (metric) => userCallMetrics.push(metric),
+      promptDiagnostics: true,
     });
     serverConfig = { ...readConfig(), llm: characterConfig };
   }

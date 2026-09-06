@@ -6,6 +6,7 @@ import {
   FixtureLlmProvider,
   StructuredOutputError,
   type GenerateObjectInput,
+  type LlmCallMetric,
 } from "@personasim/providers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -20,11 +21,32 @@ class FullRunFixtureUser extends FixtureLlmProvider {
   calls = 0;
   interruptOpenRecallOnce = false;
   prompts: Record<string, unknown>[] = [];
-  constructor() {
+  constructor(private readonly metrics?: LlmCallMetric[]) {
     super({ model: "product-life-user-offline" });
   }
   override generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
     this.calls += 1;
+    this.metrics?.push({
+      provider: "fixture",
+      model: this.model,
+      purpose: input.purpose,
+      attempt: 1,
+      latencyMs: 1,
+      success: true,
+      usageSource: "provider",
+      inputTokens: 100,
+      outputTokens: 10,
+      ...(this.calls === 1
+        ? {}
+        : {
+            logicalCallId: `user-call-${this.calls}`,
+            cacheReadTokens: 60,
+            cacheReadSource: "usage.prompt_tokens_details.cached_tokens",
+            cacheWriteTokens: 0,
+            cacheWriteSource:
+              "usage.prompt_tokens_details.cache_creation_input_tokens",
+          }),
+    });
     const context = JSON.parse(input.prompt) as {
       controlledRecallProbe?: { kind: string; questions: string[] };
     };
@@ -139,18 +161,41 @@ describe("42-turn product life long-run", () => {
         maxRetries: 0,
       },
     });
-    const userProvider = new FullRunFixtureUser();
+    const userMetrics: LlmCallMetric[] = [];
+    const userProvider = new FullRunFixtureUser(userMetrics);
     const result = await runProductLifeLongRun({
       runDirectory,
       config,
       userProvider,
-      userMetrics: [],
+      userMetrics,
     });
     expect(result, JSON.stringify(result.error)).toMatchObject({
       status: "completed",
       completedTurns: 42,
     });
     expect(userProvider.calls).toBe(44);
+    expect(
+      await parsed(join(runDirectory, "provider-metrics.json")),
+    ).toMatchObject({
+      user: {
+        total: {
+          physicalAttempts: 44,
+          logicalCalls: 43,
+          logicalIdUnknownAttempts: 1,
+          cacheRead: { tokens: 2580, knownAttempts: 43, unknownAttempts: 1 },
+          cacheWrite: { tokens: 0, knownAttempts: 43, unknownAttempts: 1 },
+          cacheReadRate: { value: 0.6, inputTokens: 4300 },
+        },
+      },
+    });
+    const recordedMetrics = await readFile(
+      join(runDirectory, "user-metrics.json"),
+      "utf8",
+    );
+    const recordedAccounting = await readFile(
+      join(runDirectory, "provider-metrics.json"),
+      "utf8",
+    );
     expect(globalThis.fetch).not.toHaveBeenCalled();
     const before = rows(runDirectory);
     expect(before.sessions).toBe(3);
@@ -303,6 +348,12 @@ describe("42-turn product life long-run", () => {
     });
     expect(resumed).toMatchObject({ status: "completed", completedTurns: 42 });
     expect(userProvider.calls).toBe(44);
+    expect(
+      await readFile(join(runDirectory, "user-metrics.json"), "utf8"),
+    ).toBe(recordedMetrics);
+    expect(
+      await readFile(join(runDirectory, "provider-metrics.json"), "utf8"),
+    ).toBe(recordedAccounting);
     expect(rows(runDirectory)).toEqual(before);
     expect(await readFile(join(runDirectory, "model-io.jsonl"), "utf8")).toBe(
       ioBefore,

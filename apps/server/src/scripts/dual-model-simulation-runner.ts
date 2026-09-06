@@ -14,6 +14,11 @@ import type { ServerConfig } from "../config.js";
 import { openDatabase, type Database } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import { redactLongRunArtifact } from "./companion-long-run-v2-artifacts.js";
+import {
+  providerMetricsReport,
+  renderProviderMetricsReport,
+  summarizeProviderMetrics,
+} from "./provider-metrics-summary.js";
 
 export interface DualModelSimulationProgress {
   turn: number;
@@ -177,15 +182,32 @@ export async function runDualModelSimulation(
           options.userCallMetrics?.slice(userMetricStart) ?? [],
           userLogicalCalls,
           options.userProvider.name === "fixture",
+          options.userProfileName,
         ),
         character: summarizeMetrics(
           characterMetrics,
           characterLogicalCalls,
           config.llm.provider === "fixture",
+          config.llm.profileName,
         ),
       },
       qualityReview: "pending_manual_review",
     });
+    const providerReport = providerMetricsReport([
+      ...characterMetrics.map((metric) => ({
+        ...metric,
+        profile: config.llm.profileName,
+      })),
+      ...(options.userCallMetrics?.slice(userMetricStart) ?? []).map(
+        (metric) => ({ ...metric, profile: options.userProfileName }),
+      ),
+    ]);
+    await writeJson("provider-metrics.json", providerReport);
+    await writeFile(
+      join(runDirectory, "provider-metrics.md"),
+      safeText(renderProviderMetricsReport(providerReport)),
+      "utf8",
+    );
   };
   try {
     await writeFile(join(runDirectory, "turns.jsonl"), "", { flag: "wx" });
@@ -207,6 +229,7 @@ export async function runDualModelSimulation(
       startScheduler: false,
       logger: false,
       llmObservation: {
+        promptDiagnostics: true,
         onMetric: (metric) => characterMetrics.push(metric),
         onLogicalCall: (event) => {
           if (event.stage === "started") characterLogicalCalls += 1;
@@ -262,10 +285,10 @@ export async function runDualModelSimulation(
             prompt: JSON.stringify({
               userPersona: safeText(options.userPersona),
               scenario: safeText(options.scenario),
-              turn,
-              currentTimeUtc: atUtc,
               publicHistory: publicHistory.messages,
               omittedEarlierMessages: publicHistory.omitted,
+              turn,
+              currentTimeUtc: atUtc,
             }),
             schema: UserMessageSchema,
             maxRetries: 1,
@@ -546,13 +569,12 @@ function summarizeMetrics(
   metrics: readonly LlmCallMetric[],
   logicalCalls: number,
   fixture: boolean,
+  profile?: string,
 ): unknown {
-  const tokenMetrics = metrics.filter(
-    (metric) =>
-      metric.usageSource === "provider" || metric.usageSource === "estimated",
-  );
+  const summary = summarizeProviderMetrics(metrics);
   return {
     logicalCalls,
+    logicalCallsSource: "runner_observation",
     physicalAttempts: fixture
       ? 0
       : metrics.length === 0
@@ -563,25 +585,14 @@ function summarizeMetrics(
       : metrics.length === 0
         ? "unavailable"
         : "provider_metrics",
-    successfulAttempts: metrics.filter((metric) => metric.success).length,
-    failedAttempts: metrics.filter((metric) => !metric.success).length,
-    inputTokens:
-      tokenMetrics.length === 0
-        ? null
-        : tokenMetrics.reduce(
-            (sum, metric) => sum + (metric.inputTokens ?? 0),
-            0,
-          ),
-    outputTokens:
-      tokenMetrics.length === 0
-        ? null
-        : tokenMetrics.reduce(
-            (sum, metric) => sum + (metric.outputTokens ?? 0),
-            0,
-          ),
-    usageSources: [
-      ...new Set(metrics.map((metric) => metric.usageSource ?? "unavailable")),
-    ],
+    successfulAttempts: summary.successfulAttempts,
+    failedAttempts: summary.failedAttempts,
+    inputTokens: summary.input.tokens,
+    outputTokens: summary.output.tokens,
+    usageSources: summary.usageSources,
+    providerMetrics: providerMetricsReport(
+      metrics.map((metric) => ({ ...metric, profile })),
+    ),
   };
 }
 

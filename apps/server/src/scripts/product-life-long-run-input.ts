@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PRODUCT_LIFE_INPUT_PROTOCOL = "named-public-history-v3";
+export const PRODUCT_LIFE_INPUT_PROTOCOL = "named-public-history-v4";
 export const PRODUCT_LIFE_USER_NAME = "林舟";
 export const PRODUCT_LIFE_CHARACTER_NAME = "顾澜";
 
@@ -48,8 +48,6 @@ export function productLifePublicContext(
   )
     bounded.shift();
   return {
-    currentTimeUtc: nowUtc,
-    currentTimeLocal: shanghaiTime(nowUtc),
     timezone: "Asia/Shanghai",
     participants: {
       simulatedUser: { id: "user", name: PRODUCT_LIFE_USER_NAME },
@@ -67,6 +65,10 @@ export function productLifePublicContext(
       firstVisibleAtLocal: shanghaiTime(message.firstVisibleAtUtc),
     })),
     omittedEarlierMessages: visible.length - bounded.length,
+    // Keep growing, legally visible history before per-turn time and scene.
+    // Time remains explicit and authoritative even when earlier messages quote dates.
+    currentTimeUtc: nowUtc,
+    currentTimeLocal: shanghaiTime(nowUtc),
   };
 }
 

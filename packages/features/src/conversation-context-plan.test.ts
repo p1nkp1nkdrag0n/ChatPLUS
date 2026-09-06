@@ -13,6 +13,7 @@ describe("conversation context planning", () => {
     "她说‘先听我说’，但我想请你分析一下。",
     "先听我说。不，改成直接给我建议。",
     "Don't just listen; give me advice.",
+    "没必要先听我说，直接给建议。",
   ])("honors the active help request in %s", (originalQuery) => {
     expect(
       buildConversationContextPlan({ ...base, originalQuery }),
@@ -46,12 +47,27 @@ describe("conversation context planning", () => {
     "她说‘给我建议’，但我只想说说。",
     "给我建议。不过先听我说就好。",
     "I don't want advice; just listen.",
+    "给我建议。不，还是先听我说就好。",
   ])("keeps negated or superseded help inactive in %s", (originalQuery) => {
     expect(
       buildConversationContextPlan({ ...base, originalQuery }),
     ).toMatchObject({
       adviceRequested: false,
       supportStyle: "listen",
+    });
+  });
+
+  it("recognizes analysis deferred without repeating an imperative", () => {
+    expect(
+      buildConversationContextPlan({
+        ...base,
+        originalQuery: "先让我说完，再详细分析。",
+      }),
+    ).toMatchObject({
+      adviceRequested: true,
+      detailedAnalysisRequested: true,
+      supportStyle: "listen_then_help",
+      helpTiming: "after_user_finishes",
     });
   });
 

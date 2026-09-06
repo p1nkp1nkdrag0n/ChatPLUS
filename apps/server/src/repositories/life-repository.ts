@@ -256,6 +256,19 @@ export class LifeRepository {
     );
   }
 
+  listEvidenceDrivenGoalThreads(agentId: string): LifeThread[] {
+    return parseRows(
+      this.database
+        .prepare(
+          `SELECT thread_json AS json FROM life_threads WHERE agent_id = ?
+         AND json_extract(thread_json, '$.progressionPolicy') = 'evidence_driven_v2'
+         ORDER BY created_at_utc, id`,
+        )
+        .all(agentId),
+      LifeThreadSchema,
+    );
+  }
+
   insertThread(thread: LifeThread): boolean {
     const value = LifeThreadSchema.parse(thread);
     return (

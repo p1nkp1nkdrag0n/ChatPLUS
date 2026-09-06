@@ -27,6 +27,10 @@ import { DateTime } from "luxon";
 
 import type { DatabaseStore } from "../db/store.js";
 import { buildTimeBasedGoalMilestones } from "../domain/defaults.js";
+import {
+  goalThreadBindingKey,
+  matchesGoalBinding,
+} from "./fuzzy-life-goal-binding.js";
 
 interface DailyIntentSeed {
   title: string;
@@ -140,8 +144,9 @@ export function buildDeterministicLifeOutcome(input: {
   evidenceId: string;
   effectiveLocalDate: string;
   recordedAtUtc: string;
+  outcomeKind?: LifeOutcome["outcomeKind"];
 }): LifeOutcome {
-  const outcomeKind = seededOutcome(input.intent.id);
+  const outcomeKind = input.outcomeKind ?? seededOutcome(input.intent.id);
   const summary = outcomeSummary(input.intent.title, outcomeKind);
   return LifeOutcomeSchema.parse({
     id: stableId("life_outcome", input.intent.id),
@@ -190,7 +195,7 @@ export function createEvidenceDrivenGoalThread(
   goal: CharacterGoal,
   atUtc: string,
 ): LifeThread {
-  const key = `life-thread:${spec.id}:goal:${goal.id}`;
+  const key = goalThreadBindingKey(spec.id, goal);
   const localDate = projectCharacterTime(spec.identity, atUtc).localDate;
   return LifeThreadSchema.parse({
     id: stableId("life_thread", key),
@@ -227,6 +232,7 @@ export function projectGoalThreadOutcome(
     thread.agentId !== outcome.agentId ||
     !outcome.threadIds.includes(thread.id) ||
     outcome.sourceEvidenceIds.length === 0 ||
+    thread.pauseSourceMessageId !== undefined ||
     thread.status === "resolved" ||
     thread.status === "abandoned"
   )
@@ -394,7 +400,7 @@ export function buildDailyIntents(
         spec.compilationPolicyVersion !== "companion_character_v2" ||
         threads.some(
           (thread) =>
-            thread.status === "active" && thread.sourceGoalId === goal.id,
+            thread.status === "active" && matchesGoalBinding(thread, goal),
         ),
     )
     .slice(0, 3)
@@ -409,7 +415,8 @@ export function buildDailyIntents(
       threadIds: threads
         .filter(
           (thread) =>
-            thread.sourceGoalId === goal.id ||
+            (thread.progressionPolicy === "evidence_driven_v2" &&
+              matchesGoalBinding(thread, goal)) ||
             thread.timelinePlan?.sourceGoalId === goal.id ||
             (thread.progressionPolicy !== "evidence_driven_v2" &&
               thread.timelinePlan === undefined &&

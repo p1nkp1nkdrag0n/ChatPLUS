@@ -4,7 +4,7 @@ import {
   type LifeOutcome,
   type LifeThread,
 } from "@personasim/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
@@ -20,10 +20,13 @@ describe("evidence-driven character life threads", () => {
   let database: Database;
   let clock: FakeClock;
   let repository: LifeRepository;
+  let fixtureReply: string | undefined;
 
   afterEach(async () => {
     await app?.close();
     app = undefined;
+    fixtureReply = undefined;
+    vi.restoreAllMocks();
   });
 
   async function setup(): Promise<CharacterSpec> {
@@ -36,6 +39,7 @@ describe("evidence-driven character life threads", () => {
       seedDemo: false,
       startScheduler: false,
       logger: false,
+      fixtureTurnBehavior: { semanticReply: () => fixtureReply },
       config: readConfig({
         nodeEnv: "test",
         profile: "life-v2",
@@ -77,6 +81,329 @@ describe("evidence-driven character life threads", () => {
     app.personasim.life.ensureToday(character.id);
     return character;
   }
+
+  async function chat(
+    character: CharacterSpec,
+    text: string,
+    clientMessageId: string,
+    reply?: string,
+  ) {
+    fixtureReply = reply;
+    const created = await app!.inject({
+      method: "POST",
+      url: `/api/agents/${character.id}/sessions`,
+      payload: {},
+    });
+    const sessionId = created.json<{ session: { id: string } }>().session.id;
+    const response = await app!.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionId}/messages`,
+      payload: { agentId: character.id, text, clientMessageId },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    return response.json<{
+      userMessage: { id: string };
+      assistantMessage: { id: string };
+    }>();
+  }
+
+  async function republish(
+    character: CharacterSpec,
+    edit: (spec: CharacterSpec) => void,
+  ) {
+    const candidate = structuredClone(
+      app!.personasim.store.getCharacterSpec(character.id)!,
+    );
+    edit(candidate);
+    const updated = await app!.inject({
+      method: "PATCH",
+      url: `/api/characters/${character.id}/draft`,
+      payload: { spec: candidate, expectedVersion: candidate.version },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    const draft = updated.json<{ character: CharacterSpec }>().character;
+    const published = await app!.inject({
+      method: "POST",
+      url: `/api/characters/${character.id}/publish`,
+      payload: { expectedVersion: draft.version },
+    });
+    expect(published.statusCode, published.body).toBe(200);
+  }
+
+  it("commits explicit goal pause and resume through chat without inventing an action or result", async () => {
+    const character = await setup();
+    const initial = repository.listActiveThreads(character.id)[0]!;
+    const pausedTurn = await chat(
+      character,
+      "请暂停你的完成漫画目标。",
+      "pause-goal",
+      "我同意暂停我的完成漫画目标。",
+    );
+    const paused = repository.findThreadById(initial.id)!;
+    expect(paused).toMatchObject({
+      status: "paused",
+      currentStage: "明确暂停",
+      pauseSourceMessageId: pausedTurn.userMessage.id,
+    });
+    expect(repository.listRecentActions(character.id)).toEqual([]);
+    expect(paused.sourceMessageIds).toEqual([
+      pausedTurn.userMessage.id,
+      pausedTurn.assistantMessage.id,
+    ]);
+    clock.advance({ days: 2 });
+    app!.personasim.life.advance(character.id);
+    const held = app!.personasim.life.ensureToday(character.id);
+    expect(repository.findThreadById(initial.id)).toEqual(paused);
+    expect(
+      held.intents.some((intent) => intent.threadIds.includes(initial.id)),
+    ).toBe(false);
+    expect(
+      repository
+        .listRecentLifeOutcomes(character.id, 64)
+        .filter((outcome) => outcome.threadIds.includes(initial.id))
+        .every((outcome) => outcome.outcomeKind === "deferred"),
+    ).toBe(true);
+
+    await chat(
+      character,
+      "你已经为完成漫画画了第一页。",
+      "effort-during-pause",
+    );
+    expect(repository.findThreadById(initial.id)).toEqual(paused);
+    const resumedTurn = await chat(
+      character,
+      "请恢复你的完成漫画目标。",
+      "resume-goal",
+      "我同意恢复我的完成漫画目标。",
+    );
+    const resumed = repository.findThreadById(initial.id)!;
+    expect(resumed).toMatchObject({
+      status: "active",
+      currentStage: "当前关注",
+    });
+    expect(resumed.pauseSourceMessageId).toBeUndefined();
+    expect(resumed.sourceMessageIds).toContain(resumedTurn.userMessage.id);
+    expect(resumed.sourceMessageIds).toContain(resumedTurn.assistantMessage.id);
+    expect(resumed.progressNote).toContain("尚未据此宣称有实际进展");
+    expect(repository.listRecentActions(character.id)).toEqual([]);
+    await chat(character, "你已经为完成漫画画了第一页。", "actual-role-effort");
+    const actual = repository.findThreadById(initial.id)!;
+    expect(actual).toMatchObject({
+      status: "active",
+      currentStage: "近期有投入",
+    });
+    expect(actual.progressNote).toBe("你已经为完成漫画画了第一页");
+    clock.advance({ days: 1 });
+    expect(
+      app!.personasim.life
+        .ensureToday(character.id)
+        .intents.some((intent) => intent.threadIds.includes(initial.id)),
+    ).toBe(true);
+  });
+
+  it.each([
+    "我已经恢复完成漫画这个目标了。",
+    "如果我请恢复你的完成漫画目标，你会怎么做？",
+    "不要恢复你的完成漫画目标。",
+    "请翻译“恢复你的完成漫画目标”。",
+    "请恢复你的完成漫画目标了吗？",
+    "我已经为完成漫画画了第一页。",
+    "我不赞同恢复你的完成漫画目标。",
+    "恢复你的完成漫画目标似乎不妥。",
+  ])(
+    "does not turn an unrelated, negated, hypothetical or quoted statement into goal control: %s",
+    async (text) => {
+      const character = await setup();
+      const initial = repository.listActiveThreads(character.id)[0]!;
+      await chat(
+        character,
+        "请暂停你的完成漫画目标。",
+        "pause-before-rejected",
+        "我同意暂停我的完成漫画目标。",
+      );
+      const paused = repository.findThreadById(initial.id)!;
+      await chat(
+        character,
+        text,
+        "rejected-control",
+        "我同意恢复我的完成漫画目标。",
+      );
+      expect(repository.findThreadById(initial.id)).toEqual(paused);
+    },
+  );
+
+  it.each([
+    {
+      status: "active",
+      request: "请暂停你的完成漫画目标。",
+      reply: "我不同意暂停我的完成漫画目标。",
+    },
+    {
+      status: "active",
+      request: "请暂停你的完成漫画目标。",
+      reply: "好，我听到你的想法了。",
+    },
+    {
+      status: "active",
+      request: "请暂停你的完成漫画目标。",
+      reply: "如果之后更忙，我同意暂停我的完成漫画目标。",
+    },
+    {
+      status: "active",
+      request: "请暂停你的完成漫画目标。",
+      reply: "你说的句子是：我同意暂停我的完成漫画目标。",
+    },
+    {
+      status: "active",
+      request: "请暂停你的完成漫画目标。",
+      reply: "我同意暂停我的学习吉他目标。",
+    },
+    {
+      status: "paused",
+      request: "请恢复你的完成漫画目标。",
+      reply: "我不同意恢复我的完成漫画目标。",
+    },
+    {
+      status: "paused",
+      request: "请恢复你的完成漫画目标。",
+      reply: "我同意恢复我的完成漫画目标吗？",
+    },
+    {
+      status: "paused",
+      request: "请恢复你的完成漫画目标。",
+      reply: "请翻译“我同意恢复我的完成漫画目标”。",
+    },
+  ] as const)(
+    "requires the character to accept the same goal control: $reply",
+    async ({ status, request, reply }) => {
+      const character = await setup();
+      const initial = repository.listActiveThreads(character.id)[0]!;
+      if (status === "paused")
+        repository.updateThread(
+          { ...initial, status, revision: initial.revision + 1 },
+          initial.revision,
+        );
+      const before = repository.findThreadById(initial.id)!;
+      await chat(character, request, "unaccepted-control", reply);
+      expect(repository.findThreadById(initial.id)).toEqual(before);
+    },
+  );
+
+  it("recovers a simulation-paused thread from a committed user report about the character's actual effort", async () => {
+    const character = await setup();
+    const initial = repository.listActiveThreads(character.id)[0]!;
+    repository.updateThread(
+      {
+        ...initial,
+        status: "paused",
+        currentStage: "近期暂缓",
+        revision: initial.revision + 1,
+      },
+      initial.revision,
+    );
+    await chat(character, "我已经为完成漫画画了第一页。", "user-own-work");
+    expect(repository.findThreadById(initial.id)?.status).toBe("paused");
+    const reported = await chat(
+      character,
+      "你已经为完成漫画画了第一页。",
+      "reported-character-work",
+    );
+    expect(repository.findThreadById(initial.id)).toMatchObject({
+      status: "active",
+      currentStage: "近期有投入",
+      sourceMessageIds: [reported.userMessage.id],
+    });
+  });
+
+  it("keeps author revisions bound to their own goal content and never revives removed history", async () => {
+    const character = await setup();
+    const initial = repository.listActiveThreads(character.id)[0]!;
+    const originalGoals = structuredClone(character.persona.goals);
+    await republish(character, (spec) => {
+      spec.identity.selfDescription = "平时喜欢和邻居聊聊日常。";
+    });
+    app!.personasim.life.ensureToday(character.id);
+    expect(repository.findThreadById(initial.id)).toEqual(initial);
+    expect(repository.listEvidenceDrivenGoalThreads(character.id)).toHaveLength(
+      1,
+    );
+
+    await republish(character, (spec) => {
+      spec.persona.goals[0] = {
+        ...spec.persona.goals[0]!,
+        title: "学习吉他",
+        description: "学习吉他",
+      };
+    });
+    clock.advance({ days: 1 });
+    const changed = app!.personasim.life.ensureToday(character.id);
+    const replacement = changed.threads[0]!;
+    expect(replacement.title).toBe("学习吉他");
+    expect(replacement.id).not.toBe(initial.id);
+    const retired = repository.findThreadById(initial.id)!;
+    expect(retired.status).toBe("abandoned");
+    expect(retired.title).toBe("完成漫画");
+    expect(
+      changed.intents
+        .filter((intent) => intent.sourceKind === "goal")
+        .map((intent) => intent.threadIds),
+    ).toEqual([[replacement.id]]);
+    app!.personasim.life.advance(character.id);
+    expect(repository.findThreadById(initial.id)).toEqual(retired);
+
+    await republish(character, (spec) => {
+      spec.persona.goals = [];
+    });
+    expect(app!.personasim.life.ensureToday(character.id).threads).toEqual([]);
+    expect(repository.findThreadById(replacement.id)?.status).toBe("abandoned");
+    await republish(character, (spec) => {
+      spec.persona.goals = originalGoals;
+    });
+    expect(app!.personasim.life.ensureToday(character.id).threads).toEqual([]);
+    expect(repository.listEvidenceDrivenGoalThreads(character.id)).toHaveLength(
+      2,
+    );
+  });
+
+  it("rolls back goal control and its evidence when the enclosing chat commit fails", async () => {
+    const character = await setup();
+    const initial = repository.listActiveThreads(character.id)[0]!;
+    const created = await app!.inject({
+      method: "POST",
+      url: `/api/agents/${character.id}/sessions`,
+      payload: {},
+    });
+    const sessionId = created.json<{ session: { id: string } }>().session.id;
+    const originalRecord = app!.personasim.life.recordConversationTurn.bind(
+      app!.personasim.life,
+    );
+    fixtureReply = "我同意暂停我的完成漫画目标。";
+    vi.spyOn(app!.personasim.life, "recordConversationTurn").mockImplementation(
+      (input) => {
+        originalRecord(input);
+        throw new Error("injected failure after goal control");
+      },
+    );
+    const failed = await app!.inject({
+      method: "POST",
+      url: `/api/sessions/${sessionId}/messages`,
+      payload: {
+        agentId: character.id,
+        text: "请暂停你的完成漫画目标。",
+        clientMessageId: "rollback-goal-control",
+      },
+    });
+    expect(failed.statusCode).toBe(500);
+    expect(repository.findThreadById(initial.id)).toEqual(initial);
+    expect(app!.personasim.store.listMessagesForContext(sessionId)).toEqual([]);
+    expect(
+      database
+        .prepare(
+          "SELECT count(*) AS count FROM domain_events WHERE event_type = 'life.thread_controlled'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+  });
 
   it("does not advance a new thread merely from elapsed calendar days", async () => {
     const character = await setup();

@@ -391,6 +391,8 @@ export const LifeThreadSchema = z
     progressionPolicy: LifeThreadProgressionPolicySchema.optional(),
     sourceGoalId: EntityIdSchema.optional(),
     sourceCharacterVersion: z.number().int().positive().optional(),
+    /** An explicitly accepted pause cannot be undone by pending simulated daily outcomes. */
+    pauseSourceMessageId: EntityIdSchema.optional(),
     currentStage: ShortTextSchema,
     progressNote: NonEmptyTextSchema.optional(),
     nextStepHint: ShortTextSchema.optional(),

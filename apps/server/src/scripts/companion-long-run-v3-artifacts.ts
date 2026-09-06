@@ -84,7 +84,11 @@ export interface LongRunV3RunManifest {
     memoryRecallMode: "enforced";
     scheduler: "disabled";
     autobiographyMode?: "off";
+    companionContextMode?: "off" | "shadow" | "enforced";
+    personaRuntimeMode?: "off" | "shadow" | "enforced";
   };
+  /** Present on new runs; legacy artifact readers can still inspect earlier manifests. */
+  actualConfig?: unknown;
   checkpointEveryTurns: 10;
   configSha256: string;
   identityCaveat?: string;

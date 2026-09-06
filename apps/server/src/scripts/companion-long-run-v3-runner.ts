@@ -314,20 +314,13 @@ async function prepareRunContext(
           },
         }),
     profileConfig: profileResolution.profileConfig,
-    featureFlags: {
-      lifePlanningMode: "fuzzy",
-      liveWorldEffectsMode: "enforced",
-      memoryRecallMode: "enforced",
-      scheduler: "disabled",
-      autobiographyMode: "off",
-    },
+    ...buildLongRunV3ConfigSnapshot(
+      profileResolution.serverConfig,
+      sharedDatabasePath,
+      input.profile === "fixture",
+      profileResolution.profileConfig,
+    ),
     checkpointEveryTurns: CHECKPOINT_EVERY_TURNS,
-    configSha256: sha256LongRunV3Value({
-      profile: profileResolution.profileConfig,
-      featureFlags: companionLongRunV3Manifest.featureFlags,
-      conversationRetention:
-        profileResolution.serverConfig.conversationRetention,
-    }),
     ...(input.profile === "deepseek"
       ? {
           identityCaveat:
@@ -504,6 +497,8 @@ export function buildLongRunV3ServerConfig(
     liveWorldEffectsMode: "enforced",
     memoryRecallMode: "enforced",
     autobiographyMode: "off",
+    companionContextMode: base.companionContextMode ?? "off",
+    personaRuntimeMode: base.personaRuntimeMode ?? "off",
     ...(fixture
       ? {
           llm: {
@@ -515,6 +510,37 @@ export function buildLongRunV3ServerConfig(
           },
         }
       : {}),
+  };
+}
+
+/** Freeze the same final config builder used by the runtime, not the scenario defaults. */
+export function buildLongRunV3ConfigSnapshot(
+  base: ServerConfig,
+  databasePath: string,
+  fixture: boolean,
+  profile: LongRunV3RunManifest["profileConfig"],
+): Pick<
+  LongRunV3RunManifest,
+  "featureFlags" | "actualConfig" | "configSha256"
+> {
+  const config = buildLongRunV3ServerConfig(base, databasePath, fixture);
+  const actualConfig = redactLongRunV3Artifact(config, [
+    config.llm.apiKey ?? "",
+    config.instanceSecret ?? "",
+  ]);
+  const featureFlags: LongRunV3RunManifest["featureFlags"] = {
+    lifePlanningMode: "fuzzy",
+    liveWorldEffectsMode: "enforced",
+    memoryRecallMode: "enforced",
+    scheduler: "disabled",
+    autobiographyMode: "off",
+    companionContextMode: config.companionContextMode ?? "off",
+    personaRuntimeMode: config.personaRuntimeMode ?? "off",
+  };
+  return {
+    actualConfig,
+    featureFlags,
+    configSha256: sha256LongRunV3Value({ profile, featureFlags, actualConfig }),
   };
 }
 

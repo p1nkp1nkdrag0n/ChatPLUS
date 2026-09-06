@@ -1,3 +1,5 @@
+import type { ConversationContextPlan } from "@personasim/contracts";
+
 export type ReplyComplexity = "brief" | "standard" | "complex" | "deep";
 
 export type ReplyDeliveryPreference =
@@ -11,6 +13,7 @@ export interface ReplyDialogueStyleLike {
   directness?: number;
 }
 export interface ReplyStrategyContext {
+  conversationPlan?: ConversationContextPlan;
   state?: {
     moodValence?: number;
     moodArousal?: number;
@@ -67,6 +70,10 @@ export function deriveReplyStrategy(
   context: ReplyStrategyContext = {},
 ): ReplyStrategy {
   const text = userMessage.trim();
+  const plan =
+    context.conversationPlan?.originalQuery === userMessage
+      ? context.conversationPlan
+      : undefined;
   const negatedLongRequest = NEGATED_LONG_REQUEST.test(text);
   const explicitDetail = DETAILED_REQUEST.test(text) && !negatedLongRequest;
   const explicitDeep = DEEP_REQUEST.test(text) && !negatedLongRequest;
@@ -79,7 +86,10 @@ export function deriveReplyStrategy(
   let score = 0;
   if (text.length >= 70) score += 1;
   if (text.length >= 180) score += 1;
-  if (ANALYTICAL_REQUEST_ZH.test(text) || ANALYTICAL_REQUEST_EN.test(text))
+  if (
+    (plan?.supportStyle !== "listen" || explicitDetail || explicitDeep) &&
+    (ANALYTICAL_REQUEST_ZH.test(text) || ANALYTICAL_REQUEST_EN.test(text))
+  )
     score += 2;
   if (explicitDetail) score += 2;
   if (explicitDeep) score += 2;

@@ -4,6 +4,7 @@ export * from "./calendar.js";
 export * from "./character.js";
 export * from "./checkpoint.js";
 export * from "./correspondence.js";
+export * from "./conversation-context-plan.js";
 export * from "./event-card.js";
 export * from "./events.js";
 export * from "./follow-up.js";

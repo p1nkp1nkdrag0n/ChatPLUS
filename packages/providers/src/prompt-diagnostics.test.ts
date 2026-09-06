@@ -18,6 +18,7 @@ describe("prompt diagnostics", () => {
       { ...messages[1]!, content: "history\ncurrentTime: 02" },
     ];
     const second = tracker.observe("chat", next);
+    expect(second.previousMessagesSha256).toBe(first.messagesSha256);
     expect(second.firstChangedMessageIndex).toBe(1);
     expect(second.commonPrefixCharacters).toBe(
       JSON.stringify(messages).indexOf("01") + 1,

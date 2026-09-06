@@ -96,11 +96,14 @@ describe("LLM HTTP smoke flow", () => {
     const messages = z
       .array(z.object({ role: z.string(), content: z.string() }).passthrough())
       .parse(body["messages"]);
-    const marker = "\nEXPECTED_JSON_SCHEMA\n";
+    const marker = "EXPECTED_JSON_SCHEMA\n";
     const schemaMessage = messages.find((message) =>
-      message.content.includes(marker),
+      message.content.startsWith(marker),
     );
     expect(schemaMessage).toBeDefined();
+    expect(schemaMessage?.role).toBe("user");
+    expect(messages.at(-1)?.content).not.toContain(marker);
+    expect(messages.indexOf(schemaMessage!)).toBeLessThan(messages.length - 1);
     const schemaText =
       schemaMessage?.content.slice(
         (schemaMessage?.content.indexOf(marker) ?? -1) + marker.length,

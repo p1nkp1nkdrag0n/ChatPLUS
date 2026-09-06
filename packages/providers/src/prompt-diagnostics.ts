@@ -18,6 +18,8 @@ export interface LlmPromptDiagnostics {
     characters: number;
   }[];
   comparison: "previous_same_purpose" | "no_baseline" | "size_limit";
+  /** Identifies the previous started request even if concurrent responses finish out of order. */
+  previousMessagesSha256?: string;
   commonPrefixCharacters?: number;
   firstChangedMessageIndex?: number;
 }
@@ -34,7 +36,7 @@ function sha256(value: string): string {
 export class PromptDiagnosticsTracker {
   readonly #previous = new Map<
     string,
-    { serialized: string; messageHashes: string[] }
+    { serialized: string; messageHashes: string[]; messagesSha256: string }
   >();
 
   constructor(
@@ -83,6 +85,7 @@ export class PromptDiagnosticsTracker {
           : "previous_same_purpose",
     };
     if (withinLimit && previous !== undefined) {
+      result.previousMessagesSha256 = previous.messagesSha256;
       let prefix = 0;
       const length = Math.min(serialized.length, previous.serialized.length);
       while (
@@ -100,7 +103,11 @@ export class PromptDiagnosticsTracker {
     }
     this.#previous.delete(purpose);
     if (withinLimit) {
-      this.#previous.set(purpose, { serialized, messageHashes });
+      this.#previous.set(purpose, {
+        serialized,
+        messageHashes,
+        messagesSha256: result.messagesSha256,
+      });
       if (this.#previous.size > this.maximumPurposes) {
         const oldest = this.#previous.keys().next().value;
         if (oldest !== undefined) this.#previous.delete(oldest);

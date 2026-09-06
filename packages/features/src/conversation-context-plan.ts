@@ -7,6 +7,7 @@ import {
 
 import { deriveCurrentConversationRequests } from "./conversation-requests.js";
 import { resolveCurrentConversationTopic } from "./conversation-topic.js";
+import { ADVICE_POLICY_VERSION, deriveAdvicePolicy } from "./advice-policy.js";
 
 export interface ConversationContextPlanInput {
   originalQuery: string;
@@ -21,6 +22,10 @@ export interface ConversationContextPlanInput {
 
 const VENTING =
   /(?:为什么|为何).{0,14}(?:我总|我又|我老|搞砸|倒霉|这么难|不顺)|(?:难过|委屈|烦死|好烦|挫败|好累|想哭|沮丧|好崩溃)|why (?:do I always|am I always|does (?:this|everything) always)|(?:so frustrated|feel awful|feel terrible)/iu;
+// A persistent, unwanted mental state is also a form of sharing distress.
+// The advice boundary still applies if a less explicit state remains casual.
+const MENTAL_OVERLOAD =
+  /(?:脑子|脑袋|思绪).{0,12}(?:停不下来|停不住|静不下来|转个不停|一直打转)|(?:mind|thoughts).{0,12}(?:won't stop|keep racing|won't quiet)/iu;
 const RECOLLECTION =
   /(?:还记得|记不记得|回顾|回想|以前.{0,8}(?:说过|聊过)|之前.{0,8}(?:说过|聊过)|这些年|一路走来|do you remember|look back|reminisce)/iu;
 const COMPLEX_RECOLLECTION =
@@ -38,7 +43,8 @@ export function buildConversationContextPlan(
   const requests = deriveCurrentConversationRequests(originalQuery);
   const { listen, detailedAnalysisRequested, adviceRequested } = requests;
   const recollection = RECOLLECTION.test(originalQuery);
-  const venting = VENTING.test(originalQuery);
+  const venting =
+    VENTING.test(originalQuery) || MENTAL_OVERLOAD.test(originalQuery);
   const references = [...new Set(originalQuery.match(REFERENCES) ?? [])].slice(
     0,
     8,
@@ -77,6 +83,12 @@ export function buildConversationContextPlan(
                 )
               ? "sharing"
               : "casual";
+  const supportStyle =
+    requests.supportStyle === "respond_naturally" &&
+    venting &&
+    !requests.conflicting
+      ? "listen"
+      : requests.supportStyle;
   return ConversationContextPlanSchema.parse({
     policyVersion: CONVERSATION_CONTEXT_POLICY_VERSION,
     originalQuery,
@@ -86,14 +98,17 @@ export function buildConversationContextPlan(
     intent,
     adviceRequested,
     detailedAnalysisRequested,
-    supportStyle:
-      requests.supportStyle === "respond_naturally" &&
-      venting &&
-      !requests.conflicting
-        ? "listen"
-        : requests.supportStyle,
+    supportStyle,
     helpTiming: requests.helpTiming,
     requestPolicyVersion: "clause_requests_v1",
+    advicePolicy: deriveAdvicePolicy({
+      intent,
+      adviceRequested,
+      detailedAnalysisRequested,
+      supportStyle,
+      helpTiming: requests.helpTiming,
+    }),
+    advicePolicyVersion: ADVICE_POLICY_VERSION,
     resolvedCurrentTopic: resolveCurrentConversationTopic({
       originalQuery,
       recentUserMessages,

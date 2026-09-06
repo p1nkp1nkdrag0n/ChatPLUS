@@ -34,6 +34,11 @@ export const ConversationContextPlanSchema = z
       .enum(["now", "after_user_finishes", "unspecified"])
       .optional(),
     requestPolicyVersion: z.literal("clause_requests_v1").optional(),
+    /** A response-load boundary; absent on older audit snapshots. */
+    advicePolicy: z
+      .enum(["requested", "none_now", "optional_light"])
+      .optional(),
+    advicePolicyVersion: z.literal("advice_load_v1").optional(),
     /** Topic eligibility is separate from unresolved retrieval candidates. */
     resolvedCurrentTopic: z
       .object({

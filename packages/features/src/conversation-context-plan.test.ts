@@ -7,6 +7,48 @@ const base = { agentId: "agent_1", sessionId: "session_1", recentMessages: [] };
 
 describe("conversation context planning", () => {
   it.each([
+    "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+    "都下班了，脑子还在转个不停。",
+    "事情过去了，思绪却静不下来。",
+  ])(
+    "recognizes ongoing mental overload while keeping help authorization separate: %s",
+    (originalQuery) => {
+      expect(
+        buildConversationContextPlan({ ...base, originalQuery }),
+      ).toMatchObject({
+        intent: "venting",
+        adviceRequested: false,
+        supportStyle: "listen",
+        advicePolicy: "none_now",
+        advicePolicyVersion: "advice_load_v1",
+      });
+      expect(
+        buildConversationContextPlan({
+          ...base,
+          originalQuery: `${originalQuery}请帮我分析一下。`,
+        }),
+      ).toMatchObject({
+        intent: "help",
+        adviceRequested: true,
+        advicePolicy: "requested",
+      });
+    },
+  );
+
+  it("bounds ordinary sharing without asking the user to choose a support mode", () => {
+    expect(
+      buildConversationContextPlan({
+        ...base,
+        originalQuery: "刚刚看到一朵很漂亮的云。",
+      }),
+    ).toMatchObject({
+      adviceRequested: false,
+      supportStyle: "respond_naturally",
+      advicePolicy: "optional_light",
+    });
+  });
+
+  it.each([
     "不用先听我说，直接给我建议。",
     "不是让你先听我说，是请你帮我分析。",
     "不要只是听我说，帮我想想办法。",

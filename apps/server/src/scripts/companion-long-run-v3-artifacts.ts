@@ -10,6 +10,10 @@ import {
   stat,
 } from "node:fs/promises";
 import { basename, dirname, relative, resolve } from "node:path";
+import {
+  providerCacheUsage,
+  type ProviderCacheUsage,
+} from "./provider-metrics-summary.js";
 
 import type { CompanionLongRunV3Snapshot } from "./companion-long-run-v3-assertions.js";
 
@@ -115,7 +119,9 @@ export interface LongRunV3LogicalCallTrace {
   repairAttempt?: boolean;
 }
 
-export interface LongRunV3ProviderAttemptEvidence {
+export interface LongRunV3ProviderAttemptEvidence extends ProviderCacheUsage {
+  providerLogicalCallId?: string;
+  providerInputTokens?: number;
   attemptId: string;
   logicalCallId?: string;
   logicalCallIndex?: number;
@@ -284,6 +290,7 @@ export interface LongRunV3LogicalModelIoRecord extends LongRunV3ModelIoIdentity 
 }
 
 export interface LongRunV3PhysicalModelIoRecord extends LongRunV3ModelIoIdentity {
+  providerLogicalCallId?: string;
   recordType: "physical_attempt";
   attemptId: string;
   attemptNumber: number;
@@ -308,7 +315,7 @@ export interface LongRunV3PhysicalModelIoRecord extends LongRunV3ModelIoIdentity
     errorCode?: string;
     raw?: unknown;
     text?: string;
-    usage: {
+    usage: ProviderCacheUsage & {
       source?: "provider" | "estimated" | "unavailable";
       inputTokens?: number;
       outputTokens?: number;
@@ -1203,6 +1210,9 @@ function projectPhysicalModelIoRecord(
   return {
     ...identity,
     recordType: "physical_attempt",
+    ...(attempt.providerLogicalCallId === undefined
+      ? {}
+      : { providerLogicalCallId: attempt.providerLogicalCallId }),
     attemptId: attempt.attemptId,
     attemptNumber: attempt.attempt,
     ...(attempt.logicalCallId === undefined
@@ -1247,6 +1257,7 @@ function projectPhysicalModelIoRecord(
         ? {}
         : { text: attempt.responseText }),
       usage: {
+        ...providerCacheUsage(attempt),
         ...(attempt.usageSource === undefined
           ? {}
           : { source: attempt.usageSource }),

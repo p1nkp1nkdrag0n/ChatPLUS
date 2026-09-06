@@ -1,8 +1,73 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { LongRunV2Observer } from "./companion-long-run-v2-observer.js";
+import {
+  providerAccountingMetric,
+  summarizeProviderMetrics,
+} from "./provider-metrics-summary.js";
 
 describe("LongRunV2Observer", () => {
+  it("retains provider call identity and exact input across independent or resumed observers", () => {
+    const observed = [
+      "provider-call-before-restart",
+      "provider-call-after-restart",
+    ].flatMap((id) => {
+      const observer = new LongRunV2Observer();
+      const cursor = observer.cursor();
+      observer.onLogicalCall({
+        stage: "started",
+        index: 1,
+        purpose: "chat_turn",
+        system: "system",
+        prompt: "prompt",
+        createdAtUtc: "2026-09-01T01:00:00.000Z",
+      });
+      observer.onMetric({
+        provider: "openai-compatible",
+        model: "test",
+        purpose: "chat_turn",
+        logicalCallId: id,
+        attempt: 1,
+        latencyMs: 1,
+        success: true,
+        usageSource: "provider",
+        inputTokens: 100,
+        cacheReadTokens: 60,
+      });
+      observer.onLogicalCall({
+        stage: "completed",
+        index: 1,
+        purpose: "chat_turn",
+        success: true,
+        parsedOutput: { reply: "estimated output" },
+        latencyMs: 1,
+        completedAtUtc: "2026-09-01T01:00:00.000Z",
+      });
+      return observer.slice(cursor).providerAttempts;
+    });
+    expect(observed.map((attempt) => attempt.logicalCallId)).toEqual([
+      "logical-call-000001",
+      "logical-call-000001",
+    ]);
+    expect(observed.map((attempt) => attempt.usageSource)).toEqual([
+      "estimated",
+      "estimated",
+    ]);
+    const restored = JSON.parse(JSON.stringify(observed)) as typeof observed;
+    const summary = summarizeProviderMetrics(
+      restored.map(providerAccountingMetric),
+    );
+    expect(summary).toMatchObject({
+      logicalCalls: 2,
+      logicalIdUnknownAttempts: 0,
+      cacheReadRate: { value: 0.6, inputTokens: 200, includedAttempts: 2 },
+    });
+    const legacy = { ...restored[0]! };
+    delete legacy.providerLogicalCallId;
+    expect(
+      summarizeProviderMetrics([providerAccountingMetric(legacy)]),
+    ).toMatchObject({ logicalCalls: null, logicalIdUnknownAttempts: 1 });
+  });
   it("joins logical prompt, raw response and exact Provider metric without headers", async () => {
     const observer = new LongRunV2Observer(() => "2026-09-01T01:00:00.000Z");
     const cursor = observer.cursor();

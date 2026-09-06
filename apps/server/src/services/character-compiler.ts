@@ -1,7 +1,4 @@
-import {
-  buildTimeBasedGoalMilestones,
-  originalDialogueStyleFact,
-} from "../domain/defaults.js";
+import { originalDialogueStyleFact } from "../domain/defaults.js";
 import { capabilitiesForTier } from "../domain/capabilities.js";
 import { ApiError } from "../domain/errors.js";
 import { createEntityId } from "../domain/id.js";
@@ -17,6 +14,7 @@ import {
 // bounded per-call budget that still leaves ample room for a complete draft.
 export const CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS = 32_000;
 export const CHARACTER_COMPILATION_MAX_RETRIES = 1;
+export const CHARACTER_COMPILATION_POLICY_VERSION = "companion_character_v2";
 
 export const CHARACTER_COMPILER_SYSTEM = [
   "You are a character-behavior compiler, not a biography embellisher.",
@@ -41,9 +39,9 @@ const CHARACTER_COMPILATION_STRATEGY = [
   "Compilation priorities, in order:",
   "1. Preserve explicit identity, setting, era, work, formative history, relationship position, and language contract.",
   "2. Express personality as observable choices: each trait needs situation-specific triggers and meaningful exceptions. Do not merely restate adjectives.",
-  "3. Model at least two genuine tensions when supported, especially public versus private behavior, duty versus desire, and coping under pressure. resolutionPattern describes a tendency, not an invariant script.",
+  "3. Include tensions only when supported by supplied material. There is no minimum count: contradictions=[] is valid. resolutionPattern describes a contextual tendency, not an invariant script.",
   "4. Keep the character's own values and life goal independent from the user. The relationship may influence choices but must not erase the character's separate life.",
-  "5. For every goal, create 4-6 milestones. The first starts at afterDays=0 and later offsets strictly increase. Milestones are creation-time plans advanced only by elapsed character-local calendar days; they describe an entered phase or current focus and never claim an external result already happened. Do not infer progress percentages from future model replies.",
+  "5. goals=[] is valid when no goal is supplied or supported. Never invent a goal to find a life purpose or preserve character consistency. A current goal does not establish a lifelong value. Do not create calendar milestones or future outcomes; leave milestones absent. Changes require later evidence, not elapsed days.",
   "6. Treat dialogue as an interaction contract: preserve language or translation rules, public/private register, directness, emotional disclosure, typical length, and intimacy pacing. Patterns are varied tendencies, not sentences to repeat verbatim. Keep frequentPhrases sparse and put recurring cliches in avoidedPhrases.",
   "7. Condense long negative-command lists into the smallest behaviorally meaningful boundaries. Do not create generic legal, public-release, or assistant disclaimers. Do not copy a decorative object, body detail, or trauma into repeated dialogue motifs.",
   "8. Use knownFacts only for supplied facts. Put unresolved contradictions and unsupported possibilities in uncertainFacts. Historical or fictional world facts override the host application's civil year for characterization.",
@@ -154,6 +152,15 @@ export function authoritativeImportedDraft(
       rebaseImportedSourceRefs({
         ...structuredClone(candidate),
         sourceType: "imported_character",
+        compilationPolicyVersion: fallback.compilationPolicyVersion,
+        persona: {
+          ...candidate.persona,
+          goals: candidate.persona.goals.map((goal) =>
+            fallback.compilationPolicyVersion === "companion_character_v2"
+              ? withoutGeneratedMilestones(goal)
+              : goal,
+          ),
+        },
         identity: {
           ...candidate.identity,
           name: input.characterName,
@@ -253,12 +260,12 @@ function applyOriginalFormAuthority(
         !consumedTraitIndexes.has(candidateIndex) &&
         trait.name.trim().toLocaleLowerCase() === normalizedName,
     );
-    if (
-      generatedIndex < 0 &&
-      draft.persona.traits[index] !== undefined &&
-      !consumedTraitIndexes.has(index)
-    ) {
-      generatedIndex = index;
+    if (generatedIndex < 0) {
+      generatedIndex = draft.persona.traits.findIndex(
+        (trait, candidateIndex) =>
+          !consumedTraitIndexes.has(candidateIndex) &&
+          trait.id === fallback.persona.traits[index]!.id,
+      );
     }
     if (generatedIndex >= 0) consumedTraitIndexes.add(generatedIndex);
     const generated =
@@ -273,41 +280,53 @@ function applyOriginalFormAuthority(
     };
   });
   const authorTraitIds = new Set(authorTraits.map((trait) => trait.id));
-  const generatedContradiction = draft.persona.contradictions[0];
-  const baseContradiction = fallback.persona.contradictions[0]!;
-  const authorContradiction = {
-    ...(generatedContradiction ?? baseContradiction),
-    id: baseContradiction.id,
-    sideA: input.coreContradiction,
-    origin: "user_spec" as const,
-  };
-  const generatedGoal = draft.persona.goals[0];
-  const baseGoal = fallback.persona.goals[0]!;
-  const authorGoal = {
-    ...(generatedGoal ?? baseGoal),
-    id: baseGoal.id,
-    title: input.mainGoal,
-    description:
-      input.characterBrief === undefined
-        ? `持续推进：${input.mainGoal}`
-        : (generatedGoal?.description ?? `持续推进：${input.mainGoal}`),
-    origin: "user_spec" as const,
-    sourceRefs: [sourceId],
-    milestones:
-      generatedGoal?.milestones ??
-      baseGoal.milestones ??
-      buildTimeBasedGoalMilestones(baseGoal.id, input.mainGoal),
-  };
-  const generatedValue = draft.persona.values[0];
-  const baseValue = fallback.persona.values[0]!;
-  const authorValue = {
-    ...(generatedValue ?? baseValue),
-    id: baseValue.id,
-    name: baseValue.name,
-    description: input.mainGoal,
-    origin: "user_spec" as const,
-    sourceRefs: [sourceId],
-  };
+  const baseContradiction = fallback.persona.contradictions.find(
+    (item) =>
+      item.origin === "user_spec" && item.sideA === input.coreContradiction,
+  );
+  const generatedContradiction =
+    baseContradiction === undefined
+      ? undefined
+      : draft.persona.contradictions.find(
+          (item) =>
+            item.id === baseContradiction.id ||
+            item.sideA === input.coreContradiction,
+        );
+  const authorContradiction =
+    input.coreContradiction && baseContradiction
+      ? {
+          ...(generatedContradiction ?? baseContradiction),
+          id: baseContradiction.id,
+          sideA: input.coreContradiction,
+          origin: "user_spec" as const,
+        }
+      : undefined;
+  const baseGoal = fallback.persona.goals.find(
+    (goal) =>
+      goal.origin === "user_spec" &&
+      goal.sourceRefs.includes(sourceId) &&
+      goal.title === input.mainGoal,
+  );
+  const generatedGoal =
+    baseGoal === undefined
+      ? undefined
+      : draft.persona.goals.find(
+          (goal) => goal.id === baseGoal.id || goal.title === input.mainGoal,
+        );
+  const authorGoal =
+    input.mainGoal && baseGoal
+      ? {
+          ...(generatedGoal ?? baseGoal),
+          id: baseGoal.id,
+          title: input.mainGoal,
+          description:
+            input.characterBrief === undefined
+              ? `持续推进：${input.mainGoal}`
+              : (generatedGoal?.description ?? `持续推进：${input.mainGoal}`),
+          origin: "user_spec" as const,
+          sourceRefs: [sourceId],
+        }
+      : undefined;
   const dialogueStyleFact = originalDialogueStyleFact(input.dialogueStyle);
   const authoritativeTemporalFrame =
     fallback.identity.temporalFrame ?? draft.identity.temporalFrame;
@@ -315,6 +334,7 @@ function applyOriginalFormAuthority(
   return {
     ...draft,
     sourceType: "original",
+    compilationPolicyVersion: fallback.compilationPolicyVersion,
     identity: {
       ...draft.identity,
       name: input.name,
@@ -338,24 +358,29 @@ function applyOriginalFormAuthority(
             !consumedTraitIndexes.has(index) && !authorTraitIds.has(trait.id),
         ),
       ],
-      values: [
-        authorValue,
-        ...draft.persona.values
-          .slice(1)
-          .filter((value) => value.id !== authorValue.id),
-      ],
+      values: draft.persona.values,
       contradictions: [
-        authorContradiction,
-        ...draft.persona.contradictions
-          .slice(1)
-          .filter((item) => item.id !== authorContradiction.id),
+        ...(authorContradiction ? [authorContradiction] : []),
+        ...(input.coreContradiction || input.characterBrief
+          ? draft.persona.contradictions.filter(
+              (item) =>
+                item !== generatedContradiction &&
+                item.id !== authorContradiction?.id,
+            )
+          : []),
       ],
       goals: [
-        authorGoal,
-        ...draft.persona.goals
-          .slice(1)
-          .filter((goal) => goal.id !== authorGoal.id),
-      ],
+        ...(authorGoal ? [authorGoal] : []),
+        ...(input.mainGoal || input.characterBrief
+          ? draft.persona.goals.filter(
+              (goal) => goal !== generatedGoal && goal.id !== authorGoal?.id,
+            )
+          : []),
+      ].map((goal) =>
+        fallback.compilationPolicyVersion === "companion_character_v2"
+          ? withoutGeneratedMilestones(goal)
+          : goal,
+      ),
     },
     userRelationship: {
       ...draft.userRelationship,
@@ -384,6 +409,14 @@ function applyOriginalFormAuthority(
     },
     sources: structuredClone(fallback.sources),
   };
+}
+
+function withoutGeneratedMilestones(
+  goal: CharacterDraft["persona"]["goals"][number],
+) {
+  const result = { ...goal };
+  delete result.milestones;
+  return result;
 }
 
 function rebaseOriginalSourceRefs(draft: CharacterDraft): CharacterDraft {

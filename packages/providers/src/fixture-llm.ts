@@ -65,7 +65,12 @@ function arrayStrings(
   return values.length > 0 ? values : [...fallback];
 }
 
-function originalInput(payload: JsonValue): OriginalCharacterInput {
+type LegacyOriginalFixtureInput = OriginalCharacterInput & {
+  coreContradiction: string;
+  mainGoal: string;
+};
+
+function originalInput(payload: JsonValue): LegacyOriginalFixtureInput {
   const root = asRecord(payload);
   const nested = asRecord(root.input ?? root);
   const providedTraits = arrayStrings(nested.coreTraits, [
@@ -141,7 +146,7 @@ function importedInput(payload: JsonValue): ImportedCharacterInput {
 }
 
 function makeDraft(
-  input: OriginalCharacterInput,
+  input: LegacyOriginalFixtureInput,
   origin: "user_spec" | "canon_extract",
   sourceLabel: string,
   sourceExcerpt?: string,

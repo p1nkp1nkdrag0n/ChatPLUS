@@ -1121,7 +1121,7 @@ describe("PersonaSim server integration", () => {
     maliciousOriginal.persona.traits[0]!.sourceRefs = ["invented-source"];
     maliciousOriginal.persona.contradictions[0]!.sideA = "模型替换矛盾";
     maliciousOriginal.persona.goals[0]!.title = "模型替换目标";
-    maliciousOriginal.persona.values[0]!.description = "模型替换目标";
+    maliciousOriginal.persona.values[0]!.description = "重视诚实";
     maliciousOriginal.userRelationship.relationshipType = "模型替换关系";
     maliciousOriginal.knowledge.knownFacts = [];
     maliciousOriginal.persona.traits.push({
@@ -1223,11 +1223,9 @@ describe("PersonaSim server integration", () => {
       origin: "user_spec",
       sourceRefs: ["original-form"],
     });
-    expect(generated.persona.values[0]?.description).toBe(
-      originalInput.mainGoal,
-    );
+    expect(generated.persona.values[0]?.description).toBe("重视诚实");
     expect(generated.persona.values[0]).toMatchObject({
-      origin: "user_spec",
+      origin: "model_inference",
       sourceRefs: ["original-form"],
     });
     expect(generated.userRelationship.relationshipType).toBe(

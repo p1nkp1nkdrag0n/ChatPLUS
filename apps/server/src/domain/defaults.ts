@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 
-import { LOCAL_USER_ID } from "@personasim/contracts";
+import {
+  LOCAL_USER_ID,
+  type CharacterCompilationPolicyVersion,
+} from "@personasim/contracts";
 
 import type {
   CharacterDraft,
@@ -79,7 +82,9 @@ export function importedSourceLabel(
 
 export function buildOriginalDraft(
   input: OriginalCharacterInput,
+  compilationPolicyVersion: CharacterCompilationPolicyVersion = "legacy_template_v1",
 ): CharacterDraft {
+  const legacy = compilationPolicyVersion === "legacy_template_v1";
   const activeSimulation = input.tier !== "lightweight";
   const initialRelationship = initialRelationshipPreset(
     input.initialRelationship,
@@ -88,11 +93,12 @@ export function buildOriginalDraft(
   return {
     tier: input.tier,
     sourceType: "original",
+    ...(legacy ? {} : { compilationPolicyVersion }),
     identity: {
       name: input.name,
       workOrRole: input.workOrRole,
       worldSetting: input.worldSetting,
-      selfDescription: `${input.name}是一位${input.workOrRole}。${input.mainGoal}`,
+      selfDescription: `${input.name}是一位${input.workOrRole}。${legacy ? (input.mainGoal ?? "") : ""}`,
       timezone: input.timezone,
       ...(temporalFrame === undefined ? {} : { temporalFrame }),
     },
@@ -108,15 +114,19 @@ export function buildOriginalDraft(
         sourceRefs: ["original-form"],
       })),
       values: [
-        {
-          id: "value-1",
-          name: "长期目标",
-          priority: 0.86,
-          description: input.mainGoal,
-          exceptions: ["健康或重要关系面临明显风险时"],
-          origin: "user_spec",
-          sourceRefs: ["original-form"],
-        },
+        ...(legacy && input.mainGoal
+          ? [
+              {
+                id: "value-1",
+                name: "长期目标",
+                priority: 0.86,
+                description: input.mainGoal,
+                exceptions: ["健康或重要关系面临明显风险时"],
+                origin: "user_spec" as const,
+                sourceRefs: ["original-form"],
+              },
+            ]
+          : []),
         {
           id: "value-2",
           name: "尊重真实关系",
@@ -128,36 +138,59 @@ export function buildOriginalDraft(
         },
       ],
       contradictions: [
-        {
-          id: "contradiction-1",
-          sideA: input.coreContradiction,
-          sideB: input.mainGoal,
-          triggerConditions: ["时间或承诺发生冲突时"],
-          resolutionPattern: "先保护硬承诺，再根据关系亲近度寻求折中。",
-          origin: "user_spec",
-        },
-        {
-          id: "contradiction-2",
-          sideA: "保持自己的节奏",
-          sideB: "回应重要他人的邀请",
-          triggerConditions: ["用户提出临时邀请时"],
-          resolutionPattern:
-            "结合最近的生活主线、精力和关系意义，决定回应、推迟或拒绝。",
-          origin: "synthetic_extension",
-        },
+        ...(input.coreContradiction
+          ? [
+              {
+                id: "contradiction-1",
+                sideA: input.coreContradiction,
+                sideB: legacy
+                  ? (input.mainGoal ?? "另一侧尚未明确")
+                  : "另一侧尚未单独说明",
+                triggerConditions: [
+                  legacy ? "时间或承诺发生冲突时" : "作者描述的具体情境出现时",
+                ],
+                resolutionPattern: legacy
+                  ? "先保护硬承诺，再根据关系亲近度寻求折中。"
+                  : "依据当时的具体情境处理，不预设统一的化解方式。",
+                origin: "user_spec" as const,
+              },
+            ]
+          : []),
+        ...(legacy
+          ? [
+              {
+                id: "contradiction-2",
+                sideA: "保持自己的节奏",
+                sideB: "回应重要他人的邀请",
+                triggerConditions: ["用户提出临时邀请时"],
+                resolutionPattern:
+                  "结合最近的生活主线、精力和关系意义，决定回应、推迟或拒绝。",
+                origin: "synthetic_extension" as const,
+              },
+            ]
+          : []),
       ],
-      goals: [
-        {
-          id: "goal-1",
-          title: input.mainGoal,
-          description: `持续推进：${input.mainGoal}`,
-          priority: 0.9,
-          progress: 0.05,
-          origin: "user_spec",
-          sourceRefs: ["original-form"],
-          milestones: buildTimeBasedGoalMilestones("goal-1", input.mainGoal),
-        },
-      ],
+      goals: input.mainGoal
+        ? [
+            {
+              id: "goal-1",
+              title: input.mainGoal,
+              description: `持续推进：${input.mainGoal}`,
+              priority: 0.9,
+              progress: 0.05,
+              origin: "user_spec",
+              sourceRefs: ["original-form"],
+              ...(legacy
+                ? {
+                    milestones: buildTimeBasedGoalMilestones(
+                      "goal-1",
+                      input.mainGoal,
+                    ),
+                  }
+                : {}),
+            },
+          ]
+        : [],
       preferences: [
         {
           id: "preference-1",
@@ -342,24 +375,32 @@ export function initialRelationshipPreset(description: string): {
 
 export function buildImportedDraft(
   input: ImportedCharacterInput,
+  compilationPolicyVersion: CharacterCompilationPolicyVersion = "legacy_template_v1",
 ): CharacterDraft {
+  const legacy = compilationPolicyVersion === "legacy_template_v1";
   const excerpt = input.sourceText.replace(/\s+/g, " ").slice(0, 700);
   const seed: OriginalCharacterInput = {
     name: input.characterName,
     worldSetting: `${input.workTitle}；剧情阶段：${input.storyStage}`,
     workOrRole: `《${input.workTitle}》中的角色`,
     coreTraits: ["忠于已知经历", "谨慎面对未知", "拥有明确关系边界"],
-    coreContradiction: "正典经历与新对话情境之间存在空白",
-    mainGoal: "在当前剧情阶段保持身份与选择一致",
+    ...(legacy
+      ? {
+          coreContradiction: "正典经历与新对话情境之间存在空白",
+          mainGoal: "在当前剧情阶段保持身份与选择一致",
+        }
+      : {}),
     initialRelationship: "初次建立联系的对话对象",
     dialogueStyle: "优先依据材料中可观察的表达方式",
     tier: input.tier,
     timezone: input.timezone,
   };
-  const draft = buildOriginalDraft(seed);
+  const draft = buildOriginalDraft(seed, compilationPolicyVersion);
   draft.sourceType = "imported_character";
   draft.identity.selfDescription = `${input.characterName}来自《${input.workTitle}》，当前处于${input.storyStage}。`;
-  draft.persona.goals[0]!.description = `在“${input.storyStage}”阶段保持身份与选择一致。`;
+  if (draft.persona.goals[0]) {
+    draft.persona.goals[0].description = `在“${input.storyStage}”阶段保持身份与选择一致。`;
+  }
   draft.knowledge.knownFacts.push(`来源材料片段：${excerpt}`);
   draft.knowledge.uncertainFacts.push("材料未展示的经历与关系细节");
   draft.sources = [
@@ -372,8 +413,8 @@ export function buildImportedDraft(
     },
   ];
   for (const trait of draft.persona.traits) {
-    trait.origin = "model_inference";
-    trait.sourceRefs = ["import-source"];
+    trait.origin = legacy ? "model_inference" : "synthetic_extension";
+    trait.sourceRefs = legacy ? ["import-source"] : [];
   }
   return draft;
 }

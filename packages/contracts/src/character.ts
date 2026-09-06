@@ -19,6 +19,14 @@ export const CharacterSourceKindSchema = z.enum([
 ]);
 export type CharacterSourceKind = z.infer<typeof CharacterSourceKindSchema>;
 
+export const CharacterCompilationPolicyVersionSchema = z.enum([
+  "legacy_template_v1",
+  "companion_character_v2",
+]);
+export type CharacterCompilationPolicyVersion = z.infer<
+  typeof CharacterCompilationPolicyVersionSchema
+>;
+
 export const ScheduleRigiditySchema = z.enum([
   "fixed",
   "committed",
@@ -238,7 +246,7 @@ export const CharacterPersonaSchema = z
     traits: z.array(TraitRuleSchema).min(1).max(24),
     values: z.array(ValueRuleSchema).min(1).max(24),
     contradictions: z.array(ContradictionRuleSchema).max(16),
-    goals: z.array(CharacterGoalSchema).min(1).max(20),
+    goals: z.array(CharacterGoalSchema).max(20),
     preferences: z.array(PreferenceRuleSchema).max(40),
     boundaries: z.array(BoundaryRuleSchema).max(30),
     biography: z.array(BiographyEntrySchema).max(40).optional(),
@@ -385,6 +393,8 @@ export const LockedCharacterPathSchema = z
 const CharacterSpecContentShape = {
   tier: SimulationTierSchema,
   sourceType: CharacterSourceKindSchema,
+  /** Absent on historical specs; absence preserves legacy compilation semantics. */
+  compilationPolicyVersion: CharacterCompilationPolicyVersionSchema.optional(),
   identity: CharacterIdentitySchema,
   persona: CharacterPersonaSchema,
   dialogue: DialogueStyleSchema,
@@ -468,9 +478,19 @@ export const OriginalCharacterInputSchema = z
     name: z.string().trim().min(1).max(120),
     worldSetting: z.string().trim().min(1).max(4_000),
     workOrRole: z.string().trim().min(1).max(240),
-    coreTraits: z.array(z.string().trim().min(1).max(120)).length(3),
-    coreContradiction: z.string().trim().min(1).max(500),
-    mainGoal: z.string().trim().min(1).max(160),
+    coreTraits: z.array(z.string().trim().min(1).max(120)).min(1).max(8),
+    coreContradiction: z
+      .string()
+      .trim()
+      .max(500)
+      .transform((value) => value || undefined)
+      .optional(),
+    mainGoal: z
+      .string()
+      .trim()
+      .max(160)
+      .transform((value) => value || undefined)
+      .optional(),
     initialRelationship: z.string().trim().min(1).max(120),
     dialogueStyle: z.string().trim().min(1).max(500),
     characterBrief: z.string().trim().min(1).max(20_000).optional(),

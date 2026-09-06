@@ -22,6 +22,7 @@ export function applyLifePlanningAuthority(
 export function ensureTimeBasedGoalMilestones(
   draft: CharacterDraft,
 ): CharacterDraft {
+  if (draft.compilationPolicyVersion === "companion_character_v2") return draft;
   const next = structuredClone(draft);
   next.persona.goals = next.persona.goals.map((goal) => ({
     ...goal,

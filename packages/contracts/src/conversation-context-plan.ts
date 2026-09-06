@@ -34,6 +34,20 @@ export const ConversationContextPlanSchema = z
       .enum(["now", "after_user_finishes", "unspecified"])
       .optional(),
     requestPolicyVersion: z.literal("clause_requests_v1").optional(),
+    /** Topic eligibility is separate from unresolved retrieval candidates. */
+    resolvedCurrentTopic: z
+      .object({
+        text: z.string().max(20_000),
+        basis: z.enum([
+          "current_message",
+          "recent_user_continuity",
+          "unresolved",
+        ]),
+        sourceMessageIds: z.array(EntityIdSchema).max(1),
+        policyVersion: z.literal("scoped_topic_v1"),
+      })
+      .strict()
+      .optional(),
     maxRecallEvidence: z.number().int().min(1).max(8),
     maxExplicitMemories: z.number().int().min(0).max(8),
     allowCharacterLifeMention: z.boolean(),

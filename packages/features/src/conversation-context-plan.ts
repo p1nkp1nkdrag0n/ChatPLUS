@@ -6,6 +6,7 @@ import {
 } from "@personasim/contracts";
 
 import { deriveCurrentConversationRequests } from "./conversation-requests.js";
+import { resolveCurrentConversationTopic } from "./conversation-topic.js";
 
 export interface ConversationContextPlanInput {
   originalQuery: string;
@@ -44,17 +45,17 @@ export function buildConversationContextPlan(
   );
   // Only user-authored, same-session text can supply short-term query candidates.
   // Full source text is retained; oversized messages are omitted, not summarized.
+  const recentUserMessages = input.recentMessages.filter(
+    (message) =>
+      message.agentId === input.agentId &&
+      message.sessionId === input.sessionId &&
+      message.role === "user",
+  );
   const sources =
     references.length === 0
       ? []
-      : input.recentMessages
-          .filter(
-            (message) =>
-              message.agentId === input.agentId &&
-              message.sessionId === input.sessionId &&
-              message.role === "user" &&
-              message.text.length <= 1_200,
-          )
+      : recentUserMessages
+          .filter((message) => message.text.length <= 1_200)
           .slice(-3);
   const complexRecall =
     recollection &&
@@ -93,6 +94,10 @@ export function buildConversationContextPlan(
         : requests.supportStyle,
     helpTiming: requests.helpTiming,
     requestPolicyVersion: "clause_requests_v1",
+    resolvedCurrentTopic: resolveCurrentConversationTopic({
+      originalQuery,
+      recentUserMessages,
+    }),
     maxRecallEvidence: complexRecall ? 8 : 3,
     maxExplicitMemories: complexRecall
       ? 8

@@ -195,4 +195,33 @@ describe("conversation context planning", () => {
       }).allowCharacterLifeMention,
     ).toBe(true);
   });
+
+  it("separates old work retrieval candidates from the resolved movie topic", () => {
+    const plan = buildConversationContextPlan({
+      ...base,
+      originalQuery: "她说电影很好看，我也觉得挺有意思。",
+      recentMessages: [
+        {
+          ...base,
+          id: "work",
+          role: "user",
+          text: "以后聊工作时，请先听我说，不要急着给建议。",
+        },
+        {
+          ...base,
+          id: "movie",
+          role: "user",
+          text: "换个话题，昨晚和妹妹看了一部电影。",
+        },
+      ],
+    });
+    expect(plan.expandedQueries[0]).toContain("工作");
+    expect(plan).toMatchObject({
+      resolvedCurrentTopic: {
+        text: "她说电影很好看，我也觉得挺有意思。",
+        basis: "current_message",
+        sourceMessageIds: [],
+      },
+    });
+  });
 });

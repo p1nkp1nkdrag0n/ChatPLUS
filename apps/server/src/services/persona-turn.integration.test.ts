@@ -205,6 +205,89 @@ describe("persona runtime through committed HTTP turns", () => {
     }
   });
 
+  it.each([
+    [
+      "换个话题，昨晚和妹妹看了一部电影。",
+      "她说电影很好看，我也觉得挺有意思。",
+    ],
+    ["换个话题，妹妹昨天因为家里的事很烦。", "她又那样了。"],
+  ])(
+    "keeps work practices outside the current topic after %s",
+    async (transition, current) => {
+      await setup();
+      const learned = await learn();
+      const sessionId = learned.userMessage.sessionId;
+      expect(snapshot().relationshipPractices).toHaveLength(1);
+      const transitionResponse = await send(
+        sessionId,
+        transition,
+        "topic-transition",
+      );
+      expect(transitionResponse.statusCode, transitionResponse.body).toBe(201);
+      const originalGenerate = app.personasim.llm.generateObject.bind(
+        app.personasim.llm,
+      );
+      const generate = vi
+        .spyOn(app.personasim.llm, "generateObject")
+        .mockImplementation((input) =>
+          input.purpose === "chat_turn"
+            ? Promise.resolve({ invalid: true } as never)
+            : originalGenerate(input),
+        );
+      const decisions = app.personasim.kernel.registry.resolve(
+        TURN_DECISION_SERVICE_TOKEN,
+      );
+      const decide = vi.spyOn(decisions, "decide");
+      const response = await send(sessionId, current, "topic-current");
+      expect(response.statusCode, response.body).toBe(201);
+      const plan = decide.mock.calls[0]?.[0].conversationPlan;
+      expect(plan?.expandedQueries).toContain(PREFERENCE);
+      expect(plan?.resolvedCurrentTopic?.text).not.toContain("工作");
+      expect(
+        decide.mock.calls[0]?.[0].effectivePersona?.relationshipPractices,
+      ).toEqual([]);
+      const chat = generate.mock.calls.find(
+        ([input]) => input.purpose === "chat_turn",
+      )?.[0];
+      const repaired = generate.mock.calls.find(
+        ([input]) => input.purpose === "repair_chat_turn",
+      )?.[0];
+      expect(promptPersona(chat!.system)?.relationshipPractices).toEqual([]);
+      expect(repaired?.prompt).toContain('"relationshipPractices":[]');
+      expect(repaired?.prompt).not.toContain('"practice":"listen_first"');
+
+      generate.mockClear();
+      decide.mockClear();
+      const backToWork = await send(
+        sessionId,
+        "回到工作，我的同事小林又临时改需求了。",
+        "back-to-work",
+      );
+      expect(backToWork.statusCode, backToWork.body).toBe(201);
+      generate.mockClear();
+      decide.mockClear();
+      const continuity = await send(
+        sessionId,
+        "她又那样了。",
+        "work-continuity",
+      );
+      expect(continuity.statusCode, continuity.body).toBe(201);
+      expect(
+        decide.mock.calls[0]?.[0].conversationPlan?.resolvedCurrentTopic,
+      ).toMatchObject({
+        basis: "recent_user_continuity",
+        sourceMessageIds: [backToWork.json<ChatTurnResult>().userMessage.id],
+      });
+      expect(
+        decide.mock.calls[0]?.[0].effectivePersona?.relationshipPractices,
+      ).toHaveLength(1);
+      const workRepair = generate.mock.calls.find(
+        ([input]) => input.purpose === "repair_chat_turn",
+      )?.[0];
+      expect(workRepair?.prompt).toContain('"practice":"listen_first"');
+    },
+  );
+
   it.each(["off", "shadow", "enforced"] as const)(
     "applies %s only at its authorized boundary and learns after the current reply",
     async (mode) => {

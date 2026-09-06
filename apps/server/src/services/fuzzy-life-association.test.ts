@@ -186,6 +186,68 @@ function branches() {
 }
 
 describe("life evidence association", () => {
+  it("uses separately verified structured observations without treating them as first-person chat", () => {
+    const character = candidate("character", "保留克制的结尾");
+    character.decision.subject = "character";
+    character.decision.decidedBy = "character";
+    character.dilemma!.subject = "character";
+    character.actions = [
+      {
+        ...action(character, "创作者开始落实自己的选择：保留克制的结尾"),
+        performedBy: "character",
+      },
+    ];
+    character.outcomes = [
+      {
+        ...outcome(
+          character,
+          "动作带来了混合反馈：被摄者对处理方式更放心，但合作方担心成片的市场吸引力下降。",
+        ),
+        valence: "mixed",
+      },
+    ];
+    const records = [...character.actions, ...character.outcomes];
+    const structuredSources = {
+      messages: records.map((record) => ({
+        id: record.sourceEvidenceIds[0]!,
+        agentId: record.agentId,
+        sessionId: record.sessionId!,
+        role: "system",
+        kind: "system_notice",
+        createdAtUtc: record.recordedAtUtc,
+      })),
+      events: records.map((record) => ({
+        agentId: record.agentId,
+        causationId: record.sourceEvidenceIds[0]!,
+        recordedAtUtc: record.recordedAtUtc,
+        payload: {
+          decisionId: record.decisionId,
+          actionId: character.actions[0]!.id,
+          ...("actionIds" in record ? { outcomeId: record.id } : {}),
+        },
+      })),
+    };
+    const text =
+      "我仍认同保留克制的结尾，因为被摄者的尊严比制造冲突更重要；但合作方对市场吸引力的担心是真实代价。";
+    expect(
+      select(text, "reflection", [character], {
+        subject: "character",
+        structuredSources,
+      })?.outcomeId,
+    ).toBe(character.outcomes[0]!.id);
+    expect(
+      select(text, "reflection", [character], {
+        subject: "character",
+      })?.outcomeId,
+    ).toBeUndefined();
+    expect(
+      select(text, "reflection", [character], {
+        subject: "character",
+        structuredSources: { ...structuredSources, events: [] },
+      })?.outcomeId,
+    ).toBeUndefined();
+  });
+
   it("matches a completed action to the existing selected-option alias", () => {
     const work = candidate("work", "正式辞职");
     expect(
@@ -289,28 +351,32 @@ describe("life evidence association", () => {
     expect(result?.actionIds).toEqual(["work-action"]);
   });
 
-  it("keeps two actual actions in one sentence on their own matters", () => {
-    const { work, walk } = branches();
-    const clauses = collectLifeAssociationEvidence(
-      analyzeLifeEvidence(
-        "我今天已经散步二十分钟了，我也已经提交了外包项目申请。",
-      ),
-      "action",
-    );
-    expect(clauses).toHaveLength(2);
-    expect(
-      clauses.map(
-        (clause) =>
-          selectLifeEvidenceAssociation({
-            stage: "action",
-            clause,
-            candidates: [work, walk],
-            sessionId: "current",
-            atUtc: NOW,
-          })?.decision.id,
-      ),
-    ).toEqual(["walk", "work"]);
-  });
+  it.each([
+    "我今天已经散步二十分钟了，我也已经提交了外包项目申请。",
+    "我今天已经散步二十分钟了，并提交了外包项目申请。",
+  ])(
+    "keeps two actual actions in one sentence on their own matters: %s",
+    (text) => {
+      const { work, walk } = branches();
+      const clauses = collectLifeAssociationEvidence(
+        analyzeLifeEvidence(text),
+        "action",
+      );
+      expect(clauses).toHaveLength(2);
+      expect(
+        clauses.map(
+          (clause) =>
+            selectLifeEvidenceAssociation({
+              stage: "action",
+              clause,
+              candidates: [work, walk],
+              sessionId: "current",
+              atUtc: NOW,
+            })?.decision.id,
+        ),
+      ).toEqual(["walk", "work"]);
+    },
+  );
 
   it("does not inherit a legacy unrelated or unperformed action as a causal predecessor", () => {
     const { work } = branches();
@@ -649,6 +715,155 @@ describe("bounded source-backed references", () => {
     ).toBeUndefined();
   });
 
+  it("retains a source-backed predecessor when an identified matter has a result days later", () => {
+    const work = candidate("work", "接受副主编岗位", "current", OLD);
+    work.dilemma!.options[0]!.description =
+      "副主编岗位提供稳定收入和可预测的作息";
+    work.actions = [action(work, "我已经签了副主编合同。")];
+    const text =
+      "几天后的结果是：收入和作息稳定了，但能留给个人创作的时间明显变少。";
+    const recentMessages = [
+      source("work-action-source", work.actions[0]!.summary, OLD),
+    ];
+    expect(
+      select(text, "outcome", [work], { recentMessages })?.actionIds,
+    ).toEqual(["work-action"]);
+    expect(select(text, "outcome", [work])?.actionIds).toEqual([]);
+    expect(
+      select(text, "outcome", [work], {
+        recentMessages: [
+          source("work-action-source", "我打算签副主编合同。", OLD),
+        ],
+      })?.actionIds,
+    ).toEqual([]);
+    expect(
+      select("这个决定带来的结果让我轻松多了。", "outcome", [work], {
+        recentMessages,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("resolves overlapping consequence terms only with one currently evidenced predecessor", () => {
+    const oldWork = candidate("old-work", "去异地影像公司", "earlier", OLD);
+    oldWork.dilemma!.options[0]!.description = "收入低一些，只有一年合同。";
+    oldWork.actions = [action(oldWork, "我已经给异地影像公司发出接受邮件。")];
+    const work = candidate("work", "接受副主编岗位", "current", OLD);
+    work.dilemma!.options[0]!.description =
+      "用更稳定的收入与作息支撑未来一年。";
+    work.actions = [action(work, "我今天已经签了副主编合同。")];
+    const text =
+      "几天后的结果是：收入和作息稳定了，但能留给个人创作的时间明显变少。这是混合结果。";
+    const recentMessages = [
+      source("work-action-source", work.actions[0]!.summary, OLD),
+    ];
+    expect(
+      select(text, "outcome", [oldWork, work], { recentMessages }),
+    ).toMatchObject({
+      decision: { id: "work" },
+      actionIds: ["work-action"],
+    });
+    expect(select(text, "outcome", [oldWork, work])).toBeUndefined();
+    oldWork.decision.sessionId = "current";
+    oldWork.actions[0]!.sessionId = "current";
+    expect(
+      select(text, "outcome", [oldWork, work], {
+        recentMessages: [
+          ...recentMessages,
+          source("old-work-action-source", oldWork.actions[0]!.summary, OLD),
+        ],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("links a topically grounded personal reflection to its uniquely source-backed earlier outcome", () => {
+    const work = candidate("work", "接受纪录片研究岗位", "current", OLD);
+    work.dilemma!.options[0]!.description =
+      "纪录片研究更接近创作，但要承担不确定性。";
+    work.outcomes = [outcome(work, "后来公司同意了我的纪录片研究申请。")];
+    const text =
+      "我现在的理解是：真正改变我的不只是选项，而是我第一次承认自己愿意为创作承担一些不确定性。";
+    const recentMessages = [
+      source("work-outcome-source", work.outcomes[0]!.summary, OLD),
+    ];
+    expect(
+      select(text, "reflection", [work], { recentMessages }),
+    ).toMatchObject({
+      decision: { id: "work" },
+      outcomeId: "work-outcome",
+    });
+    expect(select(text, "reflection", [work])?.outcomeId).toBeUndefined();
+    expect(
+      select(text, "reflection", [work], {
+        recentMessages: [{ ...recentMessages[0]!, sessionId: "other" }],
+      })?.outcomeId,
+    ).toBeUndefined();
+    expect(
+      select(text, "reflection", [work], {
+        recentMessages: [
+          ...recentMessages,
+          ...Array.from({ length: 8 }, (_, index) =>
+            source(`later-${index}`, "天气很好。"),
+          ),
+        ],
+      })?.outcomeId,
+    ).toBeUndefined();
+    work.outcomes = [
+      ...work.outcomes,
+      outcome(work, "后来公司同意了我的纪录片研究补充申请。", "second-outcome"),
+    ];
+    expect(
+      select(text, "reflection", [work], {
+        recentMessages: [
+          ...recentMessages,
+          source("second-outcome-source", work.outcomes[1]!.summary, OLD),
+        ],
+      })?.outcomeId,
+    ).toBeUndefined();
+  });
+
+  it("does not choose between multiple older source-backed result predecessors", () => {
+    const work = candidate("work", "接受副主编岗位", "current", OLD);
+    work.dilemma!.options[0]!.description =
+      "副主编岗位提供稳定收入和可预测的作息";
+    work.actions = [
+      action(work, "我已经签了副主编合同。", "contract-action"),
+      action(work, "我已经提交了副主编入职申请。", "application-action"),
+    ];
+    expect(
+      select("几天后的结果是：收入和作息稳定了。", "outcome", [work], {
+        recentMessages: work.actions.map((item) =>
+          source(item.sourceEvidenceIds[0]!, item.summary, OLD),
+        ),
+      })?.actionIds,
+    ).toEqual([]);
+  });
+
+  it("associates a completed coordinated launch with its selected project", () => {
+    const project = candidate("project", "启动独立影像项目");
+    const clauses = collectLifeAssociationEvidence(
+      analyzeLifeEvidence("我今天已经拒绝副主编合同，并和伙伴确认启动项目。"),
+      "action",
+    );
+    const results = clauses.map((clause) =>
+      selectLifeEvidenceAssociation({
+        stage: "action",
+        clause,
+        candidates: [project],
+        sessionId: "current",
+        atUtc: NOW,
+      }),
+    );
+    expect(clauses).toHaveLength(2);
+    expect(results[0]).toBeUndefined();
+    expect(results[1]?.decision.id).toBe("project");
+    expect(
+      collectLifeAssociationEvidence(
+        analyzeLifeEvidence(clauses[1]!.sourceText),
+        "action",
+      )[1],
+    ).toEqual(clauses[1]);
+  });
+
   it("does not guess an action for a result frame with multiple equally grounded recent steps", () => {
     const work = candidate("work", "接受副主编岗位");
     work.dilemma!.options[0]!.description =
@@ -814,6 +1029,56 @@ describe("bounded source-backed references", () => {
 });
 
 describe("stage-specific evidence clauses", () => {
+  it("keeps a result's same-subject benefit and explicit mixed declaration across a semicolon", () => {
+    const text =
+      "几天后的结果是：我们拿到第一个小客户，但现金流很不稳定；我重新感到有创作动力。这是混合结果。";
+    const clauses = collectLifeAssociationEvidence(
+      analyzeLifeEvidence(text),
+      "outcome",
+    );
+    expect(clauses).toHaveLength(1);
+    expect(clauses[0]!.sourceText).toContain("现金流很不稳定");
+    expect(clauses[0]!.sourceText).toContain("重新感到有创作动力");
+    expect(clauses[0]!.valence).toBe("mixed");
+    const project = candidate("project", "启动独立影像项目", "current", OLD);
+    project.dilemma!.options[0]!.description = "和朋友承担项目与创作自主权";
+    project.dilemma!.options[0]!.likelyTradeoffs = [
+      "现金流和项目连续性更不确定",
+    ];
+    project.actions = [action(project, "我已经确认启动独立影像项目。")];
+    const associated = select(text, "outcome", [project], {
+      recentMessages: [
+        source("project-action-source", project.actions[0]!.summary, OLD),
+      ],
+    });
+    expect(associated?.decision.id).toBe("project");
+    expect(associated?.actionIds).toEqual(["project-action"]);
+    project.outcomes = [outcome(project, clauses[0]!.sourceText)];
+    expect(
+      select(
+        "回头看，我仍认可选择独立项目，但我低估了现金流压力。",
+        "reflection",
+        [project],
+      )?.outcomeId,
+    ).toBe("project-outcome");
+  });
+
+  it("does not absorb a different or non-actual event into an explicit result", () => {
+    const project = candidate("project", "启动独立影像项目");
+    project.dilemma!.options[0]!.likelyTradeoffs = ["现金流不确定"];
+    const text = "几天后的结果是：现金流不稳定；我明天可能重新感到有创作动力。";
+    const clauses = collectLifeAssociationEvidence(
+      analyzeLifeEvidence(text),
+      "outcome",
+    );
+    expect(clauses).toHaveLength(1);
+    expect(clauses[0]!.sourceText).not.toContain("明天");
+    expect(clauses[0]!.valence).toBe("negative");
+    expect(
+      select("散步回来我轻松多了。", "outcome", [project]),
+    ).toBeUndefined();
+  });
+
   it("preserves a result heading and its asserted same-sentence consequences", () => {
     const text =
       "几天后的结果是：收入和作息稳定了，但能留给个人创作的时间明显变少。";

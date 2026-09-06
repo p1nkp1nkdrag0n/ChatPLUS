@@ -43,7 +43,7 @@ const ACTION_PREDICATES: readonly (string | readonly [string, string])[] = [
   "辞职",
   "离职",
   ["答应", "答应了"],
-  ["拒绝", "拒绝了"],
+  ["拒绝", "拒绝(?:了)?"],
   ["开始", "开始做"],
   "完成",
   "做完",
@@ -109,7 +109,7 @@ const NON_OCCURRENCE = new RegExp(
   "u",
 );
 const NEGATED_STATE_CHANGE =
-  /(?:还没|没有|尚未|并未|并不|不是).{0,8}(?:好(?:多|些)了|轻松|松快|安静|放松|踏实|更焦虑|更难受|更糟|缓解|减轻|退了|少了)|(?:不是|并非|没有|尚未|并未).{0,8}(?:成功|失败|同意|拒绝|通过)/u;
+  /(?:还没|没有|尚未|并未|并不|不是).{0,8}(?:好(?:多|些)了|轻松|松快|安静|放松|踏实|更焦虑|更难受|更糟|缓解|减轻|退了|少了|延迟)|(?:不是|并非|没有|尚未|并未).{0,8}(?:成功|失败|同意|拒绝|通过)/u;
 const PENDING_RESULT =
   /(?:还没|尚未|没有|并未).{0,12}(?:最终结果|结果|反馈|确认|同意|通过|成功|收到)|(?:仍然|仍)不是最终结果|只有行动.{0,8}没有结果|事实没有变化|没有新的确认/u;
 const REFLECTION =
@@ -118,8 +118,12 @@ const PRESSURE_FEEDBACK =
   /好多了|轻松(?:多|些|了)|松快(?:了|些)|安静了(?:一些|不少|一点)?|没那么(?:焦虑|难受|乱)|想清楚了|清楚多了|被(?:你)?听见|被理解|谢谢你.*(?:听|陪)|更焦虑|更难受|更糟|还是很乱|完全没用|压力更大|没(?:有)?被(?:听见|理解)|(?:嗡嗡(?:声)?|紧绷|焦虑|压力|难受).{0,16}(?:退了|小了|少了|松了|减轻|缓解|散了|没了)|(?:心里|脑子|身体|整个人).{0,12}(?:松快|轻松|安静|放松|踏实)(?:了|些)|松了(?:一)?口气/u;
 const ACTUAL_OUTCOME =
   /(?:同意|拒绝|通过|失败|成功)(?:了|的通知|的结果)|(?:结果|后来|因此|所以|最终|现在).{0,28}(?:同意|拒绝|通过|失败|成功|变得|让我|轻松|开心|难受|后悔|更好|更糟|有了)|拿到(?:了)?.{0,16}(?:岗位|职位|录用|批准|许可)|(?:收到|收到了).{0,16}(?:录用|拒绝|批准|通过|失败|结果|通知)|几天后的结果是|这是混合结果|出现的实际反馈|收入比.{0,12}(?:少|多)|薪资.{0,12}(?:降低|提高)/u;
-const EXTERNAL_RESPONSE =
-  /确认(?:接受|录用|录取)(?:了)?我|(?:公司|团队|平台|机构|学校).{0,12}愿意(?:让|给)我|(?:项目)?资金(?:发生)?延迟/u;
+const CONFIRMED_SELF_ACCEPTANCE =
+  /确认(?:接受|录用|录取)(?:了)?我(?!的?(?:朋友|同事|家人|伴侣|父母|母亲|父亲))/u;
+const EXTERNAL_RESPONSE = new RegExp(
+  `${CONFIRMED_SELF_ACCEPTANCE.source}|(?:公司|团队|平台|机构|学校).{0,12}愿意(?:让|给)我|(?:项目)?资金(?:发生)?延迟`,
+  "u",
+);
 
 /**
  * Extracts reported events, not instructions to perform them. Sentence and
@@ -147,6 +151,7 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
     let reflectionFrame = false;
     let metaFrame = false;
     let reportedFrame = false;
+    let previousActionSubject: EvidenceSubject | undefined;
     for (const clause of alignedParts(
       sentence.sourceText,
       sentence.classifyText,
@@ -231,6 +236,9 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
         !DELEGATED_CHOICE.test(value) &&
         explicitActionOutsidePassive &&
         (isOccurredAction(actionText) ||
+          (previousActionSubject === subject &&
+            /^(?:并且|并|也|还)(?!没|不|未)/u.test(value) &&
+            ACTION_VERB.test(actionText)) ||
           (actionText !== value &&
             new RegExp(`(?:${ACTION_STEM_SOURCE})了`, "u").test(actionText)));
       const outcome =
@@ -258,6 +266,7 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
         actionKind: actionKind(value),
         valence: asserted ? evidenceValence(value) : "neutral",
       });
+      previousActionSubject = action ? subject : undefined;
     }
     if (question || sentenceExample || metaFrame || reportedFrame) {
       inheritedSubject = "unspecified";
@@ -309,7 +318,7 @@ function actionKind(text: string): EvidenceActionKind {
 export function evidenceValence(text: string): EvidenceValence {
   if (/混合结果|不是纯好消息|好的一面和坏的一面/u.test(text)) return "mixed";
   const normalized = maskEvidenceQuotes(text).replace(
-    /(?:别|不用|不要|不必|无需|没必要|没有|并未|并不|不是).{0,3}(?:担心|失败|拒绝|难受|更糟|后悔|失望|痛苦|损失|开心|成功|同意|通过)|没(?:有)?那么(?:焦虑|难受|乱)/gu,
+    /(?:别|不用|不要|不必|无需|没必要|没有|并未|并不|不是).{0,3}(?:担心|失败|拒绝|难受|更糟|后悔|失望|痛苦|损失|开心|成功|同意|通过|延迟|确认(?:接受|录用|录取)(?:了)?我)|没(?:有)?那么(?:焦虑|难受|乱)/gu,
     " ",
   );
   const negative =
@@ -319,7 +328,9 @@ export function evidenceValence(text: string): EvidenceValence {
   const positive =
     /成功|通过|同意|轻松|松快|开心|更好|庆幸|值得|满意|(?<!不)稳定|放心|动力|安静了|踏实了|(?:嗡嗡(?:声)?|紧绷|焦虑|压力).{0,16}(?:退了|小了|少了|松了|减轻|缓解|散了|没了)/u.test(
       normalized,
-    ) || /没(?:有)?那么(?:焦虑|难受|乱)/u.test(text);
+    ) ||
+    CONFIRMED_SELF_ACCEPTANCE.test(normalized) ||
+    /没(?:有)?那么(?:焦虑|难受|乱)/u.test(text);
   return positive && negative
     ? "mixed"
     : positive
@@ -347,10 +358,19 @@ export function evidenceSubject(
 function explicitSubject(
   text: string,
 ): { subject: EvidenceSubject; organization: boolean } | undefined {
-  const clause = text.replace(
-    /^(?:(?:另外|此外|但(?:是)?|不过|可是|而且|而是|同时|然后|随后|后来|今天|昨天|昨晚|现在|目前|最终|正式|刚刚|刚才|已经|确实|实际|其实|顺手|顺便|接着|这次|几天后|一周后|又|也)\s*)+/u,
-    "",
-  );
+  const clause = text
+    .replace(
+      /^(?:(?:另外|此外|但(?:是)?|不过|可是|而且|而是|同时|然后|随后|后来|今天|昨天|昨晚|现在|目前|最终|正式|刚刚|刚才|已经|确实|实际|其实|顺手|顺便|接着|这次|几天后|一周后|又|也)\s*)+/u,
+      "",
+    )
+    .replace(
+      new RegExp(
+        `^(?:并且|并)(?:和|跟|与|同)[\\p{L}·]{1,12}?(?=${ACTION_STEM_SOURCE})`,
+        "u",
+      ),
+      "",
+    )
+    .replace(new RegExp(`^(?:并且|并)(?=${ACTION_STEM_SOURCE})`, "u"), "");
   if (
     /^(?:我(?:的)?(?:朋友|同事|家人|伴侣|父母|母亲|父亲)|朋友|同事|家人|伴侣|父母|母亲|父亲|老师|医生|经理|他|她)/u.test(
       clause,

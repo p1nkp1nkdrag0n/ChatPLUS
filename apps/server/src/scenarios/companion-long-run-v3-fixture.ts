@@ -2,6 +2,7 @@ import {
   fixtureDelegatedDecision,
   type FixtureTurnBehavior,
 } from "../services/turn-decision-service.js";
+import { isCharacterSubjectDecisionRequest } from "../services/fuzzy-life-language.js";
 
 /**
  * Scenario-owned deterministic behavior for the v3 acceptance fixture. Nothing
@@ -33,6 +34,19 @@ export function companionLongRunV3ReviewedSemanticReply(
   text: string,
 ): string | undefined {
   const normalized = text.normalize("NFKC").trim();
+
+  if (/从.*只听.*切换到一起分析/u.test(normalized)) {
+    return "我陪你一起梳理这件事：先区分工作内容、现实条件和你在乎的东西，再比较短期代价与长期影响。具体选项还没说清，我先不替你选择。";
+  }
+  if (/只推荐一个.*最符合我哪项长期价值/u.test(normalized)) {
+    return "我的建议：选项 B，去杭州的山鸣影像。它更贴近你长期保留创作能力的价值；一年合同、收入降低和搬家的代价仍然存在。这只是建议，尚不代表你已经接受或行动。";
+  }
+  if (
+    normalized.includes("《夜航》") &&
+    isCharacterSubjectDecisionRequest(normalized)
+  ) {
+    return "我选择保留克制的结尾，保护被摄者的尊严。这个决定由我承担；还没有据此完成修改或取得反馈。";
+  }
 
   if (
     /(?:采访笔记).*(?:放在哪里|包是什么颜色|记录的包是什么颜色|书签是什么|书签上写的是什么)/u.test(

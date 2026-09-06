@@ -12,6 +12,10 @@ import {
   type LifeEvidenceClause,
 } from "./fuzzy-life-evidence.js";
 import { matchDilemmaOption, topicOverlap } from "./fuzzy-life-choice.js";
+import {
+  hasStructuredLifeEvidence,
+  type StructuredLifeEvidenceSources,
+} from "./fuzzy-life-structured-evidence.js";
 
 export type LifeAssociationStage = "action" | "outcome" | "reflection";
 
@@ -34,6 +38,7 @@ export interface LifeAssociationInput {
     Message,
     "id" | "agentId" | "sessionId" | "createdAtUtc" | "text"
   > & { role: Message["role"] | "system" })[];
+  structuredSources?: StructuredLifeEvidenceSources;
 }
 
 export interface LifeEvidenceAssociation {
@@ -51,6 +56,8 @@ const DECISION_HEADING = new RegExp(
   `^${DECISION_DECLARATION_SOURCE}(?:是)?$`,
   "u",
 );
+const EXPLICIT_RESULT_FRAME =
+  /^(?:几天后(?:的)?|这几天(?:的)?|后来(?:的)?)?(?:结果|后果)(?:已经)?(?:是|出现)/u;
 const TOPIC_FILLER =
   /(?:回头看|回过头看|几天后|这几天|实际上|我的|你的|我们|你们|他们|她们|自己|今天|昨天|昨晚|刚刚|刚才|后来|现在|已经|仍然|这次|这个|那个|上述|决定|选择|方向|结果|后果|反馈|行动|执行|落实|提交|申请|接受|拒绝|完成|开始|获得|收到|同意|成功|失败|导致|带来|产生|为了|按照|照着|确实|终于|还是|一封|一些|一份|一个|一段|一种|明显|感觉|理解|认为|认同|庆幸|感受|不是|应该|需要|时候|事情|公司|对方|机构|学校|工作|项目|合同|平台|普通|日常|杂事|时间|分钟|小时|压力|轻松|难受|后悔|缓解|增加|减少|稳定|好多|很多|多了|少了|了|的|我|你|他|她|是|和|但|把|在|就|也|又|而|更|仍)/gu;
 
@@ -141,7 +148,7 @@ function stageFrame(text: string, stage: LifeAssociationStage): boolean {
 }
 
 function outcomeElaboration(text: string): boolean {
-  return /^(?:但|不过|只是)(?:是)?(?:收入|薪资|薪水|作息|睡眠|精力|压力|心情|能留给|创作时间|个人创作)|^这是(?:混合|正面|负面)?结果$/u.test(
+  return /^(?:但|不过|只是)(?:是)?(?:收入|薪资|薪水|(?:项目)?资金|作息|睡眠|精力|压力|心情|能留给|创作时间|个人创作)|^(?:我|我们)(?:重新|又|开始)感到|^这是(?:混合|正面|负面)?结果$/u.test(
     text,
   );
 }
@@ -171,11 +178,30 @@ export function collectLifeAssociationEvidence(
       )
     );
   };
+  const attachedOutcome = (left: number, right: number): boolean => {
+    const before = positioned[left];
+    const after = positioned[right];
+    if (
+      before === undefined ||
+      after === undefined ||
+      before.end < 0 ||
+      after.start < before.end ||
+      !outcomeElaboration(after.clause.classifyText)
+    )
+      return false;
+    const separator = analysis.sourceText.slice(before.end, after.start);
+    return (
+      /^[\s；;]+$/u.test(separator) ||
+      (/^[\s。.!]+$/u.test(separator) &&
+        /^这是(?:混合|正面|负面)?结果$/u.test(after.clause.classifyText))
+    );
+  };
   const result: LifeEvidenceClause[] = [];
   for (let index = 0; index < positioned.length; index += 1) {
     const current = positioned[index]!.clause;
     if (!validStageClause(current, stage)) continue;
     let firstIndex = index;
+    let classificationFirstIndex = index;
     const pieces = [current];
     const previous = positioned[index - 1]?.clause;
     if (
@@ -190,9 +216,30 @@ export function collectLifeAssociationEvidence(
     ) {
       pieces.unshift(previous);
       firstIndex -= 1;
+      classificationFirstIndex = firstIndex;
     }
-    if (stage !== "action") {
-      while (sameSentence(index, index + 1)) {
+    if (stage === "action") {
+      // A coordinated step retains the source that supplies its tense, while
+      // its own classified topic stays separate from the preceding action.
+      // This keeps a walk and an application as two independently bound acts.
+      while (
+        firstIndex > 0 &&
+        sameSentence(firstIndex - 1, firstIndex) &&
+        validStageClause(positioned[firstIndex - 1]!.clause, "action") &&
+        positioned[firstIndex - 1]!.clause.subject === current.subject &&
+        /^(?:并且|并|也|还)(?!没|不|未)/u.test(
+          positioned[firstIndex]!.clause.classifyText,
+        )
+      ) {
+        firstIndex -= 1;
+      }
+    } else {
+      while (
+        sameSentence(index, index + 1) ||
+        (stage === "outcome" &&
+          EXPLICIT_RESULT_FRAME.test(pieces[0]!.classifyText) &&
+          attachedOutcome(index, index + 1))
+      ) {
         const next = positioned[index + 1]!.clause;
         const elaboration =
           (stage === "outcome" && outcomeElaboration(next.classifyText)) ||
@@ -230,6 +277,7 @@ export function collectLifeAssociationEvidence(
             ? "positive"
             : "neutral";
     const start = positioned[firstIndex]!.start;
+    const classificationStart = positioned[classificationFirstIndex]!.start;
     const end = positioned[index]!.end;
     result.push({
       ...current,
@@ -240,8 +288,8 @@ export function collectLifeAssociationEvidence(
           ? analysis.sourceText.slice(start, end)
           : current.sourceText,
       classifyText:
-        start >= 0 && end >= start
-          ? analysis.classifyText.slice(start, end)
+        classificationStart >= 0 && end >= classificationStart
+          ? analysis.classifyText.slice(classificationStart, end)
           : current.classifyText,
       subject:
         pieces.find((piece) => piece.subject !== "unspecified")?.subject ??
@@ -255,12 +303,6 @@ export function collectLifeAssociationEvidence(
 function recordedByNow(recordedAtUtc: string, atUtc: string): boolean {
   const elapsed = Date.parse(atUtc) - Date.parse(recordedAtUtc);
   return Number.isFinite(elapsed) && elapsed >= 0;
-}
-
-function stageTexts(text: string, stage: LifeAssociationStage): string[] {
-  return collectLifeAssociationEvidence(analyzeLifeEvidence(text), stage).map(
-    (clause) => clause.classifyText,
-  );
 }
 
 function branchStageText(
@@ -286,19 +328,34 @@ function branchStageText(
     .join("；");
 }
 
+type GroundedAction = ActionRecord & { structuredEvidence: boolean };
+type GroundedOutcome = OutcomeRecord & { structuredEvidence: boolean };
+
+function actionTexts(action: GroundedAction): string[] {
+  // groundedActions already projected only the matching asserted clauses;
+  // re-parsing that projection would discard inherited tense and subjects.
+  return [action.summary];
+}
+
+function outcomeTexts(outcome: GroundedOutcome): string[] {
+  return [outcome.summary];
+}
+
 function groundedActions(
   candidate: LifeAssociationCandidate,
-  atUtc: string,
-): ActionRecord[] {
-  return candidate.actions.flatMap((action) => {
+  input: LifeAssociationInput,
+): GroundedAction[] {
+  return candidate.actions.flatMap<GroundedAction>((action) => {
     if (!(
       action.agentId === candidate.decision.agentId &&
       action.decisionId === candidate.decision.id &&
       action.subject === candidate.decision.subject &&
       action.sourceEvidenceIds.length > 0 &&
-      recordedByNow(action.recordedAtUtc, atUtc)
+      recordedByNow(action.recordedAtUtc, input.atUtc)
     ))
       return [];
+    if (hasStructuredLifeEvidence(action, input.structuredSources, input.atUtc))
+      return [{ ...action, structuredEvidence: true }];
     const summary = branchStageText(
       candidate,
       action.summary,
@@ -306,15 +363,17 @@ function groundedActions(
       action.performedBy === "character",
     );
     // This is a temporary evidence projection. Persisted records stay intact.
-    return summary === "" ? [] : [{ ...action, summary }];
+    return summary === ""
+      ? []
+      : [{ ...action, summary, structuredEvidence: false }];
   });
 }
 
 function groundedOutcomes(
   candidate: LifeAssociationCandidate,
   input: LifeAssociationInput,
-): OutcomeRecord[] {
-  return candidate.outcomes.flatMap((outcome) => {
+): GroundedOutcome[] {
+  return candidate.outcomes.flatMap<GroundedOutcome>((outcome) => {
     if (!(
       outcome.agentId === candidate.decision.agentId &&
       outcome.decisionId === candidate.decision.id &&
@@ -323,6 +382,10 @@ function groundedOutcomes(
       recordedByNow(outcome.recordedAtUtc, input.atUtc)
     ))
       return [];
+    if (
+      hasStructuredLifeEvidence(outcome, input.structuredSources, input.atUtc)
+    )
+      return [{ ...outcome, structuredEvidence: true }];
     const assistantFirstPerson = (input.recentMessages ?? []).some(
       (message) =>
         outcome.sourceEvidenceIds.includes(message.id) &&
@@ -337,7 +400,9 @@ function groundedOutcomes(
       "outcome",
       assistantFirstPerson,
     );
-    return summary === "" ? [] : [{ ...outcome, summary }];
+    return summary === ""
+      ? []
+      : [{ ...outcome, summary, structuredEvidence: false }];
   });
 }
 
@@ -415,13 +480,14 @@ function hasRecentSource(
   sourceIds: readonly string[],
   summary: string,
   sourceStage: "decision" | "action" | "outcome",
+  requireRecent = true,
 ): boolean {
   const elapsed = Date.parse(input.atUtc) - Date.parse(record.recordedAtUtc);
   if (
     record.sessionId !== input.sessionId ||
     !Number.isFinite(elapsed) ||
     elapsed < 0 ||
-    elapsed > RECENT_EVIDENCE_MS
+    (requireRecent && elapsed > RECENT_EVIDENCE_MS)
   )
     return false;
   const messages = [...(input.recentMessages ?? [])]
@@ -440,8 +506,9 @@ function hasRecentSource(
     (message) =>
       message.role !== "system" &&
       sourceIds.includes(message.id) &&
-      Date.parse(input.atUtc) - Date.parse(message.createdAtUtc) <=
-        RECENT_EVIDENCE_MS &&
+      (!requireRecent ||
+        Date.parse(input.atUtc) - Date.parse(message.createdAtUtc) <=
+          RECENT_EVIDENCE_MS) &&
       recordedByNow(message.createdAtUtc, record.recordedAtUtc) &&
       (sourceStage === "decision"
         ? candidate.dilemma !== undefined &&
@@ -489,16 +556,12 @@ export function selectLifeEvidenceAssociation(
         decision.subject === "shared"),
   );
   const evaluated = candidates.map((candidate) => {
-    const actions = groundedActions(candidate, input.atUtc);
+    const actions = groundedActions(candidate, input);
     const outcomes = groundedOutcomes(candidate, input);
     const sources = [
       ...selectedSources(candidate),
-      ...(input.stage === "action"
-        ? []
-        : actions.flatMap((action) => stageTexts(action.summary, "action"))),
-      ...(input.stage === "reflection"
-        ? outcomes.flatMap((outcome) => stageTexts(outcome.summary, "outcome"))
-        : []),
+      ...(input.stage === "action" ? [] : actions.flatMap(actionTexts)),
+      ...(input.stage === "reflection" ? outcomes.flatMap(outcomeTexts) : []),
     ];
     return {
       candidate,
@@ -520,8 +583,31 @@ export function selectLifeEvidenceAssociation(
     .filter((item) => item.relevance > 0)
     .sort((left, right) => right.relevance - left.relevance);
   let selected = topical[0];
-  if (selected !== undefined && topical[1]?.relevance === selected.relevance)
-    return undefined;
+  if (selected !== undefined && topical[1]?.relevance === selected.relevance) {
+    // Generic consequence terms (such as income) can overlap several past
+    // choices. An explicit result frame may resolve that tie only when one
+    // equally topical choice has an actual predecessor in the current
+    // conversation's source evidence. Two evidenced choices still abstain.
+    if (input.stage !== "outcome" || !EXPLICIT_RESULT_FRAME.test(text))
+      return undefined;
+    const supported = topical.filter(
+      (item) =>
+        item.relevance === selected!.relevance &&
+        item.actions.some((action) =>
+          hasRecentSource(
+            input,
+            item.candidate,
+            action,
+            action.sourceEvidenceIds,
+            action.summary,
+            "action",
+            false,
+          ),
+        ),
+    );
+    if (supported.length !== 1) return undefined;
+    selected = supported[0]!;
+  }
   if (selected === undefined) {
     if (!pureStageReference(text)) return undefined;
     const recent = evaluated.filter(({ candidate, actions, outcomes }) => {
@@ -565,26 +651,32 @@ export function selectLifeEvidenceAssociation(
     selected = recent[0]!;
   }
   const { candidate, actions, outcomes } = selected;
+  // An explicit result for an already identified matter can follow its
+  // source-backed action days later. Generic references still require the
+  // short conversational window, and ambiguous predecessors still abstain.
+  const topicalResultFrame =
+    input.stage === "outcome" &&
+    selected.relevance > 0 &&
+    EXPLICIT_RESULT_FRAME.test(text);
   const matchingActions = actions
     .map((action) => ({
       action,
-      relevance: relevanceTo(text, stageTexts(action.summary, "action")),
+      relevance: relevanceTo(text, actionTexts(action)),
     }))
     .filter(
       ({ action, relevance }) =>
         relevance > 0 ||
-        ((pureStageReference(text) ||
-          /^(?:几天后(?:的)?|这几天(?:的)?|后来(?:的)?)?(?:结果|后果)(?:已经)?(?:是|出现)/u.test(
-            text,
-          )) &&
-          hasRecentSource(
-            input,
-            candidate,
-            action,
-            action.sourceEvidenceIds,
-            action.summary,
-            "action",
-          )),
+        ((pureStageReference(text) || topicalResultFrame) &&
+          ((topicalResultFrame && action.structuredEvidence) ||
+            hasRecentSource(
+              input,
+              candidate,
+              action,
+              action.sourceEvidenceIds,
+              action.summary,
+              "action",
+              !topicalResultFrame,
+            ))),
     )
     .sort((left, right) => right.relevance - left.relevance);
   const strongestAction = matchingActions[0];
@@ -594,20 +686,27 @@ export function selectLifeEvidenceAssociation(
       matchingActions[1].relevance < strongestAction.relevance)
       ? strongestAction.action
       : undefined;
+  const topicalReflectionFrame =
+    input.stage === "reflection" &&
+    selected.relevance > 0 &&
+    !pureStageReference(text) &&
+    /^(?:回头看|回看|我(?:现在)?的理解是)/u.test(text);
   const matchingOutcomes = outcomes
     .map((outcome) => ({
       outcome,
       relevance: relevanceTo(
         text,
-        stageTexts(outcome.summary, "outcome").filter(
-          (actual) => relevanceTo(actual, selectedSources(candidate)) > 0,
+        outcomeTexts(outcome).filter(
+          (actual) =>
+            outcome.structuredEvidence ||
+            relevanceTo(actual, selectedSources(candidate)) > 0,
         ),
       ),
     }))
     .filter(
       ({ outcome, relevance }) =>
         relevance > 0 ||
-        (pureStageReference(text) &&
+        ((pureStageReference(text) || topicalReflectionFrame) &&
           hasRecentSource(
             input,
             candidate,
@@ -615,6 +714,7 @@ export function selectLifeEvidenceAssociation(
             outcome.sourceEvidenceIds,
             outcome.summary,
             "outcome",
+            !topicalReflectionFrame,
           )),
     )
     .sort((left, right) => right.relevance - left.relevance);

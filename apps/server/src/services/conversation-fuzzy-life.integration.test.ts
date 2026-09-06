@@ -1016,6 +1016,185 @@ describe("fuzzy-life conversation integration", () => {
     });
   });
 
+  it("reanchors a named recommendation after a day gap before accepting a fresh delegation", async () => {
+    const clock = new FakeClock(START_UTC);
+    app = await createTestApp(
+      {
+        semanticReply: ({ userText }) =>
+          userText.includes("推荐")
+            ? "我的建议：选项 B，去外地研究所。它更符合你的成长价值，但这还不是你的决定，也不代表已经行动。"
+            : "我听见了，你继续说。",
+        selectDelegatedDecision: () => "选项 B：去外地研究所",
+      },
+      clock,
+    );
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reanchor-a",
+      "选项 A 是留在本地编辑部。收入稳定，但成长空间少。",
+    );
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reanchor-b",
+      "选项 B 是去外地研究所。收入少一些，但更有成长空间。",
+    );
+    const dilemma = latestJson<DilemmaEpisode>(
+      app,
+      "dilemma_episodes",
+      "episode_json",
+    );
+    clock.advance({ days: 2 });
+    const recommendation = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reanchor-recommend",
+      "现在请直接推荐一个方向，只推荐一个，并说明它最符合我哪项长期价值。此时我只是听建议，还没有接受。",
+    );
+    expect(modeForSource(app, recommendation.assistantMessage.id)).toBe(
+      "recommend",
+    );
+    expect(scalarCount(app, "decision_records")).toBe(0);
+    const intervention = latestJson<SupportIntervention>(
+      app,
+      "support_interventions",
+      "intervention_json",
+    );
+    expect(intervention.dilemmaId).toBe(dilemma.id);
+    const delegated = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reanchor-delegate",
+      "现在我明确授权你替我在 A 和 B 之间作决定。请只选一个，但不会假装自己已经行动。",
+    );
+    const decision = latestJson<DecisionRecord>(
+      app,
+      "decision_records",
+      "decision_json",
+    );
+    expect(decision).toMatchObject({
+      dilemmaId: dilemma.id,
+      authority: "delegated",
+      authorizedByMessageId: delegated.userMessage.id,
+    });
+    const delegatedIntervention = rowJson<SupportIntervention>(
+      app,
+      "support_interventions",
+      "intervention_json",
+      "source_message_id",
+      delegated.assistantMessage.id,
+    );
+    expect(decision.supportInterventionIds).toContain(delegatedIntervention.id);
+    expect(scalarCount(app, "dilemma_episodes")).toBe(1);
+    expect(scalarCount(app, "action_records")).toBe(0);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+  });
+
+  it.each([
+    "我的建议：选项 B。",
+    "我的建议：去海边度假。",
+    "我的建议：选项 B，不是去外地研究所，而是去海边度假。",
+    "请翻译我的建议：去外地研究所。",
+    "我的建议：选项 B。之前我们聊过外地研究所。",
+    "我的建议：选项 A，去外地研究所。",
+  ])(
+    "does not reanchor a stale dilemma without an affirmed, consistent named recommendation: %s",
+    async (reply) => {
+      const clock = new FakeClock(START_UTC);
+      app = await createTestApp(
+        {
+          semanticReply: ({ userText }) =>
+            userText.includes("推荐") ? reply : "我听见了，你继续说。",
+        },
+        clock,
+      );
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "reject-reanchor-a",
+        "选项 A 是留在本地编辑部。收入稳定。",
+      );
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "reject-reanchor-b",
+        "选项 B 是去外地研究所。收入少一些。",
+      );
+      clock.advance({ days: 2 });
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "reject-reanchor-recommend",
+        "现在请直接推荐一个方向，只推荐一个，并说明它最符合我哪项长期价值。此时我只是听建议，还没有接受。",
+      );
+      expect(
+        app.personasim.store.database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM support_interventions WHERE source_message_id = ?",
+          )
+          .get(turn.assistantMessage.id),
+      ).toMatchObject({ count: 0 });
+      expect(scalarCount(app, "decision_records")).toBe(0);
+    },
+  );
+
+  it("does not resolve two stale dilemmas from their shared recommended option", async () => {
+    const clock = new FakeClock(START_UTC);
+    app = await createTestApp(
+      {
+        semanticReply: ({ userText }) =>
+          userText.includes("推荐")
+            ? "我的建议：去外地研究所。"
+            : "我听见了，你继续说。",
+      },
+      clock,
+    );
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    for (const [index, text] of [
+      "我不知道该选留在本地编辑部还是去外地研究所。",
+      "我不知道该选经营家庭花店还是去外地研究所。",
+    ].entries()) {
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        `ambiguous-reanchor-${index}`,
+        text,
+      );
+    }
+    expect(scalarCount(app, "dilemma_episodes")).toBe(2);
+    clock.advance({ days: 2 });
+    const turn = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "ambiguous-reanchor-recommend",
+      "现在请直接推荐一个方向，只推荐一个。",
+    );
+    expect(
+      app.personasim.store.database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM support_interventions WHERE source_message_id = ?",
+        )
+        .get(turn.assistantMessage.id),
+    ).toMatchObject({ count: 0 });
+    expect(scalarCount(app, "decision_records")).toBe(0);
+    expect(scalarCount(app, "dilemma_episodes")).toBe(2);
+  });
+
   it("persists completed clauses without recording their future or negated neighbors", async () => {
     app = await createTestApp();
     const character = await createAndPublish(app);
@@ -1072,6 +1251,78 @@ describe("fuzzy-life conversation integration", () => {
     expect(scalarCount(app, "outcome_records")).toBe(0);
     expect(scalarCount(app, "reflection_records")).toBe(0);
   });
+
+  it.each(["older_pressure_outside_context", "both_pressures_in_context"])(
+    "changes support mode only for a uniquely referenced pressure: %s",
+    async (context) => {
+      const clock = new FakeClock(START_UTC);
+      app = await createTestApp(companionLongRunV3FixtureBehavior, clock);
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "mode-switch-older-pressure",
+        "刚下班。今天没有发生大事，就是被很多小消息磨得很累。",
+      );
+      const olderPressure = latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      );
+      if (context === "older_pressure_outside_context") {
+        for (let index = 0; index < 4; index += 1) {
+          await sendChat(
+            app,
+            sessionId,
+            character.id,
+            `mode-switch-neutral-${index}`,
+            "今天听了一张器乐专辑，旋律很安静。",
+          );
+        }
+      }
+      clock.advance({ days: 5 });
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "mode-switch-current-pressure",
+        "最近工作上有件事一直压着我。我一想到要处理，肩膀就会绷起来。",
+      );
+      const currentPressure = latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      );
+      expect(currentPressure.id).not.toBe(olderPressure.id);
+      expect(scalarCount(app, "pressure_episodes")).toBe(2);
+      clock.advance({ days: 1 });
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "mode-switch-request",
+        "现在可以从“只听”切换到一起分析了，但先不要替我选择。",
+      );
+      const rows = app.personasim.store.database
+        .prepare(
+          "SELECT intervention_json FROM support_interventions WHERE source_message_id = ?",
+        )
+        .all(turn.assistantMessage.id) as { intervention_json: string }[];
+      if (context === "older_pressure_outside_context") {
+        expect(rows).toHaveLength(1);
+        expect(JSON.parse(rows[0]!.intervention_json)).toMatchObject({
+          pressureEpisodeId: currentPressure.id,
+          mode: "deliberate",
+        });
+      } else {
+        expect(rows).toHaveLength(0);
+      }
+      expect(scalarCount(app, "decision_records")).toBe(0);
+      expect(scalarCount(app, "dilemma_episodes")).toBe(0);
+    },
+  );
 
   it("records natural completed activity and reported relief through the messages route", async () => {
     app = await createTestApp();

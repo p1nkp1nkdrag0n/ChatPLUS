@@ -924,8 +924,9 @@ export function assembleChatPrompt(
             conversationIntent: input.conversationPlan.intent,
             supportStyle: input.conversationPlan.supportStyle,
             adviceRequested: input.conversationPlan.adviceRequested,
+            helpTiming: input.conversationPlan.helpTiming,
             guidance:
-              "Sharing and venting need not become analysis, advice, a follow-up question, a goal update or relationship growth. Give concrete help when explicitly requested. Maintain the character's own values without reciting them or agreeing merely to please.",
+              "Sharing and venting need not become analysis, advice, a follow-up question, a goal update or relationship growth. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
           }),
       complexity: replyStrategy.complexity,
       softTargetCharacters: {

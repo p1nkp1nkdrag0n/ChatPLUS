@@ -152,6 +152,59 @@ describe("persona runtime through committed HTTP turns", () => {
     ).count;
   }
 
+  it("preserves active and ordered requests in generated and repaired HTTP prompts", async () => {
+    await setup();
+    await learn();
+    const originalGenerate = app.personasim.llm.generateObject.bind(
+      app.personasim.llm,
+    );
+    const generate = vi
+      .spyOn(app.personasim.llm, "generateObject")
+      .mockImplementation((input) =>
+        input.purpose === "chat_turn"
+          ? Promise.resolve({ invalid: true } as never)
+          : originalGenerate(input),
+      );
+    const sessionId = await newSession();
+    for (const [index, [text, supportStyle, helpTiming]] of [
+      ["不用先听我说，直接给我建议。", "offer_requested_help", "now"],
+      ["不是让你先听我说，是请你帮我分析。", "offer_requested_help", "now"],
+      [
+        "先让我说完，再帮我详细分析。",
+        "listen_then_help",
+        "after_user_finishes",
+      ],
+      ["她说‘先听我说’，但我想请你分析一下。", "offer_requested_help", "now"],
+    ].entries()) {
+      generate.mockClear();
+      const response = await send(sessionId, text!, `request-${index}`);
+      expect(response.statusCode, response.body).toBe(201);
+      const chat = generate.mock.calls.find(
+        ([input]) => input.purpose === "chat_turn",
+      )?.[0];
+      const repaired = generate.mock.calls.find(
+        ([input]) => input.purpose === "repair_chat_turn",
+      )?.[0];
+      for (const prompt of [chat?.prompt, repaired?.prompt]) {
+        expect(prompt).toContain('"adviceRequested":true');
+        expect(prompt).toContain(`"supportStyle":"${supportStyle}"`);
+        expect(prompt).toContain(`"helpTiming":"${helpTiming}"`);
+      }
+      expect(
+        response.json<ChatTurnResult>().assistantMessage.metadata[
+          "companionContext"
+        ],
+      ).toMatchObject({
+        plan: {
+          intent: "help",
+          adviceRequested: true,
+          supportStyle,
+          helpTiming,
+        },
+      });
+    }
+  });
+
   it.each(["off", "shadow", "enforced"] as const)(
     "applies %s only at its authorized boundary and learns after the current reply",
     async (mode) => {

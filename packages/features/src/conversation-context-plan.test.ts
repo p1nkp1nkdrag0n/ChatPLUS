@@ -6,6 +6,68 @@ import { deriveReplyStrategy } from "./reply-strategy.js";
 const base = { agentId: "agent_1", sessionId: "session_1", recentMessages: [] };
 
 describe("conversation context planning", () => {
+  it.each([
+    "不用先听我说，直接给我建议。",
+    "不是让你先听我说，是请你帮我分析。",
+    "不要只是听我说，帮我想想办法。",
+    "她说‘先听我说’，但我想请你分析一下。",
+    "先听我说。不，改成直接给我建议。",
+    "Don't just listen; give me advice.",
+  ])("honors the active help request in %s", (originalQuery) => {
+    expect(
+      buildConversationContextPlan({ ...base, originalQuery }),
+    ).toMatchObject({
+      intent: "help",
+      adviceRequested: true,
+      supportStyle: "offer_requested_help",
+    });
+  });
+
+  it("preserves ordered listening before requested analysis", () => {
+    const plan = buildConversationContextPlan({
+      ...base,
+      originalQuery: "先让我说完，再帮我详细分析。",
+    });
+    expect(plan).toMatchObject({
+      intent: "help",
+      adviceRequested: true,
+      supportStyle: "listen_then_help",
+      helpTiming: "after_user_finishes",
+    });
+    expect(
+      deriveReplyStrategy(plan.originalQuery, {}, { conversationPlan: plan })
+        .complexity,
+    ).toBe("standard");
+  });
+
+  it.each([
+    "我不想请你分析，先听我说就好。",
+    "请别给我建议，我只想吐槽。",
+    "她说‘给我建议’，但我只想说说。",
+    "给我建议。不过先听我说就好。",
+    "I don't want advice; just listen.",
+  ])("keeps negated or superseded help inactive in %s", (originalQuery) => {
+    expect(
+      buildConversationContextPlan({ ...base, originalQuery }),
+    ).toMatchObject({
+      adviceRequested: false,
+      supportStyle: "listen",
+    });
+  });
+
+  it.each([
+    "她说‘先听我说’。",
+    "如果我说先听我说，你会怎么办？",
+    "先听我说，也请帮我分析。",
+  ])(
+    "does not impose a strong style for quoted, conditional or conflicting requests: %s",
+    (originalQuery) => {
+      expect(
+        buildConversationContextPlan({ ...base, originalQuery }).supportStyle,
+      ).toBe("respond_naturally");
+    },
+  );
+
   it("distinguishes emotional why from requested help without changing legacy strategy", () => {
     const originalQuery = "为什么我总把事情搞砸，今天真难过。";
     const plan = buildConversationContextPlan({ ...base, originalQuery });

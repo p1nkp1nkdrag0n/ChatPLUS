@@ -41,6 +41,18 @@ function practiceContext(effective: EffectivePersonaSnapshot | undefined) {
   };
 }
 
+function requestContext(plan: ConversationContextPlan | undefined) {
+  if (plan === undefined) return undefined;
+  return {
+    intent: plan.intent,
+    supportStyle: plan.supportStyle,
+    adviceRequested: plan.adviceRequested,
+    helpTiming: plan.helpTiming,
+    guidance:
+      "Current explicit requests override stored defaults. For after_user_finishes, listen now and provide the requested help only after the user finishes. If timing is unspecified, do not impose either conflicting style.",
+  };
+}
+
 /**
  * Owns the one-shot repair boundary for invalid provider output. Repairs are
  * intentionally model-only: they never validate or commit world effects.
@@ -77,6 +89,7 @@ export class ReplyRepairService {
               input.conversationPlan,
             ).character.persona,
             effectivePersona: practiceContext(input.effectivePersona),
+            currentRequest: requestContext(input.conversationPlan),
           },
         )}`,
         schema: agentTurnDecisionSchema,
@@ -119,6 +132,7 @@ export class ReplyRepairService {
               input.conversationPlan,
             ).character.persona,
             effectivePersona: practiceContext(input.effectivePersona),
+            currentRequest: requestContext(input.conversationPlan),
             dialogue: input.effectivePersona?.dialogue ?? input.spec.dialogue,
             forbiddenMetaKnowledge: input.spec.knowledge.forbiddenMetaKnowledge,
           })}\n` +

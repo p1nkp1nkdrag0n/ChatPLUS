@@ -27,7 +27,13 @@ export const ConversationContextPlanSchema = z
       "listen",
       "respond_naturally",
       "offer_requested_help",
+      "listen_then_help",
     ]),
+    /** Optional for historical retrieval snapshots written before clause planning. */
+    helpTiming: z
+      .enum(["now", "after_user_finishes", "unspecified"])
+      .optional(),
+    requestPolicyVersion: z.literal("clause_requests_v1").optional(),
     maxRecallEvidence: z.number().int().min(1).max(8),
     maxExplicitMemories: z.number().int().min(0).max(8),
     allowCharacterLifeMention: z.boolean(),

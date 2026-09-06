@@ -10,6 +10,7 @@ import {
   memoryDedupeKey,
   stableId,
   validateMemoryProposal,
+  validateEvidenceSemantics,
   type MemoryLike,
   type MemoryProposalLike,
 } from "@personasim/features";
@@ -471,7 +472,13 @@ export function validateMergeAndPersistMemories(
     const parsedCandidate = MemoryCandidateSchema.safeParse(rawCandidate);
     if (!parsedCandidate.success) continue;
     const candidate = normalizeCandidateForJudge(
-      parsedCandidate.data,
+      serverOwnedCandidates.length > 0
+        ? parsedCandidate.data
+        : preserveCompleteUserReport(
+            parsedCandidate.data,
+            authoritativeMessage,
+            input.nowUtc,
+          ),
       catalog,
       input.nowUtc,
       input.authoritativeMessageId,
@@ -638,6 +645,36 @@ function normalizeCandidateForJudge(
   authoritativeMessageId?: string,
   authoritativeActivityEventId?: string,
 ): MemoryCandidate | undefined {
+  const userSourceIds = new Set([
+    ...(authoritativeMessageId === undefined ? [] : [authoritativeMessageId]),
+    ...(candidate.evidence ?? [])
+      .filter((item) => item.sourceType === "message")
+      .map((item) => item.sourceId),
+  ]);
+  const canonical = [...userSourceIds]
+    .flatMap((sourceId) => {
+      const source = catalog.messages.get(sourceId);
+      return source?.role === "user"
+        ? [
+            ...deriveServerOwnedUserMemoryCandidates(source.content, nowUtc),
+            ...deriveServerOwnedContinuityMemoryCandidates(
+              source.content,
+              nowUtc,
+            ),
+          ]
+        : [];
+    })
+    .find((derived) => derived.content === candidate.content);
+  if (canonical !== undefined) {
+    // Canonical wording cannot grant authority to model-authored dispositions,
+    // trait stability or timestamps. Adopt the complete server-owned object.
+    candidate = {
+      ...canonical,
+      ...(candidate.evidence === undefined
+        ? {}
+        : { evidence: candidate.evidence }),
+    };
+  }
   const evidence = collectVerifiedEvidence(
     candidate,
     catalog,
@@ -825,20 +862,24 @@ function materializeVerifiedClaim(input: {
   if (assertiveEvidenceTexts.length === 0) return undefined;
 
   const categories = memoryClaimCategories(candidate);
-  if (candidate.claim !== undefined) {
-    const correctionApplies = verifiedCorrectionAppliesToClaim(
-      assertiveEvidenceTexts,
-      categories,
-      candidate.claim.subjectKey,
-      candidate.content,
-    );
+  if (candidate.reasonCode === "complete_source_report") return undefined;
+  const canonicalClaim = assertiveEvidenceTexts
+    .flatMap((text) => deriveServerOwnedUserMemoryCandidates(text, nowUtc))
+    .find((derived) => derived.content === candidate.content)?.claim;
+  if (canonicalClaim !== undefined)
     return {
-      subjectKey: candidate.claim.subjectKey,
-      disposition: candidate.claim.disposition,
+      subjectKey: canonicalClaim.subjectKey,
+      disposition: canonicalClaim.disposition,
       recordedAtUtc: nowUtc,
-      ...(correctionApplies ? { revisionIntent: "explicit_correction" } : {}),
+      ...(verifiedCorrectionAppliesToClaim(
+        assertiveEvidenceTexts,
+        categories,
+        canonicalClaim.subjectKey,
+        candidate.content,
+      )
+        ? { revisionIntent: "explicit_correction" }
+        : {}),
     };
-  }
 
   for (const evidenceText of assertiveEvidenceTexts) {
     for (const category of categories) {
@@ -926,11 +967,12 @@ function collectVerifiedEvidence(
     ) {
       return;
     }
-    const supportingText = requestedQuote ?? source.content;
-    if (!memoryContentGrounded(candidate, supportingText)) return;
-
-    const completeQuote = source.content.trim().slice(0, 2_000);
-    const quote = requestedQuote?.trim().slice(0, 2_000) ?? completeQuote;
+    // A valid excerpt can still omit the sentence that negates it. Always
+    // validate against the complete source and keep the complete quote.
+    if (!memoryContentGrounded(candidate, source.content)) return;
+    const completeQuote = source.content.trim();
+    if (completeQuote.length > 2_000) return;
+    const quote = completeQuote;
     if (quote.length === 0) return;
     const evidenceKey = `message:${sourceId}`;
     const existing = result.get(evidenceKey);
@@ -958,7 +1000,9 @@ function collectVerifiedEvidence(
     result.set(`activity_event:${sourceId}`, {
       sourceType: "activity_event",
       sourceId,
-      contextSummary: source.summary.trim().slice(0, 1_000),
+      ...(source.summary.trim().length <= 2_000
+        ? { quote: source.summary.trim() }
+        : { contextSummary: "完整活动记录保存在来源中；此处不提供截断摘要。" }),
       recordedAtUtc: nowUtc,
     });
   };
@@ -972,7 +1016,9 @@ function collectVerifiedEvidence(
     result.set(`character_source:${sourceId}`, {
       sourceType: "character_source",
       sourceId,
-      contextSummary: source.content_excerpt.trim().slice(0, 1_000),
+      ...(source.content_excerpt.trim().length <= 2_000
+        ? { quote: source.content_excerpt.trim() }
+        : { contextSummary: "完整角色来源保存在来源中；此处不提供截断摘要。" }),
       recordedAtUtc: nowUtc,
     });
   };
@@ -1091,78 +1137,78 @@ function messageDirectlyAssertsOccurredSharedExperience(text: string): boolean {
   return true;
 }
 
-const MEMORY_GROUNDING_STOP_WORDS = new Set([
-  "and",
-  "character",
-  "current",
-  "from",
-  "have",
-  "memory",
-  "message",
-  "now",
-  "said",
-  "that",
-  "the",
-  "their",
-  "this",
-  "time",
-  "today",
-  "user",
-  "was",
-  "were",
-  "what",
-  "with",
-  "your",
-]);
-
-function memoryGroundingFeatures(value: string): Set<string> {
-  const features = new Set<string>();
-  const normalized = value.normalize("NFKC").toLocaleLowerCase();
-  for (const word of normalized.match(/[a-z0-9]{3,}/gu) ?? []) {
-    const stem =
-      word.length > 4 && word.endsWith("s") ? word.slice(0, -1) : word;
-    if (!MEMORY_GROUNDING_STOP_WORDS.has(stem) && !/^\d+$/u.test(stem)) {
-      features.add(stem);
-    }
-  }
-  for (const run of normalized.match(/[\p{Script=Han}]{2,}/gu) ?? []) {
-    for (let index = 0; index < run.length - 1; index += 1) {
-      features.add(run.slice(index, index + 2));
-    }
-  }
-  return features;
-}
-
 function memoryContentGrounded(
   candidate: MemoryCandidate,
   evidenceText: string,
 ): boolean {
-  const normalizedContent = candidate.content
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
-  const normalizedEvidence = evidenceText
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
   if (
-    normalizedContent.length >= 2 &&
-    normalizedEvidence.includes(normalizedContent) &&
-    (/\p{Script=Han}/u.test(normalizedContent) || normalizedContent.length >= 4)
-  ) {
+    validateEvidenceSemantics({
+      candidate: candidate.content,
+      sourceText: evidenceText,
+      verifiedReport: `用户在对话中说过：「${evidenceText.trim()}」`,
+    }).verdict === "supported"
+  )
     return true;
-  }
-  const candidateFeatures = memoryGroundingFeatures(candidate.content);
-  const shared = [...memoryGroundingFeatures(evidenceText)].filter((feature) =>
-    candidateFeatures.has(feature),
-  );
-  if (shared.length >= 2) return true;
-  return (
-    shared.some((feature) => feature.length >= 6) &&
-    (candidate.namespace === "user_model" ||
-      candidate.attribution === "user_explicit")
+  // Existing bounded extractors own their wording and claim scope. Do not
+  // trust reasonCode or a model-provided claim as proof of that provenance.
+  return [
+    ...deriveServerOwnedUserMemoryCandidates(
+      evidenceText,
+      "2000-01-01T00:00:00.000Z",
+    ),
+    ...deriveServerOwnedContinuityMemoryCandidates(
+      evidenceText,
+      "2000-01-01T00:00:00.000Z",
+    ),
+  ].some(
+    (derived) =>
+      derived.content === candidate.content &&
+      derived.namespace === candidate.namespace &&
+      derived.attribution === candidate.attribution &&
+      derived.claim?.subjectKey === candidate.claim?.subjectKey &&
+      derived.claim?.disposition === candidate.claim?.disposition &&
+      derived.claim?.revisionIntent === candidate.claim?.revisionIntent,
   );
 }
+
+function preserveCompleteUserReport(
+  candidate: MemoryCandidate,
+  source: MessageSourceRow | undefined,
+  nowUtc: string,
+): MemoryCandidate {
+  if (
+    source?.role !== "user" ||
+    candidate.kind !== "semantic" ||
+    candidate.namespace !== "user_model" ||
+    candidate.attribution !== "user_explicit" ||
+    source.content.trim().length > 1_800 ||
+    memoryContentGrounded(candidate, source.content)
+  )
+    return candidate;
+  // This candidate only selects which complete user utterance to preserve. Its
+  // proposed interpretation, tags, stable trait and external event time do not
+  // become authoritative. The raw source remains independently retrievable.
+  const rest = { ...candidate };
+  delete rest.claim;
+  delete rest.occurredAtUtc;
+  delete rest.temporal;
+  return {
+    ...rest,
+    content: `用户在对话中说过：「${source.content.trim()}」`,
+    tags: ["source_report"],
+    stability: "one_off",
+    temporalMetadata: {
+      recordedAtUtc: nowUtc,
+      mentionedAtUtc: nowUtc,
+      temporalCertainty: "unknown",
+      temporalStatus: "unknown",
+    },
+    reasonCode: "complete_source_report",
+    reasonSummary:
+      "An unverified interpretation was replaced by the complete user utterance.",
+  };
+}
+
 function defaultTemporalMetadata(
   candidate: MemoryCandidate,
   catalog: EvidenceCatalog,

@@ -175,6 +175,13 @@ export function authoritativeImportedDraft(
         compilationPolicyVersion: fallback.compilationPolicyVersion,
         persona: {
           ...candidate.persona,
+          // Contradictions use the historical shape without sourceRefs, so
+          // they are not visited by rebaseImportedSourceRefs below.
+          contradictions: candidate.persona.contradictions.map((item) => ({
+            ...item,
+            origin:
+              item.origin === "user_spec" ? "model_inference" : item.origin,
+          })),
           goals: candidate.persona.goals.map((goal) =>
             fallback.compilationPolicyVersion === "companion_character_v2"
               ? withoutGeneratedMilestones(goal)

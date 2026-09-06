@@ -148,4 +148,36 @@ describe("companion character compilation", () => {
     ).toBe(true);
     expect(draft.compilationPolicyVersion).toBe(POLICY);
   });
+
+  it("does not let imported model tensions claim author-specified provenance", () => {
+    const input = {
+      characterName: "阿澄",
+      workTitle: "街角",
+      storyStage: "第一章",
+      sourceText: "阿澄既想独处，又想见朋友。",
+      sourceFormat: "pasted_text" as const,
+      tier: "daily" as const,
+      timezone: "Asia/Shanghai",
+    };
+    const fallback = buildImportedDraft(input, POLICY);
+    const candidate = structuredClone(fallback);
+    candidate.persona.contradictions = [
+      {
+        id: "inferred-tension",
+        sideA: "想独处",
+        sideB: "也想见朋友",
+        triggerConditions: ["收到朋友邀请时"],
+        resolutionPattern: "结合当时的精力决定",
+        origin: "user_spec",
+      },
+    ];
+    const result = authoritativeImportedDraft(
+      candidate,
+      input,
+      fallback,
+      "a".repeat(64),
+    );
+    expect(result.persona.contradictions[0]?.origin).toBe("model_inference");
+    expect(candidate.persona.contradictions[0]?.origin).toBe("user_spec");
+  });
 });

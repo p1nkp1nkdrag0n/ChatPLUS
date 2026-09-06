@@ -11,6 +11,10 @@ import { z, type ZodType } from "zod";
 
 import { parseJsonText, StructuredOutputError } from "./safe-json.js";
 import {
+  PromptDiagnosticsTracker,
+  type LlmPromptDiagnostics,
+} from "./prompt-diagnostics.js";
+import {
   normalizePurposeOutput,
   PURPOSE_OUTPUT_SCHEMAS,
 } from "./purpose-schemas.js";
@@ -82,6 +86,8 @@ export interface OpenAiCompatibleLlmOptions {
   maxOutputTokens?: number;
   fetch?: FetchLike;
   onMetric?: LlmMetricSink;
+  /** Opt-in bounded, in-memory prefix comparison; telemetry contains no prompt text. */
+  promptDiagnostics?: boolean;
   retryDelay?: (milliseconds: number) => Promise<void>;
 }
 
@@ -326,6 +332,7 @@ function asMessages(
 }
 
 interface RawCallResult {
+  promptDiagnostics?: LlmPromptDiagnostics;
   content: string;
   data: JsonValue;
   response: ChatCompletionResponse;
@@ -412,6 +419,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   readonly #maxOutputTokens: number;
   readonly #fetch: FetchLike;
   readonly #onMetric: LlmMetricSink | undefined;
+  readonly #promptDiagnostics: PromptDiagnosticsTracker | undefined;
   readonly #retryDelay: (milliseconds: number) => Promise<void>;
 
   constructor(options: OpenAiCompatibleLlmOptions) {
@@ -429,6 +437,10 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     );
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#onMetric = options.onMetric;
+    this.#promptDiagnostics =
+      options.promptDiagnostics && options.onMetric
+        ? new PromptDiagnosticsTracker()
+        : undefined;
     this.#retryDelay =
       options.retryDelay ??
       ((milliseconds) =>
@@ -461,6 +473,9 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       success,
       status: raw.status,
       ...responseMetricFields(raw.response),
+      ...(raw.promptDiagnostics === undefined
+        ? {}
+        : { promptDiagnostics: raw.promptDiagnostics }),
       ...(errorCode === undefined ? {} : { errorCode }),
     });
   }
@@ -478,9 +493,10 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       request.purpose,
       schema,
     );
+    const messages = asMessages(request, repairIssues);
     const body = JSON.stringify({
       model: this.model,
-      messages: asMessages(request, repairIssues),
+      messages,
       ...reasoningParameters(this.capabilities),
       ...(structuredFormat === undefined
         ? {}
@@ -494,6 +510,11 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         ? {}
         : { temperature: request.temperature }),
     });
+    const promptDiagnostics = this.#promptDiagnostics?.observe(
+      request.purpose,
+      messages,
+      structuredFormat,
+    );
     const controller = new AbortController();
     const timeout = globalThis.setTimeout(
       () => controller.abort(),
@@ -584,6 +605,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         content,
         data,
         response: envelope.data,
+        ...(promptDiagnostics === undefined ? {} : { promptDiagnostics }),
         latencyMs,
         status,
       };
@@ -614,6 +636,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         success: false,
         ...(status === undefined ? {} : { status }),
         ...responseMetricFields(observedResponse),
+        ...(promptDiagnostics === undefined ? {} : { promptDiagnostics }),
         errorCode: safeCode(safeError),
       });
       throw safeError;
@@ -743,16 +766,23 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
 
   async generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
     let schemaDescription = "";
-    try {
-      schemaDescription = `\nEXPECTED_JSON_SCHEMA\n${JSON.stringify(z.toJSONSchema(input.schema))}`;
-    } catch {
-      // Runtime validation remains authoritative if a custom Zod transform is not JSON-schema compatible.
+    if (this.capabilities.structuredOutputMode !== "native_schema") {
+      try {
+        schemaDescription = `EXPECTED_JSON_SCHEMA\n${JSON.stringify(z.toJSONSchema(input.schema))}`;
+      } catch {
+        // Runtime validation remains authoritative for non-serializable schemas.
+      }
     }
     const request: LLMRequest = {
       purpose: input.purpose as LlmPurpose,
       messages: [
         { role: "system", content: input.system },
-        { role: "user", content: `${input.prompt}${schemaDescription}` },
+        // Preserve the schema's user trust boundary, ahead of changing data.
+        // Native structured output already carries it once in response_format.
+        ...(schemaDescription === ""
+          ? []
+          : [{ role: "user" as const, content: schemaDescription }]),
+        { role: "user", content: input.prompt },
       ],
       // The prompt is already present in the user message. Keep the payload
       // empty so asMessages does not serialize the same (potentially large)

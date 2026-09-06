@@ -65,6 +65,7 @@ export type LlmLogicalCallEvent =
 
 export interface LlmServiceObservationOptions {
   onMetric?: LlmMetricSink;
+  promptDiagnostics?: boolean;
   onLogicalCall?: (event: LlmLogicalCallEvent) => void;
 }
 
@@ -106,6 +107,9 @@ export class LlmService {
         model: config.model,
         timeoutMs: config.timeoutMs,
         maxRetries: config.maxRetries,
+        ...(observation.promptDiagnostics === undefined
+          ? {}
+          : { promptDiagnostics: observation.promptDiagnostics }),
         ...(config.maxOutputTokens === undefined
           ? {}
           : { maxOutputTokens: config.maxOutputTokens }),

@@ -4,6 +4,7 @@ import type {
   LLMResponse,
 } from "@personasim/contracts";
 import type { ZodType } from "zod";
+import type { LlmPromptDiagnostics } from "./prompt-diagnostics.js";
 
 export interface GenerateObjectInput<T> {
   purpose: string;
@@ -40,6 +41,7 @@ export interface LlmCallMetric {
   purpose: string;
   /** Shared by all physical attempts of one logical invocation. */
   logicalCallId?: string;
+  promptDiagnostics?: LlmPromptDiagnostics;
   attempt: number;
   latencyMs: number;
   success: boolean;

@@ -42,3 +42,6 @@ export * from "./evidence-semantics.js";
 export * from "./state-engine.js";
 export * from "./temporal-query.js";
 export * from "./world-effects.js";
+export * from "./interaction-attribution.js";
+export * from "./follow-up-grounding.js";
+export * from "./advice-policy.js";

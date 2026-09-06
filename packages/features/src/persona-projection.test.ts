@@ -52,4 +52,76 @@ describe("finite explicit relationship practice planning", () => {
       [],
     );
   });
+
+  it.each([
+    "现在改一下，以后聊工作时可以直接给我建议。",
+    "现在起，以后聊工作时可以直接给我建议。",
+    "今天先听我说，以后聊工作时可以直接给我建议。",
+    "以后聊工作时，直接给我建议。",
+    "以后聊工作时可以直接给我建议，但今天还是先听我说。",
+  ])(
+    "uses the enduring clause's topic and interval for withdrawal: %s",
+    (text) => {
+      expect(
+        deriveExplicitPersonaPracticeRetractions({ text, userId: "user" }),
+      ).toEqual([
+        {
+          facet: "advice_timing",
+          scope: { userId: "user", topic: "工作" },
+          content: text,
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    "这次先给建议。",
+    "现在直接给我建议。",
+    "以后还是先听，但今天可以分析。",
+    "以后聊工作时还是先听，但今天可以直接给我建议。",
+    "以后聊工作时，今天直接给我建议，也可以追问。",
+    "以后聊工作时先听我说，再直接给我建议。",
+    "以后聊工作时不要直接给我建议，也不可以追问。",
+    "她说现在改一下，以后聊工作时可以直接给我建议。",
+    "如果现在改一下，以后聊工作时可以直接给我建议。",
+    "以后先听我说。今天聊电影时可以直接给我建议。",
+  ])(
+    "does not withdraw for temporary, sequential, negated or reported clauses: %s",
+    (text) => {
+      expect(
+        deriveExplicitPersonaPracticeRetractions({ text, userId: "user" }),
+      ).toEqual([]);
+    },
+  );
+
+  it("recognizes an explicit global interval without making a transient second facet enduring", () => {
+    const text = "现在起，以后给建议，但这次也可以追问。";
+    expect(
+      deriveExplicitPersonaPracticeRetractions({ text, userId: "user" }),
+    ).toEqual([
+      {
+        facet: "advice_timing",
+        scope: { userId: "user" },
+        content: text,
+      },
+    ]);
+  });
+
+  it("keeps each withdrawal bound to its own parsed topic", () => {
+    const text = "现在改一下，以后聊工作时直接给我建议，以后聊家庭时可以追问。";
+    expect(
+      deriveExplicitPersonaPracticeRetractions({ text, userId: "user" }),
+    ).toEqual([
+      {
+        facet: "advice_timing",
+        scope: { userId: "user", topic: "工作" },
+        content: text,
+      },
+      {
+        facet: "follow_up_questions",
+        scope: { userId: "user", topic: "家庭" },
+        content: text,
+      },
+    ]);
+  });
 });

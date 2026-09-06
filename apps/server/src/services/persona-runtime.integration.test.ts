@@ -249,6 +249,112 @@ describe("scoped persona runtime persistence and revision fences", () => {
     ).toEqual(history);
   });
 
+  it.each([
+    ["现在改一下，以后聊工作时可以直接给我建议。", true],
+    ["现在起，以后给建议。", true],
+    ["这次先给建议。", false],
+    ["以后还是先听，但今天可以分析。", false],
+    ["以后聊工作时还是先听，但今天可以直接给我建议。", false],
+  ])(
+    "persists the effective interval through another turn, session and restart: %s",
+    (text, withdrawn) => {
+      message("interval_preference");
+      capture("interval_preference");
+      const history = service.snapshotAsOf({
+        baseSpec: spec,
+        nowUtc: NOW,
+        topicText: "工作",
+      });
+      message("interval_change", text, "user", LATER);
+      const changed = capture("interval_change", LATER);
+      const expectedRevision = withdrawn ? 2 : 1;
+      expect(changed.revision).toBe(expectedRevision);
+      expect(snapshot().relationshipPractices).toHaveLength(withdrawn ? 0 : 1);
+      expect(capture("interval_change", LATER).revision).toBe(expectedRevision);
+
+      message("next_turn", "工作又有点烦。", "user", LATER);
+      expect(capture("next_turn", LATER).revision).toBe(expectedRevision);
+      expect(snapshot().relationshipPractices).toHaveLength(withdrawn ? 0 : 1);
+      sessionId = store.createSession(
+        spec.id,
+        "After interval change",
+        LATER,
+      ).id;
+      message("next_session", "工作上的事还没结束。", "user", LATER);
+      expect(capture("next_session", LATER).revision).toBe(expectedRevision);
+      const persisted = snapshot();
+      expect(persisted.relationshipPractices).toHaveLength(withdrawn ? 0 : 1);
+      expect(persisted.suppressedMemoryIds).toHaveLength(withdrawn ? 1 : 0);
+
+      database.close();
+      reopen();
+      expect(snapshot()).toEqual(persisted);
+      expect(
+        service.snapshotAsOf({
+          baseSpec: spec,
+          nowUtc: NOW,
+          topicText: "工作",
+        }),
+      ).toEqual(history);
+      if (withdrawn) {
+        const revision = new PersonaRuntimeRepository(store).historyAt(
+          spec.id,
+          LATER,
+        );
+        expect(revision?.state.changeSources).toEqual([
+          validity.readSource(spec.id, "message", "interval_change", LATER),
+        ]);
+      }
+    },
+  );
+
+  it("retains user, topic and revision fences for a withdrawal made now with future effect", () => {
+    message("scoped_work_preference");
+    capture("scoped_work_preference");
+    message(
+      "scoped_family_preference",
+      "我谈家庭烦恼时，先听我说，不急着建议。",
+    );
+    capture("scoped_family_preference");
+    message(
+      "scoped_withdrawal",
+      "现在改一下，以后聊工作时可以直接给我建议。",
+      "user",
+      LATER,
+    );
+    expect(
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "scoped_withdrawal",
+        userId: "someone_else",
+        nowUtc: LATER,
+        mode: "enforced",
+      }).revision,
+    ).toBe(2);
+    expect(() =>
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "scoped_withdrawal",
+        nowUtc: LATER,
+        mode: "enforced",
+        expectedRevision: 1,
+      }),
+    ).toThrow("persona_revision_conflict");
+    expect(() =>
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "scoped_withdrawal",
+        nowUtc: LATER,
+        mode: "enforced",
+        expectedMemoryRevision: validity.currentRevision(spec.id) + 1,
+      }),
+    ).toThrow("persona_memory_revision_conflict");
+    expect(snapshot().relationshipPractices).toHaveLength(1);
+    expect(capture("scoped_withdrawal", LATER).revision).toBe(3);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(snapshot("家庭烦恼").relationshipPractices).toHaveLength(1);
+  });
+
   it("excludes a source corrected before a delayed arrival without needing a later persona reconciliation", () => {
     message("delayed_source");
     capture("delayed_source");

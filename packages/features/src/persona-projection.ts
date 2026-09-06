@@ -158,40 +158,95 @@ export function deriveExplicitPersonaPracticeRetractions(input: {
   if (
     text.length === 0 ||
     text.length > 2_000 ||
-    /(?:他说|她说|朋友说|假如|如果|假设|要是|[“”"「」]|今天|这次|现在|\b(?:if|said|today|this time)\b)/iu.test(
+    /(?:他说|她说|朋友说|引用|假如|如果|假设|要是|[“”"「」]|\b(?:if|suppose|said|says|quote)\b)/iu.test(
       text,
-    )
+    ) ||
+    /(?:不要不|不用不|不能不|不是不|并非不|不喜欢不)/u.test(text)
   )
     return [];
-  const scopeMatch = practiceScopeMatch(text);
-  if (
-    !scopeMatch &&
-    !/(?:以后|今后|每次|每当|我(?:不喜欢|希望|更想)|\b(?:I prefer|in future|going forward)\b)/iu.test(
-      text,
-    )
-  )
-    return [];
-  if (!scopeMatch && /(?:时候|当我|谈|聊|关于|\b(?:when|about)\b)/iu.test(text))
-    return [];
-  const scope = {
-    userId: input.userId,
-    ...(scopeMatch?.[1] === undefined ? {} : { topic: scopeMatch[1].trim() }),
-  };
+  const clauses = enduringPracticeClauses(text, input.userId);
   const result: Array<
     Pick<PersonaPracticeProposal, "facet" | "scope" | "content">
   > = [];
-  if (
-    /(?:不(?:用|要|必).{0,5}先听|直接.{0,5}(?:给|提).{0,3}建议|(?:you can|please).{0,8}give.{0,4}advice)/iu.test(
-      text,
+  for (const clause of clauses) {
+    const negativeListen = /(?:不(?:用|要|必)|别).{0,5}先听/u;
+    const keepsListenFirst = clauses.some(
+      (other) =>
+        other.scope.topic === clause.scope.topic &&
+        /先听/u.test(other.text) &&
+        !negativeListen.test(other.text),
+    );
+    if (
+      negativeListen.test(clause.text) ||
+      (!keepsListenFirst &&
+        !/(?:不(?:用|要|必|可以)|别).{0,8}(?:建议|advice)/iu.test(
+          clause.text,
+        ) &&
+        /(?:直接.{0,5}(?:给|提).{0,3}建议|(?:以后|今后|每次|每当|往后|现在起)(?:请|可以|你|都|就)*给我?建议|(?:you can|please).{0,8}give.{0,4}advice)/iu.test(
+          clause.text,
+        ))
     )
-  )
-    result.push({ facet: "advice_timing", scope, content: text });
-  if (
-    /(?:可以.{0,4}(?:追问|多问)|多.{0,3}问我|(?:you can|please).{0,8}ask)/iu.test(
-      text,
+      result.push({
+        facet: "advice_timing",
+        scope: clause.scope,
+        content: text,
+      });
+    if (
+      !/(?:不(?:用|要|必|可以)|别).{0,6}(?:追问|多问|问我|ask)/iu.test(
+        clause.text,
+      ) &&
+      /(?:可以.{0,4}(?:追问|多问)|多.{0,3}问我|(?:you can|please).{0,8}ask)/iu.test(
+        clause.text,
+      )
     )
-  )
-    result.push({ facet: "follow_up_questions", scope, content: text });
+      result.push({
+        facet: "follow_up_questions",
+        scope: clause.scope,
+        content: text,
+      });
+  }
+  return result.filter(
+    (request, index) =>
+      result.findIndex(
+        (other) =>
+          request.facet === other.facet &&
+          request.scope.topic === other.scope.topic,
+      ) === index,
+  );
+}
+
+/** The request time is separate from its effective interval; comma clauses can inherit both. */
+function enduringPracticeClauses(
+  text: string,
+  userId: string,
+): Array<{ text: string; scope: PersonaPracticeProposal["scope"] }> {
+  const result: Array<{
+    text: string;
+    scope: PersonaPracticeProposal["scope"];
+  }> = [];
+  for (const sentence of text.split(/[。；;！？!?]/u)) {
+    let scope: PersonaPracticeProposal["scope"] = { userId };
+    let enduring = false;
+    for (const clause of sentence.split(
+      /(?:[，,]|但是|不过|可是|但|\bbut\b)/iu,
+    )) {
+      const scopeMatch = practiceScopeMatch(clause);
+      if (scopeMatch?.[1] !== undefined) {
+        scope = { userId, topic: scopeMatch[1].trim() };
+        enduring = true;
+      } else if (/(?:时候|当我|谈|聊|关于|\b(?:when|about)\b)/iu.test(clause)) {
+        // Do not inherit a previous topic across a new, unparsed condition.
+        scope = { userId };
+        enduring = false;
+        continue;
+      }
+      for (const marker of clause.matchAll(
+        /(?<enduring>以后|今后|每次|每当|往后|(?:从)?现在(?:起|开始)|我(?:不喜欢|希望|更想)|\b(?:I prefer|in future|going forward|from now on)\b)|(?:今天|这次|现在|这会儿|这一轮|\b(?:today|this time|right now)\b)/giu,
+      ))
+        enduring = marker.groups?.enduring !== undefined;
+      if (enduring) result.push({ text: clause.trim(), scope });
+    }
+  }
   return result;
 }
 

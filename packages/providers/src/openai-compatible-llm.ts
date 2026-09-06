@@ -22,6 +22,13 @@ import type {
   LlmProvider,
 } from "./types.js";
 
+const UsageTokenCountSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .optional()
+  .catch(undefined);
+
 const ChatCompletionResponseSchema = z
   .object({
     model: z.string().optional(),
@@ -52,12 +59,13 @@ const ChatCompletionResponseSchema = z
       .min(1),
     usage: z
       .object({
-        prompt_tokens: z.number().int().nonnegative().optional(),
-        completion_tokens: z.number().int().nonnegative().optional(),
-        total_tokens: z.number().int().nonnegative().optional(),
+        prompt_tokens: UsageTokenCountSchema,
+        completion_tokens: UsageTokenCountSchema,
+        total_tokens: UsageTokenCountSchema,
       })
       .passthrough()
-      .optional(),
+      .optional()
+      .catch(undefined),
   })
   .passthrough();
 
@@ -329,24 +337,67 @@ type ResponseMetricFields = {
   usageSource: NonNullable<LlmCallMetric["usageSource"]>;
 } & Pick<
   LlmCallMetric,
-  "responseModel" | "finishReason" | "inputTokens" | "outputTokens"
+  | "responseModel"
+  | "finishReason"
+  | "inputTokens"
+  | "outputTokens"
+  | "cacheReadTokens"
+  | "cacheWriteTokens"
+  | "cacheReadSource"
+  | "cacheWriteSource"
 >;
 
-function responseMetricFields(
-  response: ChatCompletionResponse | undefined,
-): ResponseMetricFields {
-  const usage = response?.usage;
-  const rawFinishReason = response?.choices[0]?.finish_reason;
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function responseMetricFields(untrusted: unknown): ResponseMetricFields {
+  // Usage is independent of the response envelope and schema validation. A failed
+  // attempt may still be billed, and a malformed field must not hide its siblings.
+  const response = record(untrusted);
+  const usage = record(response?.usage);
+  const details = record(usage?.prompt_tokens_details);
+  const choice = Array.isArray(response?.choices)
+    ? record(response.choices[0])
+    : undefined;
+  const rawFinishReason = choice?.finish_reason;
+  const inputTokens = tokenCount(usage?.prompt_tokens);
+  const outputTokens = tokenCount(usage?.completion_tokens);
+  // Qwen and GLM document this OpenAI-compatible read path; Qwen documents
+  // creation tokens in the same details object. Other protocols are not inferred.
+  const cacheReadTokens = tokenCount(details?.cached_tokens);
+  const cacheWriteTokens = tokenCount(details?.cache_creation_input_tokens);
   return {
     usageSource: usage === undefined ? "unavailable" : "provider",
-    ...(response?.model === undefined ? {} : { responseModel: response.model }),
-    ...(rawFinishReason === undefined ? {} : { finishReason: rawFinishReason }),
-    ...(usage?.prompt_tokens === undefined
+    ...(typeof response?.model === "string"
+      ? { responseModel: response.model }
+      : {}),
+    ...(typeof rawFinishReason === "string" || rawFinishReason === null
+      ? { finishReason: rawFinishReason }
+      : {}),
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(cacheReadTokens === undefined
       ? {}
-      : { inputTokens: usage.prompt_tokens }),
-    ...(usage?.completion_tokens === undefined
+      : {
+          cacheReadTokens,
+          cacheReadSource: "usage.prompt_tokens_details.cached_tokens",
+        }),
+    ...(cacheWriteTokens === undefined
       ? {}
-      : { outputTokens: usage.completion_tokens }),
+      : {
+          cacheWriteTokens,
+          cacheWriteSource:
+            "usage.prompt_tokens_details.cache_creation_input_tokens",
+        }),
   };
 }
 
@@ -394,6 +445,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
 
   #emitResponseMetric(
     request: LLMRequest,
+    logicalCallId: string,
     attempt: number,
     raw: RawCallResult,
     success: boolean,
@@ -403,6 +455,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       provider: this.name,
       model: this.model,
       purpose: request.purpose,
+      logicalCallId,
       attempt,
       latencyMs: raw.latencyMs,
       success,
@@ -414,10 +467,33 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
 
   async #callOnce(
     request: LLMRequest,
+    logicalCallId: string,
     attempt: number,
     schema?: ZodType<unknown>,
     repairIssues?: readonly string[],
   ): Promise<RawCallResult> {
+    // Local request validation does not count as a physical provider attempt.
+    const structuredFormat = responseFormat(
+      this.capabilities,
+      request.purpose,
+      schema,
+    );
+    const body = JSON.stringify({
+      model: this.model,
+      messages: asMessages(request, repairIssues),
+      ...reasoningParameters(this.capabilities),
+      ...(structuredFormat === undefined
+        ? {}
+        : { response_format: structuredFormat }),
+      stream: false,
+      max_tokens: Math.min(
+        normalizeMaxTokens(request.maxOutputTokens, this.#maxOutputTokens),
+        this.#maxOutputTokens,
+      ),
+      ...(request.temperature === undefined
+        ? {}
+        : { temperature: request.temperature }),
+    });
     const controller = new AbortController();
     const timeout = globalThis.setTimeout(
       () => controller.abort(),
@@ -425,41 +501,21 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     );
     const startedAt = Date.now();
     let status: number | undefined;
-    let observedResponse: ChatCompletionResponse | undefined;
+    let observedResponse: unknown;
     try {
-      const structuredFormat = responseFormat(
-        this.capabilities,
-        request.purpose,
-        schema,
-      );
       const response = await this.#fetch(this.#endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: asMessages(request, repairIssues),
-          ...reasoningParameters(this.capabilities),
-          ...(structuredFormat === undefined
-            ? {}
-            : { response_format: structuredFormat }),
-          stream: false,
-          max_tokens: Math.min(
-            normalizeMaxTokens(request.maxOutputTokens, this.#maxOutputTokens),
-            this.#maxOutputTokens,
-          ),
-          ...(request.temperature === undefined
-            ? {}
-            : { temperature: request.temperature }),
-        }),
+        body,
         signal: controller.signal,
       });
       status = response.status;
       if (!response.ok) {
-        // Consume the body, but never place provider details (which may echo input) in errors/logs.
-        await response.text().catch(() => "");
+        // Retain only allowlisted metric fields; provider error details may echo input.
+        observedResponse = await response.json().catch(() => undefined);
         throw new LlmProviderError(
           `LLM request failed with HTTP ${response.status}`,
           "HTTP_ERROR",
@@ -469,6 +525,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       let untrusted: unknown;
       try {
         untrusted = (await response.json()) as unknown;
+        observedResponse = untrusted;
       } catch (error) {
         throw new LlmProviderError(
           "LLM response was not valid JSON",
@@ -487,8 +544,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
           status,
         );
       }
-      observedResponse = envelope.data;
-      const choice = observedResponse.choices[0];
+      const choice = envelope.data.choices[0];
       if (choice === undefined) {
         throw new LlmProviderError(
           "LLM response contained no choice",
@@ -527,7 +583,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       return {
         content,
         data,
-        response: observedResponse,
+        response: envelope.data,
         latencyMs,
         status,
       };
@@ -552,6 +608,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         provider: this.name,
         model: this.model,
         purpose: request.purpose,
+        logicalCallId,
         attempt,
         latencyMs: Date.now() - startedAt,
         success: false,
@@ -571,6 +628,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     retryOverride?: number,
   ): Promise<{ value: T | JsonValue; raw: RawCallResult }> {
     const retries = normalizeRetries(retryOverride, this.#maxRetries);
+    const logicalCallId = globalThis.crypto.randomUUID();
     let lastError: unknown;
     let latestStructuredIssues: readonly string[] | undefined;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -578,12 +636,19 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       try {
         raw = await this.#callOnce(
           request,
+          logicalCallId,
           attempt + 1,
           schema,
           latestStructuredIssues,
         );
         if (schema === undefined) {
-          this.#emitResponseMetric(request, attempt + 1, raw, true);
+          this.#emitResponseMetric(
+            request,
+            logicalCallId,
+            attempt + 1,
+            raw,
+            true,
+          );
           return { value: raw.data, raw };
         }
         const parsed = schema.safeParse(
@@ -600,13 +665,20 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
             issues,
           );
         }
-        this.#emitResponseMetric(request, attempt + 1, raw, true);
+        this.#emitResponseMetric(
+          request,
+          logicalCallId,
+          attempt + 1,
+          raw,
+          true,
+        );
         return { value: parsed.data, raw };
       } catch (error) {
         lastError = error;
         if (raw !== undefined) {
           this.#emitResponseMetric(
             request,
+            logicalCallId,
             attempt + 1,
             raw,
             false,

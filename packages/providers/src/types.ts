@@ -38,6 +38,8 @@ export interface LlmCallMetric {
   model: string;
   responseModel?: string;
   purpose: string;
+  /** Shared by all physical attempts of one logical invocation. */
+  logicalCallId?: string;
   attempt: number;
   latencyMs: number;
   success: boolean;
@@ -46,6 +48,12 @@ export interface LlmCallMetric {
   usageSource?: "provider" | "estimated" | "unavailable";
   inputTokens?: number;
   outputTokens?: number;
+  /** Missing means unknown; only an explicit provider zero means no cache use. */
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  /** Exact response usage field paths, independent of overall usageSource. */
+  cacheReadSource?: string;
+  cacheWriteSource?: string;
   errorCode?: string;
 }
 

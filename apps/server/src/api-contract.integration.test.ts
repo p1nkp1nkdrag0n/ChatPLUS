@@ -157,7 +157,7 @@ describe("shared API transport contracts", () => {
         payload: {
           agentId,
           clientMessageId: "api-contract-message-1",
-          text: "今晚和我一起去参加晚会吧，我们可以把自习调整到之后。",
+          text: "我叫林秋。请记住我的名字。",
         },
       }),
       201,

@@ -1266,7 +1266,8 @@ describe("server-owned schedule negotiation", () => {
     app = (await createNegotiationTestApp({ liveWorldEffectsMode: "enforced" }))
       .app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
-    const commitment = "用户承诺在论文完成后把最终稿发给角色。";
+    const userCommitment = "我会在论文完成后把最终稿发给你，请记住这个承诺。";
+    const commitment = `用户在对话中说过：「${userCommitment}」`;
     mockLlm(app.personasim.llm, calls, () => ({
       text: "我会记住这个承诺。",
       scheduleAction: { kind: "none" },
@@ -1292,7 +1293,7 @@ describe("server-owned schedule negotiation", () => {
       sessionId,
       character.id,
       "ordinary-non-schedule-commitment",
-      "我会在论文完成后把最终稿发给你，请记住这个承诺。",
+      userCommitment,
     );
 
     expect(response.statusCode).toBe(201);

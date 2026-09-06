@@ -218,8 +218,8 @@ describe("final conversational semantic boundaries through normal HTTP routes", 
       TurnDecisionService.prototype,
       "finalizeSemanticReply",
     ).mockImplementationOnce(async function (this: TurnDecisionService, input) {
-          allowModelRepair = input.allowModelRepair;
-          authoritativeText = input.decision.reply.text;
+      allowModelRepair = input.allowModelRepair;
+      authoritativeText = input.decision.reply.text;
       return finalize.call(this, {
         ...input,
         decision: {

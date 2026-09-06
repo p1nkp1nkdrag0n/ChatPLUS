@@ -14,6 +14,7 @@ export default tseslint.config(
       "tmp/**",
       // Imported review probes are reference artifacts outside the TS project.
       "docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/**/*.cjs",
+      "docs/plans/ChatPLUS_db446b8_三项问题修复方案/rule_probes.mjs",
     ],
   },
   js.configs.recommended,

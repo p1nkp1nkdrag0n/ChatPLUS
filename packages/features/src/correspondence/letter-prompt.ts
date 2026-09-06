@@ -27,19 +27,40 @@ export interface LetterReplyPrompt {
 }
 
 /**
- * Derives the complete reference allowlist without mutating the immutable
+ * Derives the retained reference allowlist without mutating the immutable
  * arrival snapshot. The incoming letter is a separate medium-scoped source,
  * but it is already known at the same arrival boundary and may therefore be
  * cited by the reply proposal.
  */
 export function deriveAllowedLetterReplyReferenceIds(
   snapshot: Readonly<
-    Pick<LetterGenerationSnapshot, "incomingLetterId" | "evidenceIds">
+    Pick<LetterGenerationSnapshot, "incomingLetterId" | "evidenceIds"> &
+      Partial<Pick<LetterGenerationSnapshot, "contextJson">>
   >,
 ): string[] {
-  return snapshot.evidenceIds.includes(snapshot.incomingLetterId)
-    ? [...snapshot.evidenceIds]
-    : [...snapshot.evidenceIds, snapshot.incomingLetterId];
+  const context = snapshot.contextJson;
+  const effective =
+    context !== undefined && "effectivePersona" in context
+      ? EffectivePersonaSnapshotSchema.parse(context.effectivePersona)
+      : undefined;
+  const suppressedIds = new Set(effective?.suppressedMemoryIds ?? []);
+  for (const item of context?.memoryEvidence ?? []) {
+    const memoryId = item["memoryId"] ?? item["id"];
+    const evidenceId = item["id"];
+    if (
+      typeof memoryId === "string" &&
+      suppressedIds.has(memoryId) &&
+      typeof evidenceId === "string"
+    ) {
+      suppressedIds.add(evidenceId);
+    }
+  }
+  const retainedIds = snapshot.evidenceIds.filter(
+    (id) => !suppressedIds.has(id),
+  );
+  return retainedIds.includes(snapshot.incomingLetterId)
+    ? retainedIds
+    : [...retainedIds, snapshot.incomingLetterId];
 }
 
 /** Builds the letter-only model boundary exclusively from frozen inputs. */
@@ -110,7 +131,9 @@ export function buildLetterReplyPrompt(
       intervalDigest: generationContext.intervalDigest,
     },
     SNAPSHOT_EVIDENCE: {
-      evidenceIds: snapshot.evidenceIds,
+      evidenceIds: snapshot.evidenceIds.filter((id) =>
+        allowedReferencedEvidenceIds.includes(id),
+      ),
       memoryEvidence: generationContext.memoryEvidence.filter((item) => {
         const id = item["memoryId"] ?? item["id"];
         return (

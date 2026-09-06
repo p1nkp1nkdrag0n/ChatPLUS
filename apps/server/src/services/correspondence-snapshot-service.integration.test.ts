@@ -472,6 +472,9 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
     const first = repository.getSnapshotForIncomingLetter(
       outboundTask.entityId,
     )!;
+    if (!("effectivePersona" in first.contextJson)) {
+      throw new Error("Expected a frozen effective persona at arrival");
+    }
     const persona = EffectivePersonaSnapshotSchema.parse(
       first.contextJson.effectivePersona,
     );
@@ -573,6 +576,9 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
     const frozen = repository.getSnapshotForIncomingLetter(
       outboundTask.entityId,
     )!;
+    if (!("effectivePersona" in frozen.contextJson)) {
+      throw new Error("Expected a frozen effective persona at arrival");
+    }
     const persona = EffectivePersonaSnapshotSchema.parse(
       frozen.contextJson.effectivePersona,
     );

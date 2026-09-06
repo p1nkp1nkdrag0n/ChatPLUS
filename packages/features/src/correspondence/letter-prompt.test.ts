@@ -232,6 +232,11 @@ describe("buildLetterReplyPrompt", () => {
     };
     const frozen: LetterGenerationSnapshot = {
       ...snapshot,
+      evidenceIds: [
+        ...snapshot.evidenceIds,
+        "suppressed_preference",
+        "suppressed_preference_alias",
+      ],
       contextJson: {
         ...snapshot.contextJson,
         effectivePersona,
@@ -240,6 +245,11 @@ describe("buildLetterReplyPrompt", () => {
           {
             id: "suppressed_preference",
             content: "SUPPRESSED_MEMORY_MUST_NOT_RESTORE_WITHDRAWN_PRACTICE",
+          },
+          {
+            id: "suppressed_preference_alias",
+            memoryId: "suppressed_preference",
+            content: "SUPPRESSED_MEMORY_ALIAS_MUST_NOT_REMAIN_CITABLE",
           },
         ],
       },
@@ -273,9 +283,23 @@ describe("buildLetterReplyPrompt", () => {
     );
     expect(built.prompt).not.toContain("raw_persona_source_message");
     expect(built.prompt).not.toContain("raw_persona_source_memory");
+    expect(built.prompt).not.toContain("suppressed_preference");
     expect(built.prompt).not.toContain(
       "SUPPRESSED_MEMORY_MUST_NOT_RESTORE_WITHDRAWN_PRACTICE",
     );
+    expect(built.prompt).not.toContain(
+      "SUPPRESSED_MEMORY_ALIAS_MUST_NOT_REMAIN_CITABLE",
+    );
+    expect(deriveAllowedLetterReplyReferenceIds(frozen)).toEqual([
+      ...snapshot.evidenceIds,
+      snapshot.incomingLetterId,
+    ]);
+    expect(parsed["ALLOWED_REFERENCED_EVIDENCE_IDS"]).toEqual(
+      deriveAllowedLetterReplyReferenceIds(frozen),
+    );
+    expect(
+      (parsed["SNAPSHOT_EVIDENCE"] as Record<string, unknown>)["evidenceIds"],
+    ).toEqual(snapshot.evidenceIds);
     expect(JSON.stringify(frozen)).toBe(before);
   });
 

@@ -66,9 +66,11 @@ test.describe("PersonaSim fixture flow", () => {
     await page.getByLabel("核心性格 2").fill("细腻敏锐");
     await page.getByLabel("核心性格 3").fill("克制内敛");
     await page
-      .getByLabel("一个核心矛盾")
+      .getByLabel("最近拿不准的事情（可空）")
       .fill("渴望深层连接，但担心失去独立判断。");
-    await page.getByLabel("主要目标").fill("完成一项真正有公共价值的研究");
+    await page
+      .getByLabel("目前在意/想做的事（可空）")
+      .fill("完成一项真正有公共价值的研究");
     await page.getByRole("radio", { name: /拟真模拟/ }).click();
     await page.getByTestId("generate-character").click();
 

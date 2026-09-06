@@ -63,7 +63,7 @@ export default function CharacterImportPage() {
     <div className="page page--form">
       <PageHeader
         title="导入作品角色"
-        description="从正典文本抽取可追溯设定；明确事实和模型推断会被分开标记。"
+        description="从正典文本抽取可追溯设定；明确事实和模型推断会被分开标记。材料未提供目标或矛盾时可以留空。"
         actions={
           <Link className="button button--ghost" to="/create">
             <Sparkles size={16} aria-hidden="true" /> 改为原创角色

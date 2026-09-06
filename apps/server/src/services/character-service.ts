@@ -36,6 +36,7 @@ import {
   buildImportPrompt,
   CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS,
   CHARACTER_COMPILATION_MAX_RETRIES,
+  CHARACTER_COMPILATION_POLICY_VERSION,
   CHARACTER_COMPILER_SYSTEM,
   CHARACTER_IMPORT_SYSTEM,
   normalizeCharacterRuleIds,
@@ -87,7 +88,10 @@ export class CharacterService {
   async generate(rawInput: unknown): Promise<CharacterSpec> {
     const input = originalCharacterInputSchema.parse(rawInput);
     assertTimezone(input.timezone);
-    const fallback = buildOriginalDraft(input);
+    const fallback = buildOriginalDraft(
+      input,
+      CHARACTER_COMPILATION_POLICY_VERSION,
+    );
     const proposal = await this.llm.generateObject({
       purpose: "compile_character",
       system: CHARACTER_COMPILER_SYSTEM,
@@ -119,7 +123,10 @@ export class CharacterService {
   async import(rawInput: unknown): Promise<CharacterSpec> {
     const input = importedCharacterInputSchema.parse(rawInput);
     assertTimezone(input.timezone);
-    const fallback = buildImportedDraft(input);
+    const fallback = buildImportedDraft(
+      input,
+      CHARACTER_COMPILATION_POLICY_VERSION,
+    );
     const proposal = await this.llm.generateObject({
       purpose: "import_character",
       system: CHARACTER_IMPORT_SYSTEM,
@@ -175,7 +182,12 @@ export class CharacterService {
     const candidate = applyLifePlanningAuthority(
       ensureTimeBasedGoalMilestones(
         normalizeTemporalAnchor(
-          applyCharacterMutation(currentDraft, mutation),
+          {
+            ...applyCharacterMutation(currentDraft, mutation),
+            // Compilation is server-owned metadata. Older clients omitting
+            // it must not reactivate legacy calendar backfill on a v2 draft.
+            compilationPolicyVersion: currentDraft.compilationPolicyVersion,
+          },
           nowUtc,
           currentDraft,
         ),
@@ -403,7 +415,12 @@ export class CharacterService {
         streamVersion: 1,
         eventType: "character.created",
         recordedAtUtc: nowUtc,
-        payload: { sourceType: spec.sourceType, tier: spec.tier },
+        payload: {
+          sourceType: spec.sourceType,
+          tier: spec.tier,
+          compilationPolicyVersion:
+            spec.compilationPolicyVersion ?? "legacy_template_v1",
+        },
         idempotencyKey: `character:${id}:created`,
       });
     });

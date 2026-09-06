@@ -877,18 +877,45 @@ export class FuzzyLifeService {
       this.repository.insertPressure(pressure);
     }
 
-    const continuedPressure =
-      explicitSupport && isDilemmaContinuation(dilemmaEvidenceClassifyText)
-        ? exactlyOne(
-            this.repository
-              .listOpenPressures(input.agentId, 24)
-              .filter(
-                (episode) =>
-                  episode.subject === "user" &&
-                  episode.sessionId === input.sessionId,
-              ),
+    let continuedPressure: PressureEpisode | undefined;
+    if (explicitSupport && isDilemmaContinuation(dilemmaEvidenceClassifyText)) {
+      const recentMessageIds = new Set(
+        this.store
+          .listMessages(input.sessionId, 18)
+          .filter(
+            (message) =>
+              message.id !== input.userMessageId &&
+              message.id !== input.assistantMessageId,
           )
-        : undefined;
+          .slice(-8)
+          .map((message) => message.id),
+      );
+      const recentInterventions = this.repository.listRecentInterventions(
+        input.agentId,
+        64,
+      );
+      // A mode switch refers to the pressure actually discussed in the
+      // preceding turns, not every unresolved pressure in this session.
+      continuedPressure = exactlyOne(
+        this.repository
+          .listOpenPressures(input.agentId, 24)
+          .filter(
+            (episode) =>
+              episode.subject === "user" &&
+              episode.sessionId === input.sessionId &&
+              (episode.sourceMessageIds.some((id) =>
+                recentMessageIds.has(id),
+              ) ||
+                recentInterventions.some(
+                  (intervention) =>
+                    intervention.pressureEpisodeId === episode.id &&
+                    intervention.offeredBy === "character" &&
+                    intervention.receivedBy === "user" &&
+                    recentMessageIds.has(intervention.sourceMessageId),
+                )),
+          ),
+      );
+    }
     const targetPressureId = this.selectPressureForSupport({
       agentId: input.agentId,
       subject: "user",

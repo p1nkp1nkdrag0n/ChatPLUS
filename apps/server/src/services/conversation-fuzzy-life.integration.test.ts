@@ -1252,6 +1252,78 @@ describe("fuzzy-life conversation integration", () => {
     expect(scalarCount(app, "reflection_records")).toBe(0);
   });
 
+  it.each(["older_pressure_outside_context", "both_pressures_in_context"])(
+    "changes support mode only for a uniquely referenced pressure: %s",
+    async (context) => {
+      const clock = new FakeClock(START_UTC);
+      app = await createTestApp(companionLongRunV3FixtureBehavior, clock);
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "mode-switch-older-pressure",
+        "刚下班。今天没有发生大事，就是被很多小消息磨得很累。",
+      );
+      const olderPressure = latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      );
+      if (context === "older_pressure_outside_context") {
+        for (let index = 0; index < 4; index += 1) {
+          await sendChat(
+            app,
+            sessionId,
+            character.id,
+            `mode-switch-neutral-${index}`,
+            "今天听了一张器乐专辑，旋律很安静。",
+          );
+        }
+      }
+      clock.advance({ days: 5 });
+      await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "mode-switch-current-pressure",
+        "最近工作上有件事一直压着我。我一想到要处理，肩膀就会绷起来。",
+      );
+      const currentPressure = latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      );
+      expect(currentPressure.id).not.toBe(olderPressure.id);
+      expect(scalarCount(app, "pressure_episodes")).toBe(2);
+      clock.advance({ days: 1 });
+      const turn = await sendChat(
+        app,
+        sessionId,
+        character.id,
+        "mode-switch-request",
+        "现在可以从“只听”切换到一起分析了，但先不要替我选择。",
+      );
+      const rows = app.personasim.store.database
+        .prepare(
+          "SELECT intervention_json FROM support_interventions WHERE source_message_id = ?",
+        )
+        .all(turn.assistantMessage.id) as { intervention_json: string }[];
+      if (context === "older_pressure_outside_context") {
+        expect(rows).toHaveLength(1);
+        expect(JSON.parse(rows[0]!.intervention_json)).toMatchObject({
+          pressureEpisodeId: currentPressure.id,
+          mode: "deliberate",
+        });
+      } else {
+        expect(rows).toHaveLength(0);
+      }
+      expect(scalarCount(app, "decision_records")).toBe(0);
+      expect(scalarCount(app, "dilemma_episodes")).toBe(0);
+    },
+  );
+
   it("records natural completed activity and reported relief through the messages route", async () => {
     app = await createTestApp();
     const character = await createAndPublish(app);

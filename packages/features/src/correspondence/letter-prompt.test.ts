@@ -145,6 +145,140 @@ describe("buildLetterReplyPrompt", () => {
     ).toEqual(["evidence-1", "letter-incoming-1"]);
   });
 
+  it("uses frozen finite practices while keeping raw adaptation text, provenance and suppressed memory out of model input", () => {
+    const effectivePersona = {
+      policyVersion: "scoped_practice_v1",
+      agentId: snapshot.agentId,
+      baseCharacterVersion: snapshot.characterVersion,
+      revision: 7,
+      memoryRevision: 13,
+      persona: {
+        traits: [
+          {
+            id: "trait_warm",
+            name: "温暖",
+            description: "愿意倾听",
+            strength: 0.6,
+            triggers: [],
+            exceptions: [],
+            origin: "user_spec",
+            sourceRefs: [],
+          },
+        ],
+        values: [
+          {
+            id: "value_truth",
+            name: "诚实",
+            description: "忠于事实",
+            priority: 0.8,
+            exceptions: [],
+            origin: "user_spec",
+            sourceRefs: [],
+          },
+        ],
+        contradictions: [],
+        goals: [],
+        preferences: [],
+        boundaries: [],
+      },
+      dialogue: {
+        primaryLanguage: "zh-CN",
+        formality: 0.4,
+        directness: 0.6,
+        warmth: 0.7,
+        verbosity: 0.5,
+        humor: 0.3,
+        averageMessageLength: 150,
+        averageChunksPerTurn: 1,
+        frequentPhrases: [],
+        avoidedPhrases: [],
+        greetingPatterns: [],
+        refusalPatterns: [],
+        comfortingPatterns: [],
+      },
+      relationshipPractices: [
+        {
+          id: "practice_at_arrival",
+          agentId: snapshot.agentId,
+          baseCharacterVersion: snapshot.characterVersion,
+          revision: 7,
+          proposal: {
+            kind: "relationship_practice",
+            facet: "advice_timing",
+            practice: "listen_first",
+            scope: { userId: "local_user", topic: "工作" },
+            content: "RAW_PERSONA_REQUEST_MUST_NOT_BECOME_A_PROMPT_INSTRUCTION",
+          },
+          sourceMessageId: "raw_persona_source_message",
+          sources: [
+            {
+              sourceType: "message",
+              sourceId: "raw_persona_source_message",
+              sourceHash: "d".repeat(64),
+            },
+            {
+              sourceType: "memory",
+              sourceId: "raw_persona_source_memory",
+              sourceHash: "e".repeat(64),
+            },
+          ],
+          status: "accepted",
+          effectiveFromUtc: "2026-09-07T12:00:00.000Z",
+          policyVersion: "scoped_practice_v1",
+        },
+      ],
+      excludedAdaptationIds: [],
+      suppressedMemoryIds: ["suppressed_preference"],
+    };
+    const frozen: LetterGenerationSnapshot = {
+      ...snapshot,
+      contextJson: {
+        ...snapshot.contextJson,
+        effectivePersona,
+        memoryEvidence: [
+          ...snapshot.contextJson.memoryEvidence,
+          {
+            id: "suppressed_preference",
+            content: "SUPPRESSED_MEMORY_MUST_NOT_RESTORE_WITHDRAWN_PRACTICE",
+          },
+        ],
+      },
+    };
+    const before = JSON.stringify(frozen);
+    const built = buildLetterReplyPrompt({
+      snapshot: frozen,
+      incomingLetter: {
+        id: snapshot.incomingLetterId,
+        body: "工作有点烦恼，给你写信。",
+        contentHash: "b".repeat(64),
+      },
+      strategy: deriveLetterStrategy("工作有点烦恼，给你写信。"),
+    });
+    const parsed = JSON.parse(built.prompt) as Record<string, unknown>;
+    expect(parsed["EFFECTIVE_PERSONA_AT_ARRIVAL"]).toMatchObject({
+      baseCharacterVersion: 3,
+      revision: 7,
+      memoryRevision: 13,
+      relationshipPractices: [
+        {
+          id: "practice_at_arrival",
+          facet: "advice_timing",
+          practice: "listen_first",
+          scope: { userId: "local_user", topic: "工作" },
+        },
+      ],
+    });
+    expect(built.prompt).not.toContain(
+      "RAW_PERSONA_REQUEST_MUST_NOT_BECOME_A_PROMPT_INSTRUCTION",
+    );
+    expect(built.prompt).not.toContain("raw_persona_source_message");
+    expect(built.prompt).not.toContain("raw_persona_source_memory");
+    expect(built.prompt).not.toContain(
+      "SUPPRESSED_MEMORY_MUST_NOT_RESTORE_WITHDRAWN_PRACTICE",
+    );
+    expect(JSON.stringify(frozen)).toBe(before);
+  });
+
   it("fails closed when the prompt letter does not match the snapshot", () => {
     expect(() =>
       buildLetterReplyPrompt({

@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   CharacterSpecSchema,
+  EffectivePersonaSnapshotSchema,
   type CharacterSpec,
   type RuntimeState,
   type TemporalTask,
@@ -14,9 +18,11 @@ import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore } from "../db/store.js";
 import { buildOriginalDraft, initialRuntimeState } from "../domain/defaults.js";
 import { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import { ActorQueue } from "../runtime/actor-queue.js";
 import { FakeClock } from "../runtime/clock.js";
 import { CorrespondenceSnapshotService } from "./correspondence-snapshot-service.js";
+import { PersonaRuntimeService } from "./persona-runtime-service.js";
 import {
   TemporalCatchUpService,
   type OutboundArrivalTaskHandler,
@@ -53,6 +59,7 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
   let life: RecordingLifeAdvancer;
   let snapshotService: CorrespondenceSnapshotService;
   let outboundTask: TemporalTask;
+  let fileDirectory: string | undefined;
 
   beforeEach(() => {
     database = openDatabase(":memory:");
@@ -67,7 +74,13 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
     snapshotService = new CorrespondenceSnapshotService(store);
   });
 
-  afterEach(() => database.close());
+  afterEach(() => {
+    database.close();
+    if (fileDirectory !== undefined) {
+      rmSync(fileDirectory, { recursive: true, force: true });
+      fileDirectory = undefined;
+    }
+  });
 
   it("atomically freezes an as-of snapshot and leaves model work pending in shadow", async () => {
     let claimedTask: Readonly<TemporalTask> | undefined;
@@ -382,6 +395,204 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
     expect(countWhere("domain_events", "event_type LIKE 'letter.%'")).toBe(3);
   });
 
+  it("passes historical identity, effective arrival and letter topic into real persona history, then reuses the frozen hash after reopening", async () => {
+    const body = "这封信想和你聊聊工作烦恼，想听听你的近况。";
+    fileDirectory = mkdtempSync(join(tmpdir(), "personasim-letter-persona-"));
+    const path = join(fileDirectory, "snapshot.db");
+    resetSnapshotFixture(body, path);
+    const beforeSpec = store.getCharacterSpec(AGENT_ID, 1)!;
+    const futureSpec = store.getCharacterSpec(AGENT_ID, 2)!;
+    store.updateCharacterHead(beforeSpec);
+    let runtime = new PersonaRuntimeService(
+      store,
+      new MemoryValidityRepository(store),
+    );
+    store.insertMessage({
+      id: "message-persona-before-arrival",
+      sessionId: "session-snapshot",
+      agentId: AGENT_ID,
+      role: "user",
+      content: "我谈工作烦恼时，先听我说，不急着建议。",
+      messageKind: "user",
+      metadata: {},
+      createdAtUtc: BEFORE_ARRIVAL,
+    });
+    const learned = runtime.captureExplicitPractice({
+      baseSpec: beforeSpec,
+      sourceMessageId: "message-persona-before-arrival",
+      nowUtc: BEFORE_ARRIVAL,
+      mode: "enforced",
+    });
+    expect(learned.acceptedAdaptationIds).toHaveLength(1);
+    store.updateCharacterHead(futureSpec);
+    runtime.retract({
+      agentId: AGENT_ID,
+      adaptationId: learned.acceptedAdaptationIds[0]!,
+      expectedRevision: learned.revision,
+      nowUtc: OBSERVED_AT,
+      reason: "user_withdrew_after_arrival",
+    });
+    expect(
+      runtime.snapshot({
+        baseSpec: futureSpec,
+        nowUtc: OBSERVED_AT,
+        topicText: body,
+      }).relationshipPractices,
+    ).toEqual([]);
+    const personaProvider = vi.fn(
+      (baseSpec: CharacterSpec, nowUtc: string, topicText: string) =>
+        runtime.snapshotAsOf({ baseSpec, nowUtc, topicText }),
+    );
+    snapshotService = new CorrespondenceSnapshotService(
+      store,
+      {},
+      personaProvider,
+    );
+    let claimedTask: Readonly<TemporalTask> | undefined;
+    const baseHandler =
+      snapshotService.createOutboundArrivalTaskHandler("enforced");
+    await createCatchUp({
+      mode: "enforced",
+      commit: (context) => {
+        claimedTask = context.task;
+        baseHandler.commit(context);
+      },
+    }).catchUpAgent(AGENT_ID, OBSERVED_AT);
+    expect(personaProvider).toHaveBeenCalledTimes(1);
+    expect(personaProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 1,
+      }),
+      ARRIVAL_DUE_AT,
+      body,
+    );
+    expect(personaProvider.mock.calls[0]?.[0].identity.name).toBe(
+      "Character Before Arrival",
+    );
+    const first = repository.getSnapshotForIncomingLetter(
+      outboundTask.entityId,
+    )!;
+    const persona = EffectivePersonaSnapshotSchema.parse(
+      first.contextJson.effectivePersona,
+    );
+    expect(persona.baseCharacterVersion).toBe(1);
+    expect(persona.revision).toBe(1);
+    expect(persona.relationshipPractices.map((item) => item.id)).toEqual(
+      learned.acceptedAdaptationIds,
+    );
+    expect(first.contextHash).toBe(
+      createHash("sha256")
+        .update(
+          canonicalLetterGenerationSnapshot({
+            contextJson: first.contextJson,
+            evidenceIds: first.evidenceIds,
+          }),
+          "utf8",
+        )
+        .digest("hex"),
+    );
+    database.close();
+    database = openDatabase(path);
+    runMigrations(database);
+    store = new DatabaseStore(database);
+    repository = new CorrespondenceRepository(database);
+    runtime = new PersonaRuntimeService(
+      store,
+      new MemoryValidityRepository(store),
+    );
+    snapshotService = new CorrespondenceSnapshotService(
+      store,
+      {},
+      personaProvider,
+    );
+    const retry = snapshotService.freezeOutboundArrival({
+      task: claimedTask!,
+      observedNowUtc: FUTURE_RETRY_AT,
+      mode: "enforced",
+    });
+    expect(retry.snapshot).toEqual(first);
+    expect(
+      repository.getSnapshotForIncomingLetter(outboundTask.entityId)
+        ?.contextHash,
+    ).toBe(first.contextHash);
+    expect(personaProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it("excludes a source corrected before arrival even when no persona turn has reconciled the invalidation", async () => {
+    const body = "最近的工作让我有些烦恼，写信给你聊聊。";
+    resetSnapshotFixture(body);
+    const beforeSpec = store.getCharacterSpec(AGENT_ID, 1)!;
+    const futureSpec = store.getCharacterSpec(AGENT_ID, 2)!;
+    store.updateCharacterHead(beforeSpec);
+    const runtime = new PersonaRuntimeService(
+      store,
+      new MemoryValidityRepository(store),
+    );
+    store.insertMessage({
+      id: "message-persona-corrected-before-arrival",
+      sessionId: "session-snapshot",
+      agentId: AGENT_ID,
+      role: "user",
+      content: "我谈工作烦恼时，先听我说，不急着建议。",
+      messageKind: "user",
+      metadata: {},
+      createdAtUtc: DISPATCHED_AT,
+    });
+    runtime.captureExplicitPractice({
+      baseSpec: beforeSpec,
+      sourceMessageId: "message-persona-corrected-before-arrival",
+      nowUtc: DISPATCHED_AT,
+      mode: "enforced",
+    });
+    const oldProjection = runtime.snapshotAsOf({
+      baseSpec: beforeSpec,
+      nowUtc: DISPATCHED_AT,
+      topicText: body,
+    });
+    const sourceMemory = oldProjection.relationshipPractices[0]!.sources.find(
+      (source) => source.sourceType === "memory",
+    )!.sourceId;
+    database
+      .prepare(
+        "UPDATE memories SET status = 'superseded', lifecycle_updated_at_utc = ? WHERE id = ?",
+      )
+      .run(BEFORE_ARRIVAL, sourceMemory);
+    store.updateCharacterHead(futureSpec);
+    const personaProvider = vi.fn(
+      (baseSpec: CharacterSpec, nowUtc: string, topicText: string) =>
+        runtime.snapshotAsOf({ baseSpec, nowUtc, topicText }),
+    );
+    snapshotService = new CorrespondenceSnapshotService(
+      store,
+      {},
+      personaProvider,
+    );
+    await createCatchUp(
+      snapshotService.createOutboundArrivalTaskHandler("enforced"),
+    ).catchUpAgent(AGENT_ID, OBSERVED_AT);
+    const frozen = repository.getSnapshotForIncomingLetter(
+      outboundTask.entityId,
+    )!;
+    const persona = EffectivePersonaSnapshotSchema.parse(
+      frozen.contextJson.effectivePersona,
+    );
+    expect(personaProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 1 }),
+      ARRIVAL_DUE_AT,
+      body,
+    );
+    expect(persona.revision).toBe(1);
+    expect(persona.relationshipPractices).toEqual([]);
+    expect(persona.suppressedMemoryIds).toContain(sourceMemory);
+    expect(
+      runtime.snapshotAsOf({
+        baseSpec: beforeSpec,
+        nowUtc: DISPATCHED_AT,
+        topicText: body,
+      }),
+    ).toEqual(oldProjection);
+  });
+
   it("rolls the whole arrival bundle back when an audit event fails", async () => {
     const insertDomainEvent = store.insertDomainEvent.bind(store);
     vi.spyOn(store, "insertDomainEvent").mockImplementation((event) => {
@@ -454,6 +665,17 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
         createClaimToken: (task) => `claim-${task.id}`,
       },
     );
+  }
+
+  function resetSnapshotFixture(body: string, path = ":memory:"): void {
+    database.close();
+    database = openDatabase(path);
+    runMigrations(database);
+    store = new DatabaseStore(database);
+    repository = new CorrespondenceRepository(database);
+    seedCharacterTimeline(store);
+    seedAsOfSources(store);
+    outboundTask = seedOutboundLetter(repository, database, body);
   }
 
   function count(table: string): number {
@@ -695,6 +917,7 @@ function seedActivity(
 function seedOutboundLetter(
   repository: CorrespondenceRepository,
   database: Database,
+  body = ORIGINAL_BODY,
 ): TemporalTask {
   const thread = repository.createThread(AGENT_ID, {
     id: "thread-snapshot",
@@ -705,7 +928,7 @@ function seedOutboundLetter(
     threadId: thread.id,
     agentId: AGENT_ID,
     subject: "A letter in transit",
-    body: ORIGINAL_BODY,
+    body,
     nowUtc: DISPATCHED_AT,
   });
   const task = repository.sealLetter({

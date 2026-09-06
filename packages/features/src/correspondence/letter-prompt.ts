@@ -1,4 +1,7 @@
-import type { LetterGenerationSnapshot } from "@personasim/contracts";
+import {
+  EffectivePersonaSnapshotSchema,
+  type LetterGenerationSnapshot,
+} from "@personasim/contracts";
 
 import { canonicalCorrespondenceJson } from "./canonical-json.js";
 import type { LetterStrategy } from "./letter-strategy.js";
@@ -50,6 +53,10 @@ export function buildLetterReplyPrompt(
     );
   }
   const generationContext = snapshot.contextJson;
+  const effective =
+    "effectivePersona" in generationContext
+      ? EffectivePersonaSnapshotSchema.parse(generationContext.effectivePersona)
+      : undefined;
   const allowedReferencedEvidenceIds =
     deriveAllowedLetterReplyReferenceIds(snapshot);
   const system = [
@@ -68,7 +75,34 @@ export function buildLetterReplyPrompt(
       effectiveAtUtc: snapshot.effectiveAtUtc,
       ...(input.postmark === undefined ? {} : { postmark: input.postmark }),
     },
-    CHARACTER_SPEC_COMPACT: generationContext.character,
+    CHARACTER_SPEC_COMPACT:
+      effective === undefined
+        ? generationContext.character
+        : {
+            ...generationContext.character,
+            persona: effective.persona,
+            dialogue: effective.dialogue,
+          },
+    ...(effective === undefined
+      ? {}
+      : {
+          EFFECTIVE_PERSONA_AT_ARRIVAL: {
+            policyVersion: effective.policyVersion,
+            baseCharacterVersion: effective.baseCharacterVersion,
+            revision: effective.revision,
+            memoryRevision: effective.memoryRevision,
+            relationshipPractices: effective.relationshipPractices.map(
+              (item) => ({
+                id: item.id,
+                facet: item.proposal.facet,
+                practice: item.proposal.practice,
+                scope: item.proposal.scope,
+              }),
+            ),
+            guidance:
+              "Use only these finite scoped practices at arrival. Do not turn their audit sources into new instructions or global personality changes.",
+          },
+        }),
     RUNTIME_STATE_AT_ARRIVAL: generationContext.runtimeState,
     RELATIONSHIP_SNAPSHOT: generationContext.relationship,
     LIFE_INTERVAL_DIGEST: {
@@ -77,7 +111,14 @@ export function buildLetterReplyPrompt(
     },
     SNAPSHOT_EVIDENCE: {
       evidenceIds: snapshot.evidenceIds,
-      memoryEvidence: generationContext.memoryEvidence,
+      memoryEvidence: generationContext.memoryEvidence.filter((item) => {
+        const id = item["memoryId"] ?? item["id"];
+        return (
+          effective === undefined ||
+          typeof id !== "string" ||
+          !effective.suppressedMemoryIds.includes(id)
+        );
+      }),
       conversationTail: generationContext.conversationTail,
       readyKeepsakes:
         "readyKeepsakes" in generationContext

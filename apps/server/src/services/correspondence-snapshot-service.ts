@@ -9,6 +9,8 @@ import {
   RuntimeStateSchema,
   UtcDateTimeSchema,
   type JsonValue,
+  type CharacterSpec,
+  type EffectivePersonaSnapshot,
   type Letter,
   type LetterGenerationContextV1,
   type LetterGenerationSnapshot,
@@ -134,6 +136,11 @@ export class CorrespondenceSnapshotService {
   constructor(
     private readonly store: DatabaseStore,
     budgets: Partial<CorrespondenceSnapshotBudgets> = {},
+    private readonly personaAtArrival?: (
+      baseSpec: CharacterSpec,
+      nowUtc: string,
+      topicText: string,
+    ) => EffectivePersonaSnapshot,
   ) {
     // The repository must share this exact connection so all correspondence
     // writes participate in the store.transaction below.
@@ -189,6 +196,7 @@ export class CorrespondenceSnapshotService {
           delivered,
           input.task.dueAtUtc,
           this.#budgets,
+          this.personaAtArrival,
         );
         snapshot = this.#repository.insertSnapshot({
           incomingLetterId: delivered.id,
@@ -254,6 +262,11 @@ function buildSnapshot(
   incoming: Readonly<Letter>,
   effectiveAtUtc: string,
   budgets: CorrespondenceSnapshotBudgets,
+  personaAtArrival?: (
+    baseSpec: CharacterSpec,
+    nowUtc: string,
+    topicText: string,
+  ) => EffectivePersonaSnapshot,
 ): SnapshotBuildResult {
   const dispatchedAtUtc = incoming.dispatchedAtUtc;
   const timezone = incoming.transitTimezone;
@@ -499,6 +512,15 @@ function buildSnapshot(
   const contextJson = LetterGenerationContextV1Schema.parse({
     schemaVersion: 1,
     effectiveAtUtc,
+    ...(personaAtArrival === undefined
+      ? {}
+      : {
+          effectivePersona: personaAtArrival(
+            character,
+            effectiveAtUtc,
+            incoming.body ?? "",
+          ),
+        }),
     sourceWindow: {
       fromUtc: dispatchedAtUtc,
       throughUtc: effectiveAtUtc,

@@ -10,7 +10,7 @@ const PROGRESS_REQUEST =
 const OTHER_OWNER =
   /(?:别人|他人|其他人|(?:我|他|她|朋友|同事|妹妹|姐姐|弟弟|哥哥)的|(?:他|她|朋友|同事).{0,5}(?:有|画|写)|\b(?:someone else|their|her|his|my)\b)/iu;
 const EXCLUDED_LIFE =
-  /(?:(?:先|暂时)?(?:别|不要|不用|不想|不必).{0,6}(?:聊|谈|说|提|问)|(?:don't|do not|no need to).{0,12}(?:discuss|talk|ask|mention))/iu;
+  /(?:(?:先|暂时)?(?:别|不要|不用|不想|不必|不是(?:在|要)?|没(?:有|打算)).{0,6}(?:聊|谈|说|提|问)|(?:don't|do not|no need to|not asking).{0,12}(?:discuss|talk|ask|mention|about))/iu;
 const QUOTED_TEXT = /“[^”]*”|「[^」]*」|『[^』]*』|"[^"]*"/gu;
 
 // Only a small, unambiguous artifact alias may stand in for an existing title.

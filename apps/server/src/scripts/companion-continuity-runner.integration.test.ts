@@ -14,7 +14,7 @@ import {
   type ContinuityRunOptions,
 } from "./companion-continuity-runner.js";
 
-async function fixtureInputs(directory: string) {
+async function fixtureInputs(directory: string, withLetter = false) {
   const publicPath = join(directory, "public.json");
   const oraclePath = join(directory, "oracle.json");
   const publicText = JSON.stringify({
@@ -43,7 +43,15 @@ async function fixtureInputs(directory: string) {
           : `这是第${index + 1}次普通聊天，今天只是散了会步。`,
       clientMessageIdTemplate: `{runId}-turn-${index + 1}`,
     })),
-    driverOnlyActions: [],
+    driverOnlyActions: withLetter
+      ? [
+          {
+            afterTurn: 8,
+            action: "dispatch_letter_via_existing_product_helper",
+            body: "今天只是散了会步，写信告诉你。",
+          },
+        ]
+      : [],
   });
   await writeFile(publicPath, publicText);
   await writeFile(
@@ -82,7 +90,7 @@ describe("fixed continuity acceptance driver", () => {
   it("uses TCP product routes, isolates oracle/future inputs, resumes fixed IDs and shares an untouched baseline", async () => {
     const directory = await mkdtemp(join(tmpdir(), "continuity-driver-"));
     directories.push(directory);
-    const input = await fixtureInputs(directory);
+    const input = await fixtureInputs(directory, true);
     const nativeFetch = globalThis.fetch;
     const external = vi.fn();
     vi.stubGlobal(
@@ -117,10 +125,10 @@ describe("fixed continuity acceptance driver", () => {
         },
       }),
       group: "A2",
-      maxTurns: 8,
+      maxTurns: 9,
       budget: { maxPhysicalRequests: 20, maxReservedTokenUnits: 1000000 },
       onProgress: (message) => {
-        if (message.includes("4/8"))
+        if (message.includes("4/9"))
           throw new Error("controlled_driver_interruption");
       },
     };
@@ -133,7 +141,7 @@ describe("fixed continuity acceptance driver", () => {
     });
     expect(completed, completed.error).toMatchObject({
       status: "completed",
-      completedTurns: 8,
+      completedTurns: 9,
     });
     const io = await readFile(
       join(options.runDirectory, "model-io.jsonl"),
@@ -164,7 +172,7 @@ describe("fixed continuity acceptance driver", () => {
       db
         .prepare("SELECT count(*) AS n FROM messages WHERE role = 'user'")
         .get(),
-    ).toEqual({ n: 8 });
+    ).toEqual({ n: 9 });
     db.close();
     await expect(
       runCompanionContinuity({ ...resumeOptions, resume: true, group: "A0" }),

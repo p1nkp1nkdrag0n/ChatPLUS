@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 
 import {
   CreateSessionResponseSchema,
+  CorrespondenceMailboxResponseSchema,
   SendMessageResponseSchema,
   characterSpecSchema,
   type CharacterSpec,
@@ -495,10 +496,20 @@ async function runLockedContinuity(
       if (!journal.actions[arrivalKey]) {
         await http("POST", `/api/agents/${character.id}/activate`, {});
         if (journal.letterId) {
+          const mailbox = CorrespondenceMailboxResponseSchema.parse(
+            await http("GET", `/api/agents/${character.id}/correspondence`),
+          );
+          const readyReply = mailbox.letters.some(
+            (letter) => letter.direction === "agent_to_user" && letter.canOpen,
+          );
           const letters = await inspectProductLifeCorrespondence(
             app,
             character.id,
-            { incomingLetterId: journal.letterId, openReply: true },
+            {
+              incomingLetterId: journal.letterId,
+              openReply: readyReply,
+              probeEarlyOpen: !readyReply,
+            },
           );
           append("feature-evidence.jsonl", {
             kind: "correspondence",

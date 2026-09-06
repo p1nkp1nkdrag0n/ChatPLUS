@@ -1,8 +1,16 @@
+import type {
+  ConversationContextPlan,
+  EffectivePersonaSnapshot,
+} from "@personasim/contracts";
+
 import {
   PersonaChatResponseSchema,
   type PersonaChatResponse,
 } from "@personasim/contracts";
-import type { ReplyStrategy } from "@personasim/features";
+import {
+  selectCharacterContextForTurn,
+  type ReplyStrategy,
+} from "@personasim/features";
 
 import {
   agentTurnDecisionSchema,
@@ -15,6 +23,24 @@ import {
 } from "./chat-output-budget.js";
 import type { LlmService } from "./llm-service.js";
 
+function practiceContext(effective: EffectivePersonaSnapshot | undefined) {
+  if (effective === undefined) return undefined;
+  return {
+    policyVersion: effective.policyVersion,
+    baseCharacterVersion: effective.baseCharacterVersion,
+    revision: effective.revision,
+    memoryRevision: effective.memoryRevision,
+    relationshipPractices: effective.relationshipPractices.map((item) => ({
+      id: item.id,
+      facet: item.proposal.facet,
+      practice: item.proposal.practice,
+      scope: item.proposal.scope,
+    })),
+    guidance:
+      "Apply only these finite practices in their user/topic scope; a current request for advice permits advice. Do not reconstruct withdrawn practices from audit content.",
+  };
+}
+
 /**
  * Owns the one-shot repair boundary for invalid provider output. Repairs are
  * intentionally model-only: they never validate or commit world effects.
@@ -24,6 +50,8 @@ export class ReplyRepairService {
 
   async repairFixtureDecision(input: {
     spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
     userText: string;
     invalidDecision: AgentTurnDecision | undefined;
     issues: unknown;
@@ -41,7 +69,14 @@ export class ReplyRepairService {
         )}\nValidation issues: ${JSON.stringify(input.issues)}\nCharacter: ${JSON.stringify(
           {
             identity: input.spec.identity,
-            persona: input.spec.persona,
+            persona: selectCharacterContextForTurn(
+              {
+                ...input.spec,
+                persona: input.effectivePersona?.persona ?? input.spec.persona,
+              },
+              input.conversationPlan,
+            ).character.persona,
+            effectivePersona: practiceContext(input.effectivePersona),
           },
         )}`,
         schema: agentTurnDecisionSchema,
@@ -54,6 +89,8 @@ export class ReplyRepairService {
 
   async repairPersonaReply(input: {
     spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
     userText: string;
     invalidResponse: PersonaChatResponse | undefined;
     issues: unknown;
@@ -74,8 +111,15 @@ export class ReplyRepairService {
         prompt:
           `Character role and persona: ${JSON.stringify({
             identity: input.spec.identity,
-            persona: input.spec.persona,
-            dialogue: input.spec.dialogue,
+            persona: selectCharacterContextForTurn(
+              {
+                ...input.spec,
+                persona: input.effectivePersona?.persona ?? input.spec.persona,
+              },
+              input.conversationPlan,
+            ).character.persona,
+            effectivePersona: practiceContext(input.effectivePersona),
+            dialogue: input.effectivePersona?.dialogue ?? input.spec.dialogue,
             forbiddenMetaKnowledge: input.spec.knowledge.forbiddenMetaKnowledge,
           })}\n` +
           `User message: ${JSON.stringify(input.userText)}\n` +

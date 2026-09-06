@@ -1,3 +1,7 @@
+import type {
+  ConversationContextPlan,
+  EffectivePersonaSnapshot,
+} from "@personasim/contracts";
 import { DateTime } from "luxon";
 import {
   MemoryCandidateSchema,
@@ -306,6 +310,8 @@ export class TurnDecisionService {
 
   async decide(input: {
     spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
     userText: string;
     agentId: string;
     nowUtc: string;
@@ -341,6 +347,8 @@ export class TurnDecisionService {
   inspect(input: {
     agentId: string;
     spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
     decision: AgentTurnDecision;
     nowUtc: string;
     capabilities: SimulationCapabilities;
@@ -354,6 +362,7 @@ export class TurnDecisionService {
       input.decision,
       input.nowUtc,
       input.capabilities,
+      input.effectivePersona,
     );
     if (input.userText === undefined) return inspection;
     return {
@@ -392,6 +401,8 @@ export class TurnDecisionService {
 
   private async decideFixtureTurn(input: {
     spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
     userText: string;
     agentId: string;
     nowUtc: string;
@@ -455,6 +466,12 @@ export class TurnDecisionService {
       ? this.inspect({
           agentId: input.agentId,
           spec: input.spec,
+          ...(input.effectivePersona === undefined
+            ? {}
+            : { effectivePersona: input.effectivePersona }),
+          ...(input.conversationPlan === undefined
+            ? {}
+            : { conversationPlan: input.conversationPlan }),
           decision,
           nowUtc: input.nowUtc,
           capabilities: input.capabilities,
@@ -470,6 +487,12 @@ export class TurnDecisionService {
       repairAttempted = true;
       const repaired = await this.repairs.repairFixtureDecision({
         spec: input.spec,
+        ...(input.effectivePersona === undefined
+          ? {}
+          : { effectivePersona: input.effectivePersona }),
+        ...(input.conversationPlan === undefined
+          ? {}
+          : { conversationPlan: input.conversationPlan }),
         userText: input.userText,
         invalidDecision: decision,
         issues: inspection?.issues ?? initialIssues,
@@ -482,6 +505,12 @@ export class TurnDecisionService {
       inspection = this.inspect({
         agentId: input.agentId,
         spec: input.spec,
+        ...(input.effectivePersona === undefined
+          ? {}
+          : { effectivePersona: input.effectivePersona }),
+        ...(input.conversationPlan === undefined
+          ? {}
+          : { conversationPlan: input.conversationPlan }),
         decision,
         nowUtc: input.nowUtc,
         capabilities: input.capabilities,
@@ -505,6 +534,12 @@ export class TurnDecisionService {
       inspection = this.inspect({
         agentId: input.agentId,
         spec: input.spec,
+        ...(input.effectivePersona === undefined
+          ? {}
+          : { effectivePersona: input.effectivePersona }),
+        ...(input.conversationPlan === undefined
+          ? {}
+          : { conversationPlan: input.conversationPlan }),
         decision,
         nowUtc: input.nowUtc,
         capabilities: input.capabilities,
@@ -551,6 +586,8 @@ export class TurnDecisionService {
 
   private async decidePersonaReply(input: {
     spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
     userText: string;
     agentId: string;
     nowUtc: string;
@@ -693,6 +730,12 @@ export class TurnDecisionService {
       : this.inspect({
           agentId: input.agentId,
           spec: input.spec,
+          ...(input.effectivePersona === undefined
+            ? {}
+            : { effectivePersona: input.effectivePersona }),
+          ...(input.conversationPlan === undefined
+            ? {}
+            : { conversationPlan: input.conversationPlan }),
           decision,
           nowUtc: input.nowUtc,
           capabilities: input.capabilities,
@@ -711,6 +754,12 @@ export class TurnDecisionService {
       repairAttempted = true;
       const repaired = await this.repairs.repairPersonaReply({
         spec: input.spec,
+        ...(input.effectivePersona === undefined
+          ? {}
+          : { effectivePersona: input.effectivePersona }),
+        ...(input.conversationPlan === undefined
+          ? {}
+          : { conversationPlan: input.conversationPlan }),
         userText: input.userText,
         invalidResponse:
           materializedResponse !== undefined
@@ -733,6 +782,12 @@ export class TurnDecisionService {
         inspection = this.inspect({
           agentId: input.agentId,
           spec: input.spec,
+          ...(input.effectivePersona === undefined
+            ? {}
+            : { effectivePersona: input.effectivePersona }),
+          ...(input.conversationPlan === undefined
+            ? {}
+            : { conversationPlan: input.conversationPlan }),
           decision,
           nowUtc: input.nowUtc,
           capabilities: input.capabilities,
@@ -762,6 +817,12 @@ export class TurnDecisionService {
       inspection = this.inspect({
         agentId: input.agentId,
         spec: input.spec,
+        ...(input.effectivePersona === undefined
+          ? {}
+          : { effectivePersona: input.effectivePersona }),
+        ...(input.conversationPlan === undefined
+          ? {}
+          : { conversationPlan: input.conversationPlan }),
         decision,
         nowUtc: input.nowUtc,
         capabilities: input.capabilities,
@@ -976,6 +1037,7 @@ function inspectDecision(
   decision: AgentTurnDecision,
   nowUtc: string,
   capabilities: SimulationCapabilities,
+  effectivePersona?: EffectivePersonaSnapshot,
 ): DecisionInspection {
   const validation = schedules.validateEffectsPartial(
     agentId,
@@ -993,7 +1055,8 @@ function inspectDecision(
   if (capabilities.personaGuard) {
     const guarded = guardPersonaReply({
       text: decision.reply.text,
-      avoidedPhrases: spec.dialogue.avoidedPhrases,
+      avoidedPhrases: (effectivePersona?.dialogue ?? spec.dialogue)
+        .avoidedPhrases,
       forbiddenMetaKnowledge: spec.knowledge.forbiddenMetaKnowledge,
       acceptedScheduleEffects: toFeatureScheduleEffects(validation.accepted),
       reasonSummary: decision.reasonSummary,

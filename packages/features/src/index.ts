@@ -4,6 +4,7 @@ export * from "./autobiography.js";
 export * from "./calendar-relevance.js";
 export * from "./checkpoint.js";
 export * from "./character-time.js";
+export * from "./character-context-selection.js";
 export * from "./conversation-retention.js";
 export * from "./conversation-context-plan.js";
 export * from "./conversation-topic.js";

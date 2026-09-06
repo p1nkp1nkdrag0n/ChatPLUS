@@ -14,6 +14,8 @@ import { CorrespondenceRepository } from "../repositories/correspondence-reposit
 import { KeepsakeRepository } from "../repositories/keepsake-repository.js";
 import { LifeRepository } from "../repositories/life-repository.js";
 import { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
+import { PersonaRuntimeService } from "../services/persona-runtime-service.js";
 import { ActorQueue } from "../runtime/actor-queue.js";
 import { FakeClock, SystemClock, type Clock } from "../runtime/clock.js";
 import { HourlyScheduler } from "../runtime/hourly-scheduler.js";
@@ -96,6 +98,7 @@ import {
   MEMORY_LIFECYCLE_SERVICE_TOKEN,
   MEMORY_RECALL_SERVICE_TOKEN,
   PERSONAL_INTENT_SERVICE_TOKEN,
+  PERSONA_RUNTIME_SERVICE_TOKEN,
   PERSONAL_LIFE_SERVICE_TOKEN,
   PROACTIVE_DELIVERY_SERVICE_TOKEN,
   PROACTIVE_GENERATION_SERVICE_TOKEN,
@@ -287,6 +290,7 @@ function createDomainPlugin(
         SERVER_SERVICE_IDS.settlements,
         SERVER_SERVICE_IDS.memoryRecalls,
         SERVER_SERVICE_IDS.personalIntents,
+        SERVER_SERVICE_IDS.personaRuntime,
         SERVER_SERVICE_IDS.selfPlanning,
         SERVER_SERVICE_IDS.personalLife,
         SERVER_SERVICE_IDS.life,
@@ -366,7 +370,18 @@ function createDomainPlugin(
       const correspondenceRepository = new CorrespondenceRepository(
         store.database,
       );
-      const correspondenceSnapshots = new CorrespondenceSnapshotService(store);
+      const personaRuntime = new PersonaRuntimeService(
+        store,
+        new MemoryValidityRepository(store),
+      );
+      const correspondenceSnapshots = new CorrespondenceSnapshotService(
+        store,
+        {},
+        config.personaRuntimeMode === "enforced"
+          ? (baseSpec, nowUtc, topicText) =>
+              personaRuntime.snapshotAsOf({ baseSpec, nowUtc, topicText })
+          : undefined,
+      );
       const letterReplyGeneration =
         correspondenceMode === "enforced" && correspondenceCrypto !== undefined
           ? new LetterReplyGenerationService(
@@ -601,6 +616,7 @@ function createDomainPlugin(
         conversationContext,
         conversationOptions,
         life,
+        personaRuntime,
       );
       const conversations = new ConversationService(
         store,
@@ -619,6 +635,7 @@ function createDomainPlugin(
           worldEffects,
           commits: turnCommits,
           fuzzyLife: life,
+          personaRuntime,
         },
       );
 
@@ -627,6 +644,7 @@ function createDomainPlugin(
       context.services.provide(SETTLEMENT_SERVICE_TOKEN, settlements);
       context.services.provide(MEMORY_RECALL_SERVICE_TOKEN, memoryRecalls);
       context.services.provide(PERSONAL_INTENT_SERVICE_TOKEN, personalIntents);
+      context.services.provide(PERSONA_RUNTIME_SERVICE_TOKEN, personaRuntime);
       context.services.provide(SELF_PLANNING_SERVICE_TOKEN, selfPlanning);
       context.services.provide(PERSONAL_LIFE_SERVICE_TOKEN, personalLife);
       context.services.provide(LIFE_SERVICE_TOKEN, life);

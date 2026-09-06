@@ -36,6 +36,7 @@ import type { KeepsakeService } from "../services/keepsake-service.js";
 import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import type { MemoryRecallService } from "../services/memory-recall-service.js";
 import type { PersonalIntentService } from "../services/personal-intent-service.js";
+import type { PersonaRuntimeService } from "../services/persona-runtime-service.js";
 import type { PersonalLifeService } from "../services/personal-life-service.js";
 import type { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import type { ReplyRepairService } from "../services/reply-repair-service.js";
@@ -66,6 +67,7 @@ export const SERVER_SERVICE_IDS = {
   replyRepairs: "server.reply-repairs",
   memoryRecalls: "server.memory-recalls",
   personalIntents: "server.personal-intents",
+  personaRuntime: "server.persona-runtime",
   selfPlanning: "server.self-planning",
   personalLife: "server.personal-life",
   life: "server.fuzzy-life",
@@ -175,6 +177,8 @@ export const RETRIEVAL_RUN_REPOSITORY_TOKEN =
   createServiceToken<RetrievalRunRepository>(SERVER_SERVICE_IDS.retrievalRuns);
 export const CONVERSATION_SERVICE_TOKEN =
   createServiceToken<ConversationService>(SERVER_SERVICE_IDS.conversations);
+export const PERSONA_RUNTIME_SERVICE_TOKEN =
+  createServiceToken<PersonaRuntimeService>(SERVER_SERVICE_IDS.personaRuntime);
 export const TURN_DECISION_SERVICE_TOKEN =
   createServiceToken<TurnDecisionService>(SERVER_SERVICE_IDS.turnDecisions);
 export const WORLD_EFFECT_SERVICE_TOKEN =

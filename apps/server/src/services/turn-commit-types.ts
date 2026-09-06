@@ -1,4 +1,5 @@
 import type { MemoryRecallRuntimeDiagnostic } from "@personasim/contracts";
+import type { EffectivePersonaSnapshot } from "@personasim/contracts";
 
 import type { StoredMessage } from "../db/store.js";
 import type { SimulationCapabilities } from "../domain/capabilities.js";
@@ -15,6 +16,7 @@ import type { PreparedWorldEffectTurn } from "./world-effect-service.js";
 export interface TurnCommitServiceOptions {
   scheduleNegotiationMode?: "off" | "legacy" | "shadow" | "enforced";
   lifePlanningMode?: "fuzzy" | "legacy_exact";
+  personaRuntimeMode?: "off" | "shadow" | "enforced";
 }
 
 export interface ChatTurnCommand {
@@ -27,6 +29,9 @@ export interface TurnCommitInput {
   sessionId: string;
   command: ChatTurnCommand;
   spec: CharacterSpec;
+  effectivePersona?: EffectivePersonaSnapshot;
+  memoryRevision?: number;
+  personaRuntimeDiagnostic?: unknown;
   nowUtc: string;
   userMessageId: string;
   retrievalRun?: CreateRetrievalRunInput;

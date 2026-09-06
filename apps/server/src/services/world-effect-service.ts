@@ -1,3 +1,7 @@
+import type {
+  ConversationContextPlan,
+  EffectivePersonaSnapshot,
+} from "@personasim/contracts";
 import { DateTime } from "luxon";
 
 import {
@@ -183,6 +187,8 @@ export class WorldEffectService {
     assistantMessageId: string;
     nowUtc: string;
     spec: CharacterSpec;
+    effectivePersona?: EffectivePersonaSnapshot;
+    conversationPlan?: ConversationContextPlan;
     state: RuntimeState;
     capabilities: SimulationCapabilities;
     recentMessages: StoredMessage[];
@@ -306,6 +312,12 @@ export class WorldEffectService {
         inspection = this.decisions.inspect({
           agentId: input.agentId,
           spec: input.spec,
+          ...(input.effectivePersona === undefined
+            ? {}
+            : { effectivePersona: input.effectivePersona }),
+          ...(input.conversationPlan === undefined
+            ? {}
+            : { conversationPlan: input.conversationPlan }),
           decision,
           nowUtc: input.nowUtc,
           capabilities: input.capabilities,
@@ -320,6 +332,12 @@ export class WorldEffectService {
           repairAttempted = true;
           const repaired = await this.repairs.repairPersonaReply({
             spec: input.spec,
+            ...(input.effectivePersona === undefined
+              ? {}
+              : { effectivePersona: input.effectivePersona }),
+            ...(input.conversationPlan === undefined
+              ? {}
+              : { conversationPlan: input.conversationPlan }),
             userText: input.userText,
             invalidResponse: {
               text: decision.reply.text,
@@ -361,6 +379,12 @@ export class WorldEffectService {
           inspection = this.decisions.inspect({
             agentId: input.agentId,
             spec: input.spec,
+            ...(input.effectivePersona === undefined
+              ? {}
+              : { effectivePersona: input.effectivePersona }),
+            ...(input.conversationPlan === undefined
+              ? {}
+              : { conversationPlan: input.conversationPlan }),
             decision,
             nowUtc: input.nowUtc,
             capabilities: input.capabilities,
@@ -399,6 +423,12 @@ export class WorldEffectService {
             inspection = this.decisions.inspect({
               agentId: input.agentId,
               spec: input.spec,
+              ...(input.effectivePersona === undefined
+                ? {}
+                : { effectivePersona: input.effectivePersona }),
+              ...(input.conversationPlan === undefined
+                ? {}
+                : { conversationPlan: input.conversationPlan }),
               decision,
               nowUtc: input.nowUtc,
               capabilities: input.capabilities,

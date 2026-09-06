@@ -22,7 +22,8 @@ export type DilemmaTurnEvidence =
       replacement?: DilemmaFactCorrection;
     };
 
-const OPTION_EVIDENCE = /选项\s*([AB])\s*(?:是|为|[:：])\s*([^。！？!\n]+)/u;
+const OPTION_EVIDENCE =
+  /选项\s*([AB])\s*(?:是|为|[:：])\s*([^，,。；;！？!\n]+)/du;
 const CORRECTION_CUE =
   /更正|纠正|修正|说错了|记错了|(?:不是|并非).{1,80}(?:而是|应为|应该是)|(?:改|调整|更新|延|推迟|提前)(?:成|为|到|至)/u;
 const CONTEXT_EVIDENCE = [
@@ -39,19 +40,19 @@ const CORRECTION_PATTERNS: readonly {
 }[] = [
   {
     pattern:
-      /(?:不是|并非)\s*([^，,。；;!?！？\n]{1,80}?)\s*[，,；;]\s*(?:而是|应(?:为|该是)|应该是)\s*([^，,。；;!?！？\n]{1,80})/u,
+      /(?:不是|并非)\s*([^，,。；;!?！？\n]{1,80}?)\s*[，,；;]\s*(?:而是|应(?:为|该是)|应该是)\s*([^，,。；;!?！？\n]{1,80})/du,
     previousIndex: 1,
     currentIndex: 2,
   },
   {
     pattern:
-      /(?:从|原(?:来|先)?(?:是|为)?|旧(?:值|日期|时间|期限)?(?:是|为)?)\s*([^，,。；;!?！？\n]{1,80}?)\s*(?:改(?:成|为|到)|调整(?:成|为|到)|延(?:期)?(?:到|至)|推迟(?:到|至)|提前(?:到|至))\s*([^，,。；;!?！？\n]{1,80})/u,
+      /(?:从|原(?:来|先)?(?:是|为)?|旧(?:值|日期|时间|期限)?(?:是|为)?)\s*([^，,。；;!?！？\n]{1,80}?)\s*(?:改(?:成|为|到)|调整(?:成|为|到)|延(?:期)?(?:到|至)|推迟(?:到|至)|提前(?:到|至))\s*([^，,。；;!?！？\n]{1,80})/du,
     previousIndex: 1,
     currentIndex: 2,
   },
   {
     pattern:
-      /(?:改(?:成|为|到)|调整(?:成|为|到)|延(?:期)?(?:到|至)|推迟(?:到|至)|提前(?:到|至)|更新(?:成|为)|现在(?:是|为)|最新(?:是|为)|应(?:为|该是))\s*([^，,。；;!?！？\n]{1,80}?)\s*[，,；;]\s*(?:而)?不是\s*([^，,。；;!?！？\n]{1,80})/u,
+      /(?:改(?:成|为|到)|调整(?:成|为|到)|延(?:期)?(?:到|至)|推迟(?:到|至)|提前(?:到|至)|更新(?:成|为)|现在(?:是|为)|最新(?:是|为)|应(?:为|该是))\s*([^，,。；;!?！？\n]{1,80}?)\s*[，,；;]\s*(?:而)?不是\s*([^，,。；;!?！？\n]{1,80})/du,
     previousIndex: 2,
     currentIndex: 1,
   },
@@ -64,11 +65,14 @@ const CORRECTION_PATTERNS: readonly {
  */
 export function extractDilemmaTurnEvidence(
   sourceText: string,
+  classificationText: string = sourceText,
 ): DilemmaTurnEvidence | undefined {
-  const text = sourceText.normalize("NFKC").trim();
-  const option = text.match(OPTION_EVIDENCE);
+  const text = sourceText.normalize("NFKC");
+  const classification = classificationText.normalize("NFKC");
+  if (text.length !== classification.length) return undefined;
+  const option = classification.match(OPTION_EVIDENCE);
   const optionKey = option?.[1];
-  const label = option?.[2]?.trim();
+  const label = cleanStructuredValue(alignedCapture(text, option, 2));
   if ((optionKey === "A" || optionKey === "B") && label !== undefined) {
     return {
       kind: "option",
@@ -78,15 +82,15 @@ export function extractDilemmaTurnEvidence(
     };
   }
 
-  if (CORRECTION_CUE.test(text)) {
-    const replacement = extractDilemmaFactCorrection(text);
+  if (CORRECTION_CUE.test(classification)) {
+    const replacement = extractDilemmaFactCorrection(text, classification);
     return {
       kind: "correction",
       ...(replacement === undefined ? {} : { replacement }),
     };
   }
 
-  return CONTEXT_EVIDENCE.some((pattern) => pattern.test(text))
+  return CONTEXT_EVIDENCE.some((pattern) => pattern.test(classification))
     ? { kind: "context" }
     : undefined;
 }
@@ -95,6 +99,7 @@ export function applyDilemmaEvidenceToOptions(
   options: readonly DilemmaOption[],
   evidence: DilemmaTurnEvidence,
   sourceText: string,
+  classificationText: string = sourceText,
 ): DilemmaOption[] {
   const next = options.map((option) => ({
     ...option,
@@ -108,8 +113,8 @@ export function applyDilemmaEvidenceToOptions(
       ...current,
       label: evidence.label,
       description: sourceText,
-      likelyTradeoffs: extractDilemmaTradeoffFacts(sourceText),
-      valuesAtStake: inferDilemmaValues(sourceText),
+      likelyTradeoffs: extractDilemmaTradeoffFacts(classificationText),
+      valuesAtStake: inferDilemmaValues(classificationText),
     };
     return next;
   }
@@ -189,14 +194,17 @@ export function extractDilemmaTradeoffFacts(text: string): string[] {
 }
 
 function extractDilemmaFactCorrection(
-  text: string,
+  sourceText: string,
+  classificationText: string,
 ): DilemmaFactCorrection | undefined {
   for (const candidate of CORRECTION_PATTERNS) {
-    const match = text.match(candidate.pattern);
+    const match = classificationText.match(candidate.pattern);
     const previousValue = cleanCorrectionValue(
-      match?.[candidate.previousIndex],
+      alignedCapture(sourceText, match, candidate.previousIndex),
     );
-    const currentValue = cleanCorrectionValue(match?.[candidate.currentIndex]);
+    const currentValue = cleanCorrectionValue(
+      alignedCapture(sourceText, match, candidate.currentIndex),
+    );
     if (
       previousValue !== undefined &&
       currentValue !== undefined &&
@@ -208,9 +216,56 @@ function extractDilemmaFactCorrection(
   return undefined;
 }
 
+function alignedCapture(
+  sourceText: string,
+  match: RegExpMatchArray | null,
+  captureIndex: number,
+): string | undefined {
+  const range = match?.indices?.[captureIndex];
+  const classificationText = match?.input;
+  if (range === undefined || classificationText === undefined) return undefined;
+  let [start, end] = range;
+  if (classificationText.length === sourceText.length) {
+    while (
+      start > 0 &&
+      /\s/u.test(classificationText[start] ?? "") &&
+      /\s/u.test(classificationText[start - 1] ?? "")
+    ) {
+      start -= 1;
+    }
+    while (
+      end < classificationText.length &&
+      /\s/u.test(classificationText[end - 1] ?? "") &&
+      /\s/u.test(classificationText[end] ?? "")
+    ) {
+      end += 1;
+    }
+  }
+  return sourceText.slice(start, end);
+}
+
 function cleanCorrectionValue(value: string | undefined): string | undefined {
-  const cleaned = value?.replace(/^(?:是|为)\s*/u, "").trim();
+  const cleaned = cleanStructuredValue(value?.replace(/^(?:是|为)\s*/u, ""));
   return cleaned === undefined || cleaned.length === 0 ? undefined : cleaned;
+}
+
+function cleanStructuredValue(value: string | undefined): string | undefined {
+  const cleaned = value?.trim();
+  if (cleaned === undefined || cleaned === "") return undefined;
+  const quotePairs: Readonly<Record<string, string>> = {
+    '"': '"',
+    "'": "'",
+    "“": "”",
+    "‘": "’",
+    "「": "」",
+    "『": "』",
+    "【": "】",
+    "《": "》",
+  };
+  const closingQuote = quotePairs[cleaned[0] ?? ""];
+  return closingQuote !== undefined && cleaned.endsWith(closingQuote)
+    ? cleaned.slice(1, -closingQuote.length).trim()
+    : cleaned;
 }
 
 function correctionTargetIndex(

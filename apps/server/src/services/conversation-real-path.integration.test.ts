@@ -1434,6 +1434,593 @@ describe("openai-compatible reply-first conversation path", () => {
       .get(character.id) as { count: number };
     expect(audit.count).toBe(2);
   });
+
+  it("contains speculative third-party consent before reply or model effects can become durable", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const unsafeReply =
+      "姨妈愿意让你单独看修复稿，这是她新开的口子：只限你一人，不公开。";
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: {
+            text: unsafeReply,
+            deliveryMode: "sequential",
+            chunks: ["姨妈愿意让你单独看修复稿。", "这是她新开的口子。"],
+          },
+          worldEffects: {
+            stateDelta: { stress: -0.1 },
+            relationshipDelta: { trust: 0.08 },
+            memoryCandidates: [
+              {
+                type: "user_fact",
+                content: "姨妈愿意让用户单独看修复稿。",
+                tags: ["third_party_consent"],
+              },
+            ],
+            continuityEffects: {
+              careCueCandidates: [
+                {
+                  summary: "姨妈已经授权用户查看修复稿",
+                  evidenceQuotes: ["姨妈也许愿意让我单独看修复稿"],
+                },
+              ],
+            },
+          },
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "speculative-third-party-consent",
+      "姨妈也许愿意让我单独看修复稿。",
+    );
+
+    expect(response.statusCode, response.body).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).not.toBe(unsafeReply);
+    expect(body.assistantMessage.content).toContain("不能当作已经授权");
+    expect(body.assistantMessage.content).toContain("姨妈本人明确确认");
+    expect(body.assistantMessage.metadata).toMatchObject({
+      deliveryMode: "single_block",
+      consentModalityGuard: {
+        policyVersion: "third_party_consent_modality_v1",
+        sourceKind: "assertion",
+        subject: "姨妈",
+        status: "possible",
+        primaryClaimKey: "姨妈:view:修复稿:user",
+        claimCount: 1,
+        claims: [
+          expect.objectContaining({
+            claimKey: "姨妈:view:修复稿:user",
+            subject: "姨妈",
+            subjectKey: "姨妈",
+            status: "possible",
+            scopeKind: "view",
+            scopeKey: "view:修复稿",
+            resource: "修复稿",
+          }),
+        ],
+        modelReplyContentChanged: true,
+        modelSideEffectsBlocked: true,
+        contentDerivedSemanticsSkipped: true,
+      },
+    });
+    expect(body.state.energy).toBe(before.energy);
+    expect(body.state.stress).toBe(before.stress);
+    expect(body.state.relationship.trust).toBe(before.relationship.trust);
+    expect(
+      app.personasim.store.database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM memories WHERE agent_id = ? AND content LIKE '%修复稿%'",
+        )
+        .get(character.id),
+    ).toEqual({ count: 0 });
+    expect(calls.map((call) => call.purpose)).toEqual(["chat_turn"]);
+    expect(calls[0]?.prompt).toContain("CONSENT_MODALITY_GUARD_JSON");
+    const worldAudit = app.personasim.store
+      .listDomainEvents(character.id, 100)
+      .find(
+        (event) =>
+          event.eventType === "conversation.world_effects_committed" &&
+          event.correlationId === "speculative-third-party-consent",
+      );
+    expect(worldAudit?.payload).toMatchObject({
+      llmProposalStatus: "blocked",
+      acceptedDelta: {},
+      accepted: {
+        stateDelta: false,
+        relationshipDelta: false,
+        memoryCandidateCount: 0,
+        personalIntentCandidateCount: 0,
+      },
+    });
+    const turnAudit = app.personasim.store
+      .listDomainEvents(character.id, 100)
+      .find(
+        (event) =>
+          event.eventType === "conversation.turn_committed" &&
+          event.correlationId === "speculative-third-party-consent",
+      );
+    expect(turnAudit?.payload).toMatchObject({
+      assistantMessageId: body.assistantMessage.id,
+      consentModalityGuard: body.assistantMessage.metadata.consentModalityGuard,
+    });
+
+    const replay = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "speculative-third-party-consent",
+      "姨妈也许愿意让我单独看修复稿。",
+    );
+    expect(replay.statusCode).toBe(200);
+    expect(jsonBody<ChatTurnResult>(replay).assistantMessage).toEqual(
+      body.assistantMessage,
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it("blocks same-scope and cross-scope consent-derived schedules while committing an unrelated mixed-turn schedule", async () => {
+    const created = await createRealProviderTestApp("enforced", {
+      chatEffectsMode: "gated",
+    });
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          text: "姨妈已经同意你查看修复稿，我也会把两项安排都记下来。",
+          scheduleEffects: [
+            {
+              operation: "create",
+              justificationQuote: "姨妈也许愿意让我下周六下午三点看修复稿",
+              item: {
+                title: "阅读修复稿",
+                category: "other",
+                startAt: "下周六下午三点",
+                durationMinutes: 60,
+              },
+            },
+            {
+              operation: "create",
+              justificationQuote: "看修复稿",
+              item: {
+                title: "公开修复稿",
+                description: "把修复稿公开发布",
+                category: "other",
+                startAt: "下周日下午两点",
+                durationMinutes: 60,
+              },
+            },
+            {
+              operation: "create",
+              justificationQuote: "另外我们安排明天下午四点喝茶",
+              item: {
+                title: "明天下午喝茶",
+                category: "social",
+                startAt: "明天下午四点",
+                durationMinutes: 60,
+              },
+            },
+          ],
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const sessionId = await createSession(app, character.id);
+    const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "mixed-consent-legacy-schedule",
+      "姨妈也许愿意让我下周六下午三点看修复稿；另外我们安排明天下午四点喝茶。",
+    );
+
+    expect(response.statusCode, response.body).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(
+      body.scheduleChanges,
+      JSON.stringify({
+        decision: body.decision,
+        metadata: body.assistantMessage.metadata,
+        rejections: app.personasim.store.listRejectedProposals(
+          character.id,
+          20,
+        ),
+      }),
+    ).toHaveLength(1);
+    expect(body.scheduleChanges[0]?.title).toBe("明天下午喝茶");
+    expect(
+      body.scheduleChanges.some((item) => /修复稿/u.test(item.title)),
+    ).toBe(false);
+    expect(app.personasim.store.listSchedule(character.id)).toHaveLength(
+      scheduleBefore.length + 1,
+    );
+    expect(
+      app.personasim.store
+        .listSchedule(character.id)
+        .some((item) => /修复稿/u.test(item.title)),
+    ).toBe(false);
+    expect(body.assistantMessage.metadata).toMatchObject({
+      decisionPath: "partial",
+      rejectedProposalCount: 2,
+      consentModalityGuard: {
+        consentOnly: false,
+        modelSideEffectsBlocked: true,
+      },
+    });
+    expect(
+      app.personasim.store
+        .listRejectedProposals(character.id, 20)
+        .filter(
+          (item) =>
+            item.correlationId === "mixed-consent-legacy-schedule" &&
+            item.reasonCode === "consent_modality_effect_blocked",
+        ),
+    ).toHaveLength(2);
+  });
+
+  it.each([
+    [
+      "cancel",
+      {
+        operation: "cancel",
+        itemTitle: "查看修复稿",
+        justificationQuote: "看修复稿",
+      },
+    ],
+    [
+      "move",
+      {
+        operation: "move",
+        itemTitle: "查看修复稿",
+        newStart: "后天下午三点",
+        justificationQuote: "看修复稿",
+      },
+    ],
+  ] as const)(
+    "blocks a short-quote consent-derived raw %s before normalization can erase provenance",
+    async (operation, rawEffect) => {
+      const created = await createRealProviderTestApp("enforced", {
+        chatEffectsMode: "gated",
+      });
+      app = created.app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, calls, (input) => {
+        if (input.purpose === "chat_turn") {
+          return {
+            text: `我会按姨妈的意思${operation === "cancel" ? "取消" : "改期"}查看修复稿。`,
+            scheduleEffects: [rawEffect],
+          };
+        }
+        return fixtureFor(input);
+      });
+      const character = await createAndPublish(app, "high_fidelity");
+      const scheduleId = `consent-protected-${operation}`;
+      app.personasim.store.insertScheduleItem({
+        id: scheduleId,
+        agentId: character.id,
+        title: "查看修复稿",
+        description: "尚未获得明确授权的查看安排。",
+        category: "other",
+        startAtUtc: "2026-08-17T05:00:00.000Z",
+        endAtUtc: "2026-08-17T06:00:00.000Z",
+        timezone: "Asia/Shanghai",
+        status: "planned",
+        rigidity: "flexible",
+        priority: 0.6,
+        source: "manual",
+        adherenceProbability: 0.8,
+        narrativeImportance: 0.5,
+        shareable: false,
+        stateEffects: {},
+        revision: 0,
+        createdAtUtc: START_UTC,
+        updatedAtUtc: START_UTC,
+      });
+      const before = app.personasim.store
+        .listSchedule(character.id)
+        .find((item) => item.id === scheduleId);
+      calls.length = 0;
+      const sessionId = await createSession(app, character.id);
+      const correlationId = `mixed-consent-raw-${operation}`;
+
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        correlationId,
+        "姨妈也许愿意让我下周六下午三点看修复稿；另外我们安排明天下午四点喝茶。",
+      );
+
+      expect(response.statusCode, response.body).toBe(201);
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(
+        app.personasim.store
+          .listSchedule(character.id)
+          .find((item) => item.id === scheduleId),
+      ).toEqual(before);
+      expect(body.assistantMessage.metadata).toMatchObject({
+        decisionPath: "effects_rejected",
+        rejectedProposalCount: 1,
+        consentModalityGuard: {
+          consentOnly: false,
+          modelSideEffectsBlocked: true,
+        },
+      });
+      expect(
+        app.personasim.store
+          .listRejectedProposals(character.id, 20)
+          .filter(
+            (item) =>
+              item.correlationId === correlationId &&
+              item.reasonCode === "consent_modality_effect_blocked",
+          ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("blocks a consent-derived pending negotiation before a later confirmation can commit it", async () => {
+    const created = await createRealProviderTestApp("enforced", {
+      scheduleNegotiationMode: "enforced",
+    });
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    let chatTurn = 0;
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        chatTurn += 1;
+        return chatTurn === 1
+          ? {
+              replyDecision: {
+                text: "姨妈已经同意了，我先把看电影作品的时间记下来。",
+                scheduleAction: {
+                  kind: "accept_user_offer",
+                  offer: {
+                    activity: "看电影作品",
+                    category: "leisure",
+                    startAt: "下周六下午三点",
+                    durationMinutes: 60,
+                    evidenceQuotes: [
+                      "姨妈也许愿意让我下周六下午三点看她的电影作品",
+                    ],
+                  },
+                },
+              },
+              worldEffects: {},
+            }
+          : {
+              replyDecision: {
+                text: "好，日程已经确认。",
+                scheduleAction: {
+                  kind: "accept_pending_offer",
+                  evidenceQuotes: ["好"],
+                },
+              },
+              worldEffects: {},
+            };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const sessionId = await createSession(app, character.id);
+    const scheduleBefore = app.personasim.store.listSchedule(character.id);
+
+    const first = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "mixed-consent-negotiation-1",
+      "姨妈也许愿意让我下周六下午三点看她的电影作品；另外今天心情不错。",
+    );
+    expect(first.statusCode, first.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(first).assistantMessage.content,
+    ).not.toContain("【待确认日程】");
+    expect(
+      jsonBody<ChatTurnResult>(first).assistantMessage.metadata,
+    ).toMatchObject({
+      consentModalityGuard: { modelSideEffectsBlocked: true },
+    });
+    expect(
+      app.personasim.store.getActiveScheduleNegotiation(sessionId),
+    ).toBeUndefined();
+
+    const second = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "mixed-consent-negotiation-2",
+      "好",
+    );
+    expect(second.statusCode, second.body).toBe(201);
+    expect(jsonBody<ChatTurnResult>(second).scheduleChanges).toEqual([]);
+    expect(app.personasim.store.listSchedule(character.id)).toEqual(
+      scheduleBefore,
+    );
+    expect(
+      app.personasim.store.getActiveScheduleNegotiation(sessionId),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ["她确认收到邮件了。", false],
+    ["她确认明天去医院。", false],
+    ["她确认了。", true],
+    ["她回复可以。", true],
+  ] as const)(
+    "resolves only the current proposition in a fuzzy consent follow-up: %s",
+    async (followUp, hasContract) => {
+      const created = await createRealProviderTestApp("enforced", {
+        lifePlanningMode: "fuzzy",
+      });
+      app = created.app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, calls, (input) =>
+        input.purpose === "chat_turn"
+          ? { text: "我听见了，我们可以接着聊。" }
+          : fixtureFor(input),
+      );
+      const character = await createAndPublish(app, "high_fidelity");
+      const sessionId = await createSession(app, character.id);
+      const first = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "consent-context",
+        "姨妈还没确认是否允许我查看照片。",
+      );
+      expect(first.statusCode, first.body).toBe(201);
+      const second = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "consent-follow-up",
+        followUp,
+      );
+      expect(second.statusCode, second.body).toBe(201);
+      const body = jsonBody<ChatTurnResult>(second);
+      const audit = body.assistantMessage.metadata["consentModalityGuard"];
+      if (hasContract) {
+        expect(audit).toMatchObject({
+          subject: "姨妈",
+          status: followUp === "她回复可以。" ? "granted" : "pending",
+        });
+      } else {
+        expect(audit).toBeUndefined();
+        expect(body.userMessage.content).toBe(followUp);
+        const third = await sendMessage(
+          app,
+          sessionId,
+          character.id,
+          "after-topic-change",
+          "她回复可以。",
+        );
+        expect(third.statusCode, third.body).toBe(201);
+        expect(
+          jsonBody<ChatTurnResult>(third).assistantMessage.metadata[
+            "consentModalityGuard"
+          ],
+        ).toBeUndefined();
+      }
+    },
+  );
+
+  it("does not infer permission from an object-free answer to a mixed prior topic", async () => {
+    const created = await createRealProviderTestApp("enforced", {
+      lifePlanningMode: "fuzzy",
+    });
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) =>
+      input.purpose === "chat_turn"
+        ? { text: "我听见了，我们可以接着聊。" }
+        : fixtureFor(input),
+    );
+    const character = await createAndPublish(app, "high_fidelity");
+    const sessionId = await createSession(app, character.id);
+    const first = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "mixed-consent-context",
+      "姨妈还没确认是否允许我查看照片；另外她明天准备去医院。",
+    );
+    expect(first.statusCode, first.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(first).assistantMessage.metadata[
+        "consentModalityGuard"
+      ],
+    ).toMatchObject({ consentOnly: false });
+    const second = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "ambiguous-answer",
+      "她回复可以。",
+    );
+    expect(second.statusCode, second.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(second).assistantMessage.metadata[
+        "consentModalityGuard"
+      ],
+    ).toBeUndefined();
+  });
+
+  it("contains a third-party consent question without treating the question as proof", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") {
+        return {
+          replyDecision: {
+            text: "是的，姨妈已经同意了，你现在可以看修复稿。",
+          },
+          worldEffects: {
+            memoryCandidates: [
+              {
+                type: "user_fact",
+                content: "姨妈已经授权用户查看修复稿。",
+              },
+            ],
+          },
+        };
+      }
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "third-party-consent-query",
+      "姨妈愿意让我看修复稿吗？",
+    );
+
+    expect(response.statusCode, response.body).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toContain("问题本身不能证明");
+    expect(body.assistantMessage.content).toContain("仍待本人明确确认");
+    expect(body.assistantMessage.metadata).toMatchObject({
+      consentModalityGuard: {
+        sourceKind: "query",
+        subject: "姨妈",
+        status: "pending",
+        modelReplyContentChanged: true,
+        modelSideEffectsBlocked: true,
+        contentDerivedSemanticsSkipped: true,
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.prompt).toContain('"sourceKind":"query"');
+    expect(
+      app.personasim.store.database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM memories WHERE agent_id = ? AND content LIKE '%修复稿%'",
+        )
+        .get(character.id),
+    ).toEqual({ count: 0 });
+  });
 });
 
 function mockLlm(
@@ -1498,6 +2085,9 @@ async function createRealProviderTestApp(
     databasePath?: string;
     clock?: FakeClock;
     maxOutputTokens?: number;
+    lifePlanningMode?: "fuzzy" | "legacy_exact";
+    scheduleNegotiationMode?: "off" | "legacy" | "shadow" | "enforced";
+    chatEffectsMode?: "off" | "gated";
   } = {},
 ): Promise<{
   app: PersonaSimApp;
@@ -1512,8 +2102,11 @@ async function createRealProviderTestApp(
     clockMode: "fake",
     seedDemo: false,
     developerRoutes: true,
-    lifePlanningMode: "legacy_exact",
-    scheduleNegotiationMode: "legacy",
+    lifePlanningMode: options.lifePlanningMode ?? "legacy_exact",
+    ...(options.chatEffectsMode === undefined
+      ? {}
+      : { chatEffectsMode: options.chatEffectsMode }),
+    scheduleNegotiationMode: options.scheduleNegotiationMode ?? "legacy",
     selfInitiatedPlanningMode: "off",
     liveWorldEffectsMode,
     llm: {

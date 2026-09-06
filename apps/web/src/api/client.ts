@@ -1,4 +1,24 @@
-import type { MemoryRecallPreviewResponse } from "@personasim/contracts";
+import {
+  CorrespondenceMailboxResponseSchema,
+  DeveloperTemporalTasksResponseSchema,
+  KeepsakeDetailResponseSchema,
+  KeepsakePageResponseSchema,
+  LetterDetailResponseSchema,
+  OpenLetterResponseSchema,
+  RelationshipArchivePageResponseSchema,
+  RelationshipShareProjectionSchema,
+  RetryLetterReplyGenerationResponseSchema,
+  type CorrespondenceMailboxQuery,
+  type CreateLetterDraftRequest,
+  type KeepsakeListQuery,
+  type MemoryRecallPreviewResponse,
+  type RelationshipArchiveEntryId,
+  type RelationshipArchiveFilter,
+  type RetryLetterReplyGenerationRequest,
+  type SealLetterRequest,
+  type ShareComposerSelection,
+  type UpdateLetterDraftRequest,
+} from "@personasim/contracts";
 import type {
   AgentSnapshot,
   AppSettings,
@@ -15,6 +35,7 @@ import type {
   TimelineEvent,
 } from "./types";
 import { ApiError } from "./types";
+import { projectLetterDetailForCache } from "../lib/correspondence";
 
 interface ErrorEnvelope {
   error?: {
@@ -24,6 +45,23 @@ interface ErrorEnvelope {
     requestId?: string;
   };
 }
+
+type RelationshipArchiveListInput = {
+  filter?: RelationshipArchiveFilter;
+  includePreviewText?: boolean;
+  limit?: number;
+} & (
+  | { cursor?: string; entryId?: never }
+  | { entryId: RelationshipArchiveEntryId; cursor?: never }
+);
+
+type KeepsakeListInput = Partial<
+  Pick<KeepsakeListQuery, "cursor" | "limit" | "kind" | "sourceType" | "period">
+>;
+
+type CorrespondenceMailboxListInput = Partial<
+  Pick<CorrespondenceMailboxQuery, "cursor" | "limit">
+>;
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -276,6 +314,123 @@ export const api = {
       return "session" in value ? value.session : value;
     },
   },
+  correspondence: {
+    list: async (
+      agentId: string,
+      input: CorrespondenceMailboxListInput = {},
+    ) => {
+      const search = new URLSearchParams();
+      if (input.limit !== undefined) search.set("limit", String(input.limit));
+      if (input.cursor !== undefined) search.set("cursor", input.cursor);
+      const query = search.size === 0 ? "" : `?${search.toString()}`;
+      return CorrespondenceMailboxResponseSchema.parse(
+        await request<unknown>(
+          `/api/agents/${encodeURIComponent(agentId)}/correspondence${query}`,
+        ),
+      );
+    },
+  },
+  relationshipArchive: {
+    list: async (agentId: string, input: RelationshipArchiveListInput = {}) => {
+      const search = new URLSearchParams({
+        filter: input.filter ?? "all",
+        limit: String(input.limit ?? 30),
+      });
+      if (input.cursor !== undefined) search.set("cursor", input.cursor);
+      if (input.entryId !== undefined) search.set("entryId", input.entryId);
+      if (input.includePreviewText !== undefined) {
+        search.set("includePreviewText", String(input.includePreviewText));
+      }
+      return RelationshipArchivePageResponseSchema.parse(
+        await request<unknown>(
+          `/api/agents/${encodeURIComponent(agentId)}/relationship-archive?${search.toString()}`,
+        ),
+      );
+    },
+    previewShare: async (agentId: string, input: ShareComposerSelection) =>
+      RelationshipShareProjectionSchema.parse(
+        await request<unknown>(
+          `/api/agents/${encodeURIComponent(agentId)}/relationship-share/preview`,
+          { method: "POST", body: body(input) },
+        ),
+      ),
+  },
+  keepsakes: {
+    list: async (agentId: string, input: KeepsakeListInput = {}) => {
+      const search = new URLSearchParams({
+        limit: String(input.limit ?? 24),
+      });
+      if (input.cursor !== undefined) search.set("cursor", input.cursor);
+      if (input.kind !== undefined) search.set("kind", input.kind);
+      if (input.sourceType !== undefined) {
+        search.set("sourceType", input.sourceType);
+      }
+      if (input.period !== undefined) search.set("period", input.period);
+      return KeepsakePageResponseSchema.parse(
+        await request<unknown>(
+          `/api/agents/${encodeURIComponent(agentId)}/keepsakes?${search.toString()}`,
+        ),
+      );
+    },
+    get: async (keepsakeId: string) =>
+      KeepsakeDetailResponseSchema.parse(
+        await request<unknown>(
+          `/api/keepsakes/${encodeURIComponent(keepsakeId)}`,
+        ),
+      ),
+  },
+  letters: {
+    createDraft: async (agentId: string, input: CreateLetterDraftRequest) =>
+      LetterDetailResponseSchema.parse(
+        await request<unknown>(
+          `/api/agents/${encodeURIComponent(agentId)}/letters`,
+          { method: "POST", body: body(input) },
+        ),
+      ),
+    updateDraft: async (letterId: string, input: UpdateLetterDraftRequest) =>
+      LetterDetailResponseSchema.parse(
+        await request<unknown>(`/api/letters/${encodeURIComponent(letterId)}`, {
+          method: "PATCH",
+          body: body(input),
+        }),
+      ),
+    seal: async (letterId: string, input: SealLetterRequest) =>
+      LetterDetailResponseSchema.parse(
+        await request<unknown>(
+          `/api/letters/${encodeURIComponent(letterId)}/seal`,
+          { method: "POST", body: body(input) },
+        ),
+      ),
+    get: async (letterId: string) =>
+      LetterDetailResponseSchema.parse(
+        await request<unknown>(`/api/letters/${encodeURIComponent(letterId)}`),
+      ),
+    getCacheSafe: async (letterId: string) =>
+      projectLetterDetailForCache(
+        LetterDetailResponseSchema.parse(
+          await request<unknown>(
+            `/api/letters/${encodeURIComponent(letterId)}`,
+          ),
+        ),
+      ),
+    open: async (letterId: string) =>
+      OpenLetterResponseSchema.parse(
+        await request<unknown>(
+          `/api/letters/${encodeURIComponent(letterId)}/open`,
+          { method: "POST", body: body({}) },
+        ),
+      ),
+    retryReplyGeneration: async (
+      letterId: string,
+      input: RetryLetterReplyGenerationRequest,
+    ) =>
+      RetryLetterReplyGenerationResponseSchema.parse(
+        await request<unknown>(
+          `/api/letters/${encodeURIComponent(letterId)}/reply-generation/retry`,
+          { method: "POST", body: body(input) },
+        ),
+      ),
+  },
   sessions: {
     messages: async (sessionId: string) => {
       const value = await request<
@@ -325,6 +480,9 @@ export const api = {
       delete editable.baseUrl;
       delete editable.reasoningEffort;
       delete editable.reasoningRequestFormat;
+      delete editable.correspondenceMode;
+      delete editable.correspondenceExecution;
+      delete editable.keepsakeMode;
       await request<unknown>("/api/settings", {
         method: "PUT",
         body: body(editable),
@@ -362,6 +520,18 @@ export const api = {
     replayRetrievalRun: (runId: string) =>
       request<RetrievalRunReplayResponse>(
         `/api/developer/retrieval-runs/${encodeURIComponent(runId)}/replay`,
+      ),
+    temporalTasks: async (agentId: string) => {
+      return DeveloperTemporalTasksResponseSchema.parse(
+        await request<unknown>(
+          `/api/developer/agents/${encodeURIComponent(agentId)}/temporal-tasks`,
+        ),
+      );
+    },
+    processLetter: (letterId: string) =>
+      request<{ result: Record<string, unknown> }>(
+        `/api/developer/letters/${encodeURIComponent(letterId)}/process`,
+        { method: "POST", body: body({}) },
       ),
     setClock: (nowUtc: string) =>
       request<{ nowUtc: string }>("/api/developer/clock/set", {
@@ -526,6 +696,20 @@ function normalizeSettings(value: unknown): AppSettings {
       runtime.clockMode === "fake" || settings.clockMode === "fake"
         ? "fake"
         : "system",
+    correspondenceMode:
+      runtime.correspondenceMode === "enforced" ||
+      runtime.correspondenceMode === "shadow"
+        ? runtime.correspondenceMode
+        : "off",
+    correspondenceExecution:
+      runtime.correspondenceExecution === "resident" ||
+      runtime.correspondenceExecution === "worker"
+        ? runtime.correspondenceExecution
+        : "lazy",
+    keepsakeMode:
+      runtime.keepsakeMode === "enforced" || runtime.keepsakeMode === "shadow"
+        ? runtime.keepsakeMode
+        : "off",
     locale: stringValue(settings.locale, "zh-CN"),
     defaultTimezone: stringValue(settings.defaultTimezone, "Asia/Shanghai"),
   };

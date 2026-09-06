@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { promisify } from "node:util";
+import { providerCacheUsage } from "./provider-metrics-summary.js";
 
 import { canonicalJson, sha256File } from "./companion-long-run-v2-baseline.js";
 import type {
@@ -371,6 +372,9 @@ function projectPhysicalModelIoRecord(
   return {
     ...identity,
     recordType: "physical_attempt",
+    ...(attempt.providerLogicalCallId === undefined
+      ? {}
+      : { providerLogicalCallId: attempt.providerLogicalCallId }),
     attemptId: attempt.attemptId,
     attemptNumber: attempt.attempt,
     ...(attempt.logicalCallId === undefined
@@ -412,6 +416,7 @@ function projectPhysicalModelIoRecord(
         ? {}
         : { text: attempt.responseText }),
       usage: {
+        ...providerCacheUsage(attempt),
         ...(attempt.usageSource === undefined
           ? {}
           : { source: attempt.usageSource }),

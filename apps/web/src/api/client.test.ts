@@ -8,6 +8,32 @@ describe("web API normalization", () => {
     vi.unstubAllGlobals();
   });
 
+  it("normalizes immutable correspondence runtime capabilities", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            settings: { locale: "zh-CN", defaultTimezone: "Asia/Shanghai" },
+            runtime: {
+              llmProvider: "fixture",
+              correspondenceMode: "shadow",
+              correspondenceExecution: "resident",
+              keepsakeMode: "enforced",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(api.settings.get()).resolves.toMatchObject({
+      correspondenceMode: "shadow",
+      correspondenceExecution: "resident",
+      keepsakeMode: "enforced",
+    });
+  });
+
   it("uses canonical events as authoritative and preserves lineage IDs", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

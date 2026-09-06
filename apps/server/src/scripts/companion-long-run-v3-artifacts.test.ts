@@ -131,7 +131,13 @@ describe("companion long-run v3 artifacts", () => {
       response: {
         responseModel: "deepseek-v4-flash",
         finishReason: "stop",
-        usage: { inputTokens: 250, outputTokens: 75 },
+        usage: {
+          inputTokens: 250,
+          outputTokens: 75,
+          cacheReadTokens: 200,
+          cacheWriteTokens: 0,
+          cacheReadSource: "usage.prompt_tokens_details.cached_tokens",
+        },
       },
     });
 
@@ -609,6 +615,9 @@ function fakeTurn(secret: string): LongRunV3TurnEvidence {
         responseText: "raw",
         usageSource: "provider",
         inputTokens: 250,
+        cacheReadTokens: 200,
+        cacheWriteTokens: 0,
+        cacheReadSource: "usage.prompt_tokens_details.cached_tokens",
         outputTokens: 75,
         latencyMs: 300,
         startedAtUtc: "2026-09-01T01:00:00.000Z",

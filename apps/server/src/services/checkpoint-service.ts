@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 import {
-  AutobiographyRevisionProposalSchema,
   ConversationCheckpointSchema,
   DEFAULT_CONVERSATION_RETENTION_POLICY,
   type AgentAutobiographySnapshot,
@@ -14,6 +13,7 @@ import {
 } from "@personasim/contracts";
 import {
   canonicalCheckpointSource,
+  groupCheckpointTurns,
   selectConversationRetentionWindow,
   type RetentionSelectionReason,
 } from "@personasim/features";
@@ -25,12 +25,19 @@ import {
   messageEvidence,
   type VerifiedContinuityEvidence,
 } from "./autobiography-service.js";
+import { CheckpointAutobiographyError } from "./checkpoint-autobiography-model.js";
+import {
+  checkpointEntryCardTitle,
+  checkpointLongMessageReceipts,
+  MAXIMUM_CHECKPOINT_REPORT_ENTRIES,
+} from "./checkpoint-report-excerpts.js";
 import type { ContinuityIndexService } from "./continuity-index-service.js";
 import type {
   ArchivedMessage,
   ContinuityRepository,
 } from "./continuity-repository.js";
-import type { LlmService } from "./llm-service.js";
+
+export { LlmCheckpointAutobiographyModel } from "./checkpoint-autobiography-model.js";
 
 export interface CheckpointAutobiographyModelInput {
   agentId: string;
@@ -50,7 +57,8 @@ export interface CheckpointAutobiographyModel {
 export type CheckpointServiceResult =
   | {
       status: "skipped";
-      reason: RetentionSelectionReason;
+      reason: RetentionSelectionReason | "failure_cooldown";
+      retryAtUtc?: string;
     }
   | {
       status: "busy";
@@ -116,8 +124,16 @@ export class CheckpointService {
     } catch (error) {
       return this.fail(
         started.checkpoint.id,
-        "generation_failed",
+        error instanceof CheckpointAutobiographyError
+          ? error.failureCode
+          : "generation_failed",
         errorMessage(error),
+        error instanceof CheckpointAutobiographyError
+          ? {
+              attemptCount: error.attemptCount,
+              issues: error.issues,
+            }
+          : undefined,
       );
     }
 
@@ -134,9 +150,26 @@ export class CheckpointService {
       return this.fail(
         started.checkpoint.id,
         "artifact_validation_failed",
-        preparedAutobiography.issues.map((issue) => issue.message).join("; "),
+        preparedAutobiography.issues
+          .map((issue) => `${issue.code}: ${issue.message}`)
+          .join("; "),
       );
     }
+    const sourceIndexOnlyEvidenceIds = checkpointLongMessageReceipts(started)
+      .filter((receipt) =>
+        preparedAutobiography.bundle.entries.some(
+          (entry) =>
+            entry.content === receipt.content &&
+            entry.evidence.length === 1 &&
+            entry.evidence[0]?.id === receipt.evidenceId,
+        ),
+      )
+      .map((receipt) => receipt.evidenceId);
+    const reportCoverage = {
+      sourceIndexOnlyEvidenceIds,
+      hasUnrefinedContent: sourceIndexOnlyEvidenceIds.length > 0,
+      note: "Source-index-only entries confirm a message exists; their life content has not been summarized or evaluated.",
+    };
     const cardDrafts = preparedAutobiography.bundle.entries.map((entry) =>
       eventCardDraft(started.checkpoint.id, entry),
     );
@@ -188,6 +221,7 @@ export class CheckpointService {
         }
         this.continuityIndex.persistPrepared(preparedCards);
         const artifact = {
+          reportCoverage,
           summaryFirstPerson:
             preparedAutobiography.bundle.snapshot.summaryFirstPerson,
           autobiography: preparedAutobiography.bundle.snapshot,
@@ -209,10 +243,13 @@ export class CheckpointService {
           agentId: input.agentId,
           streamType: "conversation_checkpoint",
           streamId: checkpoint.id,
-          streamVersion: 1,
+          streamVersion: this.repository.nextCheckpointEventVersion(
+            checkpoint.id,
+          ),
           eventType: "conversation.checkpoint.committed",
           recordedAtUtc: nowUtc,
           payload: {
+            reportCoverage,
             sessionId: input.sessionId,
             sourceRevision: checkpoint.sourceRevision,
             sourceHash: checkpoint.sourceHash,
@@ -266,13 +303,46 @@ export class CheckpointService {
     if (!selection.shouldCheckpoint) {
       return { status: "skipped", reason: selection.reason };
     }
-    const selected = selection.checkpointMessages as ArchivedMessage[];
+    const selected: ArchivedMessage[] = [];
+    let sourceTokenEstimate = 0;
+    // Retention limits tokens, but a category may still receive more than 40
+    // complete reports. Preserve turn boundaries and drain the oldest sources
+    // over successive checkpoints without enlarging the stored schema.
+    for (const turn of groupCheckpointTurns(selection.checkpointMessages)) {
+      if (
+        selected.length + turn.messages.length >
+        MAXIMUM_CHECKPOINT_REPORT_ENTRIES
+      )
+        break;
+      selected.push(...(turn.messages as ArchivedMessage[]));
+      sourceTokenEstimate += turn.tokenEstimate;
+    }
     const first = selected[0];
     const last = selected.at(-1);
     if (first === undefined || last === undefined) {
       return { status: "skipped", reason: "no_visible_messages" };
     }
     const nowUtc = this.clock.nowUtc();
+    const recovery = this.repository.getCheckpointRecoveryState(sessionId);
+    if (recovery !== undefined) {
+      const delaysMinutes = [5, 15, 60] as const;
+      const backoffMinutes =
+        delaysMinutes[Math.min(recovery.consecutiveFailures, 3) - 1] ?? 60;
+      const newSourceChanges =
+        session.revision - recovery.checkpoint.sourceRevision;
+      // Fresh evidence may earn an earlier attempt, but never less than five
+      // minutes after failure. Message bursts cannot bypass the API backoff.
+      const waitMinutes = newSourceChanges >= 4 ? 5 : backoffMinutes;
+      const retryAt =
+        Date.parse(recovery.checkpoint.updatedAtUtc) + waitMinutes * 60_000;
+      if (Date.parse(nowUtc) < retryAt) {
+        return {
+          status: "skipped",
+          reason: "failure_cooldown",
+          retryAtUtc: new Date(retryAt).toISOString(),
+        };
+      }
+    }
     const checkpoint = ConversationCheckpointSchema.parse({
       id: createEntityId("checkpoint"),
       agentId,
@@ -283,7 +353,7 @@ export class CheckpointService {
       sourceHash: checkpointSourceHash(selected),
       sourceRevision: session.revision,
       sourceMessageCount: selected.length,
-      sourceTokenEstimate: selection.sourceTokenEstimate,
+      sourceTokenEstimate,
       status: "pending",
       createdAtUtc: nowUtc,
       updatedAtUtc: nowUtc,
@@ -324,43 +394,55 @@ export class CheckpointService {
     checkpointId: string,
     reason: "generation_failed" | "artifact_validation_failed",
     errorSummary: string,
+    generation?: { attemptCount: number; issues: readonly string[] },
   ): Extract<CheckpointServiceResult, { status: "failed" }> {
     const nowUtc = this.clock.nowUtc();
     this.repository.transaction(() => {
-      this.repository.failCheckpoint({
+      const failed = this.repository.failCheckpoint({
         checkpointId,
         failedAtUtc: nowUtc,
         failureCode: reason,
-        failureSummary: errorSummary.slice(0, 1_000),
+        failureSummary:
+          errorSummary.slice(0, 1_000) || "Checkpoint generation failed.",
       });
+      const checkpoint = this.repository.getCheckpoint(checkpointId);
+      if (failed && checkpoint !== undefined) {
+        const version =
+          this.repository.nextCheckpointEventVersion(checkpointId);
+        this.repository.store.insertDomainEvent({
+          agentId: checkpoint.agentId,
+          streamType: "conversation_checkpoint",
+          streamId: checkpointId,
+          streamVersion: version,
+          eventType: "conversation.checkpoint.failed",
+          recordedAtUtc: nowUtc,
+          payload: {
+            sessionId: checkpoint.sessionId,
+            failureCode: reason,
+            errorSummary: checkpoint.failureSummary,
+            sourceRevision: checkpoint.sourceRevision,
+            sourceHash: checkpoint.sourceHash,
+            fromMessageId: checkpoint.fromMessageId,
+            throughMessageId: checkpoint.throughMessageId,
+            ...(generation === undefined
+              ? {}
+              : {
+                  attemptCount: generation.attemptCount,
+                  repairAttempted: generation.attemptCount > 1,
+                  issues: generation.issues
+                    .slice(0, 12)
+                    .map((issue) => issue.slice(0, 400)),
+                }),
+          },
+          idempotencyKey: `checkpoint:${checkpointId}:failed:${version}`,
+        });
+      }
     });
     const checkpoint = this.repository.getCheckpoint(checkpointId);
     if (checkpoint === undefined) {
       throw new Error("Failed checkpoint could not be reloaded.");
     }
     return { status: "failed", checkpoint, reason, errorSummary };
-  }
-}
-
-export class LlmCheckpointAutobiographyModel implements CheckpointAutobiographyModel {
-  constructor(private readonly llm: Pick<LlmService, "generateObject">) {}
-
-  generateAutobiography(
-    input: CheckpointAutobiographyModelInput,
-  ): Promise<AutobiographyRevisionProposal> {
-    return this.llm.generateObject({
-      purpose: "checkpoint_autobiography",
-      system:
-        "Revise the character's first-person autobiography using only the verified evidence. Planned events must remain planned and must never be described as occurred.",
-      prompt: JSON.stringify({
-        checkpointId: input.checkpointId,
-        previousAutobiography: input.previousAutobiography ?? null,
-        messages: input.messages,
-        evidence: input.evidence.map(modelEvidence),
-      }),
-      schema: AutobiographyRevisionProposalSchema,
-      agentId: input.agentId,
-    });
   }
 }
 
@@ -381,7 +463,7 @@ function eventCardDraft(
     sourceKind: "checkpoint",
     sourceId: checkpointId,
     dedupeKey: `${checkpointId}:${entry.entryKind}:${entry.ordinal}`,
-    title: entry.content.slice(0, 240),
+    title: checkpointEntryCardTitle(entry),
     summary: entry.content,
     tags: [entry.entryKind],
     namespace: "character_self",
@@ -445,25 +527,6 @@ function cardKind(
   if (kind === "active_goal") return "goal";
   if (kind === "commitment") return "commitment";
   return "shared_experience";
-}
-
-function modelEvidence(
-  evidence: VerifiedContinuityEvidence,
-): Omit<VerifiedContinuityEvidence, "text"> {
-  return {
-    id: evidence.id,
-    sourceType: evidence.sourceType,
-    sourceId: evidence.sourceId,
-    ...(evidence.quote === undefined ? {} : { quote: evidence.quote }),
-    ...(evidence.contextSummary === undefined
-      ? {}
-      : { contextSummary: evidence.contextSummary }),
-    ...(evidence.temporalStatus === undefined
-      ? {}
-      : { temporalStatus: evidence.temporalStatus }),
-    reliability: evidence.reliability,
-    recordedAtUtc: evidence.recordedAtUtc,
-  };
 }
 
 function errorMessage(error: unknown): string {

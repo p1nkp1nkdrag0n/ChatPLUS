@@ -97,6 +97,16 @@ export class TurnCommitService {
         decisionPath: input.world.decisionPath,
         rejectedProposalCount: input.world.proposalRejections.length,
         scheduleActionAudit: input.world.scheduleActionAudit,
+        ...(input.turn.explicitFactReplyGuardAudit === undefined
+          ? {}
+          : {
+              explicitFactReplyGuard: input.turn.explicitFactReplyGuardAudit,
+            }),
+        ...(input.turn.consentModalityGuardAudit === undefined
+          ? {}
+          : {
+              consentModalityGuard: input.turn.consentModalityGuardAudit,
+            }),
         ...(input.recallDiagnostic === undefined
           ? {}
           : { memoryRecall: input.recallDiagnostic }),
@@ -112,6 +122,10 @@ export class TurnCommitService {
     };
 
     const fuzzyLifeEnabled = this.options.lifePlanningMode === "fuzzy";
+    const contentDerivedSemanticsAllowed =
+      input.turn.explicitFactReplyGuardAudit === undefined &&
+      input.turn.consentModalityGuardAudit?.contentDerivedSemanticsSkipped !==
+        true;
     let effectsToApply = fuzzyLifeEnabled
       ? []
       : input.world.validation.accepted;
@@ -233,19 +247,24 @@ export class TurnCommitService {
             }).map((memory) => memory.id)
           : [];
         this.store.insertMessage(assistantMessage);
-        if (fuzzyLifeEnabled) {
+        if (fuzzyLifeEnabled && contentDerivedSemanticsAllowed) {
           if (this.fuzzyLife === undefined) {
             throw new Error(
               "Fuzzy life mode requires a composed FuzzyLifeService.",
             );
           }
+          const semanticMessages = contentDerivedMessages(
+            input,
+            userMessage,
+            assistantMessage,
+          );
           lifeImpact = this.fuzzyLife.recordConversationTurn({
             agentId: input.command.agentId,
             sessionId: input.sessionId,
             userMessageId: userMessage.id,
             assistantMessageId: assistantMessage.id,
-            userText: userMessage.content,
-            assistantText: assistantMessage.content,
+            userText: semanticMessages.userMessage.content,
+            assistantText: semanticMessages.assistantMessage.content,
             recordedAtUtc: input.nowUtc,
             correlationId: input.command.clientMessageId,
           });
@@ -350,14 +369,25 @@ export class TurnCommitService {
       memoryIds: string[];
     },
   ): Promise<void> {
-    if (this.contexts === undefined) return;
+    if (
+      this.contexts === undefined ||
+      input.turn.explicitFactReplyGuardAudit !== undefined ||
+      input.turn.consentModalityGuardAudit?.contentDerivedSemanticsSkipped ===
+        true
+    ) {
+      return;
+    }
     try {
+      const semanticMessages = contentDerivedMessages(
+        input,
+        input.userMessage,
+        input.assistantMessage,
+      );
       const continuity = await this.contexts.commitTurn({
         agentId: input.command.agentId,
         sessionId: input.sessionId,
         timezone: input.spec.identity.timezone,
-        userMessage: input.userMessage,
-        assistantMessage: input.assistantMessage,
+        ...semanticMessages,
         memoryIds: input.memoryIds,
         promptCueIds: input.preparedContext?.continuity.cueIds ?? [],
         ...(input.turn.continuityEffects === undefined
@@ -392,6 +422,24 @@ export class TurnCommitService {
       });
     }
   }
+}
+
+/** Persist original messages; only derived semantics use the audited slice.
+ * Both life records and continuity must see the same facts and message IDs. */
+function contentDerivedMessages(
+  input: TurnCommitInput,
+  userMessage: StoredMessage,
+  assistantMessage: StoredMessage,
+): { userMessage: StoredMessage; assistantMessage: StoredMessage } {
+  const audit = input.turn.consentModalityGuardAudit;
+  if (audit === undefined) return { userMessage, assistantMessage };
+  return {
+    userMessage: { ...userMessage, content: audit.independentText.trim() },
+    assistantMessage: {
+      ...assistantMessage,
+      content: audit.independentReplyText.trim(),
+    },
+  };
 }
 
 class DuplicateTurnError extends Error {

@@ -23,6 +23,20 @@ import {
 import type { Clock } from "../runtime/clock.js";
 import type { SseHub } from "../sse/hub.js";
 import type { ConversationContextService } from "./conversation-context-service.js";
+import {
+  applyConsentModalityGuard,
+  buildConsentModalityGuardContract,
+  consentModalityFollowUpClaimsFromAudit,
+  consentModalityEffectContext,
+  consentModalityPromptSegment,
+  finalizeConsentModalityWorld,
+} from "./consent-modality-guard.js";
+import {
+  applyExplicitFactReplyGuard,
+  buildExplicitFactReplyContract,
+  explicitFactReplyEffectContext,
+  finalizeExplicitFactWorld,
+} from "./explicit-fact-reply-guard.js";
 import type { FuzzyLifeService } from "./fuzzy-life-service.js";
 import { calculateLlmPromptTokenBudget } from "./llm-prompt-headroom.js";
 import type { LlmService } from "./llm-service.js";
@@ -246,8 +260,38 @@ export class ConversationService {
             selectedRecallMemories,
             recallPreview,
           );
+    const storedContextMessages = this.store.listMessagesForContext(sessionId);
+    // Elliptical permission questions may inherit only the immediately
+    // preceding assistant turn. Searching farther back would let a generic
+    // "后来有回复吗" resurrect stale consent context after the conversation
+    // has already moved to another topic.
+    const mostRecentAssistantMessage = [...storedContextMessages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    const priorConsentClaims =
+      mostRecentAssistantMessage === undefined
+        ? []
+        : consentModalityFollowUpClaimsFromAudit(
+            mostRecentAssistantMessage.metadata["consentModalityGuard"],
+          );
+    const explicitFactReplyContract =
+      memoryRecallMode === "enforced"
+        ? buildExplicitFactReplyContract({
+            userText: input.text,
+            ...(recallRecording === undefined
+              ? {}
+              : { recall: recallRecording.retrievalRun }),
+          })
+        : undefined;
+    const consentModalityGuardContract =
+      explicitFactReplyContract === undefined
+        ? buildConsentModalityGuardContract({
+            userText: input.text,
+            priorClaims: priorConsentClaims,
+          })
+        : undefined;
     const contextSelection = selectConversationRetention({
-      messages: this.store.listMessagesForContext(sessionId).map((message) => ({
+      messages: storedContextMessages.map((message) => ({
         id: message.id,
         role: message.role,
         text: message.content,
@@ -279,9 +323,21 @@ export class ConversationService {
       capabilities,
       providerName: this.llm.providerName,
     });
+    const turnEffectContext =
+      explicitFactReplyContract !== undefined
+        ? explicitFactReplyEffectContext()
+        : consentModalityGuardContract !== undefined
+          ? consentModalityEffectContext(effects, consentModalityGuardContract)
+          : effects;
     const lifeContext = fuzzyLifeEnabled
       ? this.fuzzyLife!.promptContext(input.agentId, nowUtc)
       : undefined;
+    const additionalPromptSegments = [
+      ...(preparedContext?.additionalPromptSegments ?? []),
+      ...(consentModalityGuardContract === undefined
+        ? []
+        : [consentModalityPromptSegment(consentModalityGuardContract)]),
+    ];
     const assembledPrompt = assembleChatPrompt({
       character: spec,
       state: toFeatureState(state),
@@ -299,8 +355,10 @@ export class ConversationService {
                     careCues: preparedContext.continuity.careCues,
                   },
                 }),
-            additionalPromptSegments: preparedContext.additionalPromptSegments,
           }),
+      ...(additionalPromptSegments.length === 0
+        ? {}
+        : { additionalPromptSegments }),
       maxInputTokens: calculateLlmPromptTokenBudget(this.llm.capabilities),
       schedule: toFeatureScheduleItems(schedule),
       memories,
@@ -316,11 +374,11 @@ export class ConversationService {
         ? {}
         : { lifePlanningMode: this.options.lifePlanningMode }),
       ...(lifeContext === undefined ? {} : { lifeContext }),
-      decisionMode: effects.scheduleNegotiationEligible
+      decisionMode: turnEffectContext.scheduleNegotiationEligible
         ? this.options.scheduleNegotiationMode === "shadow"
           ? "schedule_negotiation_shadow"
           : "schedule_negotiation"
-        : effects.effectsEligible
+        : turnEffectContext.effectsEligible
           ? "legacy_effects"
           : "reply_only",
       ...(this.options.liveWorldEffectsMode === undefined
@@ -338,9 +396,9 @@ export class ConversationService {
       ...(lifeContext === undefined ? {} : { causalContext: lifeContext }),
       replyStrategy: assembledPrompt.replyStrategy,
       schedule,
-      effects,
+      effects: turnEffectContext,
     });
-    const turn = fuzzyLifeEnabled
+    const candidateTurn = fuzzyLifeEnabled
       ? {
           ...decidedTurn,
           decision: {
@@ -350,7 +408,43 @@ export class ConversationService {
           },
         }
       : decidedTurn;
-    const world = await this.worldEffects.resolve({
+    const guardedTurn =
+      explicitFactReplyContract !== undefined
+        ? applyExplicitFactReplyGuard({
+            turn: candidateTurn,
+            contract: explicitFactReplyContract,
+            inspectDecision: (decision) =>
+              this.decisions.inspect({
+                agentId: input.agentId,
+                spec,
+                decision,
+                nowUtc,
+                capabilities,
+                userText: input.text,
+                ...(lifeContext === undefined
+                  ? {}
+                  : { causalContext: lifeContext }),
+              }),
+          })
+        : consentModalityGuardContract !== undefined
+          ? applyConsentModalityGuard({
+              turn: candidateTurn,
+              contract: consentModalityGuardContract,
+              inspectDecision: (decision) =>
+                this.decisions.inspect({
+                  agentId: input.agentId,
+                  spec,
+                  decision,
+                  nowUtc,
+                  capabilities,
+                  userText: input.text,
+                  ...(lifeContext === undefined
+                    ? {}
+                    : { causalContext: lifeContext }),
+                }),
+            })
+          : candidateTurn;
+    const preparedWorld = await this.worldEffects.resolve({
       sessionId,
       agentId: input.agentId,
       userText: input.text,
@@ -363,9 +457,24 @@ export class ConversationService {
       capabilities,
       recentMessages,
       replyStrategy: assembledPrompt.replyStrategy,
-      effects,
-      turn,
+      effects: turnEffectContext,
+      turn: guardedTurn,
     });
+    const guardedWorld =
+      explicitFactReplyContract === undefined
+        ? preparedWorld
+        : finalizeExplicitFactWorld({
+            world: preparedWorld,
+            contract: explicitFactReplyContract,
+          });
+    const finalized =
+      consentModalityGuardContract === undefined
+        ? { turn: guardedTurn, world: guardedWorld }
+        : finalizeConsentModalityWorld({
+            turn: guardedTurn,
+            world: guardedWorld,
+            contract: consentModalityGuardContract,
+          });
     return this.commits.commit({
       sessionId,
       command: input,
@@ -380,8 +489,8 @@ export class ConversationService {
       ...(recallDiagnostic === undefined ? {} : { recallDiagnostic }),
       promptSegmentTrace: assembledPrompt.segmentTrace,
       ...(preparedContext === undefined ? {} : { preparedContext }),
-      turn,
-      world,
+      turn: finalized.turn,
+      world: finalized.world,
     });
   }
 }

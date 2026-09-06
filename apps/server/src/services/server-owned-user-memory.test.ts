@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { explicitFactValueResolution } from "../domain/explicit-fact-verification.js";
 import { companionLongRunV3Manifest } from "../scenarios/companion-long-run-v3-manifest.js";
 import {
   companionLongRunV3DelegatedDecision,
@@ -14,6 +15,73 @@ import {
 const NOW = "2026-09-01T01:00:00.000Z";
 
 describe("server-owned deterministic user memory extraction", () => {
+  it.each([
+    "听你提到《夜航》那段，我突然觉得那种“不敢停”的恐慌好像也没那么孤单了，至少有人懂这种感觉。\n\n既然今晚不想动脑子，那就不聊工作调整这种宏大的事了。其实我最近老惦记着想恢复画画，不是为了出作品，就是想让手和脑子换个频道。我在想，能不能先把每周四晚上雷打不动地留给自己？哪怕就画二十分钟，或者只是涂涂颜色发呆，也算给那个焦虑的“背景音”设个静音键。\n\n你觉得这个想法会不会太理想化？还是说，对于咱们这种总觉得自己“在浪费时间”的人来说，有个固定的、无用的“停机坪”反而更踏实一点？我不急着要答案，就是顺嘴提提，也想听听你这会儿的真实感受。",
+    "早啊。昨晚回去我确实没忍住，拿笔在纸上蹭了两下，算是给那根弦松了松。不过有个小事得更正一下，别被我昨天的胡言乱语带偏：我后来仔细想了想，留给画画的时间其实定在每周二晚上，不是周四。周四容易和工作上的琐事混在一起，周二相对清静些。只是还没真正稳定执行，昨晚那顿乱画只能算个意外插曲。你那个‘入口’的说法我还在琢磨，感觉比给自己设闹钟管用多了。你今天不用急着回，剪片间隙透口气就行。",
+  ])(
+    "does not turn the live run's reflection or drawing into storage: %#",
+    (text) => {
+      const candidates = deriveServerOwnedUserMemoryCandidates(text, NOW);
+      expect(
+        candidates.some((candidate) => candidate.tags.includes("item_storage")),
+      ).toBe(false);
+      expect(
+        candidates.some((candidate) =>
+          candidate.claim?.subjectKey.startsWith("user_fact:item:"),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("extracts a real storage statement after unrelated reflective prose", () => {
+    const candidates = deriveServerOwnedUserMemoryCandidates(
+      "我在想今天怎么安排，还是说，对于休息别太较真。护照放在玄关柜的第二层。",
+      NOW,
+    ).filter((candidate) => candidate.tags.includes("item_storage"));
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.claim?.subjectKey).toBe(
+      "user_fact:item:护照:storage",
+    );
+    expect(candidates[0]?.content).toContain("用户的护照现在存放在");
+  });
+
+  it("preserves the live correction as a weekly plan even when execution is unsettled", () => {
+    const candidates = deriveServerOwnedUserMemoryCandidates(
+      "早啊。昨晚拿笔在纸上蹭了两下。不过有个小事得更正一下：我后来仔细想了想，留给画画的时间其实定在每周二晚上，不是周四。只是还没真正稳定执行。你今天忙吗？",
+      NOW,
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: "semantic",
+      claim: {
+        subjectKey: "user_fact:weekly_plan:画画",
+        revisionIntent: "explicit_correction",
+      },
+      temporalMetadata: { temporalStatus: "planned" },
+    });
+    expect(candidates[0]?.content).toContain("每周二晚上");
+    expect(candidates[0]?.content).toContain("不代表已经执行");
+    expect(candidates[0]?.occurredAtUtc).toBeUndefined();
+  });
+
+  it("emits a usual-drink fact that the explicit-fact reader can resolve", () => {
+    const candidate = deriveServerOwnedUserMemoryCandidates(
+      "我喝不加糖的红茶，我的铁盒标签写着“1998 / 潮声”。",
+      NOW,
+    ).find((item) => item.content.startsWith("用户最近常喝"));
+
+    expect(candidate?.content).toBe("用户最近常喝不加糖的红茶。");
+    expect(
+      explicitFactValueResolution(candidate?.content ?? "", {
+        kind: "beverage_preference",
+        selector: { scope: "family", family: "tea" },
+      }),
+    ).toEqual({
+      kind: "resolved",
+      valueKey: "affirmed:black_tea:unspecified:unsweetened",
+    });
+  });
+
   it("extracts every reviewed v3 durable fact with stable claim identities", () => {
     const expected = new Map<number, readonly string[]>([
       [12, ["user_fact:user:name"]],

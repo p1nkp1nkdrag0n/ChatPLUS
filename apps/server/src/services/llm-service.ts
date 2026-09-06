@@ -65,8 +65,11 @@ export type LlmLogicalCallEvent =
 
 export interface LlmServiceObservationOptions {
   onMetric?: LlmMetricSink;
+  promptDiagnostics?: boolean;
   onLogicalCall?: (event: LlmLogicalCallEvent) => void;
 }
+
+const REDACTED_LETTER_REPLY_OBSERVATION = "[redacted:letter_reply]";
 
 export class LlmService {
   readonly providerName: "fixture" | "openai-compatible";
@@ -104,6 +107,9 @@ export class LlmService {
         model: config.model,
         timeoutMs: config.timeoutMs,
         maxRetries: config.maxRetries,
+        ...(observation.promptDiagnostics === undefined
+          ? {}
+          : { promptDiagnostics: observation.promptDiagnostics }),
         ...(config.maxOutputTokens === undefined
           ? {}
           : { maxOutputTokens: config.maxOutputTokens }),
@@ -132,8 +138,14 @@ export class LlmService {
       index: logicalCallIndex,
       purpose: input.purpose,
       ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
-      system: input.system,
-      prompt: input.prompt,
+      system:
+        input.purpose === "letter_reply"
+          ? REDACTED_LETTER_REPLY_OBSERVATION
+          : input.system,
+      prompt:
+        input.purpose === "letter_reply"
+          ? REDACTED_LETTER_REPLY_OBSERVATION
+          : input.prompt,
       ...(input.maxRetries === undefined
         ? {}
         : { maxRetries: input.maxRetries }),
@@ -181,7 +193,9 @@ export class LlmService {
         purpose: input.purpose,
         ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
         success,
-        ...(parsedOutput === undefined ? {} : { parsedOutput }),
+        ...(parsedOutput === undefined || input.purpose === "letter_reply"
+          ? {}
+          : { parsedOutput }),
         ...(errorCode === undefined ? {} : { errorCode }),
         latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
         completedAtUtc: this.clock.nowUtc(),

@@ -1,6 +1,14 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { readConfig } from "./config.js";
+import { readConfig, readLlmProfileConfig } from "./config.js";
+
+const workspaceRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../..",
+);
 
 const llmProfileEnvironmentFields = [
   "BASE_URL",
@@ -17,9 +25,29 @@ const llmProfileEnvironmentFields = [
   "MAX_OUTPUT_TOKENS",
 ] as const;
 
+const correspondenceEnvironmentFields = [
+  "CORRESPONDENCE_MODE",
+  "CORRESPONDENCE_EXECUTION",
+  "CORRESPONDENCE_TRANSIT_POLICY",
+  "CORRESPONDENCE_GENERATION_LEASE_MS",
+  "CORRESPONDENCE_MAX_OPEN_THREADS",
+  "KEEPSAKE_MODE",
+  "ASSET_STORAGE_PATH",
+  "INSTANCE_SECRET",
+  "SELFHOSTED_REVERSE_PROXY",
+  "SERVE_WEB",
+  "WEB_DIST_PATH",
+] as const;
+
 function clearLlmProfileEnvironment(profilePrefix: string): void {
   for (const field of llmProfileEnvironmentFields) {
     vi.stubEnv(`LLM_PROFILE_${profilePrefix}_${field}`, undefined);
+  }
+}
+
+function clearCorrespondenceEnvironment(): void {
+  for (const field of correspondenceEnvironmentFields) {
+    vi.stubEnv(field, undefined);
   }
 }
 
@@ -36,6 +64,90 @@ describe("server configuration", () => {
       minimumTailTokens: 3_000,
       minimumRecentTurns: 12,
     });
+  });
+
+  it("keeps correspondence and keepsakes disabled with safe first-version defaults", () => {
+    clearCorrespondenceEnvironment();
+
+    expect(readConfig()).toMatchObject({
+      correspondenceMode: "off",
+      correspondenceExecution: "lazy",
+      correspondenceTransitPolicy: "fixed_5d_v1",
+      correspondenceGenerationLeaseMs: 1_800_000,
+      correspondenceMaxOpenThreads: 1,
+      keepsakeMode: "off",
+      assetStoragePath: resolve(workspaceRoot, "data/assets"),
+    });
+    expect(readConfig().instanceSecret).toBeUndefined();
+  });
+
+  it.each(["off", "shadow", "enforced"] as const)(
+    "accepts correspondence rollout mode %s",
+    (mode) => {
+      vi.stubEnv("CORRESPONDENCE_MODE", mode);
+
+      expect(readConfig().correspondenceMode).toBe(mode);
+    },
+  );
+
+  it.each(["lazy", "resident", "worker"] as const)(
+    "accepts correspondence execution driver %s",
+    (execution) => {
+      vi.stubEnv("CORRESPONDENCE_EXECUTION", execution);
+
+      expect(readConfig().correspondenceExecution).toBe(execution);
+    },
+  );
+
+  it.each(["off", "shadow", "enforced"] as const)(
+    "accepts keepsake rollout mode %s",
+    (mode) => {
+      vi.stubEnv("KEEPSAKE_MODE", mode);
+
+      expect(readConfig().keepsakeMode).toBe(mode);
+    },
+  );
+
+  it("parses explicit correspondence and keepsake settings", () => {
+    vi.stubEnv("CORRESPONDENCE_MODE", "enforced");
+    vi.stubEnv("CORRESPONDENCE_EXECUTION", "resident");
+    vi.stubEnv("CORRESPONDENCE_TRANSIT_POLICY", "fixed_5d_v1");
+    vi.stubEnv("CORRESPONDENCE_GENERATION_LEASE_MS", "900000");
+    vi.stubEnv("CORRESPONDENCE_MAX_OPEN_THREADS", "1");
+    vi.stubEnv("KEEPSAKE_MODE", "shadow");
+    vi.stubEnv("ASSET_STORAGE_PATH", "./var/keepsakes");
+    vi.stubEnv("INSTANCE_SECRET", "  test-instance-secret  ");
+
+    expect(readConfig()).toMatchObject({
+      correspondenceMode: "enforced",
+      correspondenceExecution: "resident",
+      correspondenceTransitPolicy: "fixed_5d_v1",
+      correspondenceGenerationLeaseMs: 900_000,
+      correspondenceMaxOpenThreads: 1,
+      keepsakeMode: "shadow",
+      assetStoragePath: resolve(workspaceRoot, "var/keepsakes"),
+      instanceSecret: "test-instance-secret",
+    });
+  });
+
+  it("treats a blank instance secret as absent during Stage 0", () => {
+    vi.stubEnv("INSTANCE_SECRET", "   ");
+
+    expect(readConfig().instanceSecret).toBeUndefined();
+  });
+
+  it.each([
+    ["CORRESPONDENCE_MODE", "enabled"],
+    ["CORRESPONDENCE_EXECUTION", "cron"],
+    ["CORRESPONDENCE_TRANSIT_POLICY", "fixed_3d_v1"],
+    ["CORRESPONDENCE_GENERATION_LEASE_MS", "0"],
+    ["CORRESPONDENCE_MAX_OPEN_THREADS", "2"],
+    ["KEEPSAKE_MODE", "enabled"],
+    ["ASSET_STORAGE_PATH", "   "],
+  ])("rejects invalid correspondence setting %s=%s", (name, value) => {
+    vi.stubEnv(name, value);
+
+    expect(() => readConfig()).toThrow();
   });
 
   it("uses fuzzy life and promoted continuity defaults in every environment", () => {
@@ -226,6 +338,109 @@ describe("server configuration", () => {
     });
   });
 
+  it("loads the Qwen Flash profile with its own key and reasoning capabilities", () => {
+    clearLlmProfileEnvironment("QWEN");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "qwen");
+    vi.stubEnv(
+      "LLM_PROFILE_QWEN_BASE_URL",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+    );
+    vi.stubEnv("LLM_PROFILE_QWEN_API_KEY", "test-qwen-profile-key");
+    vi.stubEnv("LLM_PROFILE_QWEN_MODEL", "qwen3.8-flash");
+    vi.stubEnv("LLM_PROFILE_QWEN_TIMEOUT_MS", "300000");
+    vi.stubEnv("LLM_PROFILE_QWEN_MAX_RETRIES", "1");
+    vi.stubEnv("LLM_PROFILE_QWEN_STRUCTURED_OUTPUT_MODE", "json_object");
+    vi.stubEnv("LLM_PROFILE_QWEN_REASONING_EFFORT", "medium");
+    vi.stubEnv("LLM_PROFILE_QWEN_REASONING_FORMAT", "openai_reasoning_effort");
+    vi.stubEnv("LLM_PROFILE_QWEN_SUPPORTS_THINKING_CONTROL", "false");
+    vi.stubEnv("LLM_PROFILE_QWEN_SUPPORTS_STREAMING", "false");
+    vi.stubEnv("LLM_PROFILE_QWEN_MAX_CONTEXT_TOKENS", "1000000");
+    vi.stubEnv("LLM_PROFILE_QWEN_MAX_OUTPUT_TOKENS", "32768");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_API_KEY", "test-other-profile-key");
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "test-legacy-key");
+    vi.stubEnv("LLM_API_KEY", "test-alias-key");
+
+    expect(readConfig().llm).toEqual({
+      provider: "openai-compatible",
+      profileName: "qwen",
+      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      apiKey: "test-qwen-profile-key",
+      model: "qwen3.8-flash",
+      timeoutMs: 300_000,
+      maxRetries: 1,
+      maxOutputTokens: 32_768,
+      capabilities: {
+        structuredOutputMode: "json_object",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        reasoningEffort: "medium",
+        reasoningRequestFormat: "openai_reasoning_effort",
+        maxContextTokens: 1_000_000,
+        maxOutputTokens: 32_768,
+      },
+    });
+  });
+
+  it.each([undefined, "", "   "])(
+    "does not substitute another provider key for an absent Qwen key (%j)",
+    (apiKey) => {
+      clearLlmProfileEnvironment("QWEN");
+      vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+      vi.stubEnv("LLM_ACTIVE_PROFILE", "qwen");
+      vi.stubEnv(
+        "LLM_PROFILE_QWEN_BASE_URL",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      );
+      vi.stubEnv("LLM_PROFILE_QWEN_MODEL", "qwen3.8-flash");
+      vi.stubEnv("LLM_PROFILE_QWEN_API_KEY", apiKey);
+      vi.stubEnv("LLM_PROFILE_CLAUDE_API_KEY", "test-other-profile-key");
+      vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "test-legacy-key");
+      vi.stubEnv("LLM_API_KEY", "test-alias-key");
+
+      expect(readConfig().llm).toMatchObject({
+        profileName: "qwen",
+        model: "qwen3.8-flash",
+      });
+      expect(readConfig().llm.apiKey).toBeUndefined();
+    },
+  );
+
+  it("reads two independent model profiles without changing the active server profile", () => {
+    clearLlmProfileEnvironment("QWEN");
+    clearLlmProfileEnvironment("CLAUDE");
+    vi.stubEnv("LLM_PROVIDER", "openai-compatible");
+    vi.stubEnv("LLM_ACTIVE_PROFILE", "claude");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_BASE_URL", "https://example.com/v1");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_API_KEY", "test-claude-profile-key");
+    vi.stubEnv("LLM_PROFILE_CLAUDE_MODEL", "claude-test");
+    vi.stubEnv(
+      "LLM_PROFILE_QWEN_BASE_URL",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    );
+    vi.stubEnv("LLM_PROFILE_QWEN_API_KEY", "test-qwen-profile-key");
+    vi.stubEnv("LLM_PROFILE_QWEN_MODEL", "qwen3.8-flash");
+
+    const activeBefore = readConfig().llm;
+    const qwen = readLlmProfileConfig("qwen");
+    const claude = readLlmProfileConfig("claude");
+
+    expect(qwen).toMatchObject({
+      provider: "openai-compatible",
+      profileName: "qwen",
+      apiKey: "test-qwen-profile-key",
+      model: "qwen3.8-flash",
+    });
+    expect(claude).toMatchObject({
+      provider: "openai-compatible",
+      profileName: "claude",
+      apiKey: "test-claude-profile-key",
+      model: "claude-test",
+    });
+    expect(process.env.LLM_ACTIVE_PROFILE).toBe("claude");
+    expect(readConfig().llm).toEqual(activeBefore);
+  });
+
   it("rejects a reasoning effort without a matching request format", () => {
     clearLlmProfileEnvironment("GROK");
     vi.stubEnv("LLM_PROVIDER", "openai-compatible");
@@ -373,5 +588,44 @@ describe("server configuration", () => {
       host: "::1",
       webOrigin: "http://127.0.0.2:5173, https://[::1]:5173",
     });
+  });
+
+  it("allows a production-only wildcard bind behind the explicit HTTPS reverse-proxy boundary", () => {
+    expect(
+      readConfig({
+        nodeEnv: "production",
+        host: "0.0.0.0",
+        webOrigin: "https://friend.example.com",
+        selfHostedReverseProxy: true,
+        serveWeb: true,
+        webDistPath: "C:/chatplus/web-dist",
+      }),
+    ).toMatchObject({
+      selfHostedReverseProxy: true,
+      serveWeb: true,
+      webDistPath: "C:/chatplus/web-dist",
+    });
+  });
+
+  it.each([
+    {
+      nodeEnv: "development" as const,
+      host: "0.0.0.0",
+      webOrigin: "https://friend.example.com",
+    },
+    {
+      nodeEnv: "production" as const,
+      host: "192.168.1.20",
+      webOrigin: "https://friend.example.com",
+    },
+    {
+      nodeEnv: "production" as const,
+      host: "0.0.0.0",
+      webOrigin: "http://friend.example.com",
+    },
+  ])("rejects an unsafe self-hosted reverse-proxy configuration", (input) => {
+    expect(() =>
+      readConfig({ ...input, selfHostedReverseProxy: true }),
+    ).toThrow();
   });
 });

@@ -68,6 +68,9 @@ function compactLabeledJson(
   } catch {
     return undefined;
   }
+  if (label === "AUTOBIOGRAPHY_JSON") {
+    return compactWholeAutobiography(label, parsed, maximumCharacters);
+  }
   const configurations = [
     [2_000, 20],
     [1_000, 12],
@@ -80,14 +83,56 @@ function compactLabeledJson(
     [32, 1],
   ] as const;
   for (const [maximumString, maximumArray] of configurations) {
+    // Recent dialogue is chronological: discard its oldest messages first.
+    // Other arrays (including nested message metadata) retain their existing
+    // priority-first compaction semantics.
+    const selected =
+      label === "RECENT_VERBATIM_JSON" && Array.isArray(parsed)
+        ? parsed.slice(-maximumArray)
+        : parsed;
     const serialized = JSON.stringify(
-      compactJsonValue(parsed, maximumString, maximumArray),
+      compactJsonValue(selected, maximumString, maximumArray),
     );
     const candidate = `${label}\n${serialized}`;
     if (candidate.length <= maximumCharacters) return candidate;
   }
   const marker = `${label}\n{"_truncated":true}`;
   return marker.length <= maximumCharacters ? marker : null;
+}
+
+function compactWholeAutobiography(
+  label: string,
+  value: unknown,
+  maximumCharacters: number,
+): string | null {
+  const retained: Record<string, unknown> = { _truncated: true };
+  const render = (data: Record<string, unknown>) =>
+    `${label}\n${JSON.stringify(data)}`;
+  if (render(retained).length > maximumCharacters) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return render(retained);
+  const original = value as Record<string, unknown>;
+  const keep = (key: string, item: unknown) => {
+    if (render({ ...retained, [key]: item }).length <= maximumCharacters)
+      retained[key] = item;
+  };
+  for (const key of ["revision", "fromUtc", "throughUtc", "summaryFirstPerson"])
+    if (original[key] !== undefined) keep(key, original[key]);
+
+  // The snapshot lists are chronological. Try the newest whole report from
+  // each category first, without splitting its quote, condition or negation.
+  const lists = Object.entries(original).filter((entry) =>
+    Array.isArray(entry[1]),
+  ) as [string, unknown[]][];
+  const longest = Math.max(0, ...lists.map(([, items]) => items.length));
+  for (let offset = 1; offset <= longest; offset += 1) {
+    for (const [key, items] of lists) {
+      if (offset > items.length) continue;
+      const selected = (retained[key] as unknown[] | undefined) ?? [];
+      keep(key, [items[items.length - offset], ...selected]);
+    }
+  }
+  return render(retained);
 }
 
 function compactJsonValue(
@@ -247,11 +292,18 @@ export class PromptSegmentRegistry<
       else dropped.set(candidate.segment.id, "global_budget");
     }
 
-    const ordered = selected.sort(compareCandidateIds);
+    const ordered = selected.sort(compareCandidateRenderOrder);
     const system = joinPlacement(ordered, "system");
     const prompt = joinPlacement(ordered, "prompt");
-    const selectedIds = new Set(ordered.map(({ segment }) => segment.id));
-    const traces = buildTrace(candidates, empty, selectedIds, dropped);
+    const renderedIndexes = new Map<string, number>();
+    for (const placement of ["system", "prompt"] as const) {
+      ordered
+        .filter(({ segment }) => segment.placement === placement)
+        .forEach(({ segment }, index) =>
+          renderedIndexes.set(segment.id, index),
+        );
+    }
+    const traces = buildTrace(candidates, empty, renderedIndexes, dropped);
 
     return {
       system,
@@ -304,6 +356,15 @@ function validateSegment<TContext extends PromptContext>(
     throw new PromptSegmentRegistryError(
       "invalid_segment",
       'Prompt segment "' + segment.id + '" must have a finite priority.',
+    );
+  }
+  if (
+    segment.renderOrder !== undefined &&
+    !Number.isFinite(segment.renderOrder)
+  ) {
+    throw new PromptSegmentRegistryError(
+      "invalid_segment",
+      'Prompt segment "' + segment.id + '" must have a finite render order.',
     );
   }
   if (!Number.isInteger(segment.tokenBudget) || segment.tokenBudget < 1) {
@@ -422,12 +483,13 @@ function fitOptionalCandidate<TContext extends PromptContext>(
 function buildTrace<TContext extends PromptContext>(
   candidates: readonly Candidate<TContext>[],
   empty: readonly EmptyCandidate<TContext>[],
-  selectedIds: ReadonlySet<string>,
+  renderedIndexes: ReadonlyMap<string, number>,
   droppedReasons: ReadonlyMap<string, "segment_budget" | "global_budget">,
 ): PromptSegmentTrace[] {
   const traceById = new Map<string, PromptSegmentTrace>();
   for (const candidate of candidates) {
-    const included = selectedIds.has(candidate.segment.id);
+    const renderedIndex = renderedIndexes.get(candidate.segment.id);
+    const included = renderedIndex !== undefined;
     traceById.set(candidate.segment.id, {
       id: candidate.segment.id,
       placement: candidate.segment.placement,
@@ -438,6 +500,10 @@ function buildTrace<TContext extends PromptContext>(
       included,
       truncated: candidate.originallyTruncated || candidate.globallyTruncated,
       cacheHit: candidate.cacheHit,
+      localCacheHit: candidate.cacheHit,
+      ...(included
+        ? { renderedIndex, renderedCharacters: candidate.content.length }
+        : {}),
       ...(included
         ? {}
         : {
@@ -458,6 +524,7 @@ function buildTrace<TContext extends PromptContext>(
       included: false,
       truncated: false,
       cacheHit: item.cacheHit,
+      localCacheHit: item.cacheHit,
       reason: "empty",
     });
   }
@@ -481,7 +548,7 @@ function joinPlacement<TContext extends PromptContext>(
 ): string {
   return candidates
     .filter((candidate) => candidate.segment.placement === placement)
-    .sort(compareCandidateIds)
+    .sort(compareCandidateRenderOrder)
     .map((candidate) => candidate.content)
     .join("\n");
 }
@@ -493,11 +560,14 @@ function compareSegmentIds<TContext extends PromptContext>(
   return left.id.localeCompare(right.id);
 }
 
-function compareCandidateIds<TContext extends PromptContext>(
+function compareCandidateRenderOrder<TContext extends PromptContext>(
   left: Candidate<TContext>,
   right: Candidate<TContext>,
 ): number {
-  return left.segment.id.localeCompare(right.segment.id);
+  return (
+    (left.segment.renderOrder ?? 0) - (right.segment.renderOrder ?? 0) ||
+    left.segment.id.localeCompare(right.segment.id)
+  );
 }
 
 function compareOptionalPriority<TContext extends PromptContext>(

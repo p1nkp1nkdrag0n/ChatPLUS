@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import { request as requestHttp } from "node:http";
 
 import {
   CreateSessionResponseSchema,
@@ -381,8 +382,40 @@ export class LongRunV2Runtime {
   ): Promise<LongRunHttpResult> {
     this.requireOpen();
     const started = performance.now();
-    const response = await this.nativeFetch(new URL(path, this.origin), init);
-    const text = await response.text();
+    // An OS-assigned loopback port can be on Fetch's forbidden-port list.
+    // Use Node's HTTP client for this real local socket; nativeFetch remains
+    // dedicated to the separately observed Provider transport.
+    const request = new Request(new URL(path, this.origin), init);
+    const payload =
+      request.body === null
+        ? undefined
+        : Buffer.from(await request.arrayBuffer());
+    const response = await new Promise<{ status: number; text: string }>(
+      (resolve, reject) => {
+        const outgoing = requestHttp(
+          request.url,
+          {
+            method: request.method,
+            headers: Object.fromEntries(request.headers),
+            signal: request.signal,
+          },
+          (incoming) => {
+            incoming.setEncoding("utf8");
+            let text = "";
+            incoming.on("data", (chunk: string) => {
+              text += chunk;
+            });
+            incoming.on("error", reject);
+            incoming.on("end", () =>
+              resolve({ status: incoming.statusCode ?? 0, text }),
+            );
+          },
+        );
+        outgoing.on("error", reject);
+        outgoing.end(payload);
+      },
+    );
+    const { text } = response;
     let body: unknown = text;
     try {
       body = text === "" ? null : (JSON.parse(text) as unknown);

@@ -66,9 +66,15 @@ export class TurnCommitAuditWriter {
           mode: input.world.effectTrace.mode,
           interactionStatus: "committed",
           llmProposalStatus:
-            input.world.effectTrace.mode === "enforced"
-              ? "committed"
-              : input.world.effectTrace.mode,
+            input.turn.explicitFactReplyGuardAudit !== undefined ||
+            input.turn.consentModalityGuardAudit?.modelSideEffectsBlocked ===
+              true ||
+            input.turn.consentModalityGuardAudit
+              ?.contentDerivedSemanticsSkipped === true
+              ? "blocked"
+              : input.world.effectTrace.mode === "enforced"
+                ? "committed"
+                : input.world.effectTrace.mode,
           source: input.world.effectTrace.sources,
           expectedStateRevision: input.world.effectTrace.expectedStateRevision,
           proposed: input.world.effectTrace.proposed,
@@ -287,6 +293,17 @@ export class TurnCommitAuditWriter {
           memoryIds: input.memoryIds,
           reasonCode: input.turn.world.decision.reasonCode,
           personalIntentIds: input.personalIntentIds,
+          ...(input.turn.turn.explicitFactReplyGuardAudit === undefined
+            ? {}
+            : {
+                explicitFactReplyGuard:
+                  input.turn.turn.explicitFactReplyGuardAudit,
+              }),
+          ...(input.turn.turn.consentModalityGuardAudit === undefined
+            ? {}
+            : {
+                consentModalityGuard: input.turn.turn.consentModalityGuardAudit,
+              }),
           ...(input.lifeImpact === undefined
             ? {}
             : { lifeImpact: input.lifeImpact }),

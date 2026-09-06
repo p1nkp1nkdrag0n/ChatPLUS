@@ -39,6 +39,13 @@ export interface AutobiographyBundle {
   entries: AutobiographyEntry[];
 }
 
+export interface ExplicitFactEventCardScan {
+  cards: EventCard[];
+  truncated: boolean;
+  scanLimit: number;
+  truncationWitness?: EventCard;
+}
+
 export class ContinuityRepository {
   constructor(readonly store: DatabaseStore) {}
 
@@ -203,6 +210,71 @@ export class ContinuityRepository {
       )
       .get(sessionId) as SqlRow | undefined;
     return row === undefined ? undefined : mapCheckpoint(row);
+  }
+
+  getCheckpointRecoveryState(sessionId: string):
+    | {
+        checkpoint: ConversationCheckpoint;
+        consecutiveFailures: number;
+      }
+    | undefined {
+    // Terminal events retain repeated failures even when beginCheckpoint
+    // reuses the same source-window row. A commit resets the failure streak.
+    const events = this.store.database
+      .prepare(
+        `SELECT event.stream_id AS checkpointId, event.event_type AS eventType,
+         json_extract(event.payload_json, '$.failureCode') AS failureCode
+       FROM domain_events AS event
+       JOIN conversation_checkpoints AS checkpoint ON checkpoint.id = event.stream_id
+       WHERE event.stream_type = 'conversation_checkpoint' AND checkpoint.session_id = ?
+         AND event.event_type IN ('conversation.checkpoint.failed', 'conversation.checkpoint.committed')
+       ORDER BY event.recorded_at_utc DESC, event.rowid DESC LIMIT 3`,
+      )
+      .all(sessionId) as Array<{
+      checkpointId: string;
+      eventType: string;
+      failureCode: string | null;
+    }>;
+    const latest = events[0];
+    if (latest?.eventType === "conversation.checkpoint.failed") {
+      const checkpoint = this.getCheckpoint(latest.checkpointId);
+      if (checkpoint?.status !== "failed") return undefined;
+      let consecutiveFailures = 0;
+      for (const event of events) {
+        if (
+          event.eventType !== latest.eventType ||
+          event.failureCode !== latest.failureCode
+        )
+          break;
+        consecutiveFailures += 1;
+      }
+      return { checkpoint, consecutiveFailures };
+    }
+    // Databases created before failure events existed still get an initial
+    // cooldown; their failed row never becomes a committed boundary.
+    const legacy = this.store.database
+      .prepare(
+        `SELECT * FROM conversation_checkpoints AS failed
+       WHERE session_id = ? AND status = 'failed'
+         AND NOT EXISTS (SELECT 1 FROM conversation_checkpoints AS committed
+           WHERE committed.session_id = failed.session_id AND committed.status = 'committed'
+             AND committed.committed_at_utc >= failed.updated_at_utc)
+       ORDER BY updated_at_utc DESC, rowid DESC LIMIT 1`,
+      )
+      .get(sessionId) as SqlRow | undefined;
+    return legacy === undefined
+      ? undefined
+      : { checkpoint: mapCheckpoint(legacy), consecutiveFailures: 1 };
+  }
+
+  nextCheckpointEventVersion(checkpointId: string): number {
+    const row = this.store.database
+      .prepare(
+        `SELECT COALESCE(MAX(stream_version), 0) + 1 AS version FROM domain_events
+       WHERE stream_type = 'conversation_checkpoint' AND stream_id = ?`,
+      )
+      .get(checkpointId) as { version: number };
+    return row.version;
   }
 
   getCheckpoint(checkpointId: string): ConversationCheckpoint | undefined {
@@ -612,6 +684,60 @@ export class ContinuityRepository {
               ) as Array<{ card_json: string }>
           ).map((row) => JSON.parse(row.card_json) as EventCard);
     return mergeSearchMatches(input.query, hanMatches, ftsMatches, limit);
+  }
+
+  /**
+   * Reads a bounded, caller-independent safety pool for atomic fact checks.
+   * The supplied terms must be a conservative superset of everything the
+   * downstream fact extractor can accept; reaching the cap is reported so the
+   * caller can fail closed instead of overlooking a later contradiction.
+   */
+  scanExplicitFactEventCards(input: {
+    agentId: string;
+    searchTerms: readonly string[];
+    scanLimit: number;
+  }): ExplicitFactEventCardScan {
+    const scanLimit = Math.max(1, Math.min(500, Math.trunc(input.scanLimit)));
+    const searchTerms = [
+      ...new Set(
+        input.searchTerms
+          .map((term) => term.normalize("NFKC").trim().toLocaleLowerCase())
+          .filter(Boolean),
+      ),
+    ].slice(0, 80);
+    if (searchTerms.length === 0) {
+      return { cards: [], truncated: false, scanLimit };
+    }
+    const termClauses = searchTerms
+      .map(
+        () =>
+          "(instr(lower(title), ?) > 0 OR instr(lower(summary), ?) > 0 OR instr(lower(tags_text), ?) > 0)",
+      )
+      .join(" OR ");
+    const rows = this.store.database
+      .prepare(
+        `SELECT card_json
+         FROM event_cards
+         WHERE agent_id = ? AND status = 'active'
+           AND (${termClauses})
+         ORDER BY importance DESC, recorded_at_utc DESC, id ASC
+         LIMIT ?`,
+      )
+      .all(
+        input.agentId,
+        ...searchTerms.flatMap((term) => [term, term, term]),
+        scanLimit + 1,
+      ) as Array<{ card_json: string }>;
+    const parsedRows = rows.map(
+      (row) => JSON.parse(row.card_json) as EventCard,
+    );
+    const truncationWitness = parsedRows[scanLimit];
+    return {
+      cards: parsedRows.slice(0, scanLimit),
+      truncated: truncationWitness !== undefined,
+      scanLimit,
+      ...(truncationWitness === undefined ? {} : { truncationWitness }),
+    };
   }
 
   replaceEventCards(agentId: string, cards: readonly EventCard[]): number {

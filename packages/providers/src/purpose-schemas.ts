@@ -2,6 +2,7 @@ import {
   ActivityEnrichmentBatchSchema,
   AutobiographyRevisionProposalSchema,
   CharacterCompilationProposalSchema,
+  LetterReplyProposalSchema,
   normalizeCharacterCompilationModelOutput,
   PersonaChatResponseSchema,
   StrictPersonaTurnProviderEnvelopeSchema,
@@ -19,6 +20,7 @@ export const PURPOSE_OUTPUT_SCHEMAS: Record<LlmPurpose, ZodType> = {
   enrich_activity: ActivityEnrichmentBatchSchema,
   compose_proactive_message: ProactiveMessageProposalSchema,
   checkpoint_autobiography: AutobiographyRevisionProposalSchema,
+  letter_reply: LetterReplyProposalSchema,
 };
 
 export function normalizePurposeOutput(

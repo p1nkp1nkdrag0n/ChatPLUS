@@ -1,4 +1,9 @@
 import { resolve } from "node:path";
+import {
+  providerAccountingMetric,
+  providerMetricsReport,
+  type ProviderMetricsReport,
+} from "./provider-metrics-summary.js";
 
 import {
   resolveLongRunV3ArtifactPaths,
@@ -160,6 +165,7 @@ export interface LongRunV3RunSummary {
     };
   };
   provider: {
+    cacheAccounting?: ProviderMetricsReport;
     physicalAttempts: number;
     failedAttempts: number;
     repairedTurns: number;
@@ -322,6 +328,12 @@ export function summarizeLongRunV3Run(input: {
       },
     },
     provider: {
+      cacheAccounting: providerMetricsReport(
+        attempts.map((attempt) => ({
+          ...providerAccountingMetric(attempt),
+          profile: input.manifest.profile,
+        })),
+      ),
       physicalAttempts: attempts.length,
       failedAttempts: attempts.filter((attempt) => !attempt.success).length,
       repairedTurns,

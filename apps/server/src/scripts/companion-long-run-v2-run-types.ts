@@ -1,4 +1,8 @@
 import type { LlmCallMetric } from "@personasim/providers";
+import type {
+  ProviderCacheUsage,
+  ProviderMetricsReport,
+} from "./provider-metrics-summary.js";
 
 export const LONG_RUN_V2_PROFILE_ORDER = [
   "deepseek",
@@ -77,6 +81,8 @@ export interface RunManifest {
 }
 
 export interface ProviderAttemptEvidence extends LlmCallMetric {
+  providerLogicalCallId?: string;
+  providerInputTokens?: number;
   attemptId: string;
   logicalCallId?: string;
   logicalCallIndex?: number;
@@ -160,6 +166,7 @@ export interface LongRunLogicalModelIoRecord extends LongRunModelIoRecordIdentit
 }
 
 export interface LongRunPhysicalModelIoRecord extends LongRunModelIoRecordIdentity {
+  providerLogicalCallId?: string;
   recordType: "physical_attempt";
   attemptId: string;
   attemptNumber: number;
@@ -183,7 +190,7 @@ export interface LongRunPhysicalModelIoRecord extends LongRunModelIoRecordIdenti
     errorCode?: string;
     raw?: unknown;
     text?: string;
-    usage: {
+    usage: ProviderCacheUsage & {
       source?: "provider" | "estimated" | "unavailable";
       inputTokens?: number;
       outputTokens?: number;
@@ -371,6 +378,7 @@ export interface RunSummary {
     failedAttempts: number;
     repairedTurns: number;
     repairRate: number;
+    cacheAccounting?: ProviderMetricsReport;
     inputTokens?: number;
     outputTokens?: number;
   };

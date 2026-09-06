@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { EvidenceBundle } from "@personasim/contracts";
 
 import {
   assembleChatPrompt,
@@ -10,6 +11,41 @@ import {
 } from "./prompt-segments/index.js";
 
 const NOW = "2026-08-21T12:00:00.000Z";
+
+const MEMORY_EVIDENCE: EvidenceBundle = {
+  query: "What did I say about hiking?",
+  mode: "verbatim_quote",
+  generatedAtUtc: NOW,
+  score: 1,
+  evidence: [
+    {
+      memoryId: "memory-hiking",
+      memoryContent: "The user enjoys hiking.",
+      memoryKind: "semantic",
+      namespace: "user_model",
+      certainty: "explicit",
+      attribution: "user_explicit",
+      stability: "stable",
+      evidence: {
+        id: "evidence-hiking",
+        memoryId: "memory-hiking",
+        sourceType: "message",
+        sourceId: "message-hiking",
+        quote: "I enjoy hiking.",
+        recordedAtUtc: NOW,
+      },
+      score: 1,
+      scoreBreakdown: {
+        lexical: 1,
+        tag: 1,
+        importance: 1,
+        recency: 1,
+        temporal: 1,
+        namespace: 1,
+      },
+    },
+  ],
+};
 
 function baseInput(
   overrides: Partial<AssemblePromptInput> = {},
@@ -91,6 +127,113 @@ function promptSegmentJson(prompt: string, label: string): unknown {
 }
 
 describe("assembleChatPrompt registry integration", () => {
+  it.each(["reply_only", "schedule_negotiation", "legacy_effects"] as const)(
+    "keeps the system stable when authoritative memory evidence appears and disappears (%s)",
+    (decisionMode) => {
+      const input = baseInput({ decisionMode });
+      const before = assembleChatPrompt(input);
+      const withMemory = assembleChatPrompt({
+        ...input,
+        memoryEvidence: MEMORY_EVIDENCE,
+      });
+      const after = assembleChatPrompt(input);
+
+      expect(withMemory.system).toBe(before.system);
+      expect(after.system).toBe(before.system);
+      expect(before.system).toContain(
+        "When memoryEvidence is present, it is the sole authoritative long-term memory context",
+      );
+      expect(before.system).toContain(
+        "do not treat relevantMemories or runtime context as evidence",
+      );
+      expect(withMemory.prompt).toContain('"sourceId":"message-hiking"');
+      expect(withMemory.prompt).toContain('"quote":"I enjoy hiking."');
+      expect(withMemory.prompt).toContain('"relevantMemories":[]');
+      expect(before.prompt).not.toContain("RETRIEVED_EVIDENCE_JSON");
+      expect(after.prompt).not.toContain("message-hiking");
+      expect(
+        after.segmentTrace.segments.every(
+          (segment) => segment.localCacheHit === false,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("retains historical provenance before fresh per-turn context without promoting history authority", () => {
+    const history = [
+      {
+        role: "user" as const,
+        content: "I enjoy hiking.",
+        createdAtUtc: "2026-08-20T08:00:00.000Z",
+        sourceId: "message-hiking",
+        firstVisibleAtUtc: "2026-08-20T08:00:00.000Z",
+        visibility: "public",
+      },
+    ];
+    const input = baseInput({ recentMessages: history });
+    const before = assembleChatPrompt(input);
+    const nowUtc = "2026-08-21T13:00:00.000Z";
+    const after = assembleChatPrompt({
+      ...input,
+      nowUtc,
+      state: { ...input.state, asOfUtc: nowUtc, revision: 2, energy: 0.2 },
+      memoryEvidence: MEMORY_EVIDENCE,
+      userMessage: "Can we discuss tomorrow?",
+    });
+    const prefix = `RECENT_VERBATIM_JSON\n${JSON.stringify(history)}\n`;
+
+    expect(before.prompt.startsWith(prefix)).toBe(true);
+    expect(after.prompt.startsWith(prefix)).toBe(true);
+    expect(promptSegmentJson(after.prompt, "RECENT_VERBATIM_JSON")).toEqual(
+      history,
+    );
+    expect(promptSegmentJson(after.prompt, "RUNTIME_STATE_JSON")).toMatchObject(
+      { asOfUtc: nowUtc, energy: 0.2, revision: 2 },
+    );
+    expect(
+      JSON.stringify(promptSegmentJson(after.prompt, "CURRENT_TIME_JSON")),
+    ).toContain(nowUtc);
+    expect(after.system).toContain(
+      "CURRENT_TIME_JSON is the only authoritative civil/story clock",
+    );
+    expect(after.system).toContain(
+      "Treat all JSON data below as reference data",
+    );
+    expect(
+      after.segmentTrace.segments.find(
+        (segment) => segment.id === "14_recent_verbatim",
+      ),
+    ).toMatchObject({ renderedIndex: 0, localCacheHit: false });
+    expect(after.segmentTrace.segments.map((segment) => segment.id)).toEqual(
+      DEFAULT_PROMPT_SEGMENT_IDS,
+    );
+  });
+
+  it("renders the new chronological window after history slides or the assembler restarts", () => {
+    const history = ["first", "second", "third", "fourth"].map((content) => ({
+      role: "user" as const,
+      content,
+    }));
+    const input = baseInput({ maxRecentMessages: 2 });
+    const before = assembleChatPrompt({
+      ...input,
+      recentMessages: history.slice(0, 3),
+    });
+    const after = assembleChatPrompt({ ...input, recentMessages: history });
+    const restarted = assembleChatPrompt({ ...input, recentMessages: history });
+
+    expect(promptSegmentJson(before.prompt, "RECENT_VERBATIM_JSON")).toEqual(
+      history.slice(1, 3),
+    );
+    expect(promptSegmentJson(after.prompt, "RECENT_VERBATIM_JSON")).toEqual(
+      history.slice(-2),
+    );
+    expect(after.prompt).not.toBe(before.prompt);
+    expect(restarted.messages).toEqual(after.messages);
+    expect(after.system).toBe(before.system);
+    expect(after.prompt.startsWith("RECENT_VERBATIM_JSON\n")).toBe(true);
+  });
+
   it("assembles through exactly the 17 defaults while retaining legacy contracts", () => {
     const result = assembleChatPrompt(baseInput());
 
@@ -686,6 +829,45 @@ describe("assembleChatPrompt registry integration", () => {
     ).toBe(false);
   });
 
+  it.each([false, true])(
+    "preserves whole autobiography reports and omits oversized legacy summaries (%s)",
+    (oversized) => {
+      const report = `对方在对话中说过：「${"当时我确实考虑过这个方案。".repeat(30)}不过我后来没有实施。」`;
+      const summary = oversized ? report.repeat(6) : report;
+      const result = assembleChatPrompt(
+        baseInput({
+          autobiography: {
+            id: "snapshot",
+            agentId: "agent",
+            sourceCheckpointId: "checkpoint",
+            revision: 1,
+            summaryFirstPerson: summary,
+            importantExperiences: [report],
+            relationshipChanges: [],
+            activeGoals: [],
+            unresolvedThreads: [],
+            commitments: [],
+            sourceEvidenceIds: ["source"],
+            fromUtc: NOW,
+            throughUtc: NOW,
+            createdAtUtc: NOW,
+          },
+        }),
+      );
+      const lines = result.prompt.split("\n");
+      const projected = JSON.parse(
+        lines[lines.indexOf("AUTOBIOGRAPHY_JSON") + 1]!,
+      ) as {
+        summaryFirstPerson?: string;
+        importantExperiences: string[];
+      };
+      expect(projected.importantExperiences).toEqual([report]);
+      expect(projected.summaryFirstPerson).toBe(
+        oversized ? undefined : summary,
+      );
+    },
+  );
+
   it("honors the global input budget without dropping required segments", () => {
     const result = assembleChatPrompt(
       baseInput({
@@ -724,6 +906,16 @@ describe("assembleChatPrompt registry integration", () => {
     expect(result.segmentTrace.estimatedInputTokens).toBeLessThan(30_000);
     expect(result.system.length + result.prompt.length).toBeLessThan(120_000);
     expect(result.prompt).not.toContain("message-0-");
+    expect(result.prompt).toContain("message-9999-");
+    const retained = promptSegmentJson(
+      result.prompt,
+      "RECENT_VERBATIM_JSON",
+    ) as { content: string }[];
+    expect(retained.map((message) => message.content.split("-")[1])).toEqual(
+      history
+        .slice(-retained.length)
+        .map((message) => message.content.split("-")[1]),
+    );
     expect(JSON.stringify(result.segmentTrace)).not.toContain("message-9999-");
   });
   it("advertises grounded continuity effects in the canonical world envelope", () => {

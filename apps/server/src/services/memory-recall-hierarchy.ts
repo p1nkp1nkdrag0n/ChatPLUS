@@ -24,7 +24,23 @@ import {
 } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
+import {
+  explicitFactCandidateScore,
+  explicitFactValueResolution,
+  isFactBearingUserStatement,
+  isGroundedEvidenceExcerpt,
+  parseExplicitFactVerificationRequest,
+  type ExplicitFactFacet,
+  type ExplicitFactFacetDescriptor,
+  type ExplicitFactVerificationParse,
+  type ExplicitFactVerificationRequest,
+} from "../domain/explicit-fact-verification.js";
 import type {
+  ExplicitFactSelectorAttemptAudit,
+  ExplicitFactSelectorAudit,
+  ExplicitFactSelectorCandidateReason,
+  ExplicitFactSelectorEvidenceReason,
+  ExplicitFactSelectorInputSnapshot,
   RetrievalHierarchySnapshot,
   RetrievalReplayInput,
 } from "../repositories/retrieval-run-repository.js";
@@ -39,16 +55,22 @@ import type {
   MemoryRecallPreview,
 } from "./memory-recall-service.js";
 import {
+  readExplicitFactMemoryEvidenceScan,
   readMemoryEvidence,
   readRecallCandidateRecords,
+  readStableExplicitUserMemoryScan,
 } from "./memory-service.js";
 
 const DEFAULT_MINIMUM_SCORE = 0.42;
 const DEFAULT_CANONICAL_CLAIM_MINIMUM_SCORE = 0.35;
 const DEFAULT_LINKED_CLAIM_MINIMUM_SCORE = 0.2;
+const DEFAULT_EXPLICIT_FACT_MINIMUM_SCORE = 0.2;
+const EXPLICIT_FACT_SAFETY_SCAN_LIMIT = 500;
+const EXPLICIT_FACT_EVIDENCE_SAFETY_SCAN_LIMIT = 100;
 const DEFAULT_CANDIDATE_LIMIT = 200;
 const DEFAULT_MAX_EVIDENCE = 3;
 const MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY = 20;
+const MAX_EXPLICIT_FACT_DIAGNOSTIC_EVIDENCE = 500;
 
 type HierarchyTier =
   "event_card" | "verbatim_quote" | "date_digest" | "basic_memory";
@@ -76,6 +98,63 @@ type PreparedTierSelection = {
   candidates: HierarchyCandidate[];
 };
 
+type FactFacetCandidateMatch = {
+  candidate: HierarchyCandidate;
+  evidence: MemoryEvidence[];
+  valueKey: string;
+  score: number;
+};
+
+type FactEvidenceDecisionAudit = {
+  evidenceId: string;
+  decision: "accepted" | "rejected";
+  reasonCode: ExplicitFactSelectorEvidenceReason;
+};
+
+type FactCandidateEvaluation =
+  | {
+      candidate: HierarchyCandidate;
+      match: FactFacetCandidateMatch;
+      hardConflict?: boolean;
+      reasonCode: "fact_candidate_eligible";
+      evidence: FactEvidenceDecisionAudit[];
+    }
+  | {
+      candidate: HierarchyCandidate;
+      match?: undefined;
+      hardConflict?: boolean;
+      reasonCode: ExplicitFactSelectorCandidateReason;
+      evidence: FactEvidenceDecisionAudit[];
+    };
+
+type ExplicitFactRecallPreparation =
+  | {
+      status: "selected";
+      selection: PreparedTierSelection;
+      audit: ExplicitFactSelectorAttemptAudit;
+      matchesByFacet: FactFacetCandidateMatch[][];
+      hardConflictFacetIndexes: number[];
+    }
+  | {
+      status: "rejected";
+      reason:
+        | "requested_fact_facets_incomplete"
+        | "requested_fact_facets_conflicted"
+        | "requested_fact_evidence_capacity_insufficient"
+        | "requested_fact_scan_truncated"
+        | "requested_fact_below_caller_threshold";
+      score: number;
+      prepared?: PreparedRecall;
+      candidates?: HierarchyCandidate[];
+      audit: ExplicitFactSelectorAttemptAudit;
+      matchesByFacet: FactFacetCandidateMatch[][];
+      hardConflictFacetIndexes: number[];
+    };
+
+type FactFacetMatchSelection =
+  | { status: "selected"; matches: FactFacetCandidateMatch[] }
+  | { status: "incomplete" | "conflicted" };
+
 type TemporalContext = {
   resolution: JsonValue;
   range?: {
@@ -95,6 +174,7 @@ export interface ContinuityRecallInspection {
   prepared: PreparedRecall;
   candidateBreakdowns: Map<string, RetrievalScoreBreakdown>;
   hierarchy: RetrievalHierarchySnapshot;
+  selectorAuditInput?: ExplicitFactSelectorInputSnapshot;
 }
 
 export function inspectContinuityRecall(
@@ -104,6 +184,12 @@ export function inspectContinuityRecall(
 ): ContinuityRecallInspection {
   const started = performance.now();
   const query = normalizeQuery(input.query);
+  const explicitFactParse =
+    input.requireDurableEvidence === true
+      ? parseExplicitFactVerificationRequest(query.query)
+      : ({ kind: "none" } satisfies ExplicitFactVerificationParse);
+  const explicitFactVerification =
+    explicitFactParse.kind === "valid" ? explicitFactParse.request : undefined;
   const exactIdentifiers = recallExactIdentifiers(query.query);
   const candidateLimit = boundedInteger(
     input.limit ?? DEFAULT_CANDIDATE_LIMIT,
@@ -158,26 +244,447 @@ export function inspectContinuityRecall(
             statuses: ["occurred"],
           },
         });
+  const explicitFactQuery =
+    explicitFactVerification === undefined
+      ? undefined
+      : query.timeRange === undefined
+        ? withoutTimeRange(effectiveQuery)
+        : effectiveQuery;
+  if (explicitFactParse.kind === "invalid") {
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: emptyPrepared(query, candidateLimit, maxEvidence, minimumScore),
+      result: abstainResult(explicitFactParse.reason),
+      finalTier: "none",
+      tierByMemoryId: new Map(),
+      temporalResolution: temporal.resolution,
+    });
+  }
 
+  const explicitFactSearchTerms =
+    explicitFactVerification?.facets.flatMap((facet) => facet.searchTerms) ??
+    [];
+  const explicitEventCardScan =
+    explicitFactVerification === undefined
+      ? undefined
+      : dependencies.continuityIndex.scanExplicitFactEventCards({
+          agentId: input.agentId,
+          searchTerms: explicitFactSearchTerms,
+          scanLimit: EXPLICIT_FACT_SAFETY_SCAN_LIMIT,
+        });
+  const eventCardPool = explicitEventCardScan?.cards ?? searchedCards;
+  const eventCardRange =
+    explicitFactVerification !== undefined && query.timeRange === undefined
+      ? undefined
+      : temporal.range;
   const eventCards =
-    temporal.range === undefined
-      ? searchedCards
-      : searchedCards.filter((card) =>
-          eventCardOccursInRange(card, temporal.range!),
+    eventCardRange === undefined
+      ? eventCardPool
+      : eventCardPool.filter((card) =>
+          eventCardOccursInRange(card, eventCardRange),
         );
-  const eventCandidates = eventCards
-    .slice(0, searchLimit)
-    .map((card) => eventCardCandidate(store, card));
+  const eventScanCandidates = eventCardPool.map((card) =>
+    eventCardCandidate(store, card),
+  );
+  const eventCandidates =
+    eventCardRange === undefined
+      ? eventScanCandidates
+      : eventCards.map((card) => eventCardCandidate(store, card));
+  const eventScanWitnessCandidate =
+    explicitEventCardScan?.truncationWitness === undefined
+      ? undefined
+      : eventCardCandidate(store, explicitEventCardScan.truncationWitness);
+  const eventPreparedCandidates =
+    explicitFactVerification === undefined
+      ? eventCandidates
+      : diagnosticExplicitFactCandidates(eventCandidates);
   const eventPrepared = prepareCandidates(
     store,
     input.agentId,
-    effectiveQuery,
+    explicitFactQuery ?? effectiveQuery,
     candidateLimit,
     maxEvidence,
     minimumScore,
-    eventCandidates,
+    eventPreparedCandidates,
   );
   const eventResult = evaluateTier(eventPrepared, input.nowUtc, "event_card");
+  const eventFactSelection =
+    explicitFactVerification === undefined || explicitFactQuery === undefined
+      ? undefined
+      : prepareExplicitFactVerificationRecall({
+          store,
+          input,
+          query: explicitFactQuery,
+          candidateLimit,
+          maxEvidence,
+          request: explicitFactVerification,
+          candidates: eventCandidates,
+          tier: "event_card",
+        });
+  if (
+    explicitFactVerification !== undefined &&
+    explicitFactQuery !== undefined &&
+    eventFactSelection !== undefined
+  ) {
+    // Atomic fact verification uses a fixed safety pool. Caller-facing limits
+    // must never hide a lower-ranked contradiction.
+    const explicitFactMemoryScan = readStableExplicitUserMemoryScan(
+      store,
+      input.agentId,
+      input.nowUtc,
+      {
+        searchTerms: explicitFactSearchTerms,
+        scanLimit: EXPLICIT_FACT_SAFETY_SCAN_LIMIT,
+      },
+    );
+    const explicitFactEvidenceScan = readExplicitFactMemoryEvidenceScan(
+      store,
+      explicitFactMemoryScan.memories.map((memory) => memory.id),
+      EXPLICIT_FACT_EVIDENCE_SAFETY_SCAN_LIMIT,
+    );
+    const allExplicitBasicCandidates = basicMemoryCandidatesFromMemories(
+      store,
+      explicitFactMemoryScan.memories,
+      explicitFactEvidenceScan.evidence,
+    );
+    const basicScanWitnessCandidate =
+      explicitFactMemoryScan.truncationWitness === undefined
+        ? undefined
+        : {
+            tier: "basic_memory" as const,
+            memory: explicitFactMemoryScan.truncationWitness,
+            evidence: [],
+          };
+    const explicitBasicCandidates = allExplicitBasicCandidates.filter(
+      (candidate) =>
+        isEligibleDurableCandidateForIntent(
+          store,
+          input.agentId,
+          query.query,
+          true,
+          candidate,
+        ),
+    );
+    const explicitBasicPrepared = prepareCandidates(
+      store,
+      input.agentId,
+      explicitFactQuery,
+      candidateLimit,
+      maxEvidence,
+      minimumScore,
+      diagnosticExplicitFactCandidates(explicitBasicCandidates),
+    );
+    const explicitBasicResult = evaluateTier(
+      explicitBasicPrepared,
+      input.nowUtc,
+      "basic_memory",
+    );
+    const truncatedEvidenceMemoryIds =
+      explicitFactMemoryScan.truncated ||
+      explicitFactEvidenceScan.truncatedMemoryIds.length === 0
+        ? []
+        : explicitFactEvidenceScan.truncatedMemoryIds.slice(0, candidateLimit);
+    const truncatedEvidenceMemoryIdSet = new Set(truncatedEvidenceMemoryIds);
+    const truncatedEvidenceCandidates = allExplicitBasicCandidates.filter(
+      (candidate) => truncatedEvidenceMemoryIdSet.has(candidate.memory.id),
+    );
+    const truncatedEvidencePrepared = prepareCandidates(
+      store,
+      input.agentId,
+      explicitFactQuery,
+      candidateLimit,
+      maxEvidence,
+      minimumScore,
+      diagnosticExplicitFactCandidates(truncatedEvidenceCandidates),
+    );
+    if (
+      explicitEventCardScan?.truncated === true ||
+      explicitFactMemoryScan.truncated ||
+      explicitFactEvidenceScan.truncatedMemoryIds.length > 0
+    ) {
+      const eventAttempt = explicitEventCardScan?.truncated
+        ? truncatedExplicitFactAttemptAudit(
+            explicitFactVerification,
+            "event_card",
+            explicitEventCardScan.cards.length,
+            "candidate_pool",
+            explicitEventCardScan.scanLimit,
+            undefined,
+            eventScanWitnessCandidate?.memory.id,
+          )
+        : blockSelectedExplicitFactAttemptAudit(
+            eventFactSelection.audit,
+            "fact_candidate_rejected_due_scan_truncation",
+          );
+      const attempts = [eventAttempt];
+      if (
+        explicitFactMemoryScan.truncated ||
+        explicitFactEvidenceScan.truncatedMemoryIds.length > 0
+      ) {
+        const memoryPoolTruncated = explicitFactMemoryScan.truncated;
+        attempts.push(
+          truncatedExplicitFactAttemptAudit(
+            explicitFactVerification,
+            "basic_memory",
+            allExplicitBasicCandidates.length,
+            memoryPoolTruncated ? "candidate_pool" : "evidence_per_memory",
+            memoryPoolTruncated
+              ? explicitFactMemoryScan.scanLimit
+              : EXPLICIT_FACT_EVIDENCE_SAFETY_SCAN_LIMIT,
+            memoryPoolTruncated ? undefined : truncatedEvidenceMemoryIds,
+            memoryPoolTruncated
+              ? basicScanWitnessCandidate?.memory.id
+              : undefined,
+          ),
+        );
+      }
+      const basicScanTruncated =
+        explicitFactMemoryScan.truncated ||
+        explicitFactEvidenceScan.truncatedMemoryIds.length > 0;
+      const prepared = basicScanTruncated
+        ? explicitFactMemoryScan.truncated
+          ? explicitBasicPrepared
+          : truncatedEvidencePrepared
+        : eventPrepared;
+      const candidates = basicScanTruncated
+        ? explicitFactMemoryScan.truncated
+          ? explicitBasicCandidates
+          : truncatedEvidenceCandidates
+        : eventCandidates;
+      const rejection = strongestExplicitFactAttemptRejection(attempts);
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared,
+        result: abstainResult(
+          rejection.reason,
+          Math.max(eventResult.score, explicitBasicResult.score),
+        ),
+        finalTier: "none",
+        tierByMemoryId: tierMap(candidates),
+        temporalResolution: temporal.resolution,
+        selectorCandidates: [
+          ...eventScanCandidates,
+          ...(eventScanWitnessCandidate === undefined
+            ? []
+            : [eventScanWitnessCandidate]),
+          ...(explicitFactMemoryScan.truncated
+            ? allExplicitBasicCandidates
+            : truncatedEvidenceCandidates),
+          ...(basicScanWitnessCandidate === undefined
+            ? []
+            : [basicScanWitnessCandidate]),
+        ],
+        selectorAudit: explicitFactSelectorAudit({
+          request: explicitFactVerification,
+          outcome: rejection.outcome,
+          attempts,
+          replayEvidenceIds: prepared.evidence.map((evidence) => evidence.id),
+          matchesByAttempt: [eventFactSelection.matchesByFacet],
+        }),
+      });
+    }
+
+    const basicFactSelection = prepareExplicitFactVerificationRecall({
+      store,
+      input,
+      query: explicitFactQuery,
+      candidateLimit,
+      maxEvidence,
+      request: explicitFactVerification,
+      candidates: explicitBasicCandidates,
+      tier: "basic_memory",
+    });
+    const combinedMatchesByFacet = explicitFactVerification.facets.map(
+      (_facet, index) => [
+        ...(eventFactSelection.matchesByFacet[index] ?? []),
+        ...(basicFactSelection.matchesByFacet[index] ?? []),
+      ],
+    );
+    const conflictingFacetIndexes = [
+      ...new Set([
+        ...factConflictFacetIndexes(combinedMatchesByFacet),
+        ...eventFactSelection.hardConflictFacetIndexes,
+        ...basicFactSelection.hardConflictFacetIndexes,
+      ]),
+    ].sort((left, right) => left - right);
+    if (conflictingFacetIndexes.length > 0) {
+      const conflictCandidates = factMatchCandidates(combinedMatchesByFacet);
+      const conflictPrepared = prepareCandidates(
+        store,
+        input.agentId,
+        explicitFactQuery,
+        candidateLimit,
+        maxEvidence,
+        explicitFactQuery.minimumScore ?? DEFAULT_EXPLICIT_FACT_MINIMUM_SCORE,
+        diagnosticExplicitFactCandidates(conflictCandidates),
+      );
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: conflictPrepared,
+        result: abstainResult(
+          "requested_fact_facets_conflicted",
+          Math.max(
+            explicitFactPreparationScore(eventFactSelection),
+            explicitFactPreparationScore(basicFactSelection),
+          ),
+        ),
+        finalTier: "none",
+        tierByMemoryId: tierMap(conflictCandidates),
+        temporalResolution: temporal.resolution,
+        selectorCandidates: [...eventCandidates, ...explicitBasicCandidates],
+        selectorAudit: explicitFactSelectorAudit({
+          request: explicitFactVerification,
+          outcome: "conflicted",
+          attempts: markExplicitFactConflictAttempts(
+            [eventFactSelection, basicFactSelection],
+            combinedMatchesByFacet,
+            conflictingFacetIndexes,
+          ),
+          replayEvidenceIds: conflictPrepared.evidence.map(
+            (evidence) => evidence.id,
+          ),
+          matchesByAttempt: [
+            eventFactSelection.matchesByFacet,
+            basicFactSelection.matchesByFacet,
+          ],
+        }),
+      });
+    }
+
+    if (eventFactSelection.status === "selected") {
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: eventFactSelection.selection.prepared,
+        result: eventFactSelection.selection.result,
+        finalTier: "event_card",
+        tierByMemoryId: tierMap(eventFactSelection.selection.candidates),
+        temporalResolution: temporal.resolution,
+        selectorCandidates: [...eventCandidates, ...explicitBasicCandidates],
+        selectorAudit: explicitFactSelectorAudit({
+          request: explicitFactVerification,
+          outcome: "selected",
+          attempts: [
+            eventFactSelection.audit,
+            consistentNotSelectedFactAttemptAudit(basicFactSelection.audit),
+          ],
+          replayEvidenceIds: eventFactSelection.selection.prepared.evidence.map(
+            (evidence) => evidence.id,
+          ),
+          matchesByAttempt: [
+            eventFactSelection.matchesByFacet,
+            basicFactSelection.matchesByFacet,
+          ],
+        }),
+      });
+    }
+    if (basicFactSelection.status === "selected") {
+      if (
+        eventFactSelection.status === "rejected" &&
+        (eventFactSelection.reason ===
+          "requested_fact_evidence_capacity_insufficient" ||
+          eventFactSelection.reason === "requested_fact_below_caller_threshold")
+      ) {
+        const rejection = combinedExplicitFactRejection([eventFactSelection]);
+        return buildInspection({
+          store,
+          input,
+          started,
+          prepared: basicFactSelection.selection.prepared,
+          result: abstainResult(
+            rejection.reason,
+            Math.max(
+              rejection.score,
+              basicFactSelection.selection.result.score,
+            ),
+          ),
+          finalTier: "none",
+          tierByMemoryId: tierMap(basicFactSelection.selection.candidates),
+          temporalResolution: temporal.resolution,
+          selectorCandidates: [...eventCandidates, ...explicitBasicCandidates],
+          selectorAudit: explicitFactSelectorAudit({
+            request: explicitFactVerification,
+            outcome: rejection.outcome,
+            attempts: [
+              eventFactSelection.audit,
+              completeNotSelectedFactAttemptAudit(basicFactSelection.audit),
+            ],
+            replayEvidenceIds:
+              basicFactSelection.selection.prepared.evidence.map(
+                (evidence) => evidence.id,
+              ),
+            matchesByAttempt: [
+              eventFactSelection.matchesByFacet,
+              basicFactSelection.matchesByFacet,
+            ],
+          }),
+        });
+      }
+      return buildInspection({
+        store,
+        input,
+        started,
+        prepared: basicFactSelection.selection.prepared,
+        result: basicFactSelection.selection.result,
+        finalTier: "basic_memory",
+        tierByMemoryId: tierMap(basicFactSelection.selection.candidates),
+        temporalResolution: temporal.resolution,
+        selectorCandidates: [...eventCandidates, ...explicitBasicCandidates],
+        selectorAudit: explicitFactSelectorAudit({
+          request: explicitFactVerification,
+          outcome: "selected",
+          attempts: [eventFactSelection.audit, basicFactSelection.audit],
+          replayEvidenceIds: basicFactSelection.selection.prepared.evidence.map(
+            (evidence) => evidence.id,
+          ),
+          matchesByAttempt: [
+            eventFactSelection.matchesByFacet,
+            basicFactSelection.matchesByFacet,
+          ],
+        }),
+      });
+    }
+    const rejection = combinedExplicitFactRejection([
+      eventFactSelection,
+      basicFactSelection,
+    ]);
+    const rejectionPrepared = diagnosticPreparedRecall(
+      basicFactSelection.prepared ?? explicitBasicPrepared,
+    );
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: rejectionPrepared,
+      result: abstainResult(rejection.reason, rejection.score),
+      finalTier: "none",
+      tierByMemoryId: tierMap(
+        basicFactSelection.candidates ?? explicitBasicCandidates,
+      ),
+      temporalResolution: temporal.resolution,
+      selectorCandidates: [...eventCandidates, ...explicitBasicCandidates],
+      selectorAudit: explicitFactSelectorAudit({
+        request: explicitFactVerification,
+        outcome: rejection.outcome,
+        attempts: [eventFactSelection.audit, basicFactSelection.audit],
+        replayEvidenceIds: rejectionPrepared.evidence.map(
+          (evidence) => evidence.id,
+        ),
+        matchesByAttempt: [
+          eventFactSelection.matchesByFacet,
+          basicFactSelection.matchesByFacet,
+        ],
+      }),
+    });
+  }
+
   if (
     !eventResult.abstained &&
     resultCoversExactIdentifiers(eventResult, exactIdentifiers)
@@ -668,7 +1175,14 @@ export function replayContinuityRecall(
     minimumScore: selectedTier === "date_digest" ? 0 : input.minimumScore,
     maxEvidence: input.maxEvidence,
   });
-  return forceMode(recalled, selectedTier);
+  const result = forceMode(recalled, selectedTier);
+  if (hierarchy.selectorAudit?.outcome !== "selected") return result;
+  const candidates = memories.map((memory) => ({
+    tier: selectedTier,
+    memory,
+    evidence: evidence.filter((item) => item.memoryId === memory.id),
+  }));
+  return completeExplicitFactEvidenceResult(result, candidates) ?? result;
 }
 
 function temporalContext(
@@ -756,15 +1270,16 @@ function eventCardCandidate(
   store: DatabaseStore,
   card: EventCard,
 ): HierarchyCandidate {
-  const source = [...card.evidence]
+  const sources = [...card.evidence]
     .filter((item) => item.reliability !== "context")
     .sort(
       (left, right) =>
         reliabilityRank(right.reliability) -
           reliabilityRank(left.reliability) || left.id.localeCompare(right.id),
-    )[0];
-  const evidence =
-    source === undefined ? [] : continuityEvidence(store, card.id, source);
+    );
+  const evidence = deduplicateEvidence(
+    sources.flatMap((source) => continuityEvidence(store, card.id, source)),
+  );
   const reliable = card.certainty !== "uncertain" && evidence.length > 0;
   const memory = MemorySchema.parse({
     id: card.id,
@@ -848,6 +1363,14 @@ function continuityEvidence(
       memoryId,
     }),
   ];
+}
+
+function deduplicateEvidence(
+  evidence: readonly MemoryEvidence[],
+): MemoryEvidence[] {
+  return [...new Map(evidence.map((item) => [item.id, item])).values()].sort(
+    (left, right) => left.id.localeCompare(right.id),
+  );
 }
 
 function verbatimCandidate(message: ArchivedMessage): HierarchyCandidate {
@@ -1006,17 +1529,40 @@ function basicMemoryCandidates(
     query,
     keywordLimit: 50,
   });
-  const evidenceByMemory = groupEvidenceByMemory(
-    readMemoryEvidence(
-      store,
-      memories.map((memory) => memory.id),
-    ),
-  );
+  return basicMemoryCandidatesFromMemories(store, memories);
+}
+
+function basicMemoryCandidatesFromMemories(
+  store: DatabaseStore,
+  memories: readonly Memory[],
+  completeEvidence?: readonly MemoryEvidence[],
+): HierarchyCandidate[] {
+  const evidenceByMemory =
+    completeEvidence === undefined
+      ? groupEvidenceByMemory(
+          readMemoryEvidence(
+            store,
+            memories.map((memory) => memory.id),
+          ),
+        )
+      : groupAllEvidenceByMemory(completeEvidence);
   return memories.map((memory) => ({
     tier: "basic_memory",
     memory,
     evidence: evidenceByMemory.get(memory.id) ?? [],
   }));
+}
+
+function groupAllEvidenceByMemory(
+  evidence: readonly MemoryEvidence[],
+): Map<string, MemoryEvidence[]> {
+  const grouped = new Map<string, MemoryEvidence[]>();
+  for (const item of evidence) {
+    const current = grouped.get(item.memoryId) ?? [];
+    current.push(item);
+    grouped.set(item.memoryId, current);
+  }
+  return grouped;
 }
 
 function prepareCandidates(
@@ -1068,13 +1614,25 @@ function evaluateTier(
 ): MemoryRecallResult {
   const recalled = recallMemory({
     query: prepared.query,
-    memories: prepared.memories,
+    // Hierarchy candidates carry source ids for provenance inspection, but a
+    // source id is not itself verified evidence. Strip the legacy synthesis
+    // inputs here so every selected item must come from prepareCandidates'
+    // verified evidence set and can be replayed from the frozen snapshot.
+    memories: prepared.memories.map(withoutLegacyEvidenceFallback),
     evidence: prepared.evidence,
     nowUtc,
     minimumScore: tier === "date_digest" ? 0 : prepared.minimumScore,
     maxEvidence: prepared.maxEvidence,
   });
   return forceMode(recalled, tier);
+}
+
+function withoutLegacyEvidenceFallback(memory: Memory): Memory {
+  return {
+    ...memory,
+    sourceMessageIds: [],
+    sourceActivityEventIds: [],
+  };
 }
 
 function forceMode(
@@ -1130,6 +1688,8 @@ function buildInspection(input: {
   finalTier: HierarchyTier | "none";
   tierByMemoryId: Map<string, HierarchyTier>;
   temporalResolution: JsonValue;
+  selectorAudit?: ExplicitFactSelectorAudit;
+  selectorCandidates?: readonly HierarchyCandidate[];
 }): ContinuityRecallInspection {
   const selectedIds = new Set(input.result.selectedMemoryIds);
   const evidenceByMemory = groupEvidenceByMemory(input.prepared.evidence);
@@ -1250,6 +1810,9 @@ function buildInspection(input: {
       tier: input.tierByMemoryId.get(memory.id) ?? "event_card",
     })),
     temporalResolution: input.temporalResolution,
+    ...(input.selectorAudit === undefined
+      ? {}
+      : { selectorAudit: input.selectorAudit }),
     ...(input.result.abstained
       ? {
           abstentionReason: input.result.abstentionReason,
@@ -1257,12 +1820,173 @@ function buildInspection(input: {
         }
       : {}),
   };
+  const selectorAuditInput =
+    input.selectorAudit === undefined
+      ? undefined
+      : explicitFactSelectorInputSnapshot(
+          input.store,
+          input.input.agentId,
+          input.selectorAudit,
+          input.selectorCandidates ?? [],
+          input.prepared.evidence,
+        );
   return {
     preview,
     prepared: input.prepared,
     candidateBreakdowns,
     hierarchy,
+    ...(selectorAuditInput === undefined ? {} : { selectorAuditInput }),
   };
+}
+
+function explicitFactSelectorInputSnapshot(
+  store: DatabaseStore,
+  agentId: string,
+  audit: ExplicitFactSelectorAudit,
+  candidates: readonly HierarchyCandidate[],
+  replayEvidence: readonly MemoryEvidence[],
+): ExplicitFactSelectorInputSnapshot {
+  const auditedMemoryIds = new Set(
+    audit.attempts.flatMap((attempt) =>
+      attempt.facets.flatMap((facet) =>
+        facet.candidates.map((candidate) => candidate.memoryId),
+      ),
+    ),
+  );
+  const candidatePoolScanTiers = new Set(
+    audit.attempts.flatMap((attempt) =>
+      attempt.outcome === "scan_truncated" &&
+      attempt.scanUnit === "candidate_pool"
+        ? [attempt.tier]
+        : [],
+    ),
+  );
+  const auditedEvidenceIds = new Set(
+    audit.attempts.flatMap((attempt) =>
+      attempt.facets.flatMap((facet) =>
+        facet.candidates.flatMap((candidate) =>
+          candidate.evidence.map((evidence) => evidence.evidenceId),
+        ),
+      ),
+    ),
+  );
+  const candidateById = new Map<string, HierarchyCandidate>();
+  const evidenceById = new Map<string, MemoryEvidence>();
+  for (const candidate of candidates) {
+    const existingCandidate = candidateById.get(candidate.memory.id);
+    if (
+      existingCandidate !== undefined &&
+      (existingCandidate.tier !== candidate.tier ||
+        JSON.stringify(existingCandidate.memory) !==
+          JSON.stringify(candidate.memory))
+    ) {
+      throw new TypeError(
+        "Selector audit memory ids must identify one immutable tier candidate",
+      );
+    }
+    candidateById.set(candidate.memory.id, candidate);
+    for (const evidence of candidate.evidence) {
+      const existing = evidenceById.get(evidence.id);
+      if (
+        existing !== undefined &&
+        JSON.stringify(existing) !== JSON.stringify(evidence)
+      ) {
+        throw new TypeError(
+          "Selector audit evidence ids must identify one immutable source",
+        );
+      }
+      evidenceById.set(evidence.id, evidence);
+    }
+  }
+  for (const candidate of candidates) {
+    if (
+      (candidate.tier === "event_card" || candidate.tier === "basic_memory") &&
+      candidatePoolScanTiers.has(candidate.tier)
+    ) {
+      auditedMemoryIds.add(candidate.memory.id);
+    }
+  }
+  const replayEvidenceById = new Map(
+    replayEvidence.map((evidence) => [evidence.id, evidence]),
+  );
+  const acceptedAuditEvidenceIds = new Set(
+    audit.attempts.flatMap((attempt) =>
+      attempt.facets.flatMap((facet) =>
+        facet.candidates.flatMap((candidate) =>
+          candidate.evidence.flatMap((evidence) =>
+            evidence.decision === "accepted" ? [evidence.evidenceId] : [],
+          ),
+        ),
+      ),
+    ),
+  );
+  const memories = [...auditedMemoryIds].sort().map((memoryId) => {
+    const candidate = candidateById.get(memoryId);
+    if (candidate === undefined) {
+      throw new TypeError(
+        "Selector audit candidates must have a frozen input memory",
+      );
+    }
+    return withoutLegacyEvidenceFallback(candidate.memory);
+  });
+  const candidateTiers = [...auditedMemoryIds].sort().map((memoryId) => {
+    const candidate = candidateById.get(memoryId);
+    if (candidate === undefined) {
+      throw new TypeError(
+        "Selector audit candidates must have a frozen tier assignment",
+      );
+    }
+    if (candidate.tier !== "event_card" && candidate.tier !== "basic_memory") {
+      throw new TypeError(
+        "Selector audit candidates must belong to an auditable fact tier",
+      );
+    }
+    return { memoryId, tier: candidate.tier };
+  });
+  const evidence = [...auditedEvidenceIds].sort().map((evidenceId) => {
+    const replayItem = replayEvidenceById.get(evidenceId);
+    const item = replayItem ?? evidenceById.get(evidenceId);
+    if (item === undefined) {
+      throw new TypeError(
+        "Selector audit decisions must have frozen input evidence",
+      );
+    }
+    if (replayItem !== undefined) return replayItem;
+    const accepted = acceptedAuditEvidenceIds.has(evidenceId);
+    const source = accepted
+      ? (store.database
+          .prepare(
+            `SELECT role, content
+             FROM messages WHERE id = ? AND agent_id = ?`,
+          )
+          .get(item.sourceId, agentId) as
+          { role: string; content: string } | undefined)
+      : undefined;
+    const verifiedSource = source?.content.trim();
+    if (
+      accepted &&
+      (item.sourceType !== "message" ||
+        source?.role !== "user" ||
+        verifiedSource === undefined ||
+        verifiedSource.length === 0 ||
+        verifiedSource.length > 2_000)
+    ) {
+      throw new TypeError(
+        "Accepted selector evidence requires its verified user source snapshot",
+      );
+    }
+    return MemoryEvidenceSchema.parse({
+      id: item.id,
+      memoryId: item.memoryId,
+      sourceType: item.sourceType,
+      sourceId: item.sourceId,
+      ...(accepted && verifiedSource !== undefined
+        ? { quote: verifiedSource }
+        : {}),
+      recordedAtUtc: item.recordedAtUtc,
+    });
+  });
+  return { memories, evidence, candidateTiers };
 }
 
 function hierarchyRejectionReason(
@@ -1426,6 +2150,1219 @@ function isVerbatimQueryEcho(content: string, query: string): boolean {
   const normalize = (value: string) =>
     value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
   return normalize(content) === normalize(query);
+}
+
+function prepareExplicitFactVerificationRecall(input: {
+  store: DatabaseStore;
+  input: AgentMemoryRecallInput;
+  query: MemoryRecallQuery;
+  candidateLimit: number;
+  maxEvidence: number;
+  request: ExplicitFactVerificationRequest;
+  candidates: readonly HierarchyCandidate[];
+  tier: "event_card" | "basic_memory";
+}): ExplicitFactRecallPreparation {
+  const evaluationsByFacet = input.request.facets.map((facet) =>
+    input.candidates.map((candidate) =>
+      evaluateExplicitFactCandidate(
+        input.store,
+        input.input.agentId,
+        input.input.nowUtc,
+        input.query.timeRange,
+        input.tier,
+        facet,
+        candidate,
+      ),
+    ),
+  );
+  const matchesByFacet = evaluationsByFacet.map((evaluations) =>
+    evaluations
+      .flatMap((evaluation) =>
+        evaluation.match === undefined ? [] : [evaluation.match],
+      )
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          left.candidate.memory.id.localeCompare(right.candidate.memory.id),
+      ),
+  );
+  const hardConflictFacetIndexes = evaluationsByFacet.flatMap(
+    (evaluations, index) =>
+      evaluations.some((evaluation) => evaluation.hardConflict === true)
+        ? [index]
+        : [],
+  );
+  const facetSelection =
+    hardConflictFacetIndexes.length > 0
+      ? ({ status: "conflicted" } as const)
+      : selectUnambiguousFactFacetMatches(matchesByFacet);
+  if (facetSelection.status !== "selected") {
+    const candidates = diagnosticExplicitFactCandidates(
+      factMatchCandidates(matchesByFacet),
+    );
+    const prepared = prepareCandidates(
+      input.store,
+      input.input.agentId,
+      input.query,
+      input.candidateLimit,
+      input.maxEvidence,
+      input.query.minimumScore ?? DEFAULT_EXPLICIT_FACT_MINIMUM_SCORE,
+      candidates,
+    );
+    const diagnostic = evaluateTier(prepared, input.input.nowUtc, input.tier);
+    return {
+      status: "rejected",
+      reason:
+        facetSelection.status === "conflicted"
+          ? "requested_fact_facets_conflicted"
+          : "requested_fact_facets_incomplete",
+      score: diagnostic.score,
+      prepared,
+      candidates,
+      audit: explicitFactAttemptAudit({
+        request: input.request,
+        tier: input.tier,
+        outcome:
+          facetSelection.status === "conflicted" ? "conflicted" : "incomplete",
+        evaluationsByFacet,
+        hardConflictFacetIndexes,
+      }),
+      matchesByFacet,
+      hardConflictFacetIndexes,
+    };
+  }
+
+  const candidates = minimalSelectedFactCandidates(
+    facetSelection.matches,
+    input.maxEvidence,
+  );
+  if (candidates === undefined) {
+    const diagnosticCandidates = diagnosticExplicitFactCandidates(
+      mergeSelectedFactCandidates(facetSelection.matches),
+    );
+    const prepared = prepareCandidates(
+      input.store,
+      input.input.agentId,
+      input.query,
+      input.candidateLimit,
+      input.maxEvidence,
+      input.query.minimumScore ?? DEFAULT_EXPLICIT_FACT_MINIMUM_SCORE,
+      diagnosticCandidates,
+    );
+    return {
+      status: "rejected",
+      reason: "requested_fact_evidence_capacity_insufficient",
+      score: evaluateTier(prepared, input.input.nowUtc, input.tier).score,
+      prepared,
+      candidates: diagnosticCandidates,
+      audit: explicitFactAttemptAudit({
+        request: input.request,
+        tier: input.tier,
+        outcome: "capacity_insufficient",
+        evaluationsByFacet,
+        provisionalMatches: facetSelection.matches,
+        selectedEvidenceIds: [],
+        hardConflictFacetIndexes,
+      }),
+      matchesByFacet,
+      hardConflictFacetIndexes,
+    };
+  }
+  const threshold =
+    input.query.minimumScore ?? DEFAULT_EXPLICIT_FACT_MINIMUM_SCORE;
+  const prepared = prepareCandidates(
+    input.store,
+    input.input.agentId,
+    input.query,
+    input.candidateLimit,
+    input.maxEvidence,
+    threshold,
+    candidates,
+  );
+  const evaluatedResult = evaluateTier(
+    prepared,
+    input.input.nowUtc,
+    input.tier,
+  );
+  if (evaluatedResult.abstained) {
+    return {
+      status: "rejected",
+      reason:
+        input.query.minimumScore === undefined
+          ? "requested_fact_facets_incomplete"
+          : "requested_fact_below_caller_threshold",
+      score: evaluatedResult.score,
+      prepared,
+      candidates,
+      audit: explicitFactAttemptAudit({
+        request: input.request,
+        tier: input.tier,
+        outcome:
+          input.query.minimumScore === undefined
+            ? "incomplete"
+            : "below_threshold",
+        evaluationsByFacet,
+        provisionalMatches: facetSelection.matches,
+        selectedEvidenceIds: candidates.flatMap((candidate) =>
+          candidate.evidence.map((evidence) => evidence.id),
+        ),
+        hardConflictFacetIndexes,
+      }),
+      matchesByFacet,
+      hardConflictFacetIndexes,
+    };
+  }
+  const result = completeExplicitFactEvidenceResult(
+    evaluatedResult,
+    candidates,
+  );
+  if (result === undefined) {
+    return {
+      status: "rejected",
+      reason: "requested_fact_facets_incomplete",
+      score: evaluatedResult.score,
+      prepared,
+      candidates,
+      audit: explicitFactAttemptAudit({
+        request: input.request,
+        tier: input.tier,
+        outcome: "incomplete",
+        evaluationsByFacet,
+        provisionalMatches: facetSelection.matches,
+        selectedEvidenceIds: candidates.flatMap((candidate) =>
+          candidate.evidence.map((evidence) => evidence.id),
+        ),
+        hardConflictFacetIndexes,
+      }),
+      matchesByFacet,
+      hardConflictFacetIndexes,
+    };
+  }
+  if (
+    result.selectedMemoryIds.length !== candidates.length ||
+    !candidates.every((candidate) =>
+      result.selectedMemoryIds.includes(candidate.memory.id),
+    ) ||
+    !resultCoversExactIdentifiers(
+      result,
+      recallExactIdentifiers(input.query.query),
+    )
+  ) {
+    return {
+      status: "rejected",
+      reason: "requested_fact_facets_incomplete",
+      score: result.score,
+      prepared,
+      candidates,
+      audit: explicitFactAttemptAudit({
+        request: input.request,
+        tier: input.tier,
+        outcome: "incomplete",
+        evaluationsByFacet,
+        provisionalMatches: facetSelection.matches,
+        selectedEvidenceIds: candidates.flatMap((candidate) =>
+          candidate.evidence.map((evidence) => evidence.id),
+        ),
+        hardConflictFacetIndexes,
+      }),
+      matchesByFacet,
+      hardConflictFacetIndexes,
+    };
+  }
+  return {
+    status: "selected",
+    selection: { prepared, result, candidates },
+    audit: explicitFactAttemptAudit({
+      request: input.request,
+      tier: input.tier,
+      outcome: "selected",
+      evaluationsByFacet,
+      selectedMatches: facetSelection.matches,
+      selectedEvidenceIds: candidates.flatMap((candidate) =>
+        candidate.evidence.map((evidence) => evidence.id),
+      ),
+      hardConflictFacetIndexes,
+    }),
+    matchesByFacet,
+    hardConflictFacetIndexes,
+  };
+}
+
+function completeExplicitFactEvidenceResult(
+  result: MemoryRecallResult,
+  candidates: readonly HierarchyCandidate[],
+): MemoryRecallResult | undefined {
+  if (result.abstained) return undefined;
+  const selectedByMemoryId = new Map(
+    result.evidenceBundle.evidence.map((item) => [item.memoryId, item]),
+  );
+  const completeEvidence = candidates.flatMap((candidate) => {
+    const selected = selectedByMemoryId.get(candidate.memory.id);
+    if (selected === undefined) return [];
+    return candidate.evidence.map((evidence) => ({
+      ...selected,
+      evidence,
+    }));
+  });
+  const expectedEvidenceIds = new Set(
+    candidates.flatMap((candidate) =>
+      candidate.evidence.map((evidence) => evidence.id),
+    ),
+  );
+  if (
+    completeEvidence.length !== expectedEvidenceIds.size ||
+    completeEvidence.some((item) => !expectedEvidenceIds.has(item.evidence.id))
+  ) {
+    return undefined;
+  }
+  return MemoryRecallResultSchema.parse({
+    ...result,
+    selectedMemoryIds: [
+      ...new Set(completeEvidence.map((item) => item.memoryId)),
+    ],
+    selectedEvidenceIds: completeEvidence.map((item) => item.evidence.id),
+    evidenceBundle: {
+      ...result.evidenceBundle,
+      evidence: completeEvidence,
+    },
+  });
+}
+
+function explicitFactAttemptAudit(input: {
+  request: ExplicitFactVerificationRequest;
+  tier: "event_card" | "basic_memory";
+  outcome: ExplicitFactSelectorAttemptAudit["outcome"];
+  evaluationsByFacet: readonly (readonly FactCandidateEvaluation[])[];
+  selectedMatches?: readonly FactFacetCandidateMatch[];
+  provisionalMatches?: readonly FactFacetCandidateMatch[];
+  selectedEvidenceIds?: readonly string[];
+  hardConflictFacetIndexes: readonly number[];
+}): ExplicitFactSelectorAttemptAudit {
+  const selectedEvidenceIds = new Set(input.selectedEvidenceIds ?? []);
+  const coverageByEvidenceId = new Map<string, Set<number>>();
+  (input.selectedMatches ?? input.provisionalMatches ?? []).forEach(
+    (match, facetIndex) => {
+      for (const evidence of match.evidence) {
+        const covered = coverageByEvidenceId.get(evidence.id) ?? new Set();
+        covered.add(facetIndex);
+        coverageByEvidenceId.set(evidence.id, covered);
+      }
+    },
+  );
+  const representativeByCoverage = new Map<string, string>();
+  for (const [evidenceId, facetIndexes] of coverageByEvidenceId) {
+    const coverageKey = [...facetIndexes]
+      .sort((left, right) => left - right)
+      .join(",");
+    const previous = representativeByCoverage.get(coverageKey);
+    if (previous === undefined || evidenceId.localeCompare(previous) < 0) {
+      representativeByCoverage.set(coverageKey, evidenceId);
+    }
+  }
+  const coverageRepresentativeIds = new Set(representativeByCoverage.values());
+  return {
+    tier: input.tier,
+    outcome: input.outcome,
+    scannedCandidateCount: input.evaluationsByFacet[0]?.length ?? 0,
+    facets: input.request.facets.map((facet, index) => {
+      const evaluations = input.evaluationsByFacet[index] ?? [];
+      const matches = evaluations.flatMap((evaluation) =>
+        evaluation.match === undefined ? [] : [evaluation.match],
+      );
+      const valueGroups = factValueGroupIds(matches);
+      const selected = input.selectedMatches?.[index];
+      const provisional = input.provisionalMatches?.[index];
+      const facetOutcome = input.hardConflictFacetIndexes.includes(index)
+        ? "conflicted"
+        : matches.length === 0
+          ? "missing"
+          : new Set(matches.map((match) => match.valueKey)).size > 1
+            ? "conflicted"
+            : "selected";
+      return {
+        index,
+        kind: facet.kind,
+        request: explicitFactAuditFacetDescriptor(facet),
+        outcome: facetOutcome,
+        candidates: evaluations.map((evaluation) => {
+          const match = evaluation.match;
+          const isSelected =
+            input.outcome === "selected" &&
+            selected !== undefined &&
+            match?.candidate.memory.id === selected.candidate.memory.id;
+          const isProvisional =
+            !isSelected &&
+            provisional !== undefined &&
+            match?.candidate.memory.id === provisional.candidate.memory.id;
+          const orderedEvidence = [...evaluation.evidence].sort(
+            (left, right) =>
+              Number(selectedEvidenceIds.has(right.evidenceId)) -
+                Number(selectedEvidenceIds.has(left.evidenceId)) ||
+              Number(coverageRepresentativeIds.has(right.evidenceId)) -
+                Number(coverageRepresentativeIds.has(left.evidenceId)) ||
+              Number(
+                evaluation.hardConflict === true &&
+                  right.reasonCode === "fact_evidence_value_conflict",
+              ) -
+                Number(
+                  evaluation.hardConflict === true &&
+                    left.reasonCode === "fact_evidence_value_conflict",
+                ) ||
+              Number(right.decision === "accepted") -
+                Number(left.decision === "accepted") ||
+              left.evidenceId.localeCompare(right.evidenceId),
+          );
+          const auditedEvidence = orderedEvidence.slice(
+            0,
+            MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY,
+          );
+          return {
+            memoryId: evaluation.candidate.memory.id,
+            decision: isSelected ? "selected" : "rejected",
+            reasonCode: isSelected
+              ? "fact_candidate_selected"
+              : isProvisional
+                ? "fact_candidate_provisional_winner"
+                : match === undefined
+                  ? evaluation.reasonCode
+                  : facetOutcome === "conflicted"
+                    ? "fact_candidate_value_conflict"
+                    : "fact_candidate_lower_ranked",
+            ...(match === undefined
+              ? {}
+              : { valueGroupId: valueGroups.get(match.valueKey) }),
+            evidence: auditedEvidence,
+            ...(orderedEvidence.length === auditedEvidence.length
+              ? {}
+              : {
+                  evidenceOmittedCount:
+                    orderedEvidence.length - auditedEvidence.length,
+                }),
+          };
+        }),
+      };
+    }),
+  };
+}
+
+function factValueGroupIds(
+  matches: readonly FactFacetCandidateMatch[],
+): Map<string, string> {
+  const groups = new Map<string, FactFacetCandidateMatch[]>();
+  for (const match of matches) {
+    const group = groups.get(match.valueKey) ?? [];
+    group.push(match);
+    groups.set(match.valueKey, group);
+  }
+  const ordered = [...groups.entries()].sort((left, right) => {
+    const leftKey = left[1].map((match) => match.candidate.memory.id).sort()[0];
+    const rightKey = right[1]
+      .map((match) => match.candidate.memory.id)
+      .sort()[0];
+    return (leftKey ?? "").localeCompare(rightKey ?? "");
+  });
+  return new Map(
+    ordered.map(([valueKey], index) => [valueKey, `value_${index + 1}`]),
+  );
+}
+
+function explicitFactSelectorAudit(input: {
+  request: ExplicitFactVerificationRequest;
+  outcome: ExplicitFactSelectorAudit["outcome"];
+  attempts: ExplicitFactSelectorAttemptAudit[];
+  replayEvidenceIds: readonly string[];
+  matchesByAttempt?: readonly (readonly (readonly FactFacetCandidateMatch[])[])[];
+}): ExplicitFactSelectorAudit {
+  const globalValueGroups = input.request.facets.map((_facet, facetIndex) =>
+    factValueGroupIds(
+      (input.matchesByAttempt ?? []).flatMap(
+        (matchesByFacet) => matchesByFacet[facetIndex] ?? [],
+      ),
+    ),
+  );
+  const attempts = input.attempts.map((attempt, attemptIndex) => ({
+    ...attempt,
+    facets: attempt.facets.map((facet, facetIndex) => {
+      const valueKeyByMemoryId = new Map(
+        (input.matchesByAttempt?.[attemptIndex]?.[facetIndex] ?? []).map(
+          (match) => [match.candidate.memory.id, match.valueKey],
+        ),
+      );
+      return {
+        ...facet,
+        candidates: facet.candidates.map((candidate) => {
+          if (candidate.valueGroupId === undefined) return candidate;
+          const valueKey = valueKeyByMemoryId.get(candidate.memoryId);
+          const valueGroupId =
+            valueKey === undefined
+              ? undefined
+              : globalValueGroups[facetIndex]?.get(valueKey);
+          if (valueGroupId === undefined) {
+            throw new TypeError(
+              "Selector audit value groups require a matching canonical fact value",
+            );
+          }
+          return { ...candidate, valueGroupId };
+        }),
+      };
+    }),
+  }));
+  return {
+    policy: "explicit_fact_checklist_v1",
+    expectedFacetCount: input.request.expectedFacetCount,
+    outcome: input.outcome,
+    scanLimit: EXPLICIT_FACT_SAFETY_SCAN_LIMIT,
+    scanTruncated: attempts.some(
+      (attempt) => attempt.outcome === "scan_truncated",
+    ),
+    replayEvidenceIds: [...input.replayEvidenceIds],
+    attempts,
+  };
+}
+
+function combinedExplicitFactRejection(
+  preparations: readonly ExplicitFactRecallPreparation[],
+): {
+  reason: Extract<
+    ExplicitFactRecallPreparation,
+    { status: "rejected" }
+  >["reason"];
+  outcome: Exclude<ExplicitFactSelectorAudit["outcome"], "selected">;
+  score: number;
+} {
+  const rejected = preparations.filter(
+    (
+      preparation,
+    ): preparation is Extract<
+      ExplicitFactRecallPreparation,
+      { status: "rejected" }
+    > => preparation.status === "rejected",
+  );
+  const priority = [
+    "requested_fact_facets_conflicted",
+    "requested_fact_scan_truncated",
+    "requested_fact_evidence_capacity_insufficient",
+    "requested_fact_below_caller_threshold",
+    "requested_fact_facets_incomplete",
+  ] as const;
+  const reason =
+    priority.find((candidate) =>
+      rejected.some((preparation) => preparation.reason === candidate),
+    ) ?? "requested_fact_facets_incomplete";
+  const matching = rejected.filter(
+    (preparation) => preparation.reason === reason,
+  );
+  return {
+    reason,
+    outcome:
+      reason === "requested_fact_facets_conflicted"
+        ? "conflicted"
+        : reason === "requested_fact_scan_truncated"
+          ? "scan_truncated"
+          : reason === "requested_fact_evidence_capacity_insufficient"
+            ? "capacity_insufficient"
+            : reason === "requested_fact_below_caller_threshold"
+              ? "below_threshold"
+              : "incomplete",
+    score: Math.max(0, ...matching.map((preparation) => preparation.score)),
+  };
+}
+
+function strongestExplicitFactAttemptRejection(
+  attempts: readonly ExplicitFactSelectorAttemptAudit[],
+): {
+  outcome: Exclude<ExplicitFactSelectorAudit["outcome"], "selected">;
+  reason:
+    | "requested_fact_facets_conflicted"
+    | "requested_fact_scan_truncated"
+    | "requested_fact_evidence_capacity_insufficient"
+    | "requested_fact_below_caller_threshold"
+    | "requested_fact_facets_incomplete";
+} {
+  const priority = [
+    {
+      outcome: "conflicted",
+      reason: "requested_fact_facets_conflicted",
+    },
+    {
+      outcome: "scan_truncated",
+      reason: "requested_fact_scan_truncated",
+    },
+    {
+      outcome: "capacity_insufficient",
+      reason: "requested_fact_evidence_capacity_insufficient",
+    },
+    {
+      outcome: "below_threshold",
+      reason: "requested_fact_below_caller_threshold",
+    },
+    {
+      outcome: "incomplete",
+      reason: "requested_fact_facets_incomplete",
+    },
+  ] as const;
+  return (
+    priority.find(({ outcome }) =>
+      attempts.some((attempt) => attempt.outcome === outcome),
+    ) ?? priority[priority.length - 1]!
+  );
+}
+
+function explicitFactPreparationScore(
+  preparation: ExplicitFactRecallPreparation,
+): number {
+  return preparation.status === "selected"
+    ? preparation.selection.result.score
+    : preparation.score;
+}
+
+function factConflictFacetIndexes(
+  matchesByFacet: readonly (readonly FactFacetCandidateMatch[])[],
+): number[] {
+  return matchesByFacet.flatMap((matches, index) =>
+    new Set(matches.map((match) => match.valueKey)).size > 1 ? [index] : [],
+  );
+}
+
+function blockSelectedExplicitFactAttemptAudit(
+  audit: ExplicitFactSelectorAttemptAudit,
+  selectedReasonCode: ExplicitFactSelectorCandidateReason,
+): ExplicitFactSelectorAttemptAudit {
+  if (audit.outcome !== "selected") return audit;
+  return {
+    ...audit,
+    outcome: "incomplete",
+    facets: audit.facets.map((facet) => ({
+      ...facet,
+      candidates: facet.candidates.map((candidate) => ({
+        ...candidate,
+        decision: "rejected",
+        reasonCode:
+          candidate.decision === "selected"
+            ? selectedReasonCode
+            : candidate.reasonCode,
+      })),
+    })),
+  };
+}
+
+function consistentNotSelectedFactAttemptAudit(
+  audit: ExplicitFactSelectorAttemptAudit,
+): ExplicitFactSelectorAttemptAudit {
+  if (audit.facets.some((facet) => facet.outcome !== "selected")) return audit;
+  return {
+    ...audit,
+    outcome: "consistent_not_selected",
+    facets: audit.facets.map((facet) => ({
+      ...facet,
+      candidates: facet.candidates.map((candidate) => ({
+        ...candidate,
+        decision: "rejected",
+        reasonCode:
+          candidate.valueGroupId === undefined
+            ? candidate.reasonCode
+            : "fact_candidate_same_value_shadowed_by_event_card",
+      })),
+    })),
+  };
+}
+
+function completeNotSelectedFactAttemptAudit(
+  audit: ExplicitFactSelectorAttemptAudit,
+): ExplicitFactSelectorAttemptAudit {
+  if (audit.outcome !== "selected") return audit;
+  return {
+    ...audit,
+    outcome: "complete_not_selected",
+    facets: audit.facets.map((facet) => ({
+      ...facet,
+      candidates: facet.candidates.map((candidate) => ({
+        ...candidate,
+        decision: "rejected",
+        reasonCode:
+          candidate.decision === "selected"
+            ? "fact_candidate_rejected_due_higher_tier_failure"
+            : candidate.reasonCode,
+      })),
+    })),
+  };
+}
+
+function markExplicitFactConflictAttempts(
+  preparations: readonly ExplicitFactRecallPreparation[],
+  combinedMatchesByFacet: readonly (readonly FactFacetCandidateMatch[])[],
+  conflictingFacetIndexes: readonly number[],
+): ExplicitFactSelectorAttemptAudit[] {
+  const conflictIndexes = new Set(conflictingFacetIndexes);
+  const globalValueGroups = combinedMatchesByFacet.map(factValueGroupIds);
+  return preparations.map((preparation) => {
+    const attemptHasConflict = conflictingFacetIndexes.some(
+      (index) =>
+        (preparation.matchesByFacet[index]?.length ?? 0) > 0 ||
+        preparation.hardConflictFacetIndexes.includes(index),
+    );
+    return {
+      ...preparation.audit,
+      outcome: attemptHasConflict
+        ? "conflicted"
+        : preparation.audit.outcome === "selected"
+          ? "incomplete"
+          : preparation.audit.outcome,
+      facets: preparation.audit.facets.map((facet, index) => {
+        const matches = preparation.matchesByFacet[index] ?? [];
+        const valueKeyByMemoryId = new Map(
+          matches.map((match) => [match.candidate.memory.id, match.valueKey]),
+        );
+        const isConflicted =
+          conflictIndexes.has(index) &&
+          (valueKeyByMemoryId.size > 0 ||
+            preparation.hardConflictFacetIndexes.includes(index));
+        return {
+          ...facet,
+          outcome: isConflicted ? "conflicted" : facet.outcome,
+          candidates: facet.candidates.map((candidate) => {
+            const valueKey = valueKeyByMemoryId.get(candidate.memoryId);
+            return {
+              ...candidate,
+              decision: "rejected",
+              reasonCode:
+                isConflicted && valueKey !== undefined
+                  ? "fact_candidate_value_conflict"
+                  : candidate.decision === "selected"
+                    ? "fact_candidate_rejected_due_atomic_conflict"
+                    : candidate.reasonCode,
+              ...(valueKey === undefined
+                ? {}
+                : {
+                    valueGroupId: globalValueGroups[index]?.get(valueKey),
+                  }),
+            };
+          }),
+        };
+      }),
+    };
+  });
+}
+
+function truncatedExplicitFactAttemptAudit(
+  request: ExplicitFactVerificationRequest,
+  tier: "event_card" | "basic_memory",
+  scannedCandidateCount: number,
+  scanUnit: "candidate_pool" | "evidence_per_memory",
+  scanLimit: number,
+  truncatedMemoryIds?: readonly string[],
+  scanWitnessMemoryId?: string,
+): ExplicitFactSelectorAttemptAudit {
+  return {
+    tier,
+    outcome: "scan_truncated",
+    scannedCandidateCount,
+    scanUnit,
+    scanLimit,
+    ...(scanWitnessMemoryId === undefined ? {} : { scanWitnessMemoryId }),
+    ...(truncatedMemoryIds === undefined
+      ? {}
+      : { truncatedMemoryIds: [...truncatedMemoryIds].sort() }),
+    facets: request.facets.map((facet, index) => ({
+      index,
+      kind: facet.kind,
+      request: explicitFactAuditFacetDescriptor(facet),
+      outcome: "missing",
+      candidates: (truncatedMemoryIds ?? []).map((memoryId) => ({
+        memoryId,
+        decision: "rejected",
+        reasonCode: "fact_candidate_evidence_scan_truncated",
+        evidence: [],
+      })),
+    })),
+  };
+}
+
+function explicitFactAuditFacetDescriptor(
+  facet: ExplicitFactFacet,
+): ExplicitFactFacetDescriptor {
+  return facet.kind === "beverage_preference"
+    ? { kind: facet.kind, selector: facet.selector }
+    : { kind: facet.kind, entity: facet.entity };
+}
+
+function diagnosticExplicitFactCandidates(
+  candidates: readonly HierarchyCandidate[],
+): HierarchyCandidate[] {
+  const evidenceByCandidate = candidates.map((candidate) =>
+    [...candidate.evidence]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .slice(0, MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY),
+  );
+  const selectedIds = new Set<string>();
+  for (
+    let evidenceIndex = 0;
+    selectedIds.size < MAX_EXPLICIT_FACT_DIAGNOSTIC_EVIDENCE &&
+    evidenceByCandidate.some((evidence) => evidenceIndex < evidence.length);
+    evidenceIndex += 1
+  ) {
+    for (const evidence of evidenceByCandidate) {
+      const item = evidence[evidenceIndex];
+      if (item === undefined) continue;
+      selectedIds.add(item.id);
+      if (selectedIds.size >= MAX_EXPLICIT_FACT_DIAGNOSTIC_EVIDENCE) break;
+    }
+  }
+  return candidates.map((candidate, index) => ({
+    ...candidate,
+    evidence:
+      evidenceByCandidate[index]?.filter((evidence) =>
+        selectedIds.has(evidence.id),
+      ) ?? [],
+  }));
+}
+
+function diagnosticPreparedRecall(prepared: PreparedRecall): PreparedRecall {
+  const evidenceIds = new Set(
+    diagnosticExplicitFactCandidates(
+      prepared.memories.map((memory) => ({
+        tier: "basic_memory" as const,
+        memory,
+        evidence: prepared.rawEvidence.filter(
+          (evidence) => evidence.memoryId === memory.id,
+        ),
+      })),
+    ).flatMap((candidate) => candidate.evidence.map((evidence) => evidence.id)),
+  );
+  return {
+    ...prepared,
+    rawEvidence: prepared.rawEvidence.filter((item) =>
+      evidenceIds.has(item.id),
+    ),
+    evidence: prepared.evidence.filter((item) => evidenceIds.has(item.id)),
+  };
+}
+
+function minimalSelectedFactCandidates(
+  matches: readonly FactFacetCandidateMatch[],
+  maxEvidence: number,
+): HierarchyCandidate[] | undefined {
+  const evidenceCoverage = new Map<
+    string,
+    {
+      evidence: MemoryEvidence;
+      memoryId: string;
+      facetIndexes: Set<number>;
+    }
+  >();
+  matches.forEach((match, facetIndex) => {
+    for (const evidence of match.evidence) {
+      const existing = evidenceCoverage.get(evidence.id);
+      if (
+        existing !== undefined &&
+        existing.memoryId !== match.candidate.memory.id
+      ) {
+        return;
+      }
+      const entry = existing ?? {
+        evidence,
+        memoryId: match.candidate.memory.id,
+        facetIndexes: new Set<number>(),
+      };
+      entry.facetIndexes.add(facetIndex);
+      evidenceCoverage.set(evidence.id, entry);
+    }
+  });
+
+  const uncovered = new Set(matches.map((_match, index) => index));
+  const selectedEvidence = new Set<string>();
+  while (uncovered.size > 0 && selectedEvidence.size < maxEvidence) {
+    const next = [...evidenceCoverage.entries()]
+      .filter(([id]) => !selectedEvidence.has(id))
+      .map(([id, entry]) => ({
+        id,
+        entry,
+        newlyCovered: [...entry.facetIndexes].filter((index) =>
+          uncovered.has(index),
+        ).length,
+      }))
+      .filter((item) => item.newlyCovered > 0)
+      .sort(
+        (left, right) =>
+          right.newlyCovered - left.newlyCovered ||
+          left.id.localeCompare(right.id),
+      )[0];
+    if (next === undefined) break;
+    selectedEvidence.add(next.id);
+    for (const index of next.entry.facetIndexes) uncovered.delete(index);
+  }
+  if (uncovered.size > 0) return undefined;
+
+  const selectedCandidates = new Map<string, HierarchyCandidate>();
+  for (const match of matches) {
+    const existing = selectedCandidates.get(match.candidate.memory.id);
+    const selectedForCandidate = match.evidence.filter((evidence) =>
+      selectedEvidence.has(evidence.id),
+    );
+    const evidence = new Map(
+      [...(existing?.evidence ?? []), ...selectedForCandidate].map((item) => [
+        item.id,
+        item,
+      ]),
+    );
+    selectedCandidates.set(match.candidate.memory.id, {
+      ...match.candidate,
+      evidence: [...evidence.values()].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      ),
+    });
+  }
+  const candidates = [...selectedCandidates.values()];
+  return candidates.every((candidate) => candidate.evidence.length > 0)
+    ? candidates
+    : undefined;
+}
+
+function mergeSelectedFactCandidates(
+  matches: readonly FactFacetCandidateMatch[],
+): HierarchyCandidate[] {
+  const selected = new Map<string, HierarchyCandidate>();
+  for (const match of matches) {
+    const existing = selected.get(match.candidate.memory.id);
+    const evidence = new Map(
+      [...(existing?.evidence ?? []), ...match.evidence].map((item) => [
+        item.id,
+        item,
+      ]),
+    );
+    selected.set(match.candidate.memory.id, {
+      ...match.candidate,
+      evidence: [...evidence.values()].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      ),
+    });
+  }
+  return [...selected.values()];
+}
+
+function factMatchCandidates(
+  matchesByFacet: readonly (readonly FactFacetCandidateMatch[])[],
+): HierarchyCandidate[] {
+  return deduplicateCandidates(
+    matchesByFacet.flatMap((matches) =>
+      matches.map((match) => ({
+        ...match.candidate,
+        evidence: match.evidence,
+      })),
+    ),
+  );
+}
+
+function evaluateExplicitFactCandidate(
+  store: DatabaseStore,
+  agentId: string,
+  nowUtc: string,
+  timeRange: MemoryRecallQuery["timeRange"],
+  tier: "event_card" | "basic_memory",
+  facet: ExplicitFactFacet,
+  candidate: HierarchyCandidate,
+): FactCandidateEvaluation {
+  const memory = candidate.memory;
+  const ineligibleReason = explicitFactMemoryIneligibilityReason(
+    memory,
+    tier,
+    nowUtc,
+    timeRange,
+  );
+  if (ineligibleReason !== undefined) {
+    return {
+      candidate,
+      reasonCode: ineligibleReason,
+      evidence: [],
+    };
+  }
+  const valueResolution = explicitFactValueResolution(memory.content, facet);
+  if (valueResolution.kind !== "resolved") {
+    return {
+      candidate,
+      ...(valueResolution.kind === "conflicted" ? { hardConflict: true } : {}),
+      reasonCode:
+        valueResolution.kind === "conflicted"
+          ? "fact_candidate_value_conflicted"
+          : "fact_candidate_value_unparseable",
+      evidence: [],
+    };
+  }
+  const valueKey = valueResolution.valueKey;
+  const evidenceResolution = matchingUserFactEvidence(
+    store,
+    agentId,
+    nowUtc,
+    facet,
+    valueKey,
+    candidate.evidence,
+  );
+  if (
+    evidenceResolution.conflicted ||
+    evidenceResolution.evidence.length === 0
+  ) {
+    return {
+      candidate,
+      hardConflict: evidenceResolution.conflicted,
+      reasonCode: evidenceResolution.conflicted
+        ? "fact_candidate_evidence_conflicted"
+        : "fact_candidate_evidence_not_verified",
+      evidence: evidenceResolution.audit,
+    };
+  }
+
+  const score = explicitFactCandidateScore(memory, facet);
+  return {
+    candidate,
+    match: {
+      candidate,
+      evidence: evidenceResolution.evidence,
+      valueKey,
+      score,
+    },
+    reasonCode: "fact_candidate_eligible",
+    evidence: evidenceResolution.audit,
+  };
+}
+
+function explicitFactMemoryIneligibilityReason(
+  memory: Memory,
+  tier: "event_card" | "basic_memory",
+  nowUtc: string,
+  timeRange: MemoryRecallQuery["timeRange"],
+): ExplicitFactSelectorCandidateReason | undefined {
+  if (memory.status !== "active") return "fact_candidate_not_active";
+  if (
+    memory.supersededById !== undefined ||
+    memory.mergedIntoId !== undefined ||
+    memory.claim?.disposition === "cancelled" ||
+    memory.claim?.disposition === "completed"
+  ) {
+    return "fact_candidate_lifecycle_ineligible";
+  }
+  if (memory.certainty === "uncertain" || memory.confidence < 0.5) {
+    return "fact_candidate_low_reliability";
+  }
+  if (!memoryExistedAtRecall(memory, nowUtc)) {
+    return "fact_candidate_future";
+  }
+  if (!memoryMatchesExplicitFactTimeRange(memory, timeRange)) {
+    return "fact_candidate_outside_time_range";
+  }
+  if (tier === "event_card") {
+    return memory.certainty === "explicit"
+      ? undefined
+      : "fact_candidate_not_explicit";
+  }
+  if (
+    memory.kind !== "semantic" ||
+    memory.namespace !== "user_model" ||
+    memory.certainty !== "explicit" ||
+    memory.attribution !== "user_explicit"
+  ) {
+    return "fact_candidate_not_user_attributed";
+  }
+  return memory.stability === "stable"
+    ? undefined
+    : "fact_candidate_not_stable";
+}
+
+function memoryMatchesExplicitFactTimeRange(
+  memory: Memory,
+  range: MemoryRecallQuery["timeRange"],
+): boolean {
+  if (range === undefined) return true;
+  const temporal = memory.temporalMetadata ?? memory.temporal;
+  if (temporal === undefined) return false;
+  const statuses = new Set(range.statuses ?? [temporal.temporalStatus]);
+  let startAtUtc: string | undefined;
+  let endAtUtc: string | undefined;
+  if (statuses.has("occurred") && temporal.temporalStatus === "occurred") {
+    startAtUtc = temporal.occurredStartAtUtc;
+    endAtUtc = temporal.occurredEndAtUtc;
+  } else if (
+    statuses.has("in_progress") &&
+    temporal.temporalStatus === "in_progress"
+  ) {
+    startAtUtc = temporal.occurredStartAtUtc;
+  } else if (statuses.has("planned") && temporal.temporalStatus === "planned") {
+    startAtUtc = temporal.plannedStartAtUtc;
+    endAtUtc = temporal.plannedEndAtUtc;
+  } else if (
+    statuses.has("cancelled") &&
+    temporal.temporalStatus === "cancelled"
+  ) {
+    startAtUtc = temporal.plannedStartAtUtc;
+    endAtUtc = temporal.plannedEndAtUtc;
+  }
+  return (
+    startAtUtc !== undefined &&
+    overlapsRange(startAtUtc, endAtUtc, {
+      fromUtc: range.fromUtc,
+      toUtc: range.toUtc,
+    })
+  );
+}
+
+function memoryExistedAtRecall(memory: Memory, nowUtc: string): boolean {
+  const recallAt = Date.parse(nowUtc);
+  const recordedAt = memory.temporalMetadata?.recordedAtUtc;
+  return (
+    Number.isFinite(recallAt) &&
+    [
+      memory.createdAtUtc,
+      memory.updatedAtUtc,
+      memory.lifecycleUpdatedAtUtc,
+      memory.lastReinforcedAtUtc,
+      recordedAt,
+    ]
+      .filter((value): value is string => value !== undefined)
+      .every((value) => Date.parse(value) <= recallAt)
+  );
+}
+
+function matchingUserFactEvidence(
+  store: DatabaseStore,
+  agentId: string,
+  nowUtc: string,
+  facet: ExplicitFactFacet,
+  expectedValueKey: string,
+  evidence: readonly MemoryEvidence[],
+): {
+  evidence: MemoryEvidence[];
+  audit: FactEvidenceDecisionAudit[];
+  conflicted: boolean;
+} {
+  const recallAt = Date.parse(nowUtc);
+  const accepted: MemoryEvidence[] = [];
+  const audit: FactEvidenceDecisionAudit[] = [];
+  let conflicted = false;
+  for (const item of evidence) {
+    let reasonCode: ExplicitFactSelectorEvidenceReason | undefined;
+    if (item.sourceType !== "message") {
+      reasonCode = "fact_evidence_unsupported_source";
+    } else if (Date.parse(item.recordedAtUtc) > recallAt) {
+      reasonCode = "fact_evidence_future";
+    }
+    const source =
+      reasonCode === undefined
+        ? (store.database
+            .prepare(
+              `SELECT role, content, created_at_utc AS createdAtUtc
+               FROM messages WHERE id = ? AND agent_id = ?`,
+            )
+            .get(item.sourceId, agentId) as
+            { role: string; content: string; createdAtUtc: string } | undefined)
+        : undefined;
+    const completeSource = source?.content.trim();
+    if (reasonCode === undefined && source === undefined) {
+      reasonCode = "fact_evidence_source_missing";
+    } else if (reasonCode === undefined && source?.role !== "user") {
+      reasonCode = "fact_evidence_source_not_user";
+    } else if (
+      reasonCode === undefined &&
+      (completeSource === undefined ||
+        completeSource.length === 0 ||
+        completeSource.length > 2_000)
+    ) {
+      reasonCode = "fact_evidence_source_not_snapshot_safe";
+    } else if (
+      reasonCode === undefined &&
+      source !== undefined &&
+      Date.parse(source.createdAtUtc) > recallAt
+    ) {
+      reasonCode = "fact_evidence_future";
+    } else if (
+      reasonCode === undefined &&
+      item.quote !== undefined &&
+      completeSource !== undefined &&
+      !isGroundedEvidenceExcerpt(completeSource, item.quote)
+    ) {
+      reasonCode = "fact_evidence_quote_not_grounded";
+    } else if (
+      reasonCode === undefined &&
+      completeSource !== undefined &&
+      !isFactBearingUserStatement(completeSource)
+    ) {
+      reasonCode = "fact_evidence_not_assertive";
+    } else if (reasonCode === undefined && completeSource !== undefined) {
+      const sourceValue = explicitFactValueResolution(completeSource, facet);
+      if (
+        sourceValue.kind !== "resolved" ||
+        sourceValue.valueKey !== expectedValueKey
+      ) {
+        if (
+          sourceValue.kind === "conflicted" ||
+          (sourceValue.kind === "resolved" &&
+            sourceValue.valueKey !== expectedValueKey)
+        ) {
+          conflicted = true;
+        }
+        reasonCode =
+          sourceValue.kind === "none"
+            ? "fact_evidence_value_mismatch"
+            : "fact_evidence_value_conflict";
+      }
+    }
+    if (reasonCode !== undefined || completeSource === undefined) {
+      audit.push({
+        evidenceId: item.id,
+        decision: "rejected",
+        reasonCode: reasonCode ?? "fact_evidence_source_missing",
+      });
+      continue;
+    }
+    // Legacy rows may have no quote or a benign excerpt. The immutable row
+    // remains untouched; only the complete, verified user source is carried
+    // into this recall snapshot so surrounding negation cannot be hidden.
+    accepted.push(
+      MemoryEvidenceSchema.parse({
+        id: item.id,
+        memoryId: item.memoryId,
+        sourceType: item.sourceType,
+        sourceId: item.sourceId,
+        quote: completeSource,
+        recordedAtUtc: item.recordedAtUtc,
+      }),
+    );
+    audit.push({
+      evidenceId: item.id,
+      decision: "accepted",
+      reasonCode: "fact_evidence_accepted",
+    });
+  }
+  return {
+    evidence: accepted.sort((left, right) => left.id.localeCompare(right.id)),
+    audit: audit.sort((left, right) =>
+      left.evidenceId.localeCompare(right.evidenceId),
+    ),
+    conflicted,
+  };
+}
+
+function selectUnambiguousFactFacetMatches(
+  matchesByFacet: readonly (readonly FactFacetCandidateMatch[])[],
+): FactFacetMatchSelection {
+  const selected: FactFacetCandidateMatch[] = [];
+  for (const matches of matchesByFacet) {
+    if (matches.length === 0) return { status: "incomplete" };
+    const valueGroups = new Map<string, FactFacetCandidateMatch[]>();
+    for (const match of matches) {
+      const group = valueGroups.get(match.valueKey) ?? [];
+      group.push(match);
+      valueGroups.set(match.valueKey, group);
+    }
+    if (valueGroups.size > 1) return { status: "conflicted" };
+    const best = [...(valueGroups.values().next().value ?? [])].sort(
+      (left, right) =>
+        right.score - left.score ||
+        right.candidate.memory.confidence - left.candidate.memory.confidence ||
+        left.candidate.memory.id.localeCompare(right.candidate.memory.id),
+    )[0];
+    if (best === undefined) return { status: "incomplete" };
+    selected.push(best);
+  }
+  return { status: "selected", matches: selected };
 }
 
 function isLinkedFriendDestinationIntent(query: string): boolean {

@@ -19,6 +19,7 @@ function segment(input: {
   id: string;
   content: string;
   priority?: number;
+  renderOrder?: number;
   tokenBudget?: number;
   required?: boolean;
   placement?: "system" | "prompt";
@@ -28,6 +29,9 @@ function segment(input: {
     id: input.id,
     placement: input.placement ?? "prompt",
     priority: input.priority ?? 1,
+    ...(input.renderOrder === undefined
+      ? {}
+      : { renderOrder: input.renderOrder }),
     tokenBudget: input.tokenBudget ?? 100,
     required: input.required ?? false,
     cacheable: false,
@@ -75,6 +79,69 @@ describe("PromptSegmentRegistry", () => {
     expect(registry.list()).toEqual([]);
     expect(() => registry.register(first)).not.toThrow();
   });
+
+  it("applies render order independently of budget priority and keeps trace positions exact", () => {
+    const registry = new PromptSegmentRegistry<TestContext>([
+      segment({ id: "01_dynamic", content: "D".repeat(16), priority: 100 }),
+      segment({
+        id: "02_low",
+        content: "L".repeat(16),
+        priority: 1,
+        renderOrder: -2,
+        globalOverflowPolicy: "drop",
+      }),
+      segment({
+        id: "03_history",
+        content: "H".repeat(16),
+        required: true,
+        renderOrder: -1,
+      }),
+      segment({ id: "04_empty", content: "", renderOrder: -3 }),
+      segment({
+        id: "05_policy",
+        content: "P",
+        required: true,
+        placement: "system",
+      }),
+    ]);
+    const result = registry.render({}, { maxInputTokens: 10 });
+
+    expect(result.system).toBe("P");
+    expect(result.prompt).toBe(`${"H".repeat(16)}\n${"D".repeat(16)}`);
+    const traces = Object.fromEntries(
+      result.trace.segments.map((trace) => [trace.id, trace]),
+    );
+    expect(traces["03_history"]).toMatchObject({
+      renderedIndex: 0,
+      renderedCharacters: 16,
+    });
+    expect(traces["01_dynamic"]).toMatchObject({
+      renderedIndex: 1,
+      renderedCharacters: 16,
+    });
+    expect(traces["05_policy"]).toMatchObject({
+      renderedIndex: 0,
+      renderedCharacters: 1,
+    });
+    expect(traces["02_low"]).toMatchObject({
+      included: false,
+      reason: "global_budget",
+    });
+    expect(traces["02_low"]).not.toHaveProperty("renderedIndex");
+    expect(traces["04_empty"]).not.toHaveProperty("renderedIndex");
+  });
+
+  it.each([NaN, Infinity, -Infinity])(
+    "rejects a non-finite render order (%s)",
+    (renderOrder) => {
+      expect(
+        () =>
+          new PromptSegmentRegistry([
+            segment({ id: "01_invalid", content: "invalid", renderOrder }),
+          ]),
+      ).toThrow("must have a finite render order");
+    },
+  );
 
   it("keeps registry instances and their caches composition-local", () => {
     const render = vi.fn(() => "cached");
@@ -208,6 +275,99 @@ describe("PromptSegmentRegistry", () => {
     expect(result.trace.segments[0]).toMatchObject({ truncated: true });
   });
 
+  it.each([60, 300, 1_200, 3_000])(
+    "retains only whole autobiography statements within %i tokens",
+    (budget) => {
+      const summary = `我在对话中说过：「${"我一度考虑提交申请。".repeat(30)}但我最终没有提交。」`;
+      const reports = Array.from(
+        { length: 8 },
+        (_, index) =>
+          `对方在对话中说过：「第${index}次，${"如果时间允许，我会考虑去。".repeat(25)}这些都只是设想，并没有发生。」`,
+      );
+      const autobiography = {
+        revision: 1,
+        summaryFirstPerson: summary,
+        importantExperiences: reports,
+        relationshipChanges: ["我说我感到更熟悉，但没有替对方确认感受。"],
+      };
+      for (const global of [false, true]) {
+        const registry = new PromptSegmentRegistry<TestContext>([
+          segment({
+            id: "01_autobiography",
+            content: `AUTOBIOGRAPHY_JSON\n${JSON.stringify(autobiography)}`,
+            tokenBudget: global ? 10_000 : budget,
+          }),
+        ]);
+        const result = registry.render(
+          {},
+          global ? { maxInputTokens: budget } : {},
+        );
+        expect(result.trace.estimatedInputTokens).toBeLessThanOrEqual(budget);
+        const retained = JSON.parse(
+          result.prompt.split("\n")[1]!,
+        ) as typeof autobiography;
+        if (retained.summaryFirstPerson !== undefined)
+          expect(retained.summaryFirstPerson).toBe(summary);
+        for (const report of retained.importantExperiences ?? [])
+          expect(reports).toContain(report);
+        for (const report of retained.relationshipChanges ?? [])
+          expect(autobiography.relationshipChanges).toContain(report);
+        if ((retained.importantExperiences ?? []).length > 0)
+          expect(retained.importantExperiences.at(-1)).toBe(reports.at(-1));
+      }
+    },
+  );
+
+  it.each([
+    ["RECENT_VERBATIM_JSON", undefined],
+    ["RECENT_VERBATIM_JSON", 100],
+    ["OTHER_JSON", undefined],
+    ["OTHER_JSON", 100],
+  ] as const)(
+    "retains the correct end of %s under a global budget of %s",
+    (label, maxInputTokens) => {
+      const history = Array.from({ length: 30 }, (_, index) => ({
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message-${index}-${"x".repeat(500)}`,
+      }));
+      const registry = new PromptSegmentRegistry<TestContext>([
+        segment({
+          id: "01_history",
+          content: `${label}\n${JSON.stringify(history)}`,
+          tokenBudget: 300,
+        }),
+      ]);
+
+      const result = registry.render(
+        {},
+        maxInputTokens === undefined ? {} : { maxInputTokens },
+      );
+      const retained = JSON.parse(result.prompt.split("\n")[1] ?? "") as {
+        role: string;
+        content: string;
+      }[];
+      expect(retained.length).toBeGreaterThan(0);
+      expect(retained.length).toBeLessThan(history.length);
+      const expected =
+        label === "RECENT_VERBATIM_JSON"
+          ? history.slice(-retained.length)
+          : history.slice(0, retained.length);
+      expect(retained.map((message) => message.content.split("-")[1])).toEqual(
+        expected.map((message) => message.content.split("-")[1]),
+      );
+      expect(retained.map((message) => message.role)).toEqual(
+        expected.map((message) => message.role),
+      );
+      expect(result.trace.estimatedInputTokens).toBeLessThanOrEqual(
+        maxInputTokens ?? 300,
+      );
+      expect(result.trace.segments[0]).toMatchObject({
+        included: true,
+        truncated: true,
+      });
+    },
+  );
+
   it("drops an atomic optional segment when its own token budget is exceeded", () => {
     const registry = new PromptSegmentRegistry<TestContext>([
       segment({
@@ -270,6 +430,15 @@ describe("PromptSegmentRegistry", () => {
     expect(dynamicRender).toHaveBeenCalledTimes(2);
     expect(
       second.trace.segments.find((item) => item.id === "01_cached")?.cacheHit,
+    ).toBe(true);
+    expect(
+      second.trace.segments.find((item) => item.id === "01_cached")
+        ?.localCacheHit,
+    ).toBe(true);
+    expect(
+      second.trace.segments.every(
+        (item) => item.localCacheHit === item.cacheHit,
+      ),
     ).toBe(true);
   });
 

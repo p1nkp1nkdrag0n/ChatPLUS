@@ -54,6 +54,10 @@ describe("PersonaSim server integration", () => {
         "015_llm_provider_profiles.sql",
         "016_llm_reasoning_config.sql",
         "017_fuzzy_life_decisions.sql",
+        "018_temporal_correspondence.sql",
+        "019_correspondence_key_metadata.sql",
+        "020_keepsakes.sql",
+        "021_correspondence_reply_recovery.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -86,6 +90,12 @@ describe("PersonaSim server integration", () => {
           "proactive_generation_runs",
           "calendar_entries",
           "retrieval_runs",
+          "keepsakes",
+          "keepsake_assets",
+          "keepsake_generation_runs",
+          "keepsake_sources",
+          "keepsake_letter_links",
+          "character_visual_profiles",
           "daily_life_contexts",
           "daily_life_intents",
           "life_threads",
@@ -98,6 +108,12 @@ describe("PersonaSim server integration", () => {
           "outcome_records",
           "reflection_records",
           "relationship_milestones",
+          "correspondence_threads",
+          "letters",
+          "letter_generation_snapshots",
+          "letter_generation_runs",
+          "temporal_tasks",
+          "correspondence_key_metadata",
         ]),
       );
       expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
@@ -861,6 +877,19 @@ describe("PersonaSim server integration", () => {
     const settings = await app.inject({ method: "GET", url: "/api/settings" });
     expect(settings.body).not.toContain("apiKey");
     expect(settings.body).not.toContain("authorization");
+    expect(
+      jsonBody<{
+        runtime: {
+          correspondenceMode: string;
+          correspondenceExecution: string;
+          keepsakeMode: string;
+        };
+      }>(settings).runtime,
+    ).toMatchObject({
+      correspondenceMode: "off",
+      correspondenceExecution: "lazy",
+      keepsakeMode: "off",
+    });
 
     const invalid = await app.inject({
       method: "POST",

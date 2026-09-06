@@ -17,6 +17,7 @@ import {
   deriveExplicitUserMemoryClaim,
   extractExplicitDeadlineFact,
   extractExplicitStoredItemFact,
+  extractExplicitWeeklyPlanFacts,
   guardPersonaReply,
   hasExplicitMemoryCorrection,
   isExplicitUserMemoryStatement,
@@ -55,6 +56,16 @@ import {
   buildScheduleNegotiationContract,
   type ActiveScheduleNegotiation,
 } from "./schedule-negotiation-service.js";
+import { analyzeSupportSpeechAct } from "./fuzzy-life-language.js";
+import {
+  consentClaimsFromUnknown,
+  isConsentClaimEvidenceExcerpt,
+  isConsentControlledActivity,
+  isConsentDerivedSemanticCandidate,
+  type ThirdPartyConsentClaim,
+  type ThirdPartyConsentScopeKind,
+  type ThirdPartyConsentStatus,
+} from "./consent-modality.js";
 
 export interface TurnDecisionServiceOptions {
   chatEffectsMode?: "off" | "gated";
@@ -82,6 +93,10 @@ export interface TurnDecisionEffectContext {
   scheduleNegotiationEligible: boolean;
   negotiationEnforced: boolean;
   activeNegotiation?: ActiveScheduleNegotiation;
+  consentModality?: {
+    evidenceText: string;
+    claims: readonly ThirdPartyConsentClaim[];
+  };
 }
 
 export type DecisionInspection = {
@@ -101,6 +116,63 @@ export interface ModelScheduleActionAudit {
   kind: ScheduleNegotiationAction["kind"];
 }
 
+export interface ExplicitFactReplyGuardAudit {
+  policyVersion: "explicit_fact_checklist_v1";
+  outcome: "selected" | "abstained";
+  reasonCode: string;
+  expectedFacetCount?: 2 | 3;
+  selectedMemoryIds: string[];
+  selectedEvidenceIds: string[];
+  serverGuardApplied: true;
+  modelReplyContentChanged: boolean;
+  modelSideEffectsBlocked: boolean;
+  modelRepairAttempted: boolean;
+  modelGenerationFallbackUsed: boolean;
+  contentDerivedSemanticsSkipped: true;
+  finalTextSha256: string;
+}
+
+export interface ConsentModalityGuardAudit {
+  policyVersion: "third_party_consent_modality_v1";
+  sourceKind: "assertion" | "query" | "mixed";
+  subject: string;
+  status: ThirdPartyConsentStatus;
+  scopes: Array<{
+    kind: ThirdPartyConsentScopeKind;
+    label: string;
+    resource: string;
+    beneficiary?: string;
+    beneficiaryKey?: string;
+    restrictions?: string[];
+  }>;
+  primaryClaimKey: string;
+  claimCount: number;
+  claims: Array<{
+    claimKey: string;
+    sourceKind: "assertion" | "query";
+    subject: string;
+    subjectKey: string;
+    beneficiary?: string;
+    beneficiaryKey?: string;
+    status: ThirdPartyConsentStatus;
+    scopeKind: ThirdPartyConsentScopeKind;
+    scopeKey: string;
+    scopeLabel: string;
+    resource: string;
+    evidenceText: string;
+    restrictions?: string[];
+  }>;
+  consentOnly: boolean;
+  independentText: string;
+  independentReplyText: string;
+  evidenceText: string;
+  serverGuardApplied: true;
+  modelReplyContentChanged: boolean;
+  modelSideEffectsBlocked: boolean;
+  contentDerivedSemanticsSkipped: boolean;
+  finalTextSha256: string;
+}
+
 export type ResolvedTurn = {
   decision: AgentTurnDecision;
   inspection: DecisionInspection;
@@ -114,7 +186,100 @@ export type ResolvedTurn = {
     mode: "shadow" | "enforced";
     validation: WorldEffectsValidationResult;
   };
+  explicitFactReplyGuardAudit?: ExplicitFactReplyGuardAudit;
+  consentModalityGuardAudit?: ConsentModalityGuardAudit;
 };
+
+function filterRawConsentScheduleEffects(input: {
+  effects: readonly Record<string, unknown>[];
+  schedule: readonly ScheduleItem[];
+  consentModality?: NonNullable<TurnDecisionEffectContext["consentModality"]>;
+}): {
+  retained: Record<string, unknown>[];
+  blocked: Record<string, unknown>[];
+} {
+  if (input.consentModality === undefined) {
+    return { retained: [...input.effects], blocked: [] };
+  }
+  const retained: Record<string, unknown>[] = [];
+  const blocked: Record<string, unknown>[] = [];
+  for (const effect of input.effects) {
+    if (
+      isRawConsentScheduleEffect(effect, input.schedule, input.consentModality)
+    ) {
+      blocked.push(effect);
+    } else {
+      retained.push(effect);
+    }
+  }
+  return { retained, blocked };
+}
+
+function isRawConsentScheduleEffect(
+  effect: Record<string, unknown>,
+  schedule: readonly ScheduleItem[],
+  consentModality: NonNullable<TurnDecisionEffectContext["consentModality"]>,
+): boolean {
+  const evidenceTexts = [
+    effect["justificationQuote"],
+    effect["justification"],
+    effect["quote"],
+    effect["evidence"],
+    effect["evidenceQuotes"],
+    effect["userQuote"],
+    effect["sourceQuote"],
+  ]
+    .map((value) => consentClaimsFromUnknown(value))
+    .filter((value) => value !== "");
+  const hasConsentProvenance = evidenceTexts.some(
+    (evidenceText) =>
+      isConsentClaimEvidenceExcerpt({
+        claims: consentModality.claims,
+        candidateText: evidenceText,
+      }) ||
+      isConsentDerivedSemanticCandidate({
+        authoritativeText: consentModality.evidenceText,
+        authoritativeClaims: consentModality.claims,
+        candidateText: evidenceText,
+      }),
+  );
+  if (!hasConsentProvenance) {
+    return false;
+  }
+  const targetText = rawScheduleEffectTargetText(effect, schedule);
+  return isConsentControlledActivity({
+    claims: consentModality.claims,
+    candidateText: targetText,
+  });
+}
+
+function rawScheduleEffectTargetText(
+  effect: Record<string, unknown>,
+  schedule: readonly ScheduleItem[],
+): string {
+  const targetParts: unknown[] = [
+    effect["itemTitle"],
+    effect["targetTitle"],
+    effect["title"],
+    effect["activity"],
+    effect["description"],
+    effect["item"],
+  ];
+  const itemId = [
+    effect["itemId"],
+    effect["item_id"],
+    effect["scheduleItemId"],
+    effect["id"],
+  ].find((value): value is string => typeof value === "string");
+  if (itemId !== undefined) {
+    targetParts.push(schedule.find((item) => item.id === itemId));
+  }
+  const rawIndex = effect["scheduleIndex"] ?? effect["itemIndex"];
+  if (typeof rawIndex === "number" && Number.isInteger(rawIndex)) {
+    targetParts.push(schedule[rawIndex], schedule[rawIndex - 1]);
+  }
+  return consentClaimsFromUnknown(targetParts);
+}
 
 const EnforcedScheduleTurnProviderEnvelopeSchema =
   StrictPersonaTurnProviderEnvelopeSchema.superRefine((value, context) => {
@@ -512,6 +677,9 @@ export class TurnDecisionService {
                 userText: input.userText,
                 legacyEffectsEnabled: input.effects.effectsEligible,
                 worldEffectsEnabled,
+                ...(input.effects.consentModality === undefined
+                  ? {}
+                  : { consentModality: input.effects.consentModality }),
                 ...(validatedWorldEffects === undefined
                   ? {}
                   : { validatedWorldEffects }),
@@ -641,6 +809,9 @@ export class TurnDecisionService {
       userText: string;
       legacyEffectsEnabled: boolean;
       worldEffectsEnabled: boolean;
+      consentModality?: NonNullable<
+        TurnDecisionEffectContext["consentModality"]
+      >;
       validatedWorldEffects?: ValidatedWorldEffects;
     },
     modelRejections: ModelEffectRejection[],
@@ -659,8 +830,26 @@ export class TurnDecisionService {
       spec,
       replyStrategy,
     );
+    const rawScheduleEffects = context.legacyEffectsEnabled
+      ? response.scheduleEffects
+      : [];
+    const consentFilteredEffects = filterRawConsentScheduleEffects({
+      effects: rawScheduleEffects,
+      schedule: context.schedule,
+      ...(context.consentModality === undefined
+        ? {}
+        : { consentModality: context.consentModality }),
+    });
+    for (const raw of consentFilteredEffects.blocked) {
+      modelRejections.push({
+        raw,
+        reasonCode: "consent_modality_effect_blocked",
+        reasonSummary:
+          "A schedule mutation derived from third-party consent was blocked before normalization.",
+      });
+    }
     const normalized = normalizeModelEffects({
-      effects: context.legacyEffectsEnabled ? response.scheduleEffects : [],
+      effects: consentFilteredEffects.retained,
       schedule: context.schedule,
       timezone: context.timezone,
       nowUtc: context.nowUtc,
@@ -974,11 +1163,13 @@ function fixtureDecision(
   causalContext: unknown,
   fixtureTurnBehavior: FixtureTurnBehavior | undefined,
 ): AgentTurnDecision {
-  const delegatedDecision =
-    fixtureTurnBehavior?.selectDelegatedDecision?.({
-      userText: text,
-      ...(causalContext === undefined ? {} : { causalContext }),
-    }) ?? fixtureDelegatedDecision(text, causalContext);
+  const speechAct = analyzeSupportSpeechAct(text);
+  const delegatedDecision = speechAct.delegated
+    ? (fixtureTurnBehavior?.selectDelegatedDecision?.({
+        userText: speechAct.operativeDilemmaClassifyText,
+        ...(causalContext === undefined ? {} : { causalContext }),
+      }) ?? fixtureDelegatedDecision(text, causalContext))
+    : undefined;
   if (delegatedDecision !== undefined) {
     const reply = `我的决定：${delegatedDecision}。我知道这不是轻描淡写的一句话；先把第一步落下来，之后真正发生了什么，我们再一起看。`;
     return {
@@ -1343,27 +1534,36 @@ export function fixtureDelegatedDecision(
   text: string,
   causalContext?: unknown,
 ): string | undefined {
+  const speechAct = analyzeSupportSpeechAct(text);
+  if (!speechAct.delegated) return undefined;
+  const operativeText = speechAct.operativeDilemmaClassifyText;
   if (
     /(?:不要|别|无需|不需要)(?:再)?(?:替我|帮我|你来)(?:做|作|来)?(?:这个|这次|最后|最终)?(?:决定|选择)/u.test(
-      text,
+      operativeText,
     ) ||
     !/(?:替我|你来|你替我|帮我).{0,12}(?:决定|选)|直接.{0,8}(?:决定|选)|你说了算/u.test(
-      text,
+      operativeText,
     )
   ) {
     return undefined;
   }
   if (
-    /A\s*(?:和|与|、|\/)\s*B.{0,20}(?:之间)?.{0,12}(?:决定|选择)/iu.test(text)
+    /A\s*(?:和|与|、|\/)\s*B.{0,20}(?:之间)?.{0,12}(?:决定|选择)/iu.test(
+      operativeText,
+    )
   ) {
     return fixtureDilemmaOptions(causalContext).at(-1) ?? "选项 B";
   }
-  if (/辞职|离职|工作/u.test(text)) return "离开当前这份工作，开始下一阶段";
-  if (/分手|关系|伴侣|恋爱/u.test(text)) return "结束这段持续消耗你的关系";
-  if (/搬家|城市|留在|去哪里/u.test(text))
+  if (/辞职|离职|工作/u.test(operativeText))
+    return "离开当前这份工作，开始下一阶段";
+  if (/分手|关系|伴侣|恋爱/u.test(operativeText))
+    return "结束这段持续消耗你的关系";
+  if (/搬家|城市|留在|去哪里/u.test(operativeText))
     return "去更接近你真正想要生活的地方";
-  if (/转行|职业/u.test(text)) return "转向你反复提到、真正愿意长期投入的方向";
-  if (/学习|考试|专业/u.test(text)) return "选择更符合长期目标的学习路径";
+  if (/转行|职业/u.test(operativeText))
+    return "转向你反复提到、真正愿意长期投入的方向";
+  if (/学习|考试|专业/u.test(operativeText))
+    return "选择更符合长期目标的学习路径";
   return "选择改变现状，并从今天能完成的第一步开始";
 }
 
@@ -1525,9 +1725,31 @@ export function deriveServerOwnedUserMemoryCandidates(
   nowUtc: string,
 ): MemoryCandidate[] {
   const normalized = text.normalize("NFKC").trim();
-  if (fixtureMemoryStatementIsUnsafe(normalized)) return [];
+  const candidates: MemoryCandidate[] = extractExplicitWeeklyPlanFacts(
+    normalized,
+  ).map((plan) => ({
+    ...explicitUserSemanticCandidate({
+      content: `用户将${plan.activity}的时间安排在每周${plan.weekday}${plan.timeOfDay}；这是每周计划，不代表已经执行。`,
+      tags: [
+        "user_fact",
+        "weekly_plan",
+        ...(plan.explicitCorrection ? ["explicit_correction"] : []),
+      ],
+      subjectKey: plan.subjectKey,
+      nowUtc,
+      importance: 0.76,
+      stability: "situational",
+      correction: plan.explicitCorrection,
+    }),
+    temporalMetadata: {
+      mentionedAtUtc: nowUtc,
+      recordedAtUtc: nowUtc,
+      temporalCertainty: "unknown",
+      temporalStatus: "planned",
+    },
+  }));
+  if (fixtureMemoryStatementIsUnsafe(normalized)) return candidates;
 
-  const candidates: MemoryCandidate[] = [];
   const correction = hasExplicitMemoryCorrection(normalized);
 
   const userName = normalized.match(

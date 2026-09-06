@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AutobiographyService } from "./autobiography-service.js";
 import type { CalendarService } from "./calendar-service.js";
 import { ConversationContextService } from "./conversation-context-service.js";
+import type { RelationshipArtifactsPromptContextProvider } from "./conversation-context-service.js";
 import type { ContinuityIndexService } from "./continuity-index-service.js";
 import type { ConversationContinuityService } from "./conversation-continuity-service.js";
 import type {
@@ -165,12 +166,60 @@ describe("ConversationContextService", () => {
     expect(result.temporalResolution).toEqual(resolution);
     expect(result.additionalPromptSegments).toEqual([]);
   });
+
+  it("adds bounded safe relationship artifacts through the optional provider", () => {
+    const relationshipArtifacts = vi.fn(() => ({
+      correspondence: [
+        {
+          id: "letter-reply-1",
+          direction: "agent_to_user",
+          status: "in_transit",
+          arrivalDueAtUtc: "2026-08-26T12:00:00.000Z",
+        },
+      ],
+      readyKeepsakes: [
+        {
+          id: "keepsake-ticket-1",
+          title: "雨夜票根",
+          kind: "ticket_stub",
+          description: "一起看完电影留下的票根。",
+          sourceEventIds: ["milestone-1"],
+          sourceMemoryIds: [],
+          sourceLetterIds: [],
+          createdEffectiveAtUtc: "2026-08-20T12:00:00.000Z",
+        },
+      ],
+    }));
+    const fixture = createFixture({
+      dateQuery: { resolution: { kind: "none" } },
+      autobiographyMode: "off",
+      relationshipArtifacts,
+    });
+
+    const result = fixture.service.prepare({
+      agentId: "agent-1",
+      userText: "你最近寄出的信和那张票根呢？",
+      nowUtc: NOW,
+      timezone: "Asia/Shanghai",
+    });
+    const segment = result.additionalPromptSegments.find(
+      (item) => item.id === "12b_relationship_artifacts",
+    );
+    const rendered = segment?.render({}) ?? "";
+
+    expect(relationshipArtifacts).toHaveBeenCalledWith("agent-1", NOW);
+    expect(rendered).toContain("keepsake-ticket-1");
+    expect(rendered).toContain("雨夜票根");
+    expect(rendered).toContain('"status":"in_transit"');
+    expect(rendered).toContain("without private letter bodies or image data");
+  });
 });
 
 function createFixture(input: {
   dateQuery: DateDigestQueryResult;
   autobiographyMode: "off" | "shadow" | "enforced";
   memoryRecallMode?: "legacy" | "shadow" | "enforced";
+  relationshipArtifacts?: RelationshipArtifactsPromptContextProvider;
 }): {
   service: ConversationContextService;
   prepareContinuity: ReturnType<typeof vi.fn>;
@@ -237,6 +286,7 @@ function createFixture(input: {
       continuityIndex,
       input.autobiographyMode,
       input.memoryRecallMode ?? "legacy",
+      input.relationshipArtifacts,
     ),
     prepareContinuity,
     selectCalendar,

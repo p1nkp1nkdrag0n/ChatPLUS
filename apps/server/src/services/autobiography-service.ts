@@ -17,6 +17,7 @@ import type {
   AutobiographyBundle,
   ContinuityRepository,
 } from "./continuity-repository.js";
+import { checkpointLongMessageReceipts } from "./checkpoint-report-excerpts.js";
 
 export interface VerifiedContinuityEvidence extends ContinuityEvidenceRef {
   text: string;
@@ -85,6 +86,12 @@ export class AutobiographyService {
         }),
       })),
     };
+    const receipts = new Map(
+      checkpointLongMessageReceipts({
+        messages: input.sourceMessages,
+        evidence: input.evidenceCatalog,
+      }).map((item) => [item.evidenceId, item.content]),
+    );
     const validation = validateAutobiographyRevision({
       proposal: authoritativeProposal,
       evidenceCatalog: input.evidenceCatalog.map((evidence) => ({
@@ -96,6 +103,9 @@ export class AutobiographyService {
           ? {}
           : { temporalStatus: evidence.temporalStatus }),
         reliability: evidence.reliability,
+        ...(receipts.has(evidence.id)
+          ? { sourceReceipt: receipts.get(evidence.id)! }
+          : {}),
       })),
     });
     const projection = buildAutobiographyProjection({

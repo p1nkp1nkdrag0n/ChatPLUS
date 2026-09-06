@@ -21,6 +21,14 @@ export interface LifecycleMemoryRecord {
   raw: Record<string, unknown>;
 }
 
+export interface LifecycleUserMessageEvidence {
+  evidenceId: string;
+  sourceId: string;
+  content: string;
+  quote: string | null;
+  createdAtUtc: string;
+}
+
 export interface LifecycleMemoryPatch {
   status: Memory["status"];
   updatedAtUtc: string;
@@ -177,6 +185,50 @@ export class ContinuityMemoryRepository {
       .prepare("SELECT * FROM memories WHERE id = ?")
       .get(memoryId) as SqlRow | undefined;
     return row === undefined ? undefined : mapLifecycleMemory(row);
+  }
+
+  listUserMessageEvidence(memory: Memory): LifecycleUserMessageEvidence[] {
+    return (
+      this.store.database
+        .prepare(
+          `SELECT e.id AS evidenceId, m.id AS sourceId, m.content, e.quote,
+         m.created_at_utc AS createdAtUtc
+       FROM memory_evidence e JOIN messages m ON m.id = e.source_id
+       WHERE e.memory_id = ? AND e.source_type = 'message'
+         AND m.agent_id = ? AND m.role = 'user'
+       ORDER BY m.created_at_utc, e.id`,
+        )
+        .all(memory.id, memory.agentId) as LifecycleUserMessageEvidence[]
+    ).filter(
+      (source) =>
+        memory.sourceMessageIds.includes(source.sourceId) &&
+        (source.quote === null ||
+          source.content
+            .normalize("NFKC")
+            .includes(source.quote.normalize("NFKC"))),
+    );
+  }
+
+  attachLegacyClaim(
+    memoryId: string,
+    claim: NonNullable<Memory["claim"]>,
+  ): boolean {
+    const current = this.getLifecycleMemory(memoryId)?.memory;
+    if (current === undefined || current.claim !== undefined) return false;
+    const next = MemorySchema.parse({ ...current, claim });
+    return (
+      this.store.database
+        .prepare(
+          `UPDATE memories SET claim_subject_key = ?, claim_disposition = ?, memory_json = ?
+       WHERE id = ? AND claim_subject_key IS NULL AND claim_disposition IS NULL`,
+        )
+        .run(
+          claim.subjectKey,
+          claim.disposition,
+          JSON.stringify(next),
+          memoryId,
+        ).changes === 1
+    );
   }
 
   patchLifecycleMemory(input: {

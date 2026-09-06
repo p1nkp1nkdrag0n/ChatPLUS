@@ -5,7 +5,10 @@ import {
   type EventCard,
   type Memory,
 } from "@personasim/contracts";
-import { boundedRecallHanBigrams } from "@personasim/features";
+import {
+  boundedRecallHanBigrams,
+  groupCheckpointTurns,
+} from "@personasim/features";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { openDatabase, type Database } from "../db/connection.js";
@@ -18,6 +21,7 @@ import {
 } from "./autobiography-service.js";
 import {
   CheckpointService,
+  LlmCheckpointAutobiographyModel,
   checkpointSourceHash,
   type CheckpointAutobiographyModel,
   type CheckpointAutobiographyModelInput,
@@ -27,6 +31,7 @@ import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
 import { ContinuityRepository } from "./continuity-repository.js";
 import { DateDigestService } from "./date-digest-service.js";
 import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
+import type { GenerateObjectInput } from "./llm-service.js";
 
 const AGENT_ID = "agent_continuity";
 const SESSION_ID = "session_continuity";
@@ -54,6 +59,610 @@ describe("continuity services", () => {
 
   afterEach(() => {
     database.close();
+  });
+
+  it("persists repeated failures, backs off across service restarts, and commits the original window after recovery", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    const model = new FakeCheckpointModel();
+    let generations = 0;
+    model.beforeReturn = () => {
+      generations += 1;
+      throw new Error("Provider unavailable");
+    };
+    const attempt = () =>
+      createServices(
+        new ContinuityRepository(store),
+        model,
+        clock,
+      ).checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      });
+
+    expect((await attempt()).status).toBe("failed");
+    const original =
+      repository.getCheckpointRecoveryState(SESSION_ID)!.checkpoint;
+    expect(store.listDomainEvents(AGENT_ID)).toMatchObject([
+      {
+        eventType: "conversation.checkpoint.failed",
+        streamVersion: 1,
+        payload: {
+          sessionId: SESSION_ID,
+          failureCode: "generation_failed",
+          sourceHash: original.sourceHash,
+          fromMessageId: original.fromMessageId,
+          throughMessageId: original.throughMessageId,
+        },
+      },
+    ]);
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      reason: "failure_cooldown",
+      retryAtUtc: "2026-08-21T12:05:00.000Z",
+    });
+    expect(generations).toBe(1);
+    expect(store.listDomainEvents(AGENT_ID)).toHaveLength(1);
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(8);
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)).toBeUndefined();
+
+    clock.advance({ minutes: 5 });
+    expect((await attempt()).status).toBe("failed");
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toMatchObject({
+      consecutiveFailures: 2,
+      checkpoint: { id: original.id },
+    });
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      retryAtUtc: "2026-08-21T12:20:00.000Z",
+    });
+    clock.advance({ minutes: 15 });
+    expect((await attempt()).status).toBe("failed");
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toMatchObject({
+      consecutiveFailures: 3,
+    });
+    clock.advance({ minutes: 30 });
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      retryAtUtc: "2026-08-21T13:20:00.000Z",
+    });
+    expect(generations).toBe(3);
+
+    clock.advance({ minutes: 30 });
+    model.beforeReturn = () => {
+      generations += 1;
+    };
+    const recovered = await attempt();
+    expect(recovered).toMatchObject({
+      status: "committed",
+      checkpoint: {
+        id: original.id,
+        fromMessageId: original.fromMessageId,
+        throughMessageId: original.throughMessageId,
+      },
+    });
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+    expect(
+      store
+        .listDomainEvents(AGENT_ID)
+        .map((event) => [event.eventType, event.streamVersion]),
+    ).toEqual([
+      ["conversation.checkpoint.committed", 4],
+      ["conversation.checkpoint.failed", 3],
+      ["conversation.checkpoint.failed", 2],
+      ["conversation.checkpoint.failed", 1],
+    ]);
+    expect(repository.getLatestAutobiography(AGENT_ID)).toBeDefined();
+  });
+
+  it("cools down a legacy failed row even when an older committed event exists", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    const model = new FakeCheckpointModel();
+    const attempt = () =>
+      createServices(
+        new ContinuityRepository(store),
+        model,
+        clock,
+      ).checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      });
+    expect((await attempt()).status).toBe("committed");
+    const previous = repository.getLatestCommittedCheckpoint(SESSION_ID)!;
+    clock.advance({ minutes: 1 });
+    model.beforeReturn = () => {
+      throw new Error("Legacy failure");
+    };
+    expect((await attempt()).status).toBe("failed");
+    // Reproduce the pre-upgrade database shape, which had failed rows but
+    // emitted only committed events. This database is private and in memory.
+    database
+      .prepare(
+        "DELETE FROM domain_events WHERE event_type = 'conversation.checkpoint.failed'",
+      )
+      .run();
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toMatchObject({
+      consecutiveFailures: 1,
+    });
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      reason: "failure_cooldown",
+      retryAtUtc: "2026-08-21T12:06:00.000Z",
+    });
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)?.id).toBe(
+      previous.id,
+    );
+    clock.advance({ minutes: 5 });
+    model.beforeReturn = undefined;
+    expect((await attempt()).status).toBe("committed");
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+  });
+
+  it("allows fresh messages to recover sooner without bypassing the minimum interval or dropping skipped messages", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    const model = new FakeCheckpointModel();
+    model.beforeReturn = () => {
+      throw new Error("Provider unavailable");
+    };
+    const services = createServices(repository, model, clock);
+    const attempt = () =>
+      services.checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      });
+    await attempt();
+    clock.advance({ minutes: 5 });
+    await attempt();
+    clock.advance({ minutes: 15 });
+    await attempt();
+    const failed =
+      repository.getCheckpointRecoveryState(SESSION_ID)!.checkpoint;
+    for (let index = 4; index < 6; index += 1) insertLargeTurn(store, index);
+    expect(await attempt()).toMatchObject({
+      status: "skipped",
+      reason: "failure_cooldown",
+      retryAtUtc: "2026-08-21T12:25:00.000Z",
+    });
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)).toBeUndefined();
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(12);
+    clock.advance({ minutes: 5 });
+    model.beforeReturn = undefined;
+    const recovered = await attempt();
+    expect(recovered).toMatchObject({
+      status: "committed",
+      checkpoint: {
+        fromMessageId: failed.fromMessageId,
+        sourceMessageCount: failed.sourceMessageCount,
+      },
+    });
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(12);
+    expect(
+      store
+        .listDomainEvents(AGENT_ID)
+        .filter(
+          (event) => event.eventType === "conversation.checkpoint.failed",
+        ),
+    ).toHaveLength(3);
+    // Bounded checkpoint windows drain oldest first. New messages wait behind
+    // that boundary and remain available; the last complete turn stays live.
+    for (let index = 0; index < 5; index += 1) {
+      if ((await attempt()).status === "skipped") break;
+    }
+    expect(
+      repository.getLatestCommittedCheckpoint(SESSION_ID)?.throughMessageId,
+    ).toBe("msg_assistant_4");
+    expect(repository.listCommittedCheckpoints(AGENT_ID)).toHaveLength(5);
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(12);
+  });
+
+  it("records exhausted semantic repair details without creating snapshots or event cards", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    let calls = 0;
+    const model = new LlmCheckpointAutobiographyModel({
+      generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+        calls += 1;
+        expect(input.maxRetries).toBe(0);
+        return Promise.resolve(
+          input.schema.parse({
+            entries: [
+              {
+                basis: "reported_excerpt",
+                entryKind: "important_experience",
+                temporalStatus: "unknown",
+                excerptId: "invented_id",
+              },
+            ],
+          }),
+        );
+      },
+    });
+    const result = await createServices(
+      repository,
+      model,
+      clock,
+    ).checkpoints.createIfNeeded({ agentId: AGENT_ID, sessionId: SESSION_ID });
+    expect(result).toMatchObject({
+      status: "failed",
+      reason: "artifact_validation_failed",
+    });
+    expect(calls).toBe(2);
+    expect(store.listDomainEvents(AGENT_ID)).toMatchObject([
+      {
+        eventType: "conversation.checkpoint.failed",
+        payload: {
+          failureCode: "artifact_validation_failed",
+          attemptCount: 2,
+          repairAttempted: true,
+          issues: ["excerpt_not_found: invented_id"],
+        },
+      },
+    ]);
+    expect(repository.getLatestAutobiography(AGENT_ID)).toBeUndefined();
+    expect(readIndexedCards(database)).toEqual([]);
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)).toBeUndefined();
+  });
+
+  it("keeps the source revision fence when a new message arrives during semantic repair", async () => {
+    for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+    const repository = new ContinuityRepository(store);
+    let calls = 0;
+    const model = new LlmCheckpointAutobiographyModel({
+      generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+        calls += 1;
+        const { reportExcerpts } = JSON.parse(input.prompt) as {
+          reportExcerpts: Array<{ id: string }>;
+        };
+        if (calls === 2)
+          insertMessage(store, {
+            id: "message_during_repair",
+            role: "user",
+            messageKind: "user",
+            content: "我又想起一件事。",
+            createdAtUtc: "2026-08-21T11:00:00.000Z",
+          });
+        return Promise.resolve(
+          input.schema.parse({
+            entries: [
+              {
+                basis: "reported_excerpt",
+                entryKind: "important_experience",
+                temporalStatus: "unknown",
+                excerptId: calls === 1 ? "invented_id" : reportExcerpts[0]!.id,
+              },
+            ],
+          }),
+        );
+      },
+    });
+    const services = createServices(repository, model, clock);
+    expect(
+      await services.checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      }),
+    ).toMatchObject({ status: "invalidated", reason: "source_changed" });
+    expect(calls).toBe(2);
+    expect(repository.getLatestAutobiography(AGENT_ID)).toBeUndefined();
+    expect(repository.getCheckpointRecoveryState(SESSION_ID)).toBeUndefined();
+    expect(
+      (
+        await services.checkpoints.createIfNeeded({
+          agentId: AGENT_ID,
+          sessionId: SESSION_ID,
+        })
+      ).status,
+    ).toBe("committed");
+  });
+
+  it("commits all-long-message windows as auditable source indexes with no invented summary and no model call", async () => {
+    const userText =
+      "朋友说如果条件允许她才会参加；这是转述，并非我的亲身经历。".repeat(250);
+    const characterText =
+      "我没有说事情已经完成；只有条件满足之后才会考虑。".repeat(250);
+    insertMessage(store, {
+      id: "msg_long_user",
+      role: "user",
+      messageKind: "user",
+      content: userText,
+      createdAtUtc: "2026-08-21T02:00:00.000Z",
+    });
+    insertMessage(store, {
+      id: "msg_long_character",
+      role: "assistant",
+      messageKind: "assistant_reply",
+      inReplyToMessageId: "msg_long_user",
+      content: characterText,
+      createdAtUtc: "2026-08-21T02:01:00.000Z",
+    });
+    insertLargeTurn(store, 1);
+    const repository = new ContinuityRepository(store);
+    const generate = vi.fn(() => {
+      throw new Error("Long-message source indexes do not require a model");
+    });
+    const model = new LlmCheckpointAutobiographyModel({
+      generateObject: generate,
+    });
+    const result = await createServices(
+      repository,
+      model,
+      clock,
+    ).checkpoints.createIfNeeded({ agentId: AGENT_ID, sessionId: SESSION_ID });
+    expect(result.status).toBe("committed");
+    expect(generate).not.toHaveBeenCalled();
+    const reloaded = repository.getLatestAutobiography(AGENT_ID)!;
+    expect(reloaded.entries).toHaveLength(2);
+    expect(
+      reloaded.entries.every(
+        (entry) =>
+          entry.temporalStatus === "unknown" &&
+          entry.content.startsWith("【长消息来源索引，内容尚未提炼】"),
+      ),
+    ).toBe(true);
+    expect(
+      reloaded.entries.map((entry) => entry.evidence[0]?.sourceId),
+    ).toEqual(["msg_long_user", "msg_long_character"]);
+    expect(reloaded.snapshot.summaryFirstPerson).not.toContain(
+      "条件满足之后才会考虑",
+    );
+    expect(
+      repository
+        .listArchivedMessages(SESSION_ID)
+        .slice(0, 2)
+        .map((message) => message.content),
+    ).toEqual([userText, characterText]);
+    const committed = repository.getLatestCommittedCheckpoint(SESSION_ID)!;
+    expect(committed.artifact).toMatchObject({
+      reportCoverage: {
+        hasUnrefinedContent: true,
+        sourceIndexOnlyEvidenceIds: reloaded.entries.map(
+          (entry) => entry.evidence[0]!.id,
+        ),
+      },
+    });
+    expect(store.listDomainEvents(AGENT_ID)[0]).toMatchObject({
+      eventType: "conversation.checkpoint.committed",
+      payload: { reportCoverage: { hasUnrefinedContent: true } },
+    });
+    expect(readIndexedCards(database)).toHaveLength(2);
+    expect(
+      readIndexedCards(database).every(
+        (card) => card.title === "长消息来源索引（内容尚未提炼）",
+      ),
+    ).toBe(true);
+    database
+      .prepare(
+        "UPDATE conversation_checkpoints SET artifact_json = '{}' WHERE id = ?",
+      )
+      .run(committed.id);
+    new ContinuityIndexService(repository, clock).rebuildAgent(AGENT_ID);
+    expect(
+      readIndexedCards(database)
+        .filter((card) => card.sourceKind === "autobiography_entry")
+        .map((card) => card.title),
+    ).toEqual([
+      "长消息来源索引（内容尚未提炼）",
+      "长消息来源索引（内容尚未提炼）",
+    ]);
+  });
+
+  it("drains more than 50 long-message sources in complete-turn batches within snapshot limits", async () => {
+    for (let index = 0; index < 27; index += 1) {
+      const userId = `batch_user_${index}`;
+      const at = Date.parse("2026-08-21T02:00:00.000Z") + index * 120_000;
+      const content =
+        `Source ${index}. ` +
+        "This is a report with unrefined context. ".repeat(50);
+      insertMessage(store, {
+        id: userId,
+        role: "user",
+        messageKind: "user",
+        content,
+        createdAtUtc: new Date(at).toISOString(),
+      });
+      insertMessage(store, {
+        id: `batch_character_${index}`,
+        role: "assistant",
+        messageKind: "assistant_reply",
+        inReplyToMessageId: userId,
+        content,
+        createdAtUtc: new Date(at + 60_000).toISOString(),
+      });
+    }
+    const repository = new ContinuityRepository(store);
+    const generate = vi.fn(() => {
+      throw new Error("Source-only batches do not call a model");
+    });
+    const checkpoints = new CheckpointService(
+      repository,
+      clock,
+      new LlmCheckpointAutobiographyModel({ generateObject: generate }),
+      new AutobiographyService(repository),
+      new ContinuityIndexService(repository, clock),
+      { ...RETENTION_POLICY, hardTokenLimit: 100_000 },
+    );
+    const first = await checkpoints.createIfNeeded({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+    });
+    const second = await checkpoints.createIfNeeded({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+    });
+    expect(first).toMatchObject({
+      status: "committed",
+      checkpoint: {
+        fromMessageId: "batch_user_0",
+        throughMessageId: "batch_character_19",
+        sourceMessageCount: 40,
+      },
+    });
+    expect(second).toMatchObject({
+      status: "committed",
+      checkpoint: {
+        fromMessageId: "batch_user_20",
+        throughMessageId: "batch_character_25",
+        sourceMessageCount: 12,
+      },
+    });
+    if (first.status !== "committed")
+      throw new Error("Expected the first batch to commit");
+    expect(first.checkpoint.sourceTokenEstimate).toBe(
+      groupCheckpointTurns(
+        repository.listArchivedMessageRange(
+          SESSION_ID,
+          "batch_user_0",
+          "batch_character_19",
+        ),
+      ).reduce((sum, turn) => sum + turn.tokenEstimate, 0),
+    );
+    expect(repository.listAutobiographyEntries(AGENT_ID)).toHaveLength(52);
+    expect(repository.listArchivedMessages(SESSION_ID)).toHaveLength(54);
+    expect(generate).not.toHaveBeenCalled();
+    expect(
+      (
+        await checkpoints.createIfNeeded({
+          agentId: AGENT_ID,
+          sessionId: SESSION_ID,
+        })
+      ).status,
+    ).toBe("skipped");
+  });
+
+  it("commits reported conversations through the model DTO without inventing occurrence evidence", async () => {
+    insertMessage(store, {
+      id: "msg_report_user",
+      role: "user",
+      messageKind: "user",
+      content: "我说错了，画画是在周二，不是周四。",
+      createdAtUtc: "2026-08-21T02:00:00.000Z",
+    });
+    insertMessage(store, {
+      id: "msg_report_character",
+      role: "assistant",
+      messageKind: "assistant_reply",
+      inReplyToMessageId: "msg_report_user",
+      content: "我刚剪完粗剪。",
+      createdAtUtc: "2026-08-21T02:01:00.000Z",
+    });
+    insertMessage(store, {
+      id: "msg_report_plan",
+      role: "assistant",
+      messageKind: "assistant_proactive",
+      content: "我计划明天再检查一次粗剪。",
+      createdAtUtc: "2026-08-21T02:02:00.000Z",
+    });
+    insertLargeTurn(store, 1);
+    const repository = new ContinuityRepository(store);
+    const llm = {
+      generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+        const { evidence, reportExcerpts } = JSON.parse(input.prompt) as {
+          evidence: ContinuityEvidenceRef[];
+          reportExcerpts: Array<{ id: string; evidenceId: string }>;
+        };
+        const user = evidence.find(
+          (item) => item.sourceId === "msg_report_user",
+        )!;
+        const character = evidence.find(
+          (item) => item.sourceId === "msg_report_character",
+        )!;
+        const plan = evidence.find(
+          (item) => item.sourceId === "msg_report_plan",
+        )!;
+        const excerptId = (id: string) =>
+          reportExcerpts.find((item) => item.evidenceId === id)!.id;
+        return Promise.resolve(
+          input.schema.parse({
+            entries: [
+              {
+                basis: "reported_excerpt",
+                entryKind: "important_experience",
+                temporalStatus: "unknown",
+                excerptId: excerptId(user.id),
+              },
+              {
+                basis: "reported_excerpt",
+                entryKind: "important_experience",
+                temporalStatus: "unknown",
+                excerptId: excerptId(character.id),
+              },
+              {
+                basis: "reported_excerpt",
+                entryKind: "commitment",
+                temporalStatus: "planned",
+                excerptId: excerptId(plan.id),
+              },
+            ],
+          }),
+        );
+      },
+    };
+    const services = createServices(
+      repository,
+      new LlmCheckpointAutobiographyModel(llm),
+      clock,
+    );
+    const result = await services.checkpoints.createIfNeeded({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+    });
+    expect(result.status).toBe("committed");
+    const reloaded = new ContinuityRepository(store).getLatestAutobiography(
+      AGENT_ID,
+    )!;
+    expect(reloaded.snapshot.revision).toBe(1);
+    expect(reloaded.snapshot.summaryFirstPerson).toContain(
+      "对方在对话中说过：「我说错了，画画是在周二，不是周四。」",
+    );
+    expect(reloaded.entries.map((entry) => entry.temporalStatus)).toEqual([
+      "unknown",
+      "unknown",
+      "planned",
+    ]);
+    expect(reloaded.entries.map((entry) => entry.content)).toEqual([
+      "对方在对话中说过：「我说错了，画画是在周二，不是周四。」",
+      "我在对话中说过：「我刚剪完粗剪。」",
+      "我在对话中说过：「我计划明天再检查一次粗剪。」",
+    ]);
+    expect(
+      reloaded.entries.every((entry) =>
+        entry.evidence.every(
+          (item) =>
+            item.reliability === "reported" &&
+            item.temporalStatus === "unknown",
+        ),
+      ),
+    ).toBe(true);
+    const cards = readIndexedCards(database);
+    expect(cards).toHaveLength(3);
+    expect(cards.every((card) => card.title === "对话中的原文报告")).toBe(true);
+    expect(
+      cards.every(
+        (card) => card.temporalMetadata.occurredStartAtUtc === undefined,
+      ),
+    ).toBe(true);
+    expect(
+      cards.map((card) => card.temporalMetadata.temporalStatus).sort(),
+    ).toEqual(["planned", "unknown", "unknown"]);
+    expect(repository.getLatestCommittedCheckpoint(SESSION_ID)?.id).toBe(
+      reloaded.snapshot.sourceCheckpointId,
+    );
+    database
+      .prepare(
+        "UPDATE conversation_checkpoints SET artifact_json = '{}' WHERE id = ?",
+      )
+      .run(reloaded.snapshot.sourceCheckpointId);
+    services.index.rebuildAgent(AGENT_ID);
+    const rebuiltReports = readIndexedCards(database).filter(
+      (card) => card.sourceKind === "autobiography_entry",
+    );
+    expect(rebuiltReports).toHaveLength(3);
+    expect(
+      rebuiltReports.every((card) => card.title === "对话中的原文报告"),
+    ).toBe(true);
   });
 
   it("prioritizes bounded Han bigrams for paraphrased continuity search", () => {

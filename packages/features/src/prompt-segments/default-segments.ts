@@ -55,6 +55,7 @@ type DefaultDefinition = {
   readonly id: Exclude<DefaultPromptSegmentId, "13_retrieved_evidence">;
   readonly placement: "system" | "prompt";
   readonly priority: number;
+  readonly renderOrder?: number;
   readonly tokenBudget: number;
   readonly required: boolean;
   readonly cacheable: boolean;
@@ -199,6 +200,9 @@ const DEFINITIONS: readonly DefaultDefinition[] = [
   {
     id: "14_recent_verbatim",
     placement: "prompt",
+    // The retained chronological window can grow before mutable turn context.
+    // Its budget priority and stable diagnostic id remain unchanged.
+    renderOrder: -1,
     priority: 86,
     tokenBudget: 3_000,
     required: false,
@@ -297,6 +301,9 @@ function toSegment(
     id: definition.id,
     placement: definition.placement,
     priority: definition.priority,
+    ...(definition.renderOrder === undefined
+      ? {}
+      : { renderOrder: definition.renderOrder }),
     tokenBudget: definition.tokenBudget,
     required: definition.required,
     cacheable: definition.cacheable,

@@ -3,6 +3,10 @@ import type {
   RunSummary,
   TurnEvidence,
 } from "./companion-long-run-v2-run-types.js";
+import {
+  providerAccountingMetric,
+  providerMetricsReport,
+} from "./provider-metrics-summary.js";
 
 export interface PilotGateResult {
   status: "PASS" | "FAIL_PROVIDER" | "FAIL_PRODUCT" | "PARTIAL";
@@ -137,6 +141,12 @@ export function summarizeLongRunV2Run(input: {
     completed: { paired, closedLoop, total: input.evidence.length },
     hardAssertions: { passed, failed, skipped },
     provider: {
+      cacheAccounting: providerMetricsReport(
+        attempts.map((attempt) => ({
+          ...providerAccountingMetric(attempt),
+          profile: input.manifest.profile,
+        })),
+      ),
       physicalAttempts: attempts.length,
       failedAttempts: attempts.filter((attempt) => !attempt.success).length,
       repairedTurns,

@@ -6,7 +6,10 @@ import type { DatabaseStore } from "../db/store.js";
 import type { ActorQueue } from "../runtime/actor-queue.js";
 import type { Clock } from "../runtime/clock.js";
 import type { HourlyScheduler } from "../runtime/hourly-scheduler.js";
+import type { TemporalTaskScheduler } from "../runtime/temporal-task-scheduler.js";
 import type { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
+import type { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
+import type { KeepsakeRepository } from "../repositories/keepsake-repository.js";
 import type { AutobiographyService } from "../services/autobiography-service.js";
 import type { CalendarService } from "../services/calendar-service.js";
 import type { CharacterService } from "../services/character-service.js";
@@ -14,6 +17,12 @@ import type { CheckpointService } from "../services/checkpoint-service.js";
 import type { ConversationContinuityService } from "../services/conversation-continuity-service.js";
 import type { ConversationContextService } from "../services/conversation-context-service.js";
 import type { ConversationService } from "../services/conversation-service.js";
+import type {
+  CorrespondenceCryptoService,
+  CorrespondenceOpenService,
+} from "../services/correspondence-crypto-service.js";
+import type { CorrespondenceService } from "../services/correspondence-service.js";
+import type { CorrespondenceSnapshotService } from "../services/correspondence-snapshot-service.js";
 import type { ContinuityIndexService } from "../services/continuity-index-service.js";
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
@@ -21,17 +30,22 @@ import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { FollowUpService } from "../services/follow-up-service.js";
 import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
 import type { LlmService } from "../services/llm-service.js";
+import type { LetterReplyGenerationService } from "../services/letter-reply-generation-service.js";
+import type { KeepsakeAssetStore } from "../services/keepsake-asset-store.js";
+import type { KeepsakeService } from "../services/keepsake-service.js";
 import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import type { MemoryRecallService } from "../services/memory-recall-service.js";
 import type { PersonalIntentService } from "../services/personal-intent-service.js";
 import type { PersonalLifeService } from "../services/personal-life-service.js";
 import type { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import type { ReplyRepairService } from "../services/reply-repair-service.js";
+import type { RelationshipArchiveService } from "../services/relationship-archive-service.js";
 import type { SelfPlanningService } from "../services/self-planning-service.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
 import type { TurnCommitService } from "../services/turn-commit-service.js";
 import type { TurnDecisionService } from "../services/turn-decision-service.js";
+import type { TemporalCatchUpService } from "../services/temporal-catch-up-service.js";
 import type { WorldEffectService } from "../services/world-effect-service.js";
 import type { SseHub } from "../sse/hub.js";
 import type { ServerSimulationBundle } from "./bundles.js";
@@ -69,6 +83,18 @@ export const SERVER_SERVICE_IDS = {
   retrievalRuns: "server.retrieval-runs",
   proactiveDelivery: "server.proactive-delivery",
   scheduler: "server.scheduler",
+  temporalTaskScheduler: "server.correspondence.temporal-task-scheduler",
+  correspondenceRepository: "server.correspondence.repository",
+  correspondenceCrypto: "server.correspondence.crypto",
+  correspondenceSnapshots: "server.correspondence.snapshots",
+  letterReplyGeneration: "server.correspondence.reply-generation",
+  temporalCatchUp: "server.correspondence.temporal-catch-up",
+  correspondenceOpen: "server.correspondence.open",
+  correspondence: "server.correspondence",
+  keepsakeRepository: "server.keepsake.repository",
+  keepsakeAssets: "server.keepsake.assets",
+  keepsakes: "server.keepsake",
+  relationshipArchive: "server.relationship-archive",
 } as const;
 
 export const SERVER_BUNDLE_TOKEN = createServiceToken<ServerSimulationBundle>(
@@ -165,6 +191,45 @@ export const PROACTIVE_DELIVERY_SERVICE_TOKEN =
 export const SCHEDULER_SERVICE_TOKEN = createServiceToken<HourlyScheduler>(
   SERVER_SERVICE_IDS.scheduler,
 );
+export const TEMPORAL_TASK_SCHEDULER_TOKEN =
+  createServiceToken<TemporalTaskScheduler>(
+    SERVER_SERVICE_IDS.temporalTaskScheduler,
+  );
+export const CORRESPONDENCE_REPOSITORY_TOKEN =
+  createServiceToken<CorrespondenceRepository>(
+    SERVER_SERVICE_IDS.correspondenceRepository,
+  );
+export const CORRESPONDENCE_CRYPTO_SERVICE_TOKEN = createServiceToken<
+  CorrespondenceCryptoService | undefined
+>(SERVER_SERVICE_IDS.correspondenceCrypto);
+export const CORRESPONDENCE_SNAPSHOT_SERVICE_TOKEN =
+  createServiceToken<CorrespondenceSnapshotService>(
+    SERVER_SERVICE_IDS.correspondenceSnapshots,
+  );
+export const LETTER_REPLY_GENERATION_SERVICE_TOKEN = createServiceToken<
+  LetterReplyGenerationService | undefined
+>(SERVER_SERVICE_IDS.letterReplyGeneration);
+export const TEMPORAL_CATCH_UP_SERVICE_TOKEN =
+  createServiceToken<TemporalCatchUpService>(
+    SERVER_SERVICE_IDS.temporalCatchUp,
+  );
+export const CORRESPONDENCE_OPEN_SERVICE_TOKEN = createServiceToken<
+  CorrespondenceOpenService | undefined
+>(SERVER_SERVICE_IDS.correspondenceOpen);
+export const CORRESPONDENCE_SERVICE_TOKEN =
+  createServiceToken<CorrespondenceService>(SERVER_SERVICE_IDS.correspondence);
+export const KEEPSAKE_REPOSITORY_TOKEN = createServiceToken<KeepsakeRepository>(
+  SERVER_SERVICE_IDS.keepsakeRepository,
+);
+export const KEEPSAKE_ASSET_STORE_TOKEN =
+  createServiceToken<KeepsakeAssetStore>(SERVER_SERVICE_IDS.keepsakeAssets);
+export const KEEPSAKE_SERVICE_TOKEN = createServiceToken<KeepsakeService>(
+  SERVER_SERVICE_IDS.keepsakes,
+);
+export const RELATIONSHIP_ARCHIVE_SERVICE_TOKEN =
+  createServiceToken<RelationshipArchiveService>(
+    SERVER_SERVICE_IDS.relationshipArchive,
+  );
 
 /** Local alias retains the routes' richer Clock type while sharing core.clock. */
 export const SERVER_CLOCK_TOKEN = createServiceToken<Clock>("core.clock");

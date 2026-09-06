@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
+import type { LlmCallMetric } from "@personasim/providers";
 
 import { readConfig } from "../config.js";
 import { runLlmHttpSmoke } from "./llm-smoke-flow.js";
@@ -38,6 +39,7 @@ describe("LLM HTTP smoke flow", () => {
         ],
         usage: {
           prompt_tokens: 20,
+          prompt_tokens_details: { cached_tokens: 12 },
           completion_tokens: 12,
           total_tokens: 32,
         },
@@ -53,6 +55,7 @@ describe("LLM HTTP smoke flow", () => {
       developerRoutes: false,
       llm: {
         provider: "openai-compatible",
+        profileName: "legacy",
         baseUrl,
         apiKey: "test-placeholder-token",
         model: "mock-deepseek",
@@ -70,7 +73,20 @@ describe("LLM HTTP smoke flow", () => {
       },
     });
 
-    const result = await runLlmHttpSmoke(config);
+    const metrics: LlmCallMetric[] = [];
+    const result = await runLlmHttpSmoke(config, {
+      observation: {
+        onMetric: (metric) => metrics.push(metric),
+        promptDiagnostics: true,
+      },
+    });
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]).toMatchObject({
+      success: true,
+      cacheReadTokens: 12,
+      inputTokens: 20,
+    });
+    expect(metrics[0]?.promptDiagnostics?.messages).toHaveLength(4);
 
     expect(result).toMatchObject({
       provider: "openai-compatible",
@@ -95,11 +111,14 @@ describe("LLM HTTP smoke flow", () => {
     const messages = z
       .array(z.object({ role: z.string(), content: z.string() }).passthrough())
       .parse(body["messages"]);
-    const marker = "\nEXPECTED_JSON_SCHEMA\n";
+    const marker = "EXPECTED_JSON_SCHEMA\n";
     const schemaMessage = messages.find((message) =>
-      message.content.includes(marker),
+      message.content.startsWith(marker),
     );
     expect(schemaMessage).toBeDefined();
+    expect(schemaMessage?.role).toBe("user");
+    expect(messages.at(-1)?.content).not.toContain(marker);
+    expect(messages.indexOf(schemaMessage!)).toBeLessThan(messages.length - 1);
     const schemaText =
       schemaMessage?.content.slice(
         (schemaMessage?.content.indexOf(marker) ?? -1) + marker.length,

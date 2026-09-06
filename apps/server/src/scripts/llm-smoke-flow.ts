@@ -9,6 +9,7 @@ import { buildApp, type PersonaSimApp } from "../app.js";
 import type { ServerConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
+import type { LlmServiceObservationOptions } from "../services/llm-service.js";
 
 const SMOKE_NOW_UTC = "2026-08-16T10:00:00.000Z";
 const DEFAULT_USER_TEXT =
@@ -49,6 +50,7 @@ export async function runLlmHttpSmoke(
     userText?: string;
     clientMessageId?: string;
     host?: string;
+    observation?: LlmServiceObservationOptions;
   } = {},
 ): Promise<LlmHttpSmokeResult> {
   if (
@@ -89,6 +91,9 @@ export async function runLlmHttpSmoke(
       seedDemo: false,
       startScheduler: false,
       logger: false,
+      ...(options.observation === undefined
+        ? {}
+        : { llmObservation: options.observation }),
     });
 
     const draft = app.personasim.characters.createDemoCharacter();

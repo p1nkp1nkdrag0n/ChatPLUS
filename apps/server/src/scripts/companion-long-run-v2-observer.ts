@@ -235,6 +235,13 @@ export class LongRunV2Observer {
         estimatedOutputTokens !== undefined;
       return {
         ...metric,
+        ...(metric.logicalCallId === undefined
+          ? {}
+          : { providerLogicalCallId: metric.logicalCallId }),
+        ...(metric.usageSource === "provider" &&
+        metric.inputTokens !== undefined
+          ? { providerInputTokens: metric.inputTokens }
+          : {}),
         ...(usedEstimate ? { usageSource: "estimated" as const } : {}),
         ...(estimatedInputTokens === undefined
           ? {}

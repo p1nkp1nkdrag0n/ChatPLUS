@@ -6,7 +6,7 @@ PersonaSim 是一个本地运行、事件驱动的 AI 虚拟角色对话 Demo。
 
 核心准则是：**时间会推进，互动有后果，关系会积累，变化可追溯。**
 
-> 这是只在本机运行、只与合成测试用户交流的虚构角色功能验证 Demo。应用不会在关闭期间后台运行，也不会代表用户或角色调用外部工具、发送邮件、操作日历或执行现实动作。
+> 这是单用户、只与合成测试用户交流的虚构角色功能验证 Demo。默认 `lazy` 模式在服务关闭期间不运行；显式启用的本地常驻或自托管 worker 只处理本实例数据库中的书信时间任务。应用不会代表用户或角色调用外部工具、发送邮件、操作日历或执行现实动作。
 
 ## 已实现能力
 
@@ -26,6 +26,10 @@ PersonaSim 是一个本地运行、事件驱动的 AI 虚拟角色对话 Demo。
 - 主动消息当前暂时停用；兼容数据与底层两阶段提交实现仍保留，修复主题归属和过期生命周期后再重新启用
 - SQLite WAL 持久化、领域审计事件和 LLM 调用计量
 - FakeClock 与开发者快照
+- 五日历日数字书信、离线补算、不可变抵达快照、加密回信与启封
+- 由已发生/已确认经历派生的低频数字纪念物、内容寻址 WebP 资产与可追溯来源链
+- 分页关系档案、纪念物陈列柜，以及默认隐藏正文的本地 PNG 分享导出
+- 共用领域内核的 lazy / resident / worker 驱动，以及单实例 Docker 自托管、备份恢复
 - 单元、集成、模拟和 Playwright E2E 测试
 
 ## 快速开始
@@ -52,6 +56,10 @@ pnpm dev
 6. 将 FakeClock 推进，注入行动与结果，再观察角色是否忠实复盘成功、失败、遗憾或意外，并在后续会话中延续这次转折。
 
 默认会提供一个可直接体验的示例角色；设 `SEED_DEMO=false` 可关闭。
+
+需要浏览器关闭后仍处理到期书信，或给单个朋友部署独立实例时，请按[自托管与备份恢复指南](docs/SELF_HOSTING.md)使用同一镜像、独立数据库、独立 `INSTANCE_SECRET` 和 Caddy HTTPS/Basic Auth。不要把未经反向代理保护的 Fastify 端口直接暴露到公网。
+
+书信与纪念物默认仍关闭。体验完整闭环时，需要在隔离的本地或自托管实例中设置 `CORRESPONDENCE_MODE=enforced`、`KEEPSAKE_MODE=enforced`，并为该实例配置至少 32 个随机字节的规范 Base64 `INSTANCE_SECRET`。纪念物的 fixture 图像/模板路径不需要第三方凭证；替换为真实图片 Provider 时，Provider 只接收受限的 `VisualPromptSpec`，不会收到整封信、完整角色材料或聊天记录。
 
 ## 配置多供应商模型
 
@@ -95,13 +103,24 @@ LLM_PROFILE_BIGMODEL_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 LLM_PROFILE_BIGMODEL_MODEL=glm-5.3-flash
 LLM_PROFILE_BIGMODEL_API_KEY=在本机填写智谱密钥
 LLM_PROFILE_BIGMODEL_STRUCTURED_OUTPUT_MODE=json_object
-LLM_PROFILE_BIGMODEL_REASONING_EFFORT=max
+LLM_PROFILE_BIGMODEL_REASONING_EFFORT=low
 LLM_PROFILE_BIGMODEL_REASONING_FORMAT=openai_reasoning_effort_with_thinking
 LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL=false
 LLM_PROFILE_BIGMODEL_MAX_OUTPUT_TOKENS=32768
+
+LLM_PROFILE_QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_PROFILE_QWEN_MODEL=qwen3.8-flash
+LLM_PROFILE_QWEN_API_KEY=在本机填写阿里云百炼北京地域的密钥
+LLM_PROFILE_QWEN_STRUCTURED_OUTPUT_MODE=json_object
+LLM_PROFILE_QWEN_REASONING_EFFORT=medium
+LLM_PROFILE_QWEN_REASONING_FORMAT=openai_reasoning_effort
+LLM_PROFILE_QWEN_SUPPORTS_THINKING_CONTROL=false
+LLM_PROFILE_QWEN_MAX_OUTPUT_TOKENS=32768
 ```
 
-将 `LLM_ACTIVE_PROFILE` 设为 `claude`、`grok`、`gemini`、`gpt56-sol` 或 `bigmodel` 即可切换；档案名会规范化为小写，连字符映射为环境变量中的下划线。例如 `gpt56-sol` 会读取 `LLM_PROFILE_GPT56_SOL_*`。未设置 `LLM_ACTIVE_PROFILE` 时，原有 `OPENAI_COMPATIBLE_*` 配置仍然有效。
+将 `LLM_ACTIVE_PROFILE` 设为 `claude`、`grok`、`gemini`、`gpt56-sol`、`bigmodel` 或 `qwen` 即可切换；档案名会规范化为小写，连字符映射为环境变量中的下划线。例如 `gpt56-sol` 会读取 `LLM_PROFILE_GPT56_SOL_*`。未设置 `LLM_ACTIVE_PROFILE` 时，原有 `OPENAI_COMPATIBLE_*` 配置仍然有效。
+
+Qwen 档案直连阿里云百炼，模型 ID 为 `qwen3.8-flash`，沿用现有 Chat Completions Provider。按[官方 Chat API 文档](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)，该模型默认开启思考，支持 `reasoning_effort=low|medium|xhigh`；示例使用 `medium`，并通过 [JSON Object 模式](https://help.aliyun.com/zh/model-studio/json-mode)约束输出。`SUPPORTS_THINKING_CONTROL=false` 是为了避免发送旧式 `thinking.type` 扩展，不代表关闭 Qwen 思考。默认地址使用仍可用的北京公共域名，也可替换为控制台提供的同地域业务空间地址 `https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；API Key 与地址的地域必须匹配。
 
 真实连通性测试是显式付费命令，会验证一次中文角色对话回合及结构化落库；普通测试不会调用网络：
 
@@ -111,21 +130,40 @@ pnpm test:llm:smoke:grok
 pnpm test:llm:smoke:gemini
 pnpm test:llm:smoke:gpt56-sol
 pnpm test:llm:smoke:bigmodel
+pnpm test:llm:smoke:qwen
 ```
 
 每次 LLM 调用会同时记录通用 Provider、当前档案、模型、思考深度和请求格式，方便按档案隔离长程结果。Claude 档案使用 Prompt JSON，因为 [Anthropic 的 OpenAI SDK 兼容层](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk)会忽略 `response_format`；智谱档案按其 [OpenAI SDK 兼容接口](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)使用 `json_object`。模型输出仍需通过 Zod 与领域规则，不能直接写数据库。晚照云是第三方网关，请只填写它签发的密钥，不要复用官方 Anthropic 密钥；首次测试后还应依据[晚照云文档](https://sub.wanzhao.top/docs/?v=20260714-new)在控制台核对实际路由的上游模型。
 
 另外三套晚照云档案固定使用 [`grok-4.6`](https://docs.x.ai/developers/models/grok-4.6)、[`gemini-3.7-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash) 和 [`gpt-5.6-sol`](https://developers.openai.com/api/docs/models/gpt-5.6-sol)。网关会按密钥分组开放模型，因此最终可用 ID 仍以每个密钥调用 `/v1/models` 的结果为准。
 
-每套档案都通过 `LLM_PROFILE_<NAME>_REASONING_EFFORT` 独立调节思考深度。Claude Opus 4.6、Grok 4.6、Gemini 3.7 Flash 与 GPT-5.6 Sol 均设为 `medium`；[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash) 和兼容旧配置的 [DeepSeek V4 Flash](https://api-docs.deepseek.com/guides/thinking_mode/) 均设为各自最高档 `max`。`REASONING_FORMAT` 是请求适配方式：Claude 使用 `output_config.effort`，Grok/Gemini/GPT 使用 `reasoning_effort`，GLM/DeepSeek 还会显式发送 `thinking: { type: "enabled" }`；GLM-5.3-Flash 不支持关闭思考。通常只需修改 `REASONING_EFFORT`，不要改动格式字段。
+每套档案都通过 `LLM_PROFILE_<NAME>_REASONING_EFFORT` 独立调节思考深度。Claude Opus 4.6、Grok 4.6、Gemini 3.7 Flash 与 GPT-5.6 Sol 均设为 `medium`；当前真实长程验收使用的 [GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash) 档案设为 `low`，兼容旧配置的 [DeepSeek V4 Flash](https://api-docs.deepseek.com/guides/thinking_mode/) 仍设为 `max`。`REASONING_FORMAT` 是请求适配方式：Claude 使用 `output_config.effort`，Grok/Gemini/GPT 使用 `reasoning_effort`，GLM/DeepSeek 还会显式发送 `thinking: { type: "enabled" }`；GLM-5.3-Flash 不支持关闭思考。通常只需修改 `REASONING_EFFORT`，不要改动格式字段。
 
-聊天主决策会申请最多 24,576 个输出 token，回复修复会申请最多 16,384 个；这些预算同时覆盖隐藏思考与最终结构化 JSON。每次请求仍会被对应 Profile 的 `MAX_OUTPUT_TOKENS` 和 Provider 的 64K 传输硬上限共同截断。示例配置将六套 Profile 的能力上限设为 32,768，以避免 `high`/`max` 思考在原 2,000–2,800 token 预算内耗尽；如果供应商明确声明更低上限，应把该 Profile 改为真实上限。提高输出上限会占用上下文窗口，因此旧式 DeepSeek 配置同时显式声明 `OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS=131072`，不得把输出上限配置为大于或等于上下文上限。
+聊天主决策会申请最多 24,576 个输出 token，回复修复会申请最多 16,384 个；这些预算同时覆盖隐藏思考与最终结构化 JSON。每次请求仍会被对应 Profile 的 `MAX_OUTPUT_TOKENS` 和 Provider 的 64K 传输硬上限共同截断。示例配置将各套 Profile 的能力上限设为 32,768，以避免 `high`/`max` 思考在原 2,000–2,800 token 预算内耗尽；如果供应商明确声明更低上限，应把该 Profile 改为真实上限。提高输出上限会占用上下文窗口，因此旧式 DeepSeek 配置同时显式声明 `OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS=131072`，不得把输出上限配置为大于或等于上下文上限。
 
 示例配置同时把各 Profile 的 `TIMEOUT_MS` 提高到 `300000`，即 Provider 当前允许的每次物理 attempt 五分钟上限，避免开启较深思考后仍按 120 秒提前中止。每次重试都会重新计算五分钟；DeepSeek 当前最多重试两次，因此单个逻辑调用在供应商持续无响应时理论上可能等待约十五分钟。该设置只延长尚未返回的请求；HTTP 200 但正文为空仍会记为 `EMPTY_RESPONSE` 并按重试规则处理，不会被误记为超时。
 
 `SUPPORTS_THINKING_CONTROL` 仅保留给没有配置新字段的旧档案：值为 `true` 时会强制发送 `thinking: { type: "disabled" }`。一旦配置了 `REASONING_EFFORT` 和 `REASONING_FORMAT`，新的思考深度设置优先。晚照云是否完整透传 Claude 的 `output_config` 属于第三方网关行为，填入密钥后应先运行 Claude smoke test 验证。
 
 长程对比时，不要在同一个 SQLite 数据库中途切换档案。先冻结一份已发布角色的基线数据库，再为每个档案各复制一份并设置不同的 `DATABASE_PATH`；这样所有轨迹拥有相同 `CharacterSpec` 和起点，又不会互相污染历史、记忆与关系状态。
+
+## 双模型动态对话测试
+
+独立测试入口支持一个模型扮演合成测试用户，另一个模型通过项目真实消息路由扮演示例角色“林夏”。用户模型根据实际对话生成下一句；角色仍使用模糊生活、状态、关系、记忆与自传流程。每次运行新建隔离数据库，逐轮导出对话与状态证据，质量审阅留给人或当前 Codex 任务完成。
+
+```powershell
+# 无网络、无凭证的流程演示；台词是 fixture，不用于判断真实模型质量。
+pnpm test:dual-model:fixture --turns 3
+
+# 在 .env 填好两套独立 Key 后，显式启动真实模型测试。
+$env:RUN_PAID_DUAL_MODEL = "1"
+pnpm test:dual-model --user-profile qwen --character-profile bigmodel --turns 6
+Remove-Item Env:RUN_PAID_DUAL_MODEL
+```
+
+默认测试用户是 Qwen，项目角色是 BigModel；两端均可指定任意已配置的命名档案，也可互换。CLI 独立读取两套配置，不修改日常应用的 `LLM_ACTIVE_PROFILE`。这是测试脚本入口，聊天界面暂未加入双模型控制面板。产物保存在 `tmp/dual-model-simulation/<run-id>/`，执行完成不代表质量评审通过。定制测试用户人设、场景与审阅方式见[双模型测试说明](docs/DUAL_MODEL_TESTING.md)。旧 V2/V3 固定剧本及其评审矩阵保留原有模型名单。
+
+产品人生长测使用 `pnpm test:product-life <run-id>`，固定 42 轮、45 个模拟日，让 Qwen 扮演林舟、GLM 扮演经真实生成和发布流程建立的顾澜。它覆盖跨日生活、选择与后续、关系和记忆、自传整理、关闭重启、新会话、数字书信往返，以及自然达到条件后的纪念物和关系档案；同样需要 `RUN_PAID_DUAL_MODEL=1`。先用 `pnpm test:product-life:fixture <run-id>` 离线验证流程，失败后可用 `pnpm test:product-life:resume <run-id>` 恢复。该实验使用独立数据目录和较小的可配置上下文阈值，完整范围与结果限制见[产品人生长程实验](docs/DUAL_MODEL_TESTING.md#产品人生长程实验)。
 
 ## 五模型人生选择长程验证 v3
 
@@ -187,13 +225,33 @@ pnpm test:state:integration # 状态闭环 HTTP/持久化测试
 pnpm test:state:simulation  # 状态闭环 FakeClock 模拟
 pnpm exec playwright install chromium  # 首次运行 E2E 前安装测试浏览器
 pnpm test:e2e         # Playwright 桌面与移动端流程
+pnpm test:correspondence:focused  # 书信/纪念物/档案的单元、集成与 Web 门禁
+pnpm test:correspondence:stages1-8 # 上述门禁 + 桌面/移动端完整 E2E
 pnpm test:llm:smoke   # 显式真实 Provider 测试
 pnpm test:llm:smoke:claude   # 显式测试 Claude 档案
 pnpm test:llm:smoke:grok     # 显式测试 Grok 档案
 pnpm test:llm:smoke:gemini   # 显式测试 Gemini 档案
 pnpm test:llm:smoke:gpt56-sol # 显式测试 GPT-5.6 Sol 档案
 pnpm test:llm:smoke:bigmodel # 显式测试智谱档案
+pnpm test:llm:smoke:qwen # 显式测试 Qwen3.8 Flash 档案
+pnpm test:dual-model:fixture # 离线双模型编排演示
+pnpm test:dual-model # 显式真实双模型测试，需 RUN_PAID_DUAL_MODEL=1
 ```
+
+## 本地产物与版本控制
+
+自动生成内容按目录统一隔离，不按模型、运行日期或文件后缀逐次添加忽略规则：
+
+- `data/`：本地数据库及其 WAL/SHM 文件、仿真实例、生成图片和缩略图；只保留版本化的 `data/.gitkeep`。
+- `tmp/`、`temp/`、`artifacts/`：临时脚本、长程验收记录、模型调用原始证据、截图、导出和其他运行产物；现有长程验收继续使用 `tmp/`，子包内同名产物目录也被忽略。
+- `instances/`、`logs/`、`backups/`：本地实例、日志和备份。
+- 各 workspace 的依赖、构建、缓存和测试输出目录也统一忽略，包括 `node_modules/`、`dist/`、`.cache/`、`.vite/`、`coverage/`、`playwright-report/`、`test-results/` 等。
+
+新增仿真和工具应把自动输出写入上述目录，或写到仓库之外；自定义输出路径也遵循这个约定。Git 不能根据文件内容自动判断它是否由本地生成。
+
+源码、测试样例、配置模板、设计资产和经审查的文档继续纳入版本控制，不对所有 `assets/`、图片或 `docs/reports/` 一概忽略。旧真实验收脚本仍写入 `docs/reports/` 的自动报告由兼容规则覆盖；已跟踪的历史报告继续保留，后续新增生成器使用 `tmp/` 或 `artifacts/`。原始数据库和模型调用证据不直接提交；需要入库的验收结论应先脱敏、审查，再作为正式报告保存。
+
+忽略规则不会删除本地文件，也不会自动停止跟踪已经提交的文件。
 
 ## 结构
 
@@ -228,7 +286,7 @@ tests/          集成、模拟和 E2E
 
 ## 第一版未包含
 
-LoRA/训练、语音/图片/3D、多人账户、云同步、身份认证、桌面安装包、应用关闭后的实时后台运行、系统通知、面向用户的角色日程/日历、PDF/OCR、音视频分析、向量数据库、完整知识图谱、第三方插件安装/沙箱、外部工具执行、支付和公开部署。
+LoRA/训练、语音/3D、多人账户、云同步、通用身份认证、桌面安装包、系统通知、面向用户的角色日程/日历、PDF/OCR、音视频分析、向量数据库、完整知识图谱、第三方插件安装/沙箱、外部工具执行、支付、公开分享平台和公开多租户部署。`resident`/`worker` 可在本地服务或单实例容器仍运行时处理书信与纪念物任务，但不是操作系统级后台守护或推送服务。
 
 ## 已知限制
 
@@ -237,7 +295,7 @@ LoRA/训练、语音/图片/3D、多人账户、云同步、身份认证、桌�
 - 作品导入接受最多 500 KB；真实模型使用角色名附近、首尾和分布位置的有界摘录生成设定，不提供全文检索。
 - 模糊生活背景只表达自然日、时段、最近进展与忙碌程度，不保证角色在某一分钟正在执行某事。
 - 主动候选的相似合并使用确定性类别/日期 key，不使用向量语义聚类。
-- 浏览器页面关闭期间只积累可推进的自然日和阶段差，不调用 LLM、不发送消息。
+- 默认 `lazy` 模式下，浏览器关闭或服务停机期间只积累可补算的时间差；显式使用 `resident`/`worker` 且服务仍运行时，才会按数据库任务队列继续生成书信与纪念物。应用始终不会发送现实邮件或消息。
 
 ## 本地实验边界
 

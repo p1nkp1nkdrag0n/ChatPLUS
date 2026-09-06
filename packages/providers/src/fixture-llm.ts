@@ -762,6 +762,47 @@ function parseFixturePrompt(
   }
 }
 
+function letterReplyFixture(request: LLMRequest): JsonValue {
+  const payload = asRecord(request.payload);
+  const prompt = parseFixturePrompt(payload["prompt"]);
+  const snapshotEvidence = asRecord(prompt["SNAPSHOT_EVIDENCE"] ?? {});
+  const userLetter = asRecord(prompt["USER_LETTER"] ?? {});
+  const subject = stringValue(userLetter["subject"], "回信");
+  const body = stringValue(userLetter["body"], "谢谢你的来信。")
+    .trim()
+    .slice(0, 1_500);
+  const snapshotEvidenceIds = Array.isArray(snapshotEvidence["evidenceIds"])
+    ? snapshotEvidence["evidenceIds"].filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  const allowedReferenceIds = Array.isArray(
+    prompt["ALLOWED_REFERENCED_EVIDENCE_IDS"],
+  )
+    ? prompt["ALLOWED_REFERENCED_EVIDENCE_IDS"].filter(
+        (value): value is string => typeof value === "string",
+      )
+    : snapshotEvidenceIds;
+  const incomingLetterId =
+    typeof userLetter["id"] === "string" ? userLetter["id"] : undefined;
+  const referencedEvidenceIds =
+    incomingLetterId !== undefined &&
+    allowedReferenceIds.includes(incomingLetterId)
+      ? [incomingLetterId]
+      : allowedReferenceIds.slice(0, 2_000);
+  return {
+    subject: `回复：${subject}`.slice(0, 240),
+    salutation: "亲爱的朋友：",
+    paragraphs: [
+      `你的来信我已经认真读过。${body}`.slice(0, 4_000),
+      "愿这封回信在路上替我陪你一程，也愿你近来一切安好。",
+    ],
+    closing: "顺颂安好",
+    signature: "回信人",
+    referencedEvidenceIds,
+  };
+}
+
 const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   compile_character: compileFixture,
   import_character: importFixture,
@@ -771,6 +812,7 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   enrich_activity: enrichFixture,
   compose_proactive_message: proactiveFixture,
   checkpoint_autobiography: checkpointAutobiographyFixture,
+  letter_reply: letterReplyFixture,
 };
 
 function tokenEstimate(value: string): number {
@@ -838,6 +880,78 @@ export class FixtureLlmProvider implements LlmProvider {
         ? {}
         : { maxOutputTokens: input.maxOutputTokens }),
     });
+    if (
+      input.purpose === "checkpoint_autobiography" &&
+      parseFixturePrompt(input.prompt)["outputContractVersion"] ===
+        "checkpoint_atomic_reports_v2"
+    ) {
+      const prompt = parseFixturePrompt(input.prompt);
+      const excerpts = Array.isArray(prompt["reportExcerpts"])
+        ? prompt["reportExcerpts"].map(asRecord)
+        : [];
+      const proposal = asRecord(response.data ?? {});
+      const entries = Array.isArray(proposal["entries"])
+        ? proposal["entries"]
+        : [];
+      return input.schema.parse({
+        entries: entries.map((value) => {
+          const entry = asRecord(value);
+          const evidence = Array.isArray(entry["evidence"])
+            ? entry["evidence"].map(asRecord)
+            : [];
+          if (
+            evidence.some((item) => item["sourceType"] === "message_archive")
+          ) {
+            const excerpt =
+              excerpts.find(
+                (item) => item["evidenceId"] === evidence[0]?.["id"],
+              ) ?? excerpts[0];
+            return {
+              basis: "reported_excerpt",
+              entryKind: entry["entryKind"],
+              temporalStatus: entry["temporalStatus"],
+              excerptId: excerpt?.["id"],
+            };
+          }
+          const fields = { ...entry };
+          delete fields["evidence"];
+          return {
+            ...fields,
+            basis: "evidence_summary",
+            evidenceIds: evidence.map((item) => item["id"]),
+          };
+        }),
+      });
+    }
+    if (
+      input.purpose === "checkpoint_autobiography" &&
+      parseFixturePrompt(input.prompt)["outputContractVersion"] ===
+        "checkpoint_evidence_ids_v1"
+    ) {
+      const proposal = asRecord(response.data ?? {});
+      const entries = Array.isArray(proposal["entries"])
+        ? proposal["entries"]
+        : [];
+      return input.schema.parse({
+        summaryFirstPerson: stringValue(
+          proposal["summaryFirstPerson"],
+          "",
+        ).slice(0, 9_900),
+        entries: entries.map((value) => {
+          const entry = asRecord(value);
+          const evidence = Array.isArray(entry["evidence"])
+            ? entry["evidence"]
+            : [];
+          const fields = { ...entry };
+          delete fields["evidence"];
+          return {
+            ...fields,
+            content: stringValue(entry["content"], "").slice(0, 1_900),
+            evidenceIds: evidence.map((item) => asRecord(item)["id"]),
+          };
+        }),
+      });
+    }
     return parseWithSchema(response.data, response.content, input.schema);
   }
 

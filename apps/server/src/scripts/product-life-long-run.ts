@@ -1,0 +1,937 @@
+import { randomBytes } from "node:crypto";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
+
+import {
+  CreateSessionResponseSchema,
+  SendMessageResponseSchema,
+  characterSpecSchema,
+} from "@personasim/contracts";
+import {
+  createOpenAiCompatibleLlmProvider,
+  StructuredOutputError,
+  type LlmCallMetric,
+  type LlmProvider,
+  type GenerateObjectInput,
+} from "@personasim/providers";
+import { z } from "zod";
+
+import { buildApp, type PersonaSimApp } from "../app.js";
+import {
+  readConfig,
+  readLlmProfileConfig,
+  type ServerConfig,
+} from "../config.js";
+import { openDatabase, type Database } from "../db/connection.js";
+import { FakeClock } from "../runtime/clock.js";
+import { redactLongRunArtifact } from "./companion-long-run-v2-artifacts.js";
+import { buildGuLanV3CharacterInput } from "./companion-long-run-v3-baseline.js";
+import {
+  FixtureSimulationUser,
+  assertPaidDualModelEnabled,
+} from "./dual-model-simulation.js";
+import {
+  dispatchProductLifeLetter,
+  inspectProductLifeArtifacts,
+  inspectProductLifeCorrespondence,
+  type ProductLifeFeatureResult,
+} from "./product-life-long-run-features.js";
+import {
+  PRODUCT_LIFE_PLAN,
+  PRODUCT_LIFE_USER_PERSONA,
+} from "./product-life-long-run-plan.js";
+import { auditProductLifeDatabase } from "./product-life-long-run-audit.js";
+import {
+  providerMetricsReport,
+  renderProviderMetricsReport,
+  type ProfiledLlmCallMetric,
+} from "./provider-metrics-summary.js";
+import {
+  PRODUCT_LIFE_INPUT_PROTOCOL,
+  PRODUCT_LIFE_USER_NAME,
+  appendProductLifeHistory,
+  inspectProductLifeUserText,
+  productLifePublicContext,
+  productLifeRecallProbe,
+  productLifeUserTextSchema,
+  type ProductLifeHistoryMessage,
+} from "./product-life-long-run-input.js";
+
+const START = "2026-09-05T01:00:00.000Z";
+const LetterSchema = z
+  .object({
+    subject: z.string().trim().min(1).max(80),
+    body: z.string().trim().min(1).max(2400),
+  })
+  .strict();
+interface Journal {
+  steps: Record<string, unknown>;
+  completedTurns: number;
+  nowUtc: string;
+  status: string;
+  error?: string;
+}
+export interface ProductLifeLongRunOptions {
+  runDirectory: string;
+  config: ServerConfig;
+  userProvider: LlmProvider;
+  userMetrics: LlmCallMetric[];
+  userConnection?: Pick<
+    ServerConfig["llm"],
+    "baseUrl" | "profileName" | "timeoutMs" | "maxRetries" | "maxOutputTokens"
+  >;
+  explicitSecrets?: string[];
+  resume?: boolean;
+  onProgress?: (text: string) => void;
+}
+
+/** A bounded synthetic-user experiment. Domain writes use normal product HTTP APIs. */
+export async function runProductLifeLongRun(
+  options: ProductLifeLongRunOptions,
+): Promise<Journal> {
+  const directory = resolve(options.runDirectory);
+  await mkdir(dirname(directory), { recursive: true });
+  if (!options.resume) await mkdir(directory);
+  const secretPath = join(directory, ".instance-secret");
+  const instanceSecret = options.resume
+    ? await readFile(secretPath, "utf8")
+    : randomBytes(32).toString("base64");
+  if (!options.resume)
+    await writeFile(secretPath, instanceSecret, { flag: "wx", mode: 0o600 });
+  const secrets = [
+    instanceSecret,
+    options.config.llm.apiKey ?? "",
+    ...(options.explicitSecrets ?? []),
+  ];
+  const safe = (value: unknown): unknown =>
+    redactLongRunArtifact(value, secrets);
+  const json = async (name: string, value: unknown): Promise<void> => {
+    await writeFile(
+      join(directory, `${name}.tmp`),
+      `${JSON.stringify(safe(value), null, 2)}\n`,
+    );
+    await rename(join(directory, `${name}.tmp`), join(directory, name));
+  };
+  const append = (name: string, value: unknown): void =>
+    appendFileSync(join(directory, name), `${JSON.stringify(safe(value))}\n`);
+  const journal: Journal = options.resume
+    ? (JSON.parse(
+        await readFile(join(directory, "journal.json"), "utf8"),
+      ) as Journal)
+    : { steps: {}, completedTurns: 0, nowUtc: START, status: "running" };
+  const config: ServerConfig = {
+    ...options.config,
+    nodeEnv: "test",
+    profile: "product-life-long-run",
+    host: "127.0.0.1",
+    databasePath: join(directory, "personasim.sqlite"),
+    clockMode: "fake",
+    fakeClockStart: START,
+    developerRoutes: true,
+    seedDemo: false,
+    serveWeb: false,
+    selfHostedReverseProxy: false,
+    chatEffectsMode: "gated",
+    lifePlanningMode: "fuzzy",
+    scheduleNegotiationMode: "off",
+    selfInitiatedPlanningMode: "off",
+    liveWorldEffectsMode: "enforced",
+    memoryRecallMode: "enforced",
+    autobiographyMode: "enforced",
+    correspondenceMode: "enforced",
+    correspondenceExecution: "lazy",
+    keepsakeMode: "enforced",
+    assetStoragePath: join(directory, "assets"),
+    instanceSecret,
+    conversationRetention: {
+      fullVerbatimHours: 24,
+      softTokenLimit: 2400,
+      hardTokenLimit: 4800,
+      minimumTailTokens: 1200,
+      minimumRecentTurns: 6,
+    },
+  };
+  const currentPlan = {
+    persona: PRODUCT_LIFE_USER_PERSONA,
+    turns: PRODUCT_LIFE_PLAN,
+  };
+  const resumeIdentity: unknown = JSON.parse(
+    JSON.stringify({
+      inputProtocol: PRODUCT_LIFE_INPUT_PROTOCOL,
+      character: {
+        provider: config.llm.provider,
+        profile: config.llm.profileName,
+        model: config.llm.model,
+        baseUrl: config.llm.baseUrl,
+        capabilities: config.llm.capabilities,
+        timeoutMs: config.llm.timeoutMs,
+        maxRetries: config.llm.maxRetries,
+        maxOutputTokens: config.llm.maxOutputTokens,
+      },
+      user: {
+        provider: options.userProvider.name,
+        model: options.userProvider.model,
+        capabilities: options.userProvider.capabilities,
+        connection: options.userConnection,
+      },
+      conversationRetention: config.conversationRetention,
+      simulatedStartUtc: START,
+    }),
+  );
+  if (options.resume) {
+    const savedManifest = JSON.parse(
+      await readFile(join(directory, "manifest.json"), "utf8"),
+    ) as { resumeIdentity?: unknown };
+    const savedPlan: unknown = JSON.parse(
+      await readFile(join(directory, "plan.json"), "utf8"),
+    );
+    if (
+      !isDeepStrictEqual(savedManifest.resumeIdentity, resumeIdentity) ||
+      !isDeepStrictEqual(savedPlan, currentPlan)
+    ) {
+      throw new Error(
+        "Resume configuration or scenario differs from this run; start a new run instead.",
+      );
+    }
+  }
+  const characterMetrics: ProfiledLlmCallMetric[] = existsSync(
+    join(directory, "character-metrics.jsonl"),
+  )
+    ? readFileSync(join(directory, "character-metrics.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as ProfiledLlmCallMetric)
+    : [];
+  const oldUserMetrics: ProfiledLlmCallMetric[] =
+    options.resume && existsSync(join(directory, "user-metrics.json"))
+      ? (JSON.parse(
+          await readFile(join(directory, "user-metrics.json"), "utf8"),
+        ) as ProfiledLlmCallMetric[])
+      : [];
+  const clock = new FakeClock(journal.nowUtc);
+  let app: PersonaSimApp;
+  let database!: Database;
+  let active = false;
+  let activeStep = "initialization";
+  const history: ProductLifeHistoryMessage[] = [];
+  let userMetricCursor = 0;
+  async function open(
+    path = config.databasePath,
+    beforeStartup?: (openedDatabase: Database) => void,
+  ): Promise<void> {
+    database = openDatabase(path);
+    beforeStartup?.(database);
+    app = await buildApp({
+      config: { ...config, databasePath: path },
+      database,
+      clock,
+      seedDemo: false,
+      startScheduler: false,
+      logger: false,
+      llmObservation: {
+        promptDiagnostics: true,
+        onMetric: (metric) => {
+          const recorded = { ...metric, profile: config.llm.profileName };
+          characterMetrics.push(recorded);
+          append("character-metrics.jsonl", recorded);
+        },
+        onLogicalCall: (event) =>
+          append("model-io.jsonl", {
+            simulatedAtUtc: clock.nowUtc(),
+            step: activeStep,
+            actor: "character",
+            ...event,
+          }),
+      },
+    });
+    active = true;
+  }
+  async function close(): Promise<void> {
+    if (active) {
+      await app.close();
+      active = false;
+    }
+    if (database?.open) database.close();
+  }
+  async function save(): Promise<void> {
+    journal.nowUtc = clock.nowUtc();
+    await json("journal.json", journal);
+    const userMetrics = [
+      ...oldUserMetrics,
+      ...options.userMetrics.map((metric) => ({
+        ...metric,
+        profile: options.userConnection?.profileName,
+      })),
+    ];
+    await json("user-metrics.json", userMetrics);
+    const accounting = {
+      user: providerMetricsReport(userMetrics),
+      character: providerMetricsReport(characterMetrics),
+    };
+    await json("provider-metrics.json", accounting);
+    await writeFile(
+      join(directory, "provider-metrics.md"),
+      safe(
+        renderProviderMetricsReport(
+          providerMetricsReport([...characterMetrics, ...userMetrics]),
+        ),
+      ) as string,
+      "utf8",
+    );
+    await json("manifest.json", {
+      schema: "product-life-long-run-v3",
+      status: journal.status,
+      completedTurns: journal.completedTurns,
+      plannedTurns: PRODUCT_LIFE_PLAN.length,
+      simulatedStartUtc: START,
+      simulatedNowUtc: clock.nowUtc(),
+      updatedAtUtc: new Date().toISOString(),
+      characterModel: config.llm.model,
+      characterCapabilities: config.llm.capabilities,
+      userModel: options.userProvider.model,
+      userCapabilities: options.userProvider.capabilities,
+      resumeIdentity,
+      physicalCharacterAttempts: characterMetrics.length,
+      physicalUserAttempts: oldUserMetrics.length + options.userMetrics.length,
+      accounting,
+      experimentConfiguration: {
+        conversationRetention: config.conversationRetention,
+        correspondence: "enforced/lazy/fixed_5d_v1",
+        keepsakes:
+          "enforced; default fixture image provider for non-template assets",
+        scheduler: false,
+        life: "fuzzy",
+        memoryRecall: "enforced",
+        autobiography: "enforced",
+      },
+      limitations: [
+        "Simulated elapsed time, not 45 real days",
+        "Synthetic user self-reports are scenario facts, not real human outcomes",
+        "Reduced configurable retention thresholds exercise checkpoints",
+        "Control only compares lazy life progression; one trajectory cannot estimate causal treatment effect",
+        "No normal product creator for character-subject formal dilemmas",
+        "Quality review is a separate human/agent artifact",
+      ],
+      error: journal.error,
+    });
+  }
+  async function step<T>(id: string, work: () => Promise<T>): Promise<T> {
+    activeStep = id;
+    if (Object.hasOwn(journal.steps, id)) return journal.steps[id] as T;
+    if (
+      characterMetrics.length +
+        oldUserMetrics.length +
+        options.userMetrics.length >=
+      200
+    )
+      throw new Error("physical_request_budget_reached");
+    const value = await work();
+    journal.steps[id] = safe(value);
+    await save();
+    return value;
+  }
+  async function http(
+    method: "GET" | "POST" | "PATCH",
+    url: string,
+    payload?: Record<string, unknown>,
+  ): Promise<unknown> {
+    const response = await app.inject({
+      method,
+      url,
+      ...(payload === undefined ? {} : { payload }),
+    });
+    const body: unknown = response.json();
+    append("http.jsonl", {
+      step: activeStep,
+      atUtc: clock.nowUtc(),
+      method,
+      url,
+      statusCode: response.statusCode,
+      body,
+    });
+    if (response.statusCode >= 400)
+      throw new Error(`${method} ${url}: HTTP ${response.statusCode}`);
+    return body;
+  }
+  async function generate<T>(
+    schema: z.ZodType<T>,
+    brief: string,
+    purpose: string,
+    textKind: "chat" | "letter" = "chat",
+  ): Promise<T> {
+    const publicContext = productLifePublicContext(history, clock.nowUtc());
+    const input = {
+      purpose,
+      schema,
+      maxOutputTokens: 24576,
+      maxRetries: 0,
+      system:
+        "你只扮演模拟用户林舟，对方是顾澜。history中role=user/speakerName=林舟才是你过去说的话，assistant/顾澜是对方；你绝不能称呼对方为林舟、接管对方的经历或代写对方台词。只根据当前scene与已公开的有时间记录自然接话。当前scene优先决定这轮话题，但它不是已经发生的共同往事；没有历史依据的分歧、执行、结果要询问或承认尚未发生。今天/昨天以currentTimeLocal为准，信的写作时间与首次看到时间不同。只写你自己的内容，通常80到220字，可更短，不说教、不报告测试。计划、建议、已执行、已确认结果严格区分。若text的schema限定了枚举问题，只能选择一个原样输出，不附加答案或线索。输出符合schema的JSON。",
+      prompt: JSON.stringify({
+        persona: PRODUCT_LIFE_USER_PERSONA,
+        ...publicContext,
+        scene: brief,
+        controlledRecallProbe: /^user-\d+$/u.test(activeStep)
+          ? productLifeRecallProbe(Number(activeStep.slice(5)))
+          : undefined,
+      }),
+    };
+    let repairIssues: string[] = [];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      if (
+        characterMetrics.length +
+          oldUserMetrics.length +
+          options.userMetrics.length >=
+        200
+      )
+        throw new Error("physical_request_budget_reached");
+      const attemptInput = {
+        ...input,
+        prompt: JSON.stringify({
+          ...JSON.parse(input.prompt),
+          ...(repairIssues.length
+            ? {
+                correction: {
+                  issues: repairIssues,
+                  instruction:
+                    "重新生成本轮内容。保持你是林舟、对方是顾澜；遵守schema中不带答案的提问约束。",
+                },
+              }
+            : {}),
+        }),
+      };
+      append("model-io.jsonl", {
+        actor: "user",
+        step: activeStep,
+        attempt,
+        system: input.system,
+        prompt: attemptInput.prompt,
+        stage: "started",
+      });
+      let output: T;
+      try {
+        output = schema.parse(
+          await options.userProvider.generateObject(attemptInput),
+        );
+      } catch (error) {
+        append("model-io.jsonl", {
+          actor: "user",
+          step: activeStep,
+          attempt,
+          stage: "failed",
+          metrics: options.userMetrics.slice(userMetricCursor),
+        });
+        userMetricCursor = options.userMetrics.length;
+        // A transport error should remain visible and must not restart a paid call here.
+        if (
+          !(error instanceof z.ZodError) &&
+          !(error instanceof StructuredOutputError)
+        )
+          throw error;
+        repairIssues = ["output_does_not_match_schema"];
+        append("user-input-checks.jsonl", {
+          step: activeStep,
+          attempt,
+          issues: repairIssues,
+        });
+        continue;
+      }
+      const content = output as { text?: string; body?: string };
+      repairIssues = inspectProductLifeUserText(
+        content.text ?? content.body ?? "",
+        PRODUCT_LIFE_USER_NAME,
+        textKind,
+      );
+      append("model-io.jsonl", {
+        actor: "user",
+        step: activeStep,
+        attempt,
+        stage: "completed",
+        output,
+        metrics: options.userMetrics.slice(userMetricCursor),
+      });
+      userMetricCursor = options.userMetrics.length;
+      append("user-input-checks.jsonl", {
+        step: activeStep,
+        attempt,
+        issues: repairIssues,
+        accepted: repairIssues.length === 0,
+      });
+      if (repairIssues.length === 0) return output;
+    }
+    throw new Error(
+      `simulated_user_input_rejected: ${repairIssues.join(", ")}`,
+    );
+  }
+  async function feature(
+    id: string,
+    work: () => Promise<ProductLifeFeatureResult>,
+  ): Promise<ProductLifeFeatureResult> {
+    const result = await step(id, async () => {
+      const observed = await work();
+      return {
+        ...observed,
+        publicMessages: observed.publicMessages.map((message) => ({
+          ...message,
+          firstVisibleAtUtc: clock.nowUtc(),
+        })),
+      };
+    });
+    appendProductLifeHistory(history, result.publicMessages);
+    await json(`${id}.json`, result);
+    return result;
+  }
+  try {
+    journal.status = "running";
+    delete journal.error;
+    await json("plan.json", currentPlan);
+    await open();
+    const character = await step("character", async () => {
+      const generated = z
+        .object({ character: characterSpecSchema })
+        .parse(
+          await http(
+            "POST",
+            "/api/characters/generate",
+            buildGuLanV3CharacterInput(),
+          ),
+        );
+      const draft = generated.character;
+      const updated = z.object({ character: characterSpecSchema }).parse(
+        await http("PATCH", `/api/characters/${draft.id}`, {
+          expectedVersion: draft.version,
+          patch: { tier: "lightweight" },
+        }),
+      );
+      const restored = z
+        .object({ character: characterSpecSchema })
+        .parse(
+          await http(
+            "POST",
+            `/api/characters/${draft.id}/versions/${draft.version}/restore`,
+            {},
+          ),
+        );
+      const versions = await http(
+        "GET",
+        `/api/characters/${draft.id}/versions`,
+      );
+      await json("character-editing.json", {
+        original: draft,
+        temporarilyUpdated: updated.character,
+        restored: restored.character,
+        versions,
+      });
+      const published = z.object({ character: characterSpecSchema }).parse(
+        await http("POST", `/api/characters/${draft.id}/publish`, {
+          expectedVersion: restored.character.version,
+        }),
+      );
+      await http("POST", `/api/agents/${draft.id}/activate`, {});
+      await database.backup(join(directory, "control.sqlite"));
+      return published.character;
+    });
+    await json("character.json", character);
+    let sessionId = "";
+    let letterId: string | undefined;
+    let replyLetterId: string | undefined;
+    const turns: unknown[] = [];
+    for (const [index, planned] of PRODUCT_LIFE_PLAN.entries()) {
+      const turn = index + 1;
+      const phaseStart = index % 7 === 0;
+      const phaseIndex = Math.floor(index / 7);
+      const atUtc = new Date(
+        Date.parse(START) + planned.day * 86400000 + (index % 7) * 30 * 60000,
+      ).toISOString();
+      if (!Object.hasOwn(journal.steps, `turn-${turn}`)) {
+        if (phaseStart && [3, 5].includes(phaseIndex)) {
+          const beforeCloseAtUtc = clock.nowUtc();
+          const beforeClose = auditProductLifeDatabase(database, character.id);
+          await close();
+          clock.setUtc(atUtc);
+          await open();
+          append("lifecycle.jsonl", {
+            event: "reopened_same_database_after_absence",
+            phaseIndex,
+            atUtc,
+            beforeCloseAtUtc,
+            beforeClose,
+            afterStartup: auditProductLifeDatabase(database, character.id),
+          });
+        } else clock.setUtc(atUtc);
+      }
+      if (phaseStart) {
+        if ([0, 3, 5].includes(phaseIndex)) {
+          sessionId = await step(
+            `session-${phaseIndex}`,
+            async () =>
+              CreateSessionResponseSchema.parse(
+                await http("POST", `/api/agents/${character.id}/sessions`, {
+                  title: `长程·${planned.phase}`,
+                }),
+              ).session.id,
+          );
+        }
+        await step(`phase-${phaseIndex}-arrival`, async () => {
+          const before = auditProductLifeDatabase(database, character.id);
+          const overview = await http(
+            "POST",
+            `/api/agents/${character.id}/activate`,
+            {},
+          );
+          const after = auditProductLifeDatabase(database, character.id);
+          await http("POST", `/api/agents/${character.id}/activate`, {});
+          const repeated = auditProductLifeDatabase(database, character.id);
+          const evidence = {
+            atUtc: clock.nowUtc(),
+            before,
+            overview,
+            after,
+            repeated,
+          };
+          await json(`phase-${phaseIndex}-arrival.json`, evidence);
+          return { captured: true };
+        });
+        if (letterId && phaseIndex >= 3) {
+          const letters = await feature(`phase-${phaseIndex}-letters`, () =>
+            inspectProductLifeCorrespondence(app, character.id, {
+              incomingLetterId: letterId!,
+              probeEarlyOpen: phaseIndex === 3,
+              openReply: phaseIndex >= 4,
+            }),
+          );
+          replyLetterId = letters.replyLetterId ?? replyLetterId;
+        }
+      }
+      const user = await step(`user-${turn}`, () =>
+        generate(
+          productLifeUserTextSchema(turn),
+          planned.brief,
+          "simulate_product_life_user",
+        ),
+      );
+      const evidence = await step(`turn-${turn}`, async () => {
+        const before = auditProductLifeDatabase(database, character.id);
+        const response = SendMessageResponseSchema.parse(
+          await http("POST", `/api/sessions/${sessionId}/messages`, {
+            agentId: character.id,
+            clientMessageId: `product-life-turn-${turn}`,
+            text: user.text,
+          }),
+        );
+        const after = auditProductLifeDatabase(database, character.id);
+        const result = {
+          turn,
+          phase: planned.phase,
+          day: planned.day,
+          atUtc: clock.nowUtc(),
+          response,
+          before,
+          after,
+        };
+        await json(`turn-${String(turn).padStart(2, "0")}.json`, result);
+        if (response.decision.reasonCode === "persona_chat_fallback")
+          throw new Error(`turn_${turn}_persisted_model_fallback`);
+        journal.completedTurns = turn;
+        return result;
+      });
+      appendProductLifeHistory(history, [
+        {
+          sourceId: evidence.response.userMessage.id,
+          role: "user",
+          content: evidence.response.userMessage.content,
+          authoredAtUtc: evidence.atUtc,
+          firstVisibleAtUtc: evidence.atUtc,
+        },
+        {
+          sourceId: evidence.response.assistantMessage.id,
+          role: "assistant",
+          content: evidence.response.assistantMessage.content,
+          authoredAtUtc: evidence.atUtc,
+          firstVisibleAtUtc: evidence.atUtc,
+        },
+      ]);
+      turns.push(evidence);
+      await json("turns.json", turns);
+      await writeFile(
+        join(directory, "conversation.md"),
+        `# 45个模拟日的双模型对话\n\n用户模型：林舟；角色模型：顾澜。场景引导见plan.json；盲测回忆问题为固定候选，不含答案提示。\n\n${history.map((message) => `**${message.role === "user" ? "林舟" : "顾澜"}${message.channel ? ` · ${message.channel}` : ""} · ${message.authoredAtUtc ?? message.authoredDisplayDate}**\n\n${message.content}\n`).join("\n")}\n`,
+      );
+      if (turn === 1) {
+        await step("message-idempotence", async () => {
+          const response = SendMessageResponseSchema.parse(
+            await http("POST", `/api/sessions/${sessionId}/messages`, {
+              agentId: character.id,
+              clientMessageId: "product-life-turn-1",
+              text: user.text,
+            }),
+          );
+          return {
+            passed:
+              response.idempotentReplay &&
+              response.assistantMessage.id ===
+                evidence.response.assistantMessage.id,
+            response,
+          };
+        });
+      }
+      options.onProgress?.(
+        `Turn ${turn}/42; day ${planned.day}; ${planned.phase}; character attempts ${characterMetrics.length}`,
+      );
+      if (index % 7 === 6) {
+        if (phaseIndex === 2) {
+          const letter = await step("user-letter", () =>
+            generate(
+              LetterSchema,
+              "你将有几天不来聊天。写一封真实具体的信，回应此前顾澜公开说过的生活近况，讲清你自己已经做出的选择以及尚未发生的事，不预演回信。可以写一点对关系的感受，不要求制造纪念品。",
+              "simulate_product_life_letter",
+              "letter",
+            ),
+          );
+          const sent = await feature("letter-dispatch", () =>
+            dispatchProductLifeLetter(app, character.id, {
+              requestId: "product-life-letter-1",
+              ...letter,
+            }),
+          );
+          letterId = sent.letterId;
+        }
+        await step(`phase-${phaseIndex}-end`, async () => {
+          const overview = await http(
+            "GET",
+            `/api/agents/${character.id}/overview`,
+          );
+          const timeline = await http(
+            "GET",
+            `/api/agents/${character.id}/timeline?limit=500`,
+          );
+          const memories = await http(
+            "GET",
+            `/api/agents/${character.id}/memories`,
+          );
+          const audit = auditProductLifeDatabase(database, character.id);
+          await json(`phase-${phaseIndex}-end.json`, {
+            overview,
+            timeline,
+            memories,
+            audit,
+          });
+          await database.backup(
+            join(directory, `checkpoint-phase-${phaseIndex}.sqlite`),
+          );
+          return { captured: true };
+        });
+      }
+    }
+    await feature("final-artifacts", () =>
+      inspectProductLifeArtifacts(app, character.id, {
+        ...(replyLetterId ? { letterId: replyLetterId } : {}),
+        recapFromUtc: START,
+      }),
+    );
+    await json(
+      "final-audit.json",
+      auditProductLifeDatabase(database, character.id),
+    );
+    await step("control-final", async () => {
+      await close();
+      let before!: ReturnType<typeof auditProductLifeDatabase>;
+      await open(join(directory, "control.sqlite"), (openedDatabase) => {
+        before = auditProductLifeDatabase(openedDatabase, character.id);
+      });
+      const afterStartup = auditProductLifeDatabase(database, character.id);
+      const overview = await http(
+        "POST",
+        `/api/agents/${character.id}/activate`,
+        {},
+      );
+      const after = auditProductLifeDatabase(database, character.id);
+      await http("POST", `/api/agents/${character.id}/activate`, {});
+      const repeated = auditProductLifeDatabase(database, character.id);
+      await json("control-final.json", {
+        before,
+        afterStartup,
+        overview,
+        after,
+        repeated,
+      });
+      return { captured: true };
+    });
+    journal.status = "completed";
+  } catch (error) {
+    journal.status = "failed";
+    journal.error = String(
+      safe(error instanceof Error ? error.message : String(error)),
+    );
+    options.onProgress?.(`Stopped at ${activeStep}: ${journal.error}`);
+  } finally {
+    await close();
+    await save();
+    await json("acceptance-status.json", productLifeAcceptanceStatus(journal));
+  }
+  return journal;
+}
+
+class FixtureProductLifeUser extends FixtureSimulationUser {
+  override generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+    const context = JSON.parse(input.prompt) as {
+      controlledRecallProbe?: { questions: string[] };
+    };
+    if (context.controlledRecallProbe)
+      return Promise.resolve(
+        input.schema.parse({
+          text: context.controlledRecallProbe.questions[0],
+        }),
+      );
+    if (input.purpose === "simulate_product_life_letter")
+      return Promise.resolve(
+        input.schema.parse({
+          subject: "离开几天前",
+          body: "顾澜，这几天我会忙自己的事。谢谢你愿意听我说，等回来再聊各自的生活。",
+        }),
+      );
+    return super.generateObject(input);
+  }
+}
+
+export function productLifeAcceptanceStatus(journal: Journal) {
+  const checks = Object.entries(journal.steps).flatMap(([step, value]) => {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("checks" in value) ||
+      !Array.isArray(value.checks)
+    )
+      return [];
+    return value.checks.map(
+      (check: { id: string; passed: boolean | null; detail: string }) => ({
+        step,
+        ...check,
+      }),
+    );
+  });
+  const failedChecks = checks.filter((check) => check.passed === false);
+  return {
+    execution: journal.status,
+    completedTurns: journal.completedTurns,
+    featureChecks: {
+      status: failedChecks.length
+        ? "failed"
+        : journal.status === "completed"
+          ? "passed"
+          : "incomplete",
+      passed: checks.filter((check) => check.passed === true).length,
+      notCovered: checks.filter((check) => check.passed === null),
+      failed: failedChecks,
+    },
+    inputValidation: {
+      status: journal.error?.includes("simulated_user_input_rejected")
+        ? "rejected"
+        : "see_attempt_log",
+      artifact: "user-input-checks.jsonl",
+      scope:
+        "Only explicit role errors and constrained recall prompts; general factual and temporal grounding still needs review.",
+    },
+    sceneCoverage: PRODUCT_LIFE_PLAN.map((planned, index) => ({
+      turn: index + 1,
+      objective: planned.brief,
+      status: Object.hasOwn(journal.steps, `turn-${index + 1}`)
+        ? "pending_review"
+        : "not_executed",
+      evidence: `turn-${String(index + 1).padStart(2, "0")}.json`,
+      ...(productLifeRecallProbe(index + 1)
+        ? {
+            probe: productLifeRecallProbe(index + 1)!.kind,
+            promptConstraint: "answer_free_question_enum",
+          }
+        : {}),
+    })),
+    semanticQuality: "pending_review",
+    readmeGoals: "not_evaluated",
+    reviewInstructions:
+      "Review actual dialogue and durable state together. Completed execution and valid references do not establish scene coverage, genuine life changes, or relationship quality.",
+  };
+}
+
+export async function productLifeLongRunMain(
+  args = process.argv.slice(2),
+): Promise<void> {
+  const [command, runId] = args;
+  if (
+    !["run", "resume", "fixture"].includes(command ?? "") ||
+    !runId ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/u.test(runId) ||
+    args.length !== 2
+  )
+    throw new Error(
+      "Usage: product-life-long-run.ts run|resume|fixture RUN_ID",
+    );
+  if (command !== "fixture") assertPaidDualModelEnabled();
+  const userMetrics: LlmCallMetric[] = [];
+  const base = readConfig();
+  const userConfig =
+    command === "fixture" ? undefined : readLlmProfileConfig("qwen");
+  const characterConfig: ServerConfig["llm"] =
+    command === "fixture"
+      ? {
+          provider: "fixture",
+          baseUrl: "https://fixture.invalid",
+          model: "personasim-fixture-v1",
+          timeoutMs: 5000,
+          maxRetries: 0,
+        }
+      : readLlmProfileConfig("bigmodel");
+  if (command !== "fixture" && (!userConfig?.apiKey || !characterConfig.apiKey))
+    throw new Error(
+      "Qwen and BigModel named-profile credentials are required.",
+    );
+  const userProvider = userConfig
+    ? createOpenAiCompatibleLlmProvider({
+        ...userConfig,
+        apiKey: userConfig.apiKey!,
+        onMetric: (metric) => userMetrics.push(metric),
+        promptDiagnostics: true,
+      })
+    : new FixtureProductLifeUser();
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+  const runDirectory = join(root, "tmp", "product-life-long-run", runId);
+  console.log(`Artifacts: ${runDirectory}`);
+  const result = await runProductLifeLongRun({
+    runDirectory,
+    config: { ...base, llm: characterConfig },
+    userProvider,
+    userMetrics,
+    ...(userConfig
+      ? {
+          userConnection: {
+            baseUrl: userConfig.baseUrl,
+            ...(userConfig.profileName
+              ? { profileName: userConfig.profileName }
+              : {}),
+            timeoutMs: userConfig.timeoutMs,
+            maxRetries: userConfig.maxRetries,
+            ...(userConfig.maxOutputTokens !== undefined
+              ? { maxOutputTokens: userConfig.maxOutputTokens }
+              : {}),
+          },
+        }
+      : {}),
+    explicitSecrets: [userConfig?.apiKey ?? ""],
+    resume: command === "resume",
+    onProgress: console.log,
+  });
+  console.log(
+    `${result.status}: ${result.completedTurns}/42 turns. Content evaluation is recorded separately.`,
+  );
+  if (result.status !== "completed") process.exitCode = 1;
+}
+
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+)
+  await productLifeLongRunMain();

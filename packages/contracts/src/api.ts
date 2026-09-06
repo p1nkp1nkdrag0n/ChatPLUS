@@ -425,6 +425,9 @@ export const GetSettingsResponseSchema = z
         hasApiKey: z.boolean(),
         clockMode: z.enum(["system", "fake"]),
         profile: z.string().trim().min(1).max(120),
+        correspondenceMode: z.enum(["off", "shadow", "enforced"]),
+        correspondenceExecution: z.enum(["lazy", "resident", "worker"]),
+        keepsakeMode: z.enum(["off", "shadow", "enforced"]),
       })
       .strict(),
   })

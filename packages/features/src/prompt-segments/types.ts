@@ -14,6 +14,9 @@ export interface PromptSegment<TContext extends PromptContext = PromptContext> {
   readonly id: string;
   readonly placement: PromptSegmentPlacement;
   readonly priority: number;
+  /** Final order within a message; defaults to 0, with id as the tie-breaker.
+   * Independent of priority, which controls admission under the token budget. */
+  readonly renderOrder?: number;
   readonly tokenBudget: number;
   readonly required: boolean;
   readonly cacheable: boolean;
@@ -39,7 +42,14 @@ export interface PromptSegmentTrace {
   readonly required: boolean;
   readonly included: boolean;
   readonly truncated: boolean;
+  /** Compatibility alias for localCacheHit; never a provider billing metric. */
   readonly cacheHit: boolean;
+  /** Hit in this registry instance's segment rendering cache, not prompt caching at the provider. */
+  readonly localCacheHit?: boolean;
+  /** Zero-based position within the segment's system or prompt message, when included. */
+  readonly renderedIndex?: number;
+  /** Retained JavaScript character count, not provider token usage. */
+  readonly renderedCharacters?: number;
   readonly reason?: PromptSegmentTraceReason;
 }
 

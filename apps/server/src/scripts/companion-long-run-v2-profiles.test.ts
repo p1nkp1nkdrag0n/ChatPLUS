@@ -58,7 +58,7 @@ describe("companion long-run v2 profile orchestration", () => {
       "medium",
       "medium",
       "medium",
-      "max",
+      "low",
     ]);
     expect(snapshots.map((item) => item.profileSource)).toEqual([
       "legacy",
@@ -93,7 +93,7 @@ describe("companion long-run v2 profile orchestration", () => {
     });
     expect(snapshots[4]?.capabilities).toMatchObject({
       structuredOutputMode: "json_object",
-      reasoningEffort: "max",
+      reasoningEffort: "low",
       reasoningRequestFormat: "openai_reasoning_effort_with_thinking",
     });
     expect(
@@ -341,7 +341,7 @@ function completeProfileEnvironment(): NodeJS.ProcessEnv {
     LLM_PROFILE_BIGMODEL_BASE_URL: "https://bigmodel.test/api/paas/v4",
     LLM_PROFILE_BIGMODEL_API_KEY: SECRET_VALUES[4],
     LLM_PROFILE_BIGMODEL_MODEL: "glm-5.3-flash",
-    LLM_PROFILE_BIGMODEL_REASONING_EFFORT: "max",
+    LLM_PROFILE_BIGMODEL_REASONING_EFFORT: "low",
     LLM_PROFILE_BIGMODEL_REASONING_FORMAT:
       "openai_reasoning_effort_with_thinking",
     LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL: "false",

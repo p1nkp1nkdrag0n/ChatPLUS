@@ -1,7 +1,8 @@
 import {
   boundedRecallQueryTokens,
   deriveExplicitUserMemoryClaim,
-  hasExplicitMemoryCorrection,
+  extractExplicitWeeklyPlanFacts,
+  hasExplicitMemoryCorrectionForClaim,
   isExplicitUserMemoryStatement,
   recallExactIdentifierAnchors,
   judgeMemoryCandidate,
@@ -25,6 +26,7 @@ import {
 } from "@personasim/contracts";
 
 import type { DatabaseStore } from "../db/store.js";
+import { isConsentDerivedSemanticCandidate } from "./consent-modality.js";
 import {
   deriveServerOwnedContinuityMemoryCandidates,
   deriveServerOwnedUserMemoryCandidates,
@@ -74,6 +76,78 @@ export type RecallCandidatePoolInput = {
   query: string;
   keywordLimit?: number;
 };
+
+export type StableExplicitUserMemoryScan = {
+  memories: Memory[];
+  truncated: boolean;
+  scanLimit: number;
+  truncationWitness?: Memory;
+};
+
+/**
+ * Reads the complete bounded safety pool used for atomic explicit-fact
+ * verification. Unlike the ordinary recall pool, its limit is internal and
+ * cannot be reduced by a caller's presentation-oriented candidate limit.
+ */
+export function readStableExplicitUserMemoryScan(
+  store: DatabaseStore,
+  agentId: string,
+  nowUtc: string,
+  input: { searchTerms: readonly string[]; scanLimit: number },
+): StableExplicitUserMemoryScan {
+  const scanLimit = Math.max(1, Math.min(500, Math.trunc(input.scanLimit)));
+  const searchTerms = [
+    ...new Set(
+      input.searchTerms
+        .map((term) => term.normalize("NFKC").trim().toLocaleLowerCase())
+        .filter(Boolean),
+    ),
+  ].slice(0, 80);
+  if (searchTerms.length === 0) {
+    return { memories: [], truncated: false, scanLimit };
+  }
+  const termClauses = searchTerms
+    .map(
+      () => "(instr(lower(content), ?) > 0 OR instr(lower(tags_json), ?) > 0)",
+    )
+    .join(" OR ");
+  const rows = store.database
+    .prepare(
+      `SELECT id, agent_id, type, content, tags_json, importance, confidence,
+        source_message_id, source_event_id, created_at_utc, valid_until_utc,
+        memory_json, namespace, certainty, attribution, stability, status,
+        claim_subject_key, claim_disposition, superseded_by_id,
+        merged_into_id, last_reinforced_at_utc,
+        lifecycle_updated_at_utc,
+        mentioned_at_utc, planned_start_at_utc, planned_end_at_utc,
+        occurred_start_at_utc, occurred_end_at_utc, recorded_at_utc,
+        temporal_certainty, temporal_status
+       FROM memories
+       WHERE agent_id = ? AND type = 'semantic' AND status = 'active'
+         AND namespace = 'user_model' AND certainty = 'explicit'
+         AND attribution = 'user_explicit' AND stability = 'stable'
+         AND superseded_by_id IS NULL AND merged_into_id IS NULL
+         AND (claim_disposition IS NULL OR claim_disposition NOT IN ('cancelled', 'completed'))
+         AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND (${termClauses})
+       ORDER BY importance DESC, created_at_utc DESC, id ASC
+       LIMIT ?`,
+    )
+    .all(
+      agentId,
+      nowUtc,
+      ...searchTerms.flatMap((term) => [term, term]),
+      scanLimit + 1,
+    ) as MemoryRow[];
+  const memories = rows.map(memoryFromRow);
+  const truncationWitness = memories[scanLimit];
+  return {
+    memories: memories.slice(0, scanLimit),
+    truncated: truncationWitness !== undefined,
+    scanLimit,
+    ...(truncationWitness === undefined ? {} : { truncationWitness }),
+  };
+}
 
 /**
  * Builds one bounded, query-aware pool. Keyword matches are ranked ahead of
@@ -266,22 +340,70 @@ export function readMemoryEvidence(
     )
     .all(...uniqueIds) as MemoryEvidenceRow[];
   return rows.flatMap((row) => {
-    const fromJson = parseJson(row.evidence_json);
-    const parsed = MemoryEvidenceSchema.safeParse(
-      fromJson ?? {
-        id: row.id,
-        memoryId: row.memory_id,
-        sourceType: row.source_type,
-        sourceId: row.source_id,
-        ...(row.quote === null ? {} : { quote: row.quote }),
-        ...(row.context_summary === null
-          ? {}
-          : { contextSummary: row.context_summary }),
-        recordedAtUtc: row.recorded_at_utc,
-      },
-    );
-    return parsed.success ? [parsed.data] : [];
+    const evidence = memoryEvidenceFromRow(row);
+    return evidence === undefined ? [] : [evidence];
   });
+}
+
+export type ExplicitFactMemoryEvidenceScan = {
+  evidence: MemoryEvidence[];
+  truncatedMemoryIds: string[];
+  perMemoryLimit: number;
+};
+
+/**
+ * Reads up to N+1 evidence rows per memory for the explicit-fact safety path.
+ * The extra row is never returned; it only makes evidence saturation visible
+ * so a late contradiction cannot be hidden behind a presentation cap.
+ */
+export function readExplicitFactMemoryEvidenceScan(
+  store: DatabaseStore,
+  memoryIds: readonly string[],
+  perMemoryLimit: number,
+): ExplicitFactMemoryEvidenceScan {
+  const uniqueIds = [...new Set(memoryIds)].slice(0, 500);
+  const safeLimit = Math.max(1, Math.min(500, Math.trunc(perMemoryLimit)));
+  if (uniqueIds.length === 0) {
+    return { evidence: [], truncatedMemoryIds: [], perMemoryLimit: safeLimit };
+  }
+  const placeholders = uniqueIds.map(() => "?").join(", ");
+  const rows = store.database
+    .prepare(
+      `WITH ranked AS (
+         SELECT id, memory_id, source_type, source_id, quote,
+           context_summary, recorded_at_utc, evidence_json,
+           ROW_NUMBER() OVER (
+             PARTITION BY memory_id
+             ORDER BY recorded_at_utc DESC, id
+           ) AS evidence_rank
+         FROM memory_evidence
+         WHERE memory_id IN (${placeholders})
+       )
+       SELECT id, memory_id, source_type, source_id, quote,
+         context_summary, recorded_at_utc, evidence_json, evidence_rank
+       FROM ranked
+       WHERE evidence_rank <= ?
+       ORDER BY memory_id, evidence_rank`,
+    )
+    .all(...uniqueIds, safeLimit + 1) as Array<
+    MemoryEvidenceRow & { evidence_rank: number }
+  >;
+  const truncatedMemoryIds = [
+    ...new Set(
+      rows
+        .filter((row) => row.evidence_rank > safeLimit)
+        .map((row) => row.memory_id),
+    ),
+  ].sort();
+  return {
+    evidence: rows.flatMap((row) => {
+      if (row.evidence_rank > safeLimit) return [];
+      const evidence = memoryEvidenceFromRow(row);
+      return evidence === undefined ? [] : [evidence];
+    }),
+    truncatedMemoryIds,
+    perMemoryLimit: safeLimit,
+  };
 }
 
 export function validateMergeAndPersistMemories(
@@ -306,13 +428,32 @@ export function validateMergeAndPersistMemories(
           ),
         ]
       : [];
-  const candidates = [
-    ...serverOwnedCandidates,
-    ...(authoritativeMessage?.role === "user" &&
-    blocksUnverifiedModelMemoryCandidates(authoritativeMessage.content)
+  let modelCandidates = input.candidates;
+  if (authoritativeMessage?.role === "user") {
+    modelCandidates = blocksUnverifiedModelMemoryCandidates(
+      authoritativeMessage.content,
+    )
       ? []
-      : input.candidates),
-  ];
+      : input.candidates.flatMap((candidate) => {
+          if (
+            isConsentDerivedSemanticCandidate({
+              authoritativeText: authoritativeMessage.content,
+              candidateText: candidate.content,
+            })
+          ) {
+            return [];
+          }
+          const tags = candidate.tags.filter(
+            (tag) =>
+              !isConsentDerivedSemanticCandidate({
+                authoritativeText: authoritativeMessage.content,
+                candidateText: tag,
+              }),
+          );
+          return [{ ...candidate, tags }];
+        });
+  }
+  const candidates = [...serverOwnedCandidates, ...modelCandidates];
   if (candidates.length === 0) return [];
   const existingRecords = readActiveMemoryRecords(
     input.store,
@@ -551,6 +692,31 @@ function normalizeCandidateForJudge(
   const stability =
     candidate.stability ??
     (hasActivity || candidate.kind === "episodic" ? "one_off" : "situational");
+  const claim = materializeVerifiedClaim({
+    candidate,
+    evidence,
+    catalog,
+    nowUtc,
+    namespace,
+    attribution,
+  });
+  const weeklyPlan =
+    candidate.kind === "semantic" &&
+    namespace === "user_model" &&
+    attribution === "user_explicit" &&
+    claim?.subjectKey.startsWith("user_fact:weekly_plan:") === true;
+  if (
+    (candidate.claim?.subjectKey.startsWith("user_fact:weekly_plan:") ===
+      true ||
+      (candidate.claim === undefined &&
+        extractExplicitWeeklyPlanFacts(candidate.content).length > 0)) &&
+    (!weeklyPlan ||
+      candidate.occurredAtUtc !== undefined ||
+      (candidate.temporalMetadata ?? candidate.temporal)?.temporalStatus ===
+        "occurred")
+  ) {
+    return undefined;
+  }
   if (
     candidate.kind === "semantic" &&
     namespace === "user_model" &&
@@ -560,24 +726,22 @@ function normalizeCandidateForJudge(
       const message = catalog.messages.get(item.sourceId);
       return (
         message?.role === "user" &&
-        isExplicitUserMemoryStatement(message.content)
+        (isExplicitUserMemoryStatement(message.content) || weeklyPlan)
       );
     })
   ) {
     return undefined;
   }
-  const claim = materializeVerifiedClaim({
-    candidate,
-    evidence,
-    catalog,
-    nowUtc,
-    namespace,
-    attribution,
-  });
   const suppliedTemporal = candidate.temporalMetadata ?? candidate.temporal;
   const temporalMetadata = TemporalMetadataSchema.parse({
-    ...(suppliedTemporal ??
-      defaultTemporalMetadata(candidate, catalog, nowUtc, evidence)),
+    ...(weeklyPlan
+      ? {
+          mentionedAtUtc: nowUtc,
+          temporalCertainty: "unknown",
+          temporalStatus: "planned",
+        }
+      : (suppliedTemporal ??
+        defaultTemporalMetadata(candidate, catalog, nowUtc, evidence))),
     recordedAtUtc: nowUtc,
   });
   const normalizedInput: Record<string, unknown> = {
@@ -594,6 +758,7 @@ function normalizeCandidateForJudge(
     shouldWrite: candidate.shouldWrite ?? true,
     forbiddenOverclaims: candidate.forbiddenOverclaims ?? [],
   };
+  if (claim === undefined) delete normalizedInput["claim"];
   delete normalizedInput["temporal"];
   const normalized = MemoryCandidateSchema.safeParse(normalizedInput);
   return normalized.success ? normalized.data : undefined;
@@ -621,6 +786,39 @@ function materializeVerifiedClaim(input: {
     const message = catalog.messages.get(item.sourceId);
     return message?.role === "user" ? [message.content] : [];
   });
+  if (
+    candidate.claim?.subjectKey.startsWith("user_fact:weekly_plan:") === true ||
+    (candidate.claim === undefined &&
+      extractExplicitWeeklyPlanFacts(candidate.content).length > 0)
+  ) {
+    for (const evidenceText of userEvidenceTexts) {
+      const derived = deriveExplicitUserMemoryClaim({
+        category: "user_fact",
+        evidenceText,
+        candidateContent: candidate.content,
+      });
+      if (
+        derived === undefined ||
+        !derived.subjectKey.startsWith("user_fact:weekly_plan:") ||
+        (candidate.claim !== undefined &&
+          candidate.claim.subjectKey !== derived.subjectKey)
+      )
+        continue;
+      return {
+        ...derived,
+        recordedAtUtc: nowUtc,
+        ...(hasExplicitMemoryCorrectionForClaim({
+          category: "user_fact",
+          evidenceText,
+          subjectKey: derived.subjectKey,
+          candidateContent: candidate.content,
+        })
+          ? { revisionIntent: "explicit_correction" as const }
+          : {}),
+      };
+    }
+    return undefined;
+  }
   const assertiveEvidenceTexts = userEvidenceTexts.filter(
     isExplicitUserMemoryStatement,
   );
@@ -632,6 +830,7 @@ function materializeVerifiedClaim(input: {
       assertiveEvidenceTexts,
       categories,
       candidate.claim.subjectKey,
+      candidate.content,
     );
     return {
       subjectKey: candidate.claim.subjectKey,
@@ -653,6 +852,7 @@ function materializeVerifiedClaim(input: {
         assertiveEvidenceTexts,
         categories,
         derived.subjectKey,
+        candidate.content,
       );
       return {
         ...derived,
@@ -668,15 +868,18 @@ function verifiedCorrectionAppliesToClaim(
   evidenceTexts: readonly string[],
   categories: readonly ("user_fact" | "user_preference")[],
   subjectKey: string,
+  candidateContent: string,
 ): boolean {
-  return evidenceTexts.some((evidenceText) => {
-    if (!hasExplicitMemoryCorrection(evidenceText)) return false;
-    return categories.some(
-      (category) =>
-        deriveExplicitUserMemoryClaim({ category, evidenceText })
-          ?.subjectKey === subjectKey,
-    );
-  });
+  return evidenceTexts.some((evidenceText) =>
+    categories.some((category) =>
+      hasExplicitMemoryCorrectionForClaim({
+        category,
+        evidenceText,
+        subjectKey,
+        candidateContent,
+      }),
+    ),
+  );
 }
 
 function memoryClaimCategories(
@@ -726,9 +929,19 @@ function collectVerifiedEvidence(
     const supportingText = requestedQuote ?? source.content;
     if (!memoryContentGrounded(candidate, supportingText)) return;
 
-    const quote = (requestedQuote ?? source.content).trim().slice(0, 2_000);
+    const completeQuote = source.content.trim().slice(0, 2_000);
+    const quote = requestedQuote?.trim().slice(0, 2_000) ?? completeQuote;
     if (quote.length === 0) return;
-    result.set(`message:${sourceId}`, {
+    const evidenceKey = `message:${sourceId}`;
+    const existing = result.get(evidenceKey);
+    if (
+      existing?.quote !== undefined &&
+      normalizedEvidenceText(existing.quote) ===
+        normalizedEvidenceText(completeQuote)
+    ) {
+      return;
+    }
+    result.set(evidenceKey, {
       sourceType: "message",
       sourceId,
       quote,
@@ -779,12 +992,19 @@ function collectVerifiedEvidence(
 }
 
 function groundedQuote(source: string, quote: string): boolean {
-  const normalize = (value: string): string =>
-    value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase();
-  const normalizedQuote = normalize(quote);
+  const normalizedQuote = normalizedEvidenceText(quote);
   return (
-    normalizedQuote.length > 0 && normalize(source).includes(normalizedQuote)
+    normalizedQuote.length > 0 &&
+    normalizedEvidenceText(source).includes(normalizedQuote)
   );
+}
+
+function normalizedEvidenceText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase();
 }
 
 function isSharedExperienceCandidate(candidate: MemoryCandidate): boolean {
@@ -1342,6 +1562,26 @@ type MemoryEvidenceRow = {
   recorded_at_utc: string;
   evidence_json: string;
 };
+
+function memoryEvidenceFromRow(
+  row: MemoryEvidenceRow,
+): MemoryEvidence | undefined {
+  const fromJson = parseJson(row.evidence_json);
+  const parsed = MemoryEvidenceSchema.safeParse(
+    fromJson ?? {
+      id: row.id,
+      memoryId: row.memory_id,
+      sourceType: row.source_type,
+      sourceId: row.source_id,
+      ...(row.quote === null ? {} : { quote: row.quote }),
+      ...(row.context_summary === null
+        ? {}
+        : { contextSummary: row.context_summary }),
+      recordedAtUtc: row.recorded_at_utc,
+    },
+  );
+  return parsed.success ? parsed.data : undefined;
+}
 
 type MemoryRow = {
   id: string;

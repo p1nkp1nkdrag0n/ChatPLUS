@@ -1,0 +1,36 @@
+{
+	# Caddy obtains and renews the public certificate automatically when DNS
+	# points at this host.
+	email {$ACME_EMAIL}
+}
+
+{$CHATPLUS_DOMAIN} {
+	encode zstd gzip
+
+	# Generate this bcrypt value with `caddy hash-password`. Never put a real
+	# plaintext password in this file or commit it to source control.
+	basic_auth {
+		{$CHATPLUS_BASIC_AUTH_USER} {$CHATPLUS_BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy app:3001 {
+		health_uri /api/health
+		# Basic Auth terminates here. Never forward its reusable credential to
+		# the application process. Caddy flushes text/event-stream responses.
+		header_up -Authorization
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

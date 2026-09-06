@@ -3,7 +3,22 @@ import { extname } from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { DateTime } from "luxon";
 import { z } from "zod";
-import { MemoryRecallPreviewRequestSchema } from "@personasim/contracts";
+import {
+  CorrespondenceMailboxQuerySchema,
+  CreateLetterDraftRequestSchema,
+  DeveloperTemporalTasksResponseSchema,
+  KeepsakeListQuerySchema,
+  MemoryRecallPreviewRequestSchema,
+  OpenLetterRequestSchema,
+  ProcessKeepsakeTaskRequestSchema,
+  RelationshipArchiveQuerySchema,
+  RelationshipRecapQuerySchema,
+  RetryLetterReplyGenerationRequestSchema,
+  SealLetterRequestSchema,
+  ShareComposerSelectionSchema,
+  TriggerKeepsakeGenerationRequestSchema,
+  UpdateLetterDraftRequestSchema,
+} from "@personasim/contracts";
 import { projectCharacterTime } from "@personasim/features";
 
 import type { ServerConfig } from "../config.js";
@@ -20,14 +35,20 @@ import { compareUtc } from "../domain/time.js";
 import type { ActorQueue } from "../runtime/actor-queue.js";
 import type { Clock } from "../runtime/clock.js";
 import { isMutableClock } from "../runtime/clock.js";
+import type { TemporalTaskScheduler } from "../runtime/temporal-task-scheduler.js";
 import { buildTimelineResponse } from "./timeline-projection.js";
 import type { SseHub } from "../sse/hub.js";
 import type { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
+import type { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
 import type { AutobiographyService } from "../services/autobiography-service.js";
 import type { CalendarService } from "../services/calendar-service.js";
 import type { CharacterService } from "../services/character-service.js";
 import type { CheckpointService } from "../services/checkpoint-service.js";
 import type { ConversationService } from "../services/conversation-service.js";
+import {
+  CorrespondenceServiceError,
+  type CorrespondenceService,
+} from "../services/correspondence-service.js";
 import type { ContinuityIndexService } from "../services/continuity-index-service.js";
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
@@ -41,6 +62,15 @@ import type { ProactiveDeliveryService } from "../services/proactive-delivery-se
 import type { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
+import type { TemporalCatchUpService } from "../services/temporal-catch-up-service.js";
+import {
+  KeepsakeServiceError,
+  type KeepsakeService,
+} from "../services/keepsake-service.js";
+import {
+  RelationshipArchiveError,
+  type RelationshipArchiveService,
+} from "../services/relationship-archive-service.js";
 
 export type RouteServices = {
   config: ServerConfig;
@@ -67,6 +97,12 @@ export type RouteServices = {
   proactiveGeneration: ProactiveGenerationService;
   retrievalRuns: RetrievalRunRepository;
   conversations: ConversationService;
+  correspondence: CorrespondenceService;
+  correspondenceRepository: CorrespondenceRepository;
+  temporalCatchUp: TemporalCatchUpService;
+  temporalTaskScheduler: TemporalTaskScheduler;
+  keepsakes: KeepsakeService;
+  relationshipArchive: RelationshipArchiveService;
 };
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
@@ -74,6 +110,8 @@ const versionParamsSchema = idParamsSchema.extend({
   version: z.coerce.number().int().positive(),
 });
 const sessionParamsSchema = z.object({ sessionId: z.string().min(1) });
+const agentIdParamsSchema = z.object({ agentId: z.string().min(1) }).strict();
+const letterIdParamsSchema = z.object({ letterId: z.string().min(1) }).strict();
 const rangeQuerySchema = z.object({
   fromUtc: z.string().datetime({ offset: true }).optional(),
   toUtc: z.string().datetime({ offset: true }).optional(),
@@ -98,6 +136,9 @@ export function registerRoutes(
     life,
     conversationActivity,
     conversations,
+    correspondence,
+    keepsakes,
+    relationshipArchive,
   } = services;
 
   app.get("/api/health", () => ({
@@ -191,6 +232,7 @@ export function registerRoutes(
 
   app.post("/api/characters/:id/versions/:version/restore", async (request) => {
     const { id, version } = versionParamsSchema.parse(request.params);
+    await correspondence.catchUpAgent(id);
     return {
       character: await actors.runExclusive(id, () =>
         characters.restore(id, version),
@@ -203,6 +245,7 @@ export function registerRoutes(
     const { version } = z
       .object({ version: z.number().int().positive() })
       .parse(request.body);
+    await correspondence.catchUpAgent(id);
     return {
       character: await actors.runExclusive(id, () =>
         characters.restore(id, version),
@@ -215,6 +258,7 @@ export function registerRoutes(
     const body = z
       .object({ expectedVersion: z.number().int().positive().optional() })
       .parse(request.body ?? {});
+    await correspondence.catchUpAgent(id);
     return actors.runExclusive(id, async () => {
       const character = characters.publish(id, body.expectedVersion);
       if (config.lifePlanningMode === "fuzzy") {
@@ -234,6 +278,7 @@ export function registerRoutes(
 
   app.post("/api/agents/:id/activate", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
+    await correspondence.catchUpAgent(id);
     const activated = await actors.runExclusive(id, async () => {
       const spec = store.getCharacterSpec(id);
       if (!spec) throw notFound("Character");
@@ -417,6 +462,7 @@ export function registerRoutes(
   app.post("/api/sessions/:sessionId/messages", async (request, reply) => {
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const input = chatMessageInputSchema.parse(normalizeChatBody(request.body));
+    await correspondence.catchUpAgent(input.agentId);
     const lease = conversationActivity.beginUserTurn(input.agentId);
     try {
       const result = await actors.runExclusive(input.agentId, async () => {
@@ -445,6 +491,7 @@ export function registerRoutes(
       ...normalizeChatBody(request.body),
       agentId: id,
     });
+    await correspondence.catchUpAgent(id);
     const lease = conversationActivity.beginUserTurn(id);
     try {
       const result = await actors.runExclusive(id, async () => {
@@ -469,6 +516,151 @@ export function registerRoutes(
     }
   });
 
+  app.get("/api/agents/:agentId/correspondence", async (request, reply) => {
+    const { agentId } = agentIdParamsSchema.parse(request.params);
+    const query = CorrespondenceMailboxQuerySchema.parse(request.query);
+    reply.header("cache-control", "no-store");
+    return correspondenceApi(() =>
+      correspondence.listCorrespondence(agentId, query),
+    );
+  });
+
+  app.post("/api/agents/:agentId/letters", async (request, reply) => {
+    const { agentId } = agentIdParamsSchema.parse(request.params);
+    const input = CreateLetterDraftRequestSchema.parse(request.body);
+    const result = await correspondenceApi(() =>
+      correspondence.createDraftLetter({ agentId, ...input }),
+    );
+    reply.header("cache-control", "no-store");
+    return reply.code(201).send(result);
+  });
+
+  app.patch("/api/letters/:letterId", async (request, reply) => {
+    const { letterId } = letterIdParamsSchema.parse(request.params);
+    const input = UpdateLetterDraftRequestSchema.parse(request.body);
+    const result = await correspondenceApi(() =>
+      correspondence.updateDraftLetter({ letterId, ...input }),
+    );
+    reply.header("cache-control", "no-store");
+    return reply.send(result);
+  });
+
+  app.post("/api/letters/:letterId/seal", async (request, reply) => {
+    const { letterId } = letterIdParamsSchema.parse(request.params);
+    const input = SealLetterRequestSchema.parse(request.body);
+    const result = await correspondenceApi(() =>
+      correspondence.sealLetter({ letterId, ...input }),
+    );
+    reply.header("cache-control", "no-store");
+    return reply.send(result);
+  });
+
+  app.post(
+    "/api/letters/:letterId/reply-generation/retry",
+    async (request, reply) => {
+      const { letterId } = letterIdParamsSchema.parse(request.params);
+      const input = RetryLetterReplyGenerationRequestSchema.parse(request.body);
+      const result = await correspondenceApi(
+        () => correspondence.retryLetterReplyGeneration({ letterId, ...input }),
+        { includeErrorDetails: false },
+      );
+      void services.temporalTaskScheduler.wake();
+      reply.header("cache-control", "no-store");
+      return reply.code(202).send(result);
+    },
+  );
+
+  app.get("/api/letters/:letterId", async (request, reply) => {
+    const { letterId } = letterIdParamsSchema.parse(request.params);
+    reply.header("cache-control", "no-store");
+    return correspondenceApi(() => correspondence.getLetterDetail(letterId));
+  });
+
+  app.post("/api/letters/:letterId/open", async (request, reply) => {
+    const { letterId } = letterIdParamsSchema.parse(request.params);
+    OpenLetterRequestSchema.parse(request.body ?? {});
+    const result = await correspondenceApi(() =>
+      correspondence.openLetter({ letterId }),
+    );
+    reply.header("cache-control", "no-store");
+    return reply.send(result);
+  });
+
+  app.get(
+    "/api/agents/:agentId/relationship-archive",
+    async (request, reply) => {
+      const { agentId } = agentIdParamsSchema.parse(request.params);
+      const query = RelationshipArchiveQuerySchema.parse(request.query);
+      await correspondence.catchUpAgent(agentId);
+      reply.header("cache-control", "no-store");
+      return relationshipArchiveApi(() =>
+        relationshipArchive.listPage(agentId, query),
+      );
+    },
+  );
+
+  app.get("/api/agents/:agentId/relationship-recap", async (request, reply) => {
+    const { agentId } = agentIdParamsSchema.parse(request.params);
+    const query = RelationshipRecapQuerySchema.parse(request.query);
+    await correspondence.catchUpAgent(agentId);
+    reply.header("cache-control", "no-store");
+    return relationshipArchiveApi(() =>
+      relationshipArchive.buildRecap({
+        agentId,
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        limit: query.limit,
+      }),
+    );
+  });
+
+  app.post(
+    "/api/agents/:agentId/relationship-share/preview",
+    async (request, reply) => {
+      const { agentId } = agentIdParamsSchema.parse(request.params);
+      const selection = ShareComposerSelectionSchema.parse(request.body);
+      await correspondence.catchUpAgent(agentId);
+      reply.header("cache-control", "no-store");
+      return relationshipArchiveApi(() =>
+        relationshipArchive.buildShareProjection(agentId, selection),
+      );
+    },
+  );
+
+  app.get("/api/agents/:agentId/keepsakes", async (request, reply) => {
+    const { agentId } = agentIdParamsSchema.parse(request.params);
+    const query = KeepsakeListQuerySchema.parse(request.query);
+    await correspondence.catchUpAgent(agentId);
+    reply.header("cache-control", "no-store");
+    return keepsakeApi(() => keepsakes.list(agentId, query));
+  });
+
+  app.get("/api/keepsakes/:id", (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    reply.header("cache-control", "no-store");
+    return keepsakeApi(() => keepsakes.getDetail(id));
+  });
+
+  app.get("/api/keepsakes/:id/thumbnail", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const asset = await keepsakeApi(() => keepsakes.readAsset(id, true));
+    return reply
+      .header("cache-control", "public, max-age=31536000, immutable")
+      .header("etag", `"${asset.etag}"`)
+      .type(asset.mimeType)
+      .send(asset.bytes);
+  });
+
+  app.get("/api/keepsakes/:id/asset", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const asset = await keepsakeApi(() => keepsakes.readAsset(id, false));
+    return reply
+      .header("cache-control", "public, max-age=31536000, immutable")
+      .header("etag", `"${asset.etag}"`)
+      .type(asset.mimeType)
+      .send(asset.bytes);
+  });
+
   app.get("/api/settings", () => ({
     settings: store.getSettings(),
     runtime: {
@@ -485,6 +677,9 @@ export function registerRoutes(
       hasApiKey: Boolean(config.llm.apiKey),
       clockMode: isMutableClock(clock) ? "fake" : "system",
       profile: config.profile,
+      correspondenceMode: config.correspondenceMode,
+      correspondenceExecution: config.correspondenceExecution,
+      keepsakeMode: config.keepsakeMode,
     },
   }));
 
@@ -510,6 +705,94 @@ export function registerRoutes(
   app.patch("/api/settings", updateSettings);
 
   if (config.developerRoutes) {
+    app.post(
+      "/api/developer/agents/:id/keepsakes/generate",
+      async (request, reply) => {
+        const { id } = idParamsSchema.parse(request.params);
+        const input = TriggerKeepsakeGenerationRequestSchema.parse(
+          request.body,
+        );
+        const result = await keepsakeApi(() =>
+          keepsakes.enqueueSource({
+            agentId: id,
+            sourceType: input.sourceType,
+            sourceId: input.sourceId,
+            ...(input.requestedKind === undefined
+              ? {}
+              : { requestedKind: input.requestedKind }),
+          }),
+        );
+        void services.temporalTaskScheduler.wake();
+        return reply.code(201).send(result);
+      },
+    );
+
+    app.post("/api/developer/keepsake-tasks/:id/process", async (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      ProcessKeepsakeTaskRequestSchema.parse(request.body ?? {});
+      return keepsakeApi(async () => ({
+        keepsake: await keepsakes.processTask(id),
+      }));
+    });
+
+    app.post("/api/developer/keepsake-assets/scan-orphans", async (request) => {
+      ProcessKeepsakeTaskRequestSchema.parse(request.body ?? {});
+      return keepsakeApi(() => keepsakes.scanOrphanAssets());
+    });
+
+    app.post("/api/developer/letters/:id/process", async (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      z.object({})
+        .strict()
+        .parse(request.body ?? {});
+      return {
+        result: await correspondenceApi(() =>
+          correspondence.processLetter({ letterId: id }),
+        ),
+      };
+    });
+
+    app.get("/api/developer/agents/:id/temporal-tasks", async (request) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const query = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(500).default(100),
+        })
+        .strict()
+        .parse(request.query);
+      return correspondenceApi(() =>
+        DeveloperTemporalTasksResponseSchema.parse({
+          tasks: correspondence
+            .listTemporalTasks(id, query.limit)
+            .map((task) => ({
+              id: task.id,
+              agentId: task.agentId,
+              kind: task.kind,
+              entityId: task.entityId,
+              dueAtUtc: task.dueAtUtc,
+              priority: task.priority,
+              status: task.status,
+              ...(task.claimedAtUtc === undefined
+                ? {}
+                : { claimedAtUtc: task.claimedAtUtc }),
+              ...(task.leaseExpiresAtUtc === undefined
+                ? {}
+                : { leaseExpiresAtUtc: task.leaseExpiresAtUtc }),
+              attempt: task.attempt,
+              maxAttempts: task.maxAttempts,
+              ...(task.lastErrorCode === undefined
+                ? {}
+                : { lastErrorCode: task.lastErrorCode }),
+              createdAtUtc: task.createdAtUtc,
+              updatedAtUtc: task.updatedAtUtc,
+              ...(task.completedAtUtc === undefined
+                ? {}
+                : { completedAtUtc: task.completedAtUtc }),
+            })),
+        }),
+      );
+    });
+
     app.post("/api/developer/agents/:id/memory-recall-preview", (request) => {
       const { id } = idParamsSchema.parse(request.params);
       const spec = store.getCharacterSpec(id);
@@ -611,6 +894,7 @@ export function registerRoutes(
         .parse(request.body);
       clock.setUtc(value);
       await settleActiveAgents(services);
+      await services.temporalTaskScheduler.wake();
       return { nowUtc: clock.nowUtc() };
     });
 
@@ -631,11 +915,13 @@ export function registerRoutes(
           : { minutes: duration.minutes }),
       });
       await settleActiveAgents(services);
+      await services.temporalTaskScheduler.wake();
       return { nowUtc: clock.nowUtc() };
     });
 
     app.post("/api/developer/agents/:id/settle", async (request) => {
       const { id } = idParamsSchema.parse(request.params);
+      await correspondence.catchUpAgent(id);
       const lifecycle = await actors.runExclusive(id, async () => {
         if (config.lifePlanningMode === "fuzzy") {
           return {
@@ -670,6 +956,68 @@ function normalizeChatBody(body: unknown): Record<string, unknown> {
     text: input.text ?? input.content,
     clientMessageId: input.clientMessageId ?? input.idempotencyKey,
   };
+}
+
+async function correspondenceApi<T>(
+  operation: () => T | Promise<T>,
+  options: Readonly<{ includeErrorDetails?: boolean }> = {},
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof CorrespondenceServiceError)) throw error;
+    const statusCode =
+      error.code === "not_found"
+        ? 404
+        : error.code === "invalid_cursor"
+          ? 400
+          : error.code === "letter_integrity_error"
+            ? 500
+            : 409;
+    throw new ApiError(
+      statusCode,
+      error.code,
+      error.message,
+      options.includeErrorDetails === false ? undefined : error.details,
+    );
+  }
+}
+
+async function keepsakeApi<T>(operation: () => T | Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof KeepsakeServiceError)) throw error;
+    const statusCode =
+      error.code === "not_found" ||
+      error.code === "source_not_found" ||
+      error.code === "task_not_found" ||
+      error.code === "asset_not_found"
+        ? 404
+        : error.code === "invalid_cursor"
+          ? 400
+          : 409;
+    throw new ApiError(statusCode, error.code, error.message);
+  }
+}
+
+async function relationshipArchiveApi<T>(
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof RelationshipArchiveError)) throw error;
+    const statusCode =
+      error.code === "not_found"
+        ? 404
+        : error.code === "invalid_archive_cursor"
+          ? 400
+          : error.code === "archive_integrity_error"
+            ? 500
+            : 409;
+    throw new ApiError(statusCode, error.code, error.message);
+  }
 }
 
 async function readImportInput(request: FastifyRequest): Promise<unknown> {
@@ -757,6 +1105,11 @@ function buildAgentSnapshot(
 
 async function settleActiveAgents(services: RouteServices): Promise<void> {
   const nowUtc = services.clock.nowUtc();
+  await Promise.all(
+    services.characters
+      .list(true)
+      .map(({ id }) => services.correspondence.catchUpAgent(id, nowUtc)),
+  );
   await Promise.all(
     services.sse.getActiveAgentIds().map(async (agentId) => {
       await services.actors.runExclusive(agentId, async () => {

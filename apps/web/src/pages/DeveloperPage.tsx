@@ -1,14 +1,18 @@
-import type { MemoryRecallPreviewResponse } from "@personasim/contracts";
+import type {
+  DeveloperTemporalTaskResponse,
+  MemoryRecallPreviewResponse,
+} from "@personasim/contracts";
 import {
   BrainCircuit,
   Braces,
   Clock3,
   Database,
+  Hourglass,
   Play,
   RefreshCw,
   TerminalSquare,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { api, unwrapList } from "../api/client";
@@ -41,9 +45,22 @@ export default function DeveloperPage() {
     queryKey: ["developer", "llm-calls"],
     queryFn: api.developer.llmCalls,
   });
+  const temporalTasksQuery = useQuery({
+    queryKey: ["temporal-tasks", activeId],
+    queryFn: () => api.developer.temporalTasks(activeId),
+    enabled: Boolean(activeId),
+  });
   const [clockInput, setClockInput] = useState(() =>
     DateTime.utc().toFormat("yyyy-LL-dd'T'HH:mm"),
   );
+  const serverTimeUtc = snapshotQuery.data?.status.serverTimeUtc;
+  useEffect(() => {
+    if (typeof serverTimeUtc !== "string") return;
+    const serverTime = DateTime.fromISO(serverTimeUtc, { setZone: true });
+    if (serverTime.isValid) {
+      setClockInput(serverTime.toUTC().toFormat("yyyy-LL-dd'T'HH:mm"));
+    }
+  }, [serverTimeUtc]);
   const [advanceMinutes, setAdvanceMinutes] = useState(60);
   const [recallMessage, setRecallMessage] = useState("");
   const [retrievalRunSelection, setRetrievalRunSelection] = useState("");
@@ -76,6 +93,12 @@ export default function DeveloperPage() {
     void Promise.all([
       queryClient.invalidateQueries({ queryKey: ["developer"] }),
       queryClient.invalidateQueries({ queryKey: ["agent", activeId] }),
+      queryClient.invalidateQueries({
+        queryKey: ["temporal-tasks", activeId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["correspondence", activeId],
+      }),
     ]);
   };
   const setClock = useMutation({
@@ -86,7 +109,7 @@ export default function DeveloperPage() {
     onSuccess: refresh,
   });
   const advance = useMutation({
-    mutationFn: () => api.developer.advanceClock(advanceMinutes),
+    mutationFn: (minutes: number) => api.developer.advanceClock(minutes),
     onSuccess: refresh,
   });
   const settle = useMutation({
@@ -185,9 +208,23 @@ export default function DeveloperPage() {
               className="button button--quiet"
               type="button"
               disabled={advance.isPending}
-              onClick={() => advance.mutate()}
+              onClick={() => advance.mutate(advanceMinutes)}
             >
               <Play size={15} /> 推进
+            </button>
+          </div>
+          <div className="clock-shortcuts" aria-label="常用时间推进">
+            <button type="button" onClick={() => advance.mutate(4 * 24 * 60)}>
+              +4 天
+            </button>
+            <button type="button" onClick={() => advance.mutate(24 * 60)}>
+              +1 天
+            </button>
+            <button type="button" onClick={() => advance.mutate(5 * 24 * 60)}>
+              +5 天
+            </button>
+            <button type="button" onClick={() => advance.mutate(-24 * 60)}>
+              回拨 1 天
             </button>
           </div>
           <button
@@ -199,6 +236,31 @@ export default function DeveloperPage() {
             <Database size={15} /> 立即结算角色
           </button>
           {mutationError ? <ErrorBlock error={mutationError} /> : null}
+        </section>
+
+        <section className="developer-panel developer-panel--tasks">
+          <div className="developer-panel__heading">
+            <Hourglass size={19} />
+            <div>
+              <h2>时间任务</h2>
+              <p>
+                统一显示书信与纪念物任务的到期时间、租约、重试和错误码；不投影正文或生成内容。
+              </p>
+            </div>
+          </div>
+          {temporalTasksQuery.isPending ? (
+            <LoadingBlock label="读取时间任务…" />
+          ) : null}
+          {temporalTasksQuery.isError ? (
+            <ErrorBlock error={temporalTasksQuery.error} />
+          ) : null}
+          <DeveloperTemporalTaskList
+            tasks={
+              temporalTasksQuery.isSuccess
+                ? temporalTasksQuery.data.tasks
+                : undefined
+            }
+          />
         </section>
 
         <section className="developer-panel developer-panel--snapshot">
@@ -350,6 +412,56 @@ export default function DeveloperPage() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+export function DeveloperTemporalTaskList({
+  tasks,
+}: {
+  tasks: readonly DeveloperTemporalTaskResponse[] | undefined;
+}) {
+  if (tasks === undefined) return null;
+
+  return (
+    <div className="temporal-task-list">
+      <p className="temporal-task-list__guidance">
+        任务列表只用于诊断，不提供逐任务强制状态转换。“立即结算角色”只会依照当前运行模式，补算截至当前时刻可调度的任务；
+        <code>dead_letter</code>
+        不会被正常调度自动重跑。如对应领域明确提供了专用恢复入口，才能通过该入口恢复；否则会保留此诊断状态。
+      </p>
+      {tasks.map((task) => (
+        <article key={task.id}>
+          <header>
+            <strong>{task.kind}</strong>
+            <code>{task.status}</code>
+          </header>
+          <dl>
+            <div>
+              <dt>due</dt>
+              <dd>{task.dueAtUtc}</dd>
+            </div>
+            <div>
+              <dt>attempt</dt>
+              <dd>
+                {task.attempt} / {task.maxAttempts}
+              </dd>
+            </div>
+            <div>
+              <dt>lease</dt>
+              <dd>{task.leaseExpiresAtUtc ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>error</dt>
+              <dd>{task.lastErrorCode ?? "—"}</dd>
+            </div>
+          </dl>
+          <div className="temporal-task-list__footer">
+            <code title={task.entityId}>{task.entityId}</code>
+          </div>
+        </article>
+      ))}
+      {tasks.length === 0 ? <p>当前角色没有时间任务。</p> : null}
     </div>
   );
 }

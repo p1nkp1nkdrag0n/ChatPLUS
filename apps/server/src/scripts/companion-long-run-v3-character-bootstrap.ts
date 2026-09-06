@@ -335,6 +335,8 @@ function validateCharacterBuild(input: {
     (source) => source["sourceType"] === "original_character_brief",
   );
   const goals = spec?.persona.goals ?? [];
+  const evidenceDriven =
+    spec?.compilationPolicyVersion === "companion_character_v2";
   const milestonesValid =
     goals.length > 0 &&
     goals.every((goal) => {
@@ -387,7 +389,8 @@ function validateCharacterBuild(input: {
     ],
     [
       "trait_behavior_rules",
-      (spec?.persona.traits.length ?? 0) >= 3 &&
+      (spec?.persona.traits.length ?? 0) >=
+        (evidenceDriven ? input.input.coreTraits.length : 3) &&
         (spec?.persona.traits ?? []).every(
           (trait) => trait.triggers.length > 0 && trait.exceptions.length > 0,
         ),
@@ -407,14 +410,24 @@ function validateCharacterBuild(input: {
         : "fixture transport check",
     ],
     [
-      "goal_time_milestones",
-      milestonesValid,
-      goals
-        .map((goal) =>
-          (goal.milestones ?? []).map((milestone) => milestone.afterDays),
-        )
-        .map((days) => days.join(","))
-        .join(" | "),
+      evidenceDriven ? "goal_evidence_progression" : "goal_time_milestones",
+      evidenceDriven
+        ? goals.every((goal) => goal.milestones === undefined) &&
+          (input.input.mainGoal === undefined ||
+            goals.some(
+              (goal) =>
+                goal.title === input.input.mainGoal &&
+                goal.origin === "user_spec",
+            ))
+        : milestonesValid,
+      evidenceDriven
+        ? "companion_character_v2: authored goals preserved; no calendar milestones"
+        : goals
+            .map((goal) =>
+              (goal.milestones ?? []).map((milestone) => milestone.afterDays),
+            )
+            .map((days) => days.join(","))
+            .join(" | "),
     ],
     [
       "friend_relationship_range",

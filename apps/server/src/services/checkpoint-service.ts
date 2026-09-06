@@ -1,3 +1,4 @@
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -106,6 +107,8 @@ export class CheckpointService {
     );
     if ("status" in started) return started;
 
+    const validity = new MemoryValidityRepository(this.repository.store);
+    const expectedMemoryRevision = validity.currentRevision(input.agentId);
     let proposal: AutobiographyRevisionProposal;
     try {
       const previous = this.autobiography.latest(input.agentId);
@@ -207,6 +210,7 @@ export class CheckpointService {
         const currentHash = checkpointSourceHash(currentMessages);
         if (
           session === undefined ||
+          validity.currentRevision(input.agentId) !== expectedMemoryRevision ||
           session.revision !== checkpoint.sourceRevision ||
           currentMessages.length !== checkpoint.sourceMessageCount ||
           currentHash !== checkpoint.sourceHash

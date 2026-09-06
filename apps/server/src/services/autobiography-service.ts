@@ -12,6 +12,10 @@ import {
   type AutobiographyValidationIssue,
 } from "@personasim/features";
 
+import {
+  MemoryValidityRepository,
+  type MemoryValiditySource,
+} from "../repositories/memory-validity-repository.js";
 import type {
   ArchivedMessage,
   AutobiographyBundle,
@@ -32,6 +36,8 @@ export type PreparedAutobiographyRevision =
       bundle: AutobiographyBundle;
       expectedPreviousSnapshotId?: string;
       expectedPreviousRevision: number;
+      expectedMemoryRevision: number;
+      sources: MemoryValiditySource[];
     }
   | {
       accepted: false;
@@ -89,9 +95,22 @@ export class AutobiographyService {
         }),
       })),
     };
+    const validity = new MemoryValidityRepository(this.repository.store);
     const semanticCatalog = continuitySemanticCatalog({
       messages: input.sourceMessages,
       evidence: input.evidenceCatalog,
+    }).map((evidence) => {
+      if (
+        evidence.sourceType !== "message_archive" ||
+        !validity.messageSourceNeedsReview(input.agentId, evidence.sourceId)
+      )
+        return evidence;
+      const next = {
+        ...evidence,
+        sourceReceipt: `【已纠正来源索引】此段发言包含后来被纠正或撤回的解释。完整历史保存在消息 ${evidence.sourceId}；当前事实需要使用更新后的记录。`,
+      };
+      delete next.sourceReport;
+      return next;
     });
     authoritativeProposal = preserveUnverifiedAutobiographySources({
       proposal: authoritativeProposal,
@@ -121,7 +140,9 @@ export class AutobiographyService {
         ],
       };
     }
-    const previous = this.repository.getLatestAutobiography(input.agentId);
+    const previous = this.repository.getLatestAutobiography(input.agentId, {
+      includeInvalidated: true,
+    });
     const snapshotId = stableId("autobio", input.checkpointId);
     const snapshot = AgentAutobiographySnapshotSchema.parse({
       id: snapshotId,
@@ -154,6 +175,16 @@ export class AutobiographyService {
         ? {}
         : { expectedPreviousSnapshotId: previous.snapshot.id }),
       expectedPreviousRevision: previous?.snapshot.revision ?? 0,
+      expectedMemoryRevision: new MemoryValidityRepository(
+        this.repository.store,
+      ).currentRevision(input.agentId),
+      sources: authoritativeProposal.entries.flatMap((entry) =>
+        validity.sourcesForEvidence(
+          input.agentId,
+          entry.evidence,
+          entry.content,
+        ),
+      ),
     };
   }
 
@@ -162,8 +193,15 @@ export class AutobiographyService {
   ): boolean {
     const current = this.repository.getLatestAutobiography(
       prepared.bundle.snapshot.agentId,
+      { includeInvalidated: true },
     );
+    const validity = new MemoryValidityRepository(this.repository.store);
     return (
+      validity.currentRevision(prepared.bundle.snapshot.agentId) ===
+        prepared.expectedMemoryRevision &&
+      prepared.sources.every((source) =>
+        validity.isSourceCurrent(prepared.bundle.snapshot.agentId, source),
+      ) &&
       (current?.snapshot.revision ?? 0) === prepared.expectedPreviousRevision &&
       current?.snapshot.id === prepared.expectedPreviousSnapshotId
     );

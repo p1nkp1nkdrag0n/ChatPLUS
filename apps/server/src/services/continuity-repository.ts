@@ -8,10 +8,12 @@ import type {
 } from "@personasim/contracts";
 import {
   boundedRecallHanBigrams,
+  buildAutobiographyProjection,
   boundedRecallQueryTokens,
   recallExactIdentifiers,
 } from "@personasim/features";
 
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import type { DatabaseStore } from "../db/store.js";
 
 type SqlRow = Record<string, unknown>;
@@ -440,7 +442,10 @@ export class ContinuityRepository {
     );
   }
 
-  getLatestAutobiography(agentId: string): AutobiographyBundle | undefined {
+  getLatestAutobiography(
+    agentId: string,
+    options: { includeInvalidated?: boolean } = {},
+  ): AutobiographyBundle | undefined {
     const row = this.store.database
       .prepare(
         `SELECT * FROM autobiography_snapshots
@@ -457,7 +462,29 @@ export class ContinuityRepository {
         )
         .all(snapshot.id) as SqlRow[]
     ).map(mapAutobiographyEntry);
-    return { snapshot, entries };
+    if (options.includeInvalidated) return { snapshot, entries };
+    const validity = new MemoryValidityRepository(this.store);
+    const validEntries = entries.filter((entry) =>
+      validity.isDerivedCurrent(agentId, "autobiography_entry", entry.id),
+    );
+    if (validEntries.length === entries.length) return { snapshot, entries };
+    if (validEntries.length === 0) return undefined;
+    const projection = buildAutobiographyProjection({
+      proposal: {
+        entries: validEntries,
+        summaryFirstPerson: validEntries
+          .map((entry) => entry.content)
+          .join("\n"),
+      },
+      validation: {
+        accepted: true,
+        issues: [],
+        sourceEvidenceIds: [
+          ...new Set(validEntries.flatMap((entry) => entry.sourceEvidenceIds)),
+        ],
+      },
+    })!;
+    return { snapshot: { ...snapshot, ...projection }, entries: validEntries };
   }
 
   insertAutobiography(bundle: AutobiographyBundle): void {
@@ -498,7 +525,22 @@ export class ContinuityRepository {
         evidence_json, created_at_utc
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    const validity = new MemoryValidityRepository(this.store);
     for (const entry of bundle.entries) {
+      if (
+        !validity.registerDependencies({
+          agentId: entry.agentId,
+          derivedType: "autobiography_entry",
+          derivedId: entry.id,
+          sources: validity.sourcesForEvidence(
+            entry.agentId,
+            entry.evidence,
+            entry.content,
+          ),
+          nowUtc: entry.createdAtUtc,
+        })
+      )
+        throw new Error("Autobiography source changed before persistence.");
       statement.run(
         entry.id,
         entry.snapshotId,
@@ -560,7 +602,62 @@ export class ContinuityRepository {
       WHERE event_cards.agent_id = excluded.agent_id`,
     );
     let changed = 0;
+    const validity = new MemoryValidityRepository(this.store);
     for (const card of cards) {
+      const sources = validity.sourcesForEvidence(
+        card.agentId,
+        card.evidence,
+        card.summary,
+      );
+      if (sources.length === 0) continue;
+      const directSource =
+        card.sourceKind === "memory"
+          ? validity.readSource(card.agentId, "memory", card.sourceId)
+          : undefined;
+      if (card.sourceKind === "memory" && directSource === undefined) continue;
+      if (
+        directSource !== undefined &&
+        !sources.some(
+          (source) =>
+            source.sourceType === directSource.sourceType &&
+            source.sourceId === directSource.sourceId,
+        )
+      )
+        sources.push(directSource);
+      if (card.sourceKind === "autobiography_entry") {
+        if (
+          !validity.isDerivedCurrent(
+            card.agentId,
+            "autobiography_entry",
+            card.sourceId,
+          )
+        )
+          continue;
+        for (const source of validity.dependencies(
+          card.agentId,
+          "autobiography_entry",
+          card.sourceId,
+        )) {
+          if (
+            !sources.some(
+              (item) =>
+                item.sourceType === source.sourceType &&
+                item.sourceId === source.sourceId,
+            )
+          )
+            sources.push(source);
+        }
+      }
+      if (
+        !validity.registerDependencies({
+          agentId: card.agentId,
+          derivedType: "event_card",
+          derivedId: card.id,
+          sources,
+          nowUtc: card.updatedAtUtc,
+        })
+      )
+        continue;
       const temporal = card.temporalMetadata;
       changed += statement.run(
         card.id,
@@ -742,7 +839,9 @@ export class ContinuityRepository {
 
   replaceEventCards(agentId: string, cards: readonly EventCard[]): number {
     this.store.database
-      .prepare("DELETE FROM event_cards WHERE agent_id = ?")
+      .prepare(
+        "UPDATE event_cards SET status = 'archived', card_json = json_set(card_json, '$.status', 'archived') WHERE agent_id = ? AND status = 'active'",
+      )
       .run(agentId);
     return this.upsertEventCards(cards);
   }
@@ -755,7 +854,15 @@ export class ContinuityRepository {
            WHERE agent_id = ? ORDER BY created_at_utc, ordinal, rowid`,
         )
         .all(agentId) as SqlRow[]
-    ).map(mapAutobiographyEntry);
+    )
+      .map(mapAutobiographyEntry)
+      .filter((entry) =>
+        new MemoryValidityRepository(this.store).isDerivedCurrent(
+          agentId,
+          "autobiography_entry",
+          entry.id,
+        ),
+      );
   }
 
   listActivitiesForIndex(agentId: string): Array<Record<string, unknown>> {

@@ -43,7 +43,7 @@ const ACTION_PREDICATES: readonly (string | readonly [string, string])[] = [
   "辞职",
   "离职",
   ["答应", "答应了"],
-  ["拒绝", "拒绝了"],
+  ["拒绝", "拒绝(?:了)?"],
   ["开始", "开始做"],
   "完成",
   "做完",
@@ -147,6 +147,7 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
     let reflectionFrame = false;
     let metaFrame = false;
     let reportedFrame = false;
+    let previousActionSubject: EvidenceSubject | undefined;
     for (const clause of alignedParts(
       sentence.sourceText,
       sentence.classifyText,
@@ -231,6 +232,9 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
         !DELEGATED_CHOICE.test(value) &&
         explicitActionOutsidePassive &&
         (isOccurredAction(actionText) ||
+          (previousActionSubject === subject &&
+            /^(?:并且|并|也|还)(?!没|不|未)/u.test(value) &&
+            ACTION_VERB.test(actionText)) ||
           (actionText !== value &&
             new RegExp(`(?:${ACTION_STEM_SOURCE})了`, "u").test(actionText)));
       const outcome =
@@ -258,6 +262,7 @@ export function analyzeLifeEvidence(text: string): LifeEvidenceAnalysis {
         actionKind: actionKind(value),
         valence: asserted ? evidenceValence(value) : "neutral",
       });
+      previousActionSubject = action ? subject : undefined;
     }
     if (question || sentenceExample || metaFrame || reportedFrame) {
       inheritedSubject = "unspecified";
@@ -347,10 +352,19 @@ export function evidenceSubject(
 function explicitSubject(
   text: string,
 ): { subject: EvidenceSubject; organization: boolean } | undefined {
-  const clause = text.replace(
-    /^(?:(?:另外|此外|但(?:是)?|不过|可是|而且|而是|同时|然后|随后|后来|今天|昨天|昨晚|现在|目前|最终|正式|刚刚|刚才|已经|确实|实际|其实|顺手|顺便|接着|这次|几天后|一周后|又|也)\s*)+/u,
-    "",
-  );
+  const clause = text
+    .replace(
+      /^(?:(?:另外|此外|但(?:是)?|不过|可是|而且|而是|同时|然后|随后|后来|今天|昨天|昨晚|现在|目前|最终|正式|刚刚|刚才|已经|确实|实际|其实|顺手|顺便|接着|这次|几天后|一周后|又|也)\s*)+/u,
+      "",
+    )
+    .replace(
+      new RegExp(
+        `^(?:并且|并)(?:和|跟|与|同)[\\p{L}·]{1,12}?(?=${ACTION_STEM_SOURCE})`,
+        "u",
+      ),
+      "",
+    )
+    .replace(new RegExp(`^(?:并且|并)(?=${ACTION_STEM_SOURCE})`, "u"), "");
   if (
     /^(?:我(?:的)?(?:朋友|同事|家人|伴侣|父母|母亲|父亲)|朋友|同事|家人|伴侣|父母|母亲|父亲|老师|医生|经理|他|她)/u.test(
       clause,

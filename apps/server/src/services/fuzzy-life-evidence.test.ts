@@ -78,6 +78,31 @@ describe("clause-level life evidence", () => {
     expect(analysis.clauses.some((clause) => clause.outcome)).toBe(false);
   });
 
+  it("carries completed first-person action across a same-sentence coordinated step", () => {
+    const clauses = analyzeLifeEvidence(
+      "我今天已经拒绝副主编合同，并和伙伴确认启动项目。这是实际行动。",
+    ).clauses.filter((clause) => clause.action);
+    expect(clauses.slice(0, 2)).toMatchObject([
+      { sourceText: "我今天已经拒绝副主编合同", subject: "user" },
+      { sourceText: "并和伙伴确认启动项目", subject: "user" },
+    ]);
+  });
+
+  it.each([
+    "我今天已经拒绝副主编合同，并和伙伴准备启动项目。",
+    "我今天已经拒绝副主编合同，并和伙伴确认下周启动项目。",
+    "我今天已经拒绝副主编合同，并没有确认启动项目。",
+    "我今天已经拒绝副主编合同，并且我朋友确认启动项目。",
+    "我今天已经拒绝副主编合同。并和伙伴确认启动项目。",
+    "我今天已经拒绝副主编合同，并和伙伴确认启动项目了吗？",
+  ])("does not invent a coordinated completed step: %s", (text) => {
+    expect(
+      analyzeLifeEvidence(text).clauses.some(
+        (clause) => clause.action && clause.classifyText.includes("启动项目"),
+      ),
+    ).toBe(false);
+  });
+
   it("does not execute a delegated option but preserves an independent completed action", () => {
     const analysis = analyzeLifeEvidence(
       "现在我明确授权你替我在留在目前公司和正式辞职之间作决定。我已经按照这个决定向主管提出离职。",

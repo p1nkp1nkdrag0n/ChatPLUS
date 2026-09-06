@@ -19,6 +19,7 @@ function segment(input: {
   id: string;
   content: string;
   priority?: number;
+  renderOrder?: number;
   tokenBudget?: number;
   required?: boolean;
   placement?: "system" | "prompt";
@@ -28,6 +29,9 @@ function segment(input: {
     id: input.id,
     placement: input.placement ?? "prompt",
     priority: input.priority ?? 1,
+    ...(input.renderOrder === undefined
+      ? {}
+      : { renderOrder: input.renderOrder }),
     tokenBudget: input.tokenBudget ?? 100,
     required: input.required ?? false,
     cacheable: false,
@@ -75,6 +79,69 @@ describe("PromptSegmentRegistry", () => {
     expect(registry.list()).toEqual([]);
     expect(() => registry.register(first)).not.toThrow();
   });
+
+  it("applies render order independently of budget priority and keeps trace positions exact", () => {
+    const registry = new PromptSegmentRegistry<TestContext>([
+      segment({ id: "01_dynamic", content: "D".repeat(16), priority: 100 }),
+      segment({
+        id: "02_low",
+        content: "L".repeat(16),
+        priority: 1,
+        renderOrder: -2,
+        globalOverflowPolicy: "drop",
+      }),
+      segment({
+        id: "03_history",
+        content: "H".repeat(16),
+        required: true,
+        renderOrder: -1,
+      }),
+      segment({ id: "04_empty", content: "", renderOrder: -3 }),
+      segment({
+        id: "05_policy",
+        content: "P",
+        required: true,
+        placement: "system",
+      }),
+    ]);
+    const result = registry.render({}, { maxInputTokens: 10 });
+
+    expect(result.system).toBe("P");
+    expect(result.prompt).toBe(`${"H".repeat(16)}\n${"D".repeat(16)}`);
+    const traces = Object.fromEntries(
+      result.trace.segments.map((trace) => [trace.id, trace]),
+    );
+    expect(traces["03_history"]).toMatchObject({
+      renderedIndex: 0,
+      renderedCharacters: 16,
+    });
+    expect(traces["01_dynamic"]).toMatchObject({
+      renderedIndex: 1,
+      renderedCharacters: 16,
+    });
+    expect(traces["05_policy"]).toMatchObject({
+      renderedIndex: 0,
+      renderedCharacters: 1,
+    });
+    expect(traces["02_low"]).toMatchObject({
+      included: false,
+      reason: "global_budget",
+    });
+    expect(traces["02_low"]).not.toHaveProperty("renderedIndex");
+    expect(traces["04_empty"]).not.toHaveProperty("renderedIndex");
+  });
+
+  it.each([NaN, Infinity, -Infinity])(
+    "rejects a non-finite render order (%s)",
+    (renderOrder) => {
+      expect(
+        () =>
+          new PromptSegmentRegistry([
+            segment({ id: "01_invalid", content: "invalid", renderOrder }),
+          ]),
+      ).toThrow("must have a finite render order");
+    },
+  );
 
   it("keeps registry instances and their caches composition-local", () => {
     const render = vi.fn(() => "cached");
@@ -363,6 +430,15 @@ describe("PromptSegmentRegistry", () => {
     expect(dynamicRender).toHaveBeenCalledTimes(2);
     expect(
       second.trace.segments.find((item) => item.id === "01_cached")?.cacheHit,
+    ).toBe(true);
+    expect(
+      second.trace.segments.find((item) => item.id === "01_cached")
+        ?.localCacheHit,
+    ).toBe(true);
+    expect(
+      second.trace.segments.every(
+        (item) => item.localCacheHit === item.cacheHit,
+      ),
     ).toBe(true);
   });
 

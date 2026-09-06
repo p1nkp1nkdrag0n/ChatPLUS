@@ -292,11 +292,18 @@ export class PromptSegmentRegistry<
       else dropped.set(candidate.segment.id, "global_budget");
     }
 
-    const ordered = selected.sort(compareCandidateIds);
+    const ordered = selected.sort(compareCandidateRenderOrder);
     const system = joinPlacement(ordered, "system");
     const prompt = joinPlacement(ordered, "prompt");
-    const selectedIds = new Set(ordered.map(({ segment }) => segment.id));
-    const traces = buildTrace(candidates, empty, selectedIds, dropped);
+    const renderedIndexes = new Map<string, number>();
+    for (const placement of ["system", "prompt"] as const) {
+      ordered
+        .filter(({ segment }) => segment.placement === placement)
+        .forEach(({ segment }, index) =>
+          renderedIndexes.set(segment.id, index),
+        );
+    }
+    const traces = buildTrace(candidates, empty, renderedIndexes, dropped);
 
     return {
       system,
@@ -349,6 +356,15 @@ function validateSegment<TContext extends PromptContext>(
     throw new PromptSegmentRegistryError(
       "invalid_segment",
       'Prompt segment "' + segment.id + '" must have a finite priority.',
+    );
+  }
+  if (
+    segment.renderOrder !== undefined &&
+    !Number.isFinite(segment.renderOrder)
+  ) {
+    throw new PromptSegmentRegistryError(
+      "invalid_segment",
+      'Prompt segment "' + segment.id + '" must have a finite render order.',
     );
   }
   if (!Number.isInteger(segment.tokenBudget) || segment.tokenBudget < 1) {
@@ -467,12 +483,13 @@ function fitOptionalCandidate<TContext extends PromptContext>(
 function buildTrace<TContext extends PromptContext>(
   candidates: readonly Candidate<TContext>[],
   empty: readonly EmptyCandidate<TContext>[],
-  selectedIds: ReadonlySet<string>,
+  renderedIndexes: ReadonlyMap<string, number>,
   droppedReasons: ReadonlyMap<string, "segment_budget" | "global_budget">,
 ): PromptSegmentTrace[] {
   const traceById = new Map<string, PromptSegmentTrace>();
   for (const candidate of candidates) {
-    const included = selectedIds.has(candidate.segment.id);
+    const renderedIndex = renderedIndexes.get(candidate.segment.id);
+    const included = renderedIndex !== undefined;
     traceById.set(candidate.segment.id, {
       id: candidate.segment.id,
       placement: candidate.segment.placement,
@@ -483,6 +500,10 @@ function buildTrace<TContext extends PromptContext>(
       included,
       truncated: candidate.originallyTruncated || candidate.globallyTruncated,
       cacheHit: candidate.cacheHit,
+      localCacheHit: candidate.cacheHit,
+      ...(included
+        ? { renderedIndex, renderedCharacters: candidate.content.length }
+        : {}),
       ...(included
         ? {}
         : {
@@ -503,6 +524,7 @@ function buildTrace<TContext extends PromptContext>(
       included: false,
       truncated: false,
       cacheHit: item.cacheHit,
+      localCacheHit: item.cacheHit,
       reason: "empty",
     });
   }
@@ -526,7 +548,7 @@ function joinPlacement<TContext extends PromptContext>(
 ): string {
   return candidates
     .filter((candidate) => candidate.segment.placement === placement)
-    .sort(compareCandidateIds)
+    .sort(compareCandidateRenderOrder)
     .map((candidate) => candidate.content)
     .join("\n");
 }
@@ -538,11 +560,14 @@ function compareSegmentIds<TContext extends PromptContext>(
   return left.id.localeCompare(right.id);
 }
 
-function compareCandidateIds<TContext extends PromptContext>(
+function compareCandidateRenderOrder<TContext extends PromptContext>(
   left: Candidate<TContext>,
   right: Candidate<TContext>,
 ): number {
-  return left.segment.id.localeCompare(right.segment.id);
+  return (
+    (left.segment.renderOrder ?? 0) - (right.segment.renderOrder ?? 0) ||
+    left.segment.id.localeCompare(right.segment.id)
+  );
 }
 
 function compareOptionalPriority<TContext extends PromptContext>(

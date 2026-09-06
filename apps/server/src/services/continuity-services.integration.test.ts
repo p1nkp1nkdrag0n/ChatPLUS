@@ -89,11 +89,11 @@ describe("continuity services", () => {
       for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
       const repository = new ContinuityRepository(store);
       const model: CheckpointAutobiographyModel = {
-        async generateAutobiography(input) {
+        generateAutobiography(input) {
           const evidence = input.evidence.find(
             (item) => item.sourceId === "semantic_user",
           )!;
-          return {
+          return Promise.resolve({
             summaryFirstPerson: invented,
             entries: [
               {
@@ -103,7 +103,7 @@ describe("continuity services", () => {
                 evidence: [toEvidenceRef(evidence)],
               },
             ],
-          };
+          });
         },
       };
       const result = await createServices(

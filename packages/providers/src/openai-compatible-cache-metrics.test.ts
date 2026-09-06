@@ -382,7 +382,9 @@ describe("OpenAI-compatible provider cache metrics", () => {
       apiKey: "private-test-api-key",
       onMetric: (metric) => metrics.push(metric),
       fetch: (_input, init) => {
-        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (typeof init?.body !== "string")
+          throw new TypeError("Expected a serialized JSON request body");
+        bodies.push(JSON.parse(init.body) as Record<string, unknown>);
         return Promise.resolve(
           jsonResponse(
             envelope(

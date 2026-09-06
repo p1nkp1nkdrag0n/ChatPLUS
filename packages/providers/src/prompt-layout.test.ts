@@ -29,7 +29,9 @@ function harness(
     onMetric: (metric) => metrics.push(metric),
     retryDelay: () => Promise.resolve(),
     fetch: (_url, init) => {
-      requests.push(JSON.parse(String(init?.body)) as RecordedBody);
+      if (typeof init?.body !== "string")
+        throw new TypeError("Expected a serialized JSON request body");
+      requests.push(JSON.parse(init.body) as RecordedBody);
       return Promise.resolve(
         Response.json({
           choices: [

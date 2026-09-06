@@ -9,6 +9,8 @@ import { runMigrations } from "../db/migrations.js";
 import { ActorQueue } from "../runtime/actor-queue.js";
 import { FakeClock } from "../runtime/clock.js";
 import { ConversationActivityTracker } from "./conversation-activity-tracker.js";
+import { FollowUpRepository } from "./follow-up-repository.js";
+import { FollowUpService } from "./follow-up-service.js";
 import {
   ProactiveGenerationRepository,
   type ProactiveSubjectRef,
@@ -598,7 +600,7 @@ describe("ProactiveGenerationService", () => {
       id: "message-followup-source",
       role: "user",
       messageKind: "user",
-      content: "My thesis defense is this afternoon.",
+      content: "My thesis defense is tomorrow morning.",
       createdAtUtc: "2026-08-20T12:00:00.000Z",
     });
     seedFollowUp(database);
@@ -635,6 +637,117 @@ describe("ProactiveGenerationService", () => {
       reasonCode: "source_not_pending",
     });
     expect(proactiveMessageCount(database)).toBe(1);
+  });
+
+  it("keeps legacy pending rows unsendable without pretending the user cancelled", async () => {
+    database
+      .prepare("DELETE FROM proactive_candidates WHERE id = ?")
+      .run(CANDIDATE_ID);
+    insertMessage(database, {
+      id: "message-followup-source",
+      role: "user",
+      messageKind: "user",
+      content: "My thesis defense is tomorrow morning.",
+      createdAtUtc: "2026-08-20T12:00:00.000Z",
+    });
+    seedFollowUp(database);
+    const snapshot = repository.getSubject({
+      kind: "follow_up",
+      id: "followup-generation",
+    });
+    expect(snapshot).toBeDefined();
+    database
+      .prepare(
+        "UPDATE follow_up_intents SET grounding_json = NULL WHERE id = 'followup-generation'",
+      )
+      .run();
+    expect(repository.findNextDueSubject(AGENT_ID, NOW_UTC)).toBeUndefined();
+    let composeCalls = 0;
+    const outcome = await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      subject: { kind: "follow_up", id: "followup-generation" },
+      compose: () => {
+        composeCalls += 1;
+        return "How did it go?";
+      },
+    });
+    expect(outcome.status).toBe("not_claimed");
+    expect(composeCalls).toBe(0);
+    expect(readFollowUp(database)).toMatchObject({
+      status: "pending",
+      generationEpoch: 0,
+      attemptCount: 0,
+    });
+    if (snapshot === undefined)
+      throw new Error("Expected previous valid source");
+    expect(
+      repository.claimSubject({
+        runId: "legacy-bypass",
+        claimToken: "claim",
+        subject: snapshot,
+        sessionId: SESSION_ID,
+        specVersion: 1,
+        stateRevision: 0,
+        messageRowid: 0,
+        lastUserMessageRowid: 0,
+        userArrivalEpoch: 0,
+        snapshot: {},
+        startedAtUtc: NOW_UTC,
+      }),
+    ).toBeUndefined();
+    const restored = new FollowUpService(
+      new FollowUpRepository(database),
+      clock,
+    ).revalidateFollowUp({
+      agentId: AGENT_ID,
+      id: "followup-generation",
+      timezone: "UTC",
+    });
+    expect(restored.accepted).toBe(true);
+    expect(repository.findNextDueSubject(AGENT_ID, NOW_UTC)?.id).toBe(
+      "followup-generation",
+    );
+  });
+
+  it("rechecks source evidence after composition before a proactive follow-up is sent", async () => {
+    database
+      .prepare("DELETE FROM proactive_candidates WHERE id = ?")
+      .run(CANDIDATE_ID);
+    insertMessage(database, {
+      id: "message-followup-source",
+      role: "user",
+      messageKind: "user",
+      content: "My thesis defense is tomorrow morning.",
+      createdAtUtc: "2026-08-20T12:00:00.000Z",
+    });
+    seedFollowUp(database);
+    const outcome = await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      subject: { kind: "follow_up", id: "followup-generation" },
+      compose: () => {
+        expect(database.inTransaction).toBe(false);
+        database
+          .prepare(
+            "UPDATE messages SET content = 'That was a hypothetical defense.' WHERE id = 'message-followup-source'",
+          )
+          .run();
+        return "How did your defense go?";
+      },
+    });
+    expect(outcome.status).not.toBe("committed");
+    expect(readFollowUp(database)).toMatchObject({
+      status: "pending",
+      attemptCount: 0,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM messages WHERE trigger_follow_up_intent_id = 'followup-generation'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
   });
 
   it("blocks active conversations and structurally rejects CareCue delivery", async () => {
@@ -744,22 +857,30 @@ function seedActivityCandidate(database: Database): void {
 }
 
 function seedFollowUp(database: Database): void {
+  const source = "My thesis defense is tomorrow morning.";
+  const created = new FollowUpService(
+    new FollowUpRepository(database),
+    new FakeClock("2026-08-20T12:00:00.000Z"),
+  ).createFollowUp({
+    agentId: AGENT_ID,
+    sourceMessageId: "message-followup-source",
+    timezone: "UTC",
+    candidate: {
+      subjectType: "user_event",
+      contextSummary: source,
+      expectedOutcomeDescription: "How the thesis defense went.",
+      timingHint: "tomorrow morning",
+      evidenceQuotes: [source],
+      reasonCode: "future_user_event",
+      reasonSummary: "A real source event.",
+    },
+  });
+  if (!created.accepted) throw new Error("Expected verified follow-up fixture");
   database
     .prepare(
-      `INSERT INTO follow_up_intents(
-        id, agent_id, session_id, subject_type, context_summary,
-        expected_outcome_description, source_message_id, earliest_at_utc,
-        expires_at_utc, status, max_attempts, attempt_count, dedupe_key,
-        revision, generation_epoch, created_at_utc, updated_at_utc
-      ) VALUES (
-        'followup-generation', ?, ?, 'user_event',
-        'The user had a thesis defense.',
-        'How the thesis defense went.', 'message-followup-source',
-        '2026-08-21T11:00:00.000Z', '2026-08-22T12:00:00.000Z',
-        'pending', 1, 0, 'followup:generation', 0, 0, ?, ?
-      )`,
+      "UPDATE follow_up_intents SET id = 'followup-generation' WHERE id = ?",
     )
-    .run(AGENT_ID, SESSION_ID, NOW_UTC, NOW_UTC);
+    .run(created.followUp.id);
 }
 
 function insertMessage(

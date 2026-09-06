@@ -1,6 +1,12 @@
 import type { DateTime } from "luxon";
 
 import { parseInstant, parseZone } from "./shared.js";
+import {
+  groundFollowUpCandidate,
+  type FollowUpEvidenceMessage,
+  type FollowUpGroundingBasis,
+  type FollowUpGroundingRejectionCode,
+} from "./follow-up-grounding.js";
 
 export type FollowUpSubjectTypeLike =
   "user_goal" | "user_event" | "shared_commitment" | "character_commitment";
@@ -47,7 +53,8 @@ export type FollowUpCandidateRejectionCode =
   | "invalid_source_role"
   | "missing_grounded_quote"
   | "unrelated_context"
-  | "ambiguous_timing";
+  | "ambiguous_timing"
+  | FollowUpGroundingRejectionCode;
 
 export type NormalizeFollowUpCandidateResult =
   | {
@@ -64,6 +71,7 @@ export type NormalizeFollowUpCandidateResult =
         dedupeKey: string;
         reasonCode: string;
         reasonSummary: string;
+        grounding: FollowUpGroundingBasis;
       };
     }
   | {
@@ -78,6 +86,7 @@ export function normalizeFollowUpCandidate(input: {
   candidate: FollowUpCandidateLike;
   agentId: string;
   sourceMessage: { id: string; role: "user" | "assistant"; text: string };
+  supportingMessages?: readonly FollowUpEvidenceMessage[];
   nowUtc: string;
   timezone: string;
 }): NormalizeFollowUpCandidateResult {
@@ -114,8 +123,16 @@ export function normalizeFollowUpCandidate(input: {
     );
   }
 
+  if (/\d{4}-\d{2}-\d{2}|T\d{2}:/u.test(input.candidate.timingHint)) {
+    return rejectCandidate(
+      "ambiguous_timing",
+      "An exact model timestamp cannot authorize a follow-up window.",
+    );
+  }
+  const grounding = groundFollowUpCandidate(input);
+  if (!grounding.accepted) return grounding;
   const window = resolveFollowUpWindow(
-    [input.candidate.timingHint, input.sourceMessage.text].join(" "),
+    grounding.timingText,
     input.nowUtc,
     input.timezone,
   );
@@ -126,11 +143,8 @@ export function normalizeFollowUpCandidate(input: {
     );
   }
 
-  const contextSummary = compactText(input.candidate.contextSummary, 1_000);
-  const expectedOutcomeDescription = compactText(
-    input.candidate.expectedOutcomeDescription,
-    1_000,
-  );
+  const contextSummary = grounding.contextSummary;
+  const expectedOutcomeDescription = grounding.expectedOutcomeDescription;
   return {
     accepted: true,
     followUp: {
@@ -150,6 +164,7 @@ export function normalizeFollowUpCandidate(input: {
       }),
       reasonCode: input.candidate.reasonCode,
       reasonSummary: input.candidate.reasonSummary,
+      grounding: grounding.basis,
     },
   };
 }
@@ -503,10 +518,7 @@ export function selectRelevantCareCues<T extends CareCueLike>(input: {
       ) {
         return false;
       }
-      return textsAreRelated(
-        cue.contextSummary + " " + cue.mentionGuidance,
-        input.userText,
-      );
+      return textsAreRelated(cue.contextSummary, input.userText);
     })
     .sort((left, right) => {
       const expiry = left.expiresAtUtc.localeCompare(right.expiresAtUtc);
@@ -521,10 +533,7 @@ export function didMentionCareCue(
   cue: Pick<CareCueLike, "contextSummary" | "mentionGuidance">,
   assistantText: string,
 ): boolean {
-  return textsAreRelated(
-    cue.contextSummary + " " + cue.mentionGuidance,
-    assistantText,
-  );
+  return textsAreRelated(cue.contextSummary, assistantText);
 }
 
 export function shouldDismissCareCue(
@@ -533,7 +542,7 @@ export function shouldDismissCareCue(
 ): boolean {
   return (
     DECLINE_PATTERN.test(userText) &&
-    textsAreRelated(cue.contextSummary + " " + cue.mentionGuidance, userText)
+    textsAreRelated(cue.contextSummary, userText)
   );
 }
 

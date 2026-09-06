@@ -1,16 +1,44 @@
-import type { CareCueLike, FollowUpLike } from "@personasim/features";
+import { createHash } from "node:crypto";
+
+import type {
+  CareCueLike,
+  FollowUpLike,
+  FollowUpGroundingBasis,
+} from "@personasim/features";
 
 import type { Database } from "../db/connection.js";
+import { DatabaseStore } from "../db/store.js";
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 
 export interface StoredFollowUpIntent extends FollowUpLike {
   sessionId?: string;
   sourceMessageId: string;
+  grounding?: StoredContinuityGrounding;
 }
 
 export interface StoredCareCue extends CareCueLike {
   agentId: string;
   sessionId?: string;
   sourceMessageId: string;
+  grounding?: StoredContinuityGrounding;
+}
+
+export interface StoredContinuityGrounding {
+  version: 1;
+  basis: FollowUpGroundingBasis | { basisKind: "user_context"; matter: string };
+  contextSummary: string;
+  guidance: string;
+  sources: Array<{
+    id: string;
+    role: string;
+    hash: string;
+    sessionId: string;
+    createdAtUtc: string;
+  }>;
+}
+
+export function sourceTextHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 export interface FollowUpInsert {
@@ -25,6 +53,7 @@ export interface FollowUpInsert {
   expiresAtUtc: string;
   dedupeKey: string;
   createdAtUtc: string;
+  grounding?: StoredContinuityGrounding;
 }
 
 export interface CareCueInsert {
@@ -39,6 +68,7 @@ export interface CareCueInsert {
   maxMentions: number;
   dedupeKey: string;
   createdAtUtc: string;
+  grounding?: StoredContinuityGrounding;
 }
 
 export interface StoredSourceMessage {
@@ -53,7 +83,14 @@ export interface StoredSourceMessage {
 type SqlRow = Record<string, unknown>;
 
 export class FollowUpRepository {
-  constructor(readonly database: Database) {}
+  private readonly validity: MemoryValidityRepository;
+  constructor(readonly database: Database) {
+    this.validity = new MemoryValidityRepository(new DatabaseStore(database));
+  }
+
+  isSourceEvidenceUsable(agentId: string, sourceId: string): boolean {
+    return !this.validity.messageSourceNeedsReview(agentId, sourceId);
+  }
 
   transaction<T>(operation: () => T): T {
     return this.database.transaction(operation)();
@@ -78,6 +115,81 @@ export class FollowUpRepository {
         };
   }
 
+  getAdjacentTurnMessages(source: StoredSourceMessage): StoredSourceMessage[] {
+    // Only the same immediately adjacent exchange can support a shared promise;
+    // callers and model output cannot supply arbitrary IDs from other sessions.
+    const rows = this.database
+      .prepare(
+        `SELECT id FROM messages
+      WHERE session_id = ? AND agent_id = ? AND role IN ('user', 'assistant')
+        AND rowid <= (SELECT rowid + 1 FROM messages WHERE id = ?)
+      ORDER BY rowid DESC LIMIT 3`,
+      )
+      .all(source.sessionId, source.agentId, source.id) as Array<{
+      id: string;
+    }>;
+    return rows
+      .map((row) => this.getSourceMessage(row.id)!)
+      .filter((message) => message.id !== source.id);
+  }
+
+  isFollowUpEvidenceCurrent(id: string): boolean {
+    const record = this.getFollowUp(id);
+    return (
+      record !== undefined &&
+      this.groundingIsCurrent(
+        record.agentId,
+        record.sourceMessageId,
+        record.contextSummary,
+        record.expectedOutcomeDescription,
+        record.grounding,
+      )
+    );
+  }
+
+  isCareCueEvidenceCurrent(id: string): boolean {
+    const record = this.getCareCue(id);
+    return (
+      record !== undefined &&
+      this.groundingIsCurrent(
+        record.agentId,
+        record.sourceMessageId,
+        record.contextSummary,
+        record.mentionGuidance,
+        record.grounding,
+      )
+    );
+  }
+
+  private groundingIsCurrent(
+    agentId: string,
+    sourceMessageId: string,
+    contextSummary: string,
+    guidance: string,
+    grounding: StoredContinuityGrounding | undefined,
+  ): boolean {
+    if (
+      grounding?.version !== 1 ||
+      grounding.contextSummary !== contextSummary ||
+      grounding.guidance !== guidance ||
+      !Array.isArray(grounding.sources) ||
+      !grounding.sources.some((source) => source.id === sourceMessageId)
+    )
+      return false;
+    return grounding.sources.every((reference) => {
+      const source = this.getSourceMessage(reference.id);
+      return (
+        source !== undefined &&
+        source.agentId === agentId &&
+        source.role === reference.role &&
+        source.sessionId === reference.sessionId &&
+        source.createdAtUtc === reference.createdAtUtc &&
+        this.isSourceEvidenceUsable(agentId, source.id) &&
+        sourceTextHash(source.text) === reference.hash
+      );
+    });
+  }
+
   insertFollowUp(input: FollowUpInsert): {
     record: StoredFollowUpIntent;
     inserted: boolean;
@@ -88,17 +200,21 @@ export class FollowUpRepository {
           id, agent_id, session_id, subject_type, context_summary,
           expected_outcome_description, source_message_id, earliest_at_utc,
           expires_at_utc, status, max_attempts, attempt_count, dedupe_key,
-          revision, generation_epoch, created_at_utc, updated_at_utc
+          revision, generation_epoch, created_at_utc, updated_at_utc, grounding_json
         ) VALUES (
           @id, @agentId, @sessionId, @subjectType, @contextSummary,
           @expectedOutcomeDescription, @sourceMessageId, @earliestAtUtc,
           @expiresAtUtc, 'pending', 1, 0, @dedupeKey, 0, 0,
-          @createdAtUtc, @createdAtUtc
+          @createdAtUtc, @createdAtUtc, @groundingJson
         )`,
       )
       .run({
         ...input,
         sessionId: input.sessionId ?? null,
+        groundingJson:
+          input.grounding === undefined
+            ? null
+            : JSON.stringify(input.grounding),
       });
     const record =
       this.getFollowUp(input.id) ??
@@ -126,6 +242,31 @@ export class FollowUpRepository {
       )
       .get(agentId, dedupeKey) as SqlRow | undefined;
     return row === undefined ? undefined : mapFollowUp(row);
+  }
+
+  restoreFollowUpGrounding(input: {
+    id: string;
+    expectedRevision: number;
+    contextSummary: string;
+    expectedOutcomeDescription: string;
+    earliestAtUtc: string;
+    expiresAtUtc: string;
+    dedupeKey: string;
+    grounding: StoredContinuityGrounding;
+    updatedAtUtc: string;
+  }): StoredFollowUpIntent | undefined {
+    const result = this.database
+      .prepare(
+        `UPDATE OR IGNORE follow_up_intents
+      SET context_summary = @contextSummary, expected_outcome_description = @expectedOutcomeDescription,
+          earliest_at_utc = @earliestAtUtc, expires_at_utc = @expiresAtUtc, dedupe_key = @dedupeKey,
+          grounding_json = @groundingJson, revision = revision + 1, updated_at_utc = @updatedAtUtc
+      WHERE id = @id AND revision = @expectedRevision AND status = 'pending'
+        AND attempt_count = 0 AND sent_message_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM proactive_generation_runs run WHERE run.follow_up_intent_id = follow_up_intents.id AND run.status = 'generating')`,
+      )
+      .run({ ...input, groundingJson: JSON.stringify(input.grounding) });
+    return result.changes === 1 ? this.getFollowUp(input.id) : undefined;
   }
 
   listOpenFollowUps(agentId: string): StoredFollowUpIntent[] {
@@ -185,17 +326,21 @@ export class FollowUpRepository {
           id, agent_id, session_id, context_summary, mention_guidance,
           source_message_id, earliest_at_utc, expires_at_utc, status,
           max_mentions, mention_count, dedupe_key, revision,
-          created_at_utc, updated_at_utc
+          created_at_utc, updated_at_utc, grounding_json
         ) VALUES (
           @id, @agentId, @sessionId, @contextSummary, @mentionGuidance,
           @sourceMessageId, @earliestAtUtc, @expiresAtUtc, 'active',
-          @maxMentions, 0, @dedupeKey, 0, @createdAtUtc, @createdAtUtc
+          @maxMentions, 0, @dedupeKey, 0, @createdAtUtc, @createdAtUtc, @groundingJson
         )`,
       )
       .run({
         ...input,
         sessionId: input.sessionId ?? null,
         earliestAtUtc: input.earliestAtUtc ?? null,
+        groundingJson:
+          input.grounding === undefined
+            ? null
+            : JSON.stringify(input.grounding),
       });
     const record =
       this.getCareCue(input.id) ??
@@ -321,6 +466,7 @@ function mapFollowUp(row: SqlRow): StoredFollowUpIntent {
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(sentMessageId === undefined ? {} : { sentMessageId }),
     ...(resolutionMessageId === undefined ? {} : { resolutionMessageId }),
+    ...mapGrounding(row),
   };
 }
 
@@ -349,7 +495,14 @@ function mapCareCue(row: SqlRow): StoredCareCue {
     ...(earliestAtUtc === undefined ? {} : { earliestAtUtc }),
     ...(lastMentionedMessageId === undefined ? {} : { lastMentionedMessageId }),
     ...(dismissedByMessageId === undefined ? {} : { dismissedByMessageId }),
+    ...mapGrounding(row),
   };
+}
+
+function mapGrounding(row: SqlRow): { grounding?: StoredContinuityGrounding } {
+  const value = row["grounding_json"];
+  if (typeof value !== "string") return {};
+  return { grounding: JSON.parse(value) as StoredContinuityGrounding };
 }
 
 function nullableString(value: unknown): string | undefined {

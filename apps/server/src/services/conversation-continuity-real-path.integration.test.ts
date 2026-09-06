@@ -177,7 +177,7 @@ describe("conversation continuity real path", () => {
       status: "pending",
     });
     expect(careCue).toMatchObject({
-      context_summary: "答辩结束了吗",
+      context_summary: "明天中午12:10能问我答辩结束了吗？",
       source_message_id: turn.userMessage.id,
       status: "active",
     });
@@ -250,9 +250,109 @@ describe("conversation continuity real path", () => {
       expires_at_utc: "2026-09-05T07:00:00.000Z",
       status: "active",
       mention_guidance:
-        "\u5728\u540e\u7eed\u76f8\u5173\u8bed\u5883\u4e2d\uff0c\u5148\u6309\u7528\u6237\u6307\u5b9a\u7684\u65b9\u5f0f\u5173\u5fc3\uff0c\u4e0d\u8981\u7acb\u523b\u8bb2\u9053\u7406\u3002",
+        "仅在相关语境中回应用户原话所述感受、事项或关心方式；不要假定用户采纳建议、已行动或已经成功，也不要安排新任务。",
     });
   });
+
+  it.each(["exact_quote", "missing_quote", "shared_label"] as const)(
+    "rejects the T8 follow-up through the actual chat route while preserving analysis and replay: %s",
+    async (variant) => {
+      const created = await createContinuityApp({
+        llm: {
+          provider: "openai-compatible",
+          baseUrl: "https://example.invalid",
+          apiKey: "test-api-key",
+          model: "test-live-model",
+          timeoutMs: 1_000,
+          maxRetries: 0,
+        },
+      });
+      app = created.app;
+      const userText =
+        "我现在想具体想一想了，请帮我分析一下：怎样区分真正做错了，和只是被反复修改弄得烦。";
+      const analysis =
+        "可以从错误是否具体、标准是否稳定来区分。明确的尺寸错误可以核对；反复改变偏好带来的疲惫，也不等于你的判断力出了问题。";
+      const calls = vi
+        .spyOn(app.personasim.llm, "generateObject")
+        .mockImplementation((input) => {
+          if (input.purpose === "chat_turn")
+            return Promise.resolve({
+              replyDecision: { text: analysis },
+              worldEffects: {
+                continuityEffects: {
+                  followUpCandidates: [
+                    {
+                      subjectType:
+                        variant === "shared_label"
+                          ? "shared_commitment"
+                          : "user_event",
+                      contextSummary: "约定用写清单的方式复核这版改稿",
+                      expectedOutcomeDescription:
+                        "用户尝试确定的和拿不准的清单，之后聊结果",
+                      timingHint: "tomorrow evening",
+                      evidenceQuotes:
+                        variant === "missing_quote" ? [] : [userText],
+                    },
+                  ],
+                },
+              },
+            } as never);
+          if (input.fixture !== undefined)
+            return Promise.resolve(input.fixture as never);
+          return Promise.reject(
+            new Error(`Unexpected purpose ${input.purpose}`),
+          );
+        });
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      const first = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "t8-analysis",
+        userText,
+      );
+      expect(first.statusCode).toBe(201);
+      expect(first.body).toContain(analysis);
+      const db = app.personasim.store.database;
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM follow_up_intents WHERE agent_id = ?",
+          )
+          .get(character.id),
+      ).toEqual({ count: 0 });
+      expect(
+        db
+          .prepare(
+            "SELECT reason_code FROM rejected_proposals WHERE correlation_id = 't8-analysis' AND purpose = 'continuity_turn'",
+          )
+          .all(),
+      ).toContainEqual({
+        reason_code:
+          variant === "missing_quote"
+            ? "missing_grounded_quote"
+            : "unsupported_follow_up_basis",
+      });
+      const callCount = calls.mock.calls.length;
+      const replay = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "t8-analysis",
+        userText,
+      );
+      expect(replay.statusCode).toBe(200);
+      expect(calls.mock.calls.length).toBe(callCount);
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM messages WHERE session_id = ?",
+          )
+          .get(sessionId),
+      ).toEqual({ count: 2 });
+    },
+  );
 
   it("injects at most two CareCues only into a related prompt and never sends one by itself", async () => {
     const created = await createContinuityApp();
@@ -323,6 +423,13 @@ describe("conversation continuity real path", () => {
     ).toEqual(relatedContext.careCues.map((cue) => cue.id));
     expect(messageCount(app, character.id, "assistant_proactive")).toBe(0);
     expect(activeCareCueCount(app, character.id)).toBe(3);
+    expect(
+      app.personasim.store.database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM care_cues WHERE agent_id = ? AND status = 'exhausted' AND mention_count = 1",
+        )
+        .get(character.id),
+    ).toEqual({ count: 0 });
   });
 
   it("crosses the enforced autobiography checkpoint boundary with archive-backed fixture evidence", async () => {

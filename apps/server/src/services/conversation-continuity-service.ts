@@ -134,6 +134,15 @@ export class ConversationContinuityService {
         }
 
         const materialized = materializeFollowUpCandidate(proposal.data, input);
+        if (!materialized.accepted) {
+          rejections.push({
+            effect: "follow_up",
+            reasonCode: "missing_grounded_quote",
+            reasonSummary: materialized.reasonSummary,
+            raw: rawCandidate,
+          });
+          continue;
+        }
         const result = this.followUps.createFollowUp({
           agentId: input.agentId,
           sourceMessageId: materialized.source.id,
@@ -167,6 +176,16 @@ export class ConversationContinuityService {
         }
 
         const candidate = materializeCareCueCandidate(proposal.data, input);
+        if (candidate === undefined) {
+          rejections.push({
+            effect: "care_cue",
+            reasonCode: "missing_grounded_quote",
+            reasonSummary:
+              "The proposal has no valid quote from the final stored user message.",
+            raw: rawCandidate,
+          });
+          continue;
+        }
         const result = this.followUps.createCareCue({
           agentId: input.agentId,
           sourceMessageId: input.userMessage.id,
@@ -283,23 +302,29 @@ type ContinuityTurnMaterializationInput = {
 function materializeFollowUpCandidate(
   proposal: ModelFollowUpCandidate,
   input: ContinuityTurnMaterializationInput,
-): { candidate: FollowUpCandidate; source: StoredMessage } {
+):
+  | { accepted: true; candidate: FollowUpCandidate; source: StoredMessage }
+  | { accepted: false; reasonSummary: string } {
   const subjectType = proposal.subjectType ?? "user_goal";
   const source = followUpProposalSource(subjectType, proposal, input);
   const evidenceQuotes = groundedQuotes(
     proposal.evidenceQuotes,
     source.content,
   );
-  const groundedEvidence =
-    evidenceQuotes.length > 0
-      ? evidenceQuotes
-      : [messageExcerpt(source.content)];
+  if (evidenceQuotes.length === 0)
+    return {
+      accepted: false,
+      reasonSummary:
+        "The proposal has no valid quote from its final stored source; unrelated source text cannot repair missing evidence.",
+    };
+  const groundedEvidence = evidenceQuotes;
   const contextSummary = groundedSummary(
     proposal.contextSummary,
     groundedEvidence,
   );
 
   return {
+    accepted: true,
     source,
     candidate: FollowUpCandidateSchema.parse({
       subjectType,
@@ -323,15 +348,13 @@ function materializeFollowUpCandidate(
 function materializeCareCueCandidate(
   proposal: ModelCareCueCandidate,
   input: ContinuityTurnMaterializationInput,
-): CareCueCandidate {
+): CareCueCandidate | undefined {
   const evidenceQuotes = groundedQuotes(
     proposal.evidenceQuotes,
     input.userMessage.content,
   );
-  const groundedEvidence =
-    evidenceQuotes.length > 0
-      ? evidenceQuotes
-      : [messageExcerpt(input.userMessage.content)];
+  if (evidenceQuotes.length === 0) return undefined;
+  const groundedEvidence = evidenceQuotes;
 
   return CareCueCandidateSchema.parse({
     contextSummary: groundedSummary(proposal.contextSummary, groundedEvidence),

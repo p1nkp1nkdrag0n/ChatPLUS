@@ -5,8 +5,65 @@ import {
   evidenceSubject,
   evidenceValence,
 } from "./fuzzy-life-evidence.js";
+import { collectLifeAssociationEvidence } from "./fuzzy-life-association.js";
 
 describe("clause-level life evidence", () => {
+  it("retains actual acceptance and its funding cost without promoting a possible future salary", () => {
+    const text =
+      "山鸣影像确认接受我，但项目资金延迟，入职后的头两个月可能只能拿八成薪资；同时现公司愿意让我带一个更有自主权的小组。这是混合结果，不是纯好消息。";
+    const outcomes = collectLifeAssociationEvidence(
+      analyzeLifeEvidence(text),
+      "outcome",
+    );
+    expect(outcomes[0]).toMatchObject({
+      sourceText: "山鸣影像确认接受我,但项目资金延迟",
+      classifyText: "山鸣影像确认接受我,但项目资金延迟",
+      modality: "asserted",
+      outcome: true,
+      valence: "mixed",
+    });
+    expect(
+      outcomes.every((clause) => !/八成薪资|入职后/u.test(clause.sourceText)),
+    ).toBe(true);
+    expect(
+      collectLifeAssociationEvidence(
+        analyzeLifeEvidence(outcomes[0]!.sourceText),
+        "outcome",
+      )[0],
+    ).toMatchObject({ sourceText: outcomes[0]!.sourceText, valence: "mixed" });
+  });
+
+  it.each([
+    "公司确认录用我，但项目资金可能延迟。",
+    "公司确认录用我，但项目资金没有延迟。",
+    "公司确认录用我，但明天项目资金才会延迟。",
+  ])(
+    "does not turn a possible or denied cost into a mixed actual result: %s",
+    (text) => {
+      const outcomes = collectLifeAssociationEvidence(
+        analyzeLifeEvidence(text),
+        "outcome",
+      );
+      expect(outcomes).toHaveLength(1);
+      expect(outcomes[0]).toMatchObject({
+        sourceText: "公司确认录用我",
+        valence: "positive",
+      });
+    },
+  );
+
+  it.each([
+    "据说公司确认接受我，但项目资金延迟。",
+    "如果公司确认录用我，但项目资金延迟。",
+    "公司确认录取我朋友。",
+    "公司确认接受我的同事。",
+    "公司没有确认录用我。",
+  ])("does not manufacture the speaker's actual acceptance: %s", (text) => {
+    expect(
+      collectLifeAssociationEvidence(analyzeLifeEvidence(text), "outcome"),
+    ).toEqual([]);
+  });
+
   it.each([
     "我刚换好鞋出门了。",
     "散步回来，顺手画了几笔线。",

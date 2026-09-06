@@ -148,7 +148,7 @@ function stageFrame(text: string, stage: LifeAssociationStage): boolean {
 }
 
 function outcomeElaboration(text: string): boolean {
-  return /^(?:但|不过|只是)(?:是)?(?:收入|薪资|薪水|作息|睡眠|精力|压力|心情|能留给|创作时间|个人创作)|^(?:我|我们)(?:重新|又|开始)感到|^这是(?:混合|正面|负面)?结果$/u.test(
+  return /^(?:但|不过|只是)(?:是)?(?:收入|薪资|薪水|(?:项目)?资金|作息|睡眠|精力|压力|心情|能留给|创作时间|个人创作)|^(?:我|我们)(?:重新|又|开始)感到|^这是(?:混合|正面|负面)?结果$/u.test(
     text,
   );
 }
@@ -583,8 +583,31 @@ export function selectLifeEvidenceAssociation(
     .filter((item) => item.relevance > 0)
     .sort((left, right) => right.relevance - left.relevance);
   let selected = topical[0];
-  if (selected !== undefined && topical[1]?.relevance === selected.relevance)
-    return undefined;
+  if (selected !== undefined && topical[1]?.relevance === selected.relevance) {
+    // Generic consequence terms (such as income) can overlap several past
+    // choices. An explicit result frame may resolve that tie only when one
+    // equally topical choice has an actual predecessor in the current
+    // conversation's source evidence. Two evidenced choices still abstain.
+    if (input.stage !== "outcome" || !EXPLICIT_RESULT_FRAME.test(text))
+      return undefined;
+    const supported = topical.filter(
+      (item) =>
+        item.relevance === selected!.relevance &&
+        item.actions.some((action) =>
+          hasRecentSource(
+            input,
+            item.candidate,
+            action,
+            action.sourceEvidenceIds,
+            action.summary,
+            "action",
+            false,
+          ),
+        ),
+    );
+    if (supported.length !== 1) return undefined;
+    selected = supported[0]!;
+  }
   if (selected === undefined) {
     if (!pureStageReference(text)) return undefined;
     const recent = evaluated.filter(({ candidate, actions, outcomes }) => {
@@ -663,6 +686,11 @@ export function selectLifeEvidenceAssociation(
       matchingActions[1].relevance < strongestAction.relevance)
       ? strongestAction.action
       : undefined;
+  const topicalReflectionFrame =
+    input.stage === "reflection" &&
+    selected.relevance > 0 &&
+    !pureStageReference(text) &&
+    /^(?:回头看|回看|我(?:现在)?的理解是)/u.test(text);
   const matchingOutcomes = outcomes
     .map((outcome) => ({
       outcome,
@@ -678,7 +706,7 @@ export function selectLifeEvidenceAssociation(
     .filter(
       ({ outcome, relevance }) =>
         relevance > 0 ||
-        (pureStageReference(text) &&
+        ((pureStageReference(text) || topicalReflectionFrame) &&
           hasRecentSource(
             input,
             candidate,
@@ -686,6 +714,7 @@ export function selectLifeEvidenceAssociation(
             outcome.sourceEvidenceIds,
             outcome.summary,
             "outcome",
+            !topicalReflectionFrame,
           )),
     )
     .sort((left, right) => right.relevance - left.relevance);

@@ -743,6 +743,84 @@ describe("bounded source-backed references", () => {
     ).toBeUndefined();
   });
 
+  it("resolves overlapping consequence terms only with one currently evidenced predecessor", () => {
+    const oldWork = candidate("old-work", "去异地影像公司", "earlier", OLD);
+    oldWork.dilemma!.options[0]!.description = "收入低一些，只有一年合同。";
+    oldWork.actions = [action(oldWork, "我已经给异地影像公司发出接受邮件。")];
+    const work = candidate("work", "接受副主编岗位", "current", OLD);
+    work.dilemma!.options[0]!.description =
+      "用更稳定的收入与作息支撑未来一年。";
+    work.actions = [action(work, "我今天已经签了副主编合同。")];
+    const text =
+      "几天后的结果是：收入和作息稳定了，但能留给个人创作的时间明显变少。这是混合结果。";
+    const recentMessages = [
+      source("work-action-source", work.actions[0]!.summary, OLD),
+    ];
+    expect(
+      select(text, "outcome", [oldWork, work], { recentMessages }),
+    ).toMatchObject({
+      decision: { id: "work" },
+      actionIds: ["work-action"],
+    });
+    expect(select(text, "outcome", [oldWork, work])).toBeUndefined();
+    oldWork.decision.sessionId = "current";
+    oldWork.actions[0]!.sessionId = "current";
+    expect(
+      select(text, "outcome", [oldWork, work], {
+        recentMessages: [
+          ...recentMessages,
+          source("old-work-action-source", oldWork.actions[0]!.summary, OLD),
+        ],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("links a topically grounded personal reflection to its uniquely source-backed earlier outcome", () => {
+    const work = candidate("work", "接受纪录片研究岗位", "current", OLD);
+    work.dilemma!.options[0]!.description =
+      "纪录片研究更接近创作，但要承担不确定性。";
+    work.outcomes = [outcome(work, "后来公司同意了我的纪录片研究申请。")];
+    const text =
+      "我现在的理解是：真正改变我的不只是选项，而是我第一次承认自己愿意为创作承担一些不确定性。";
+    const recentMessages = [
+      source("work-outcome-source", work.outcomes[0]!.summary, OLD),
+    ];
+    expect(
+      select(text, "reflection", [work], { recentMessages }),
+    ).toMatchObject({
+      decision: { id: "work" },
+      outcomeId: "work-outcome",
+    });
+    expect(select(text, "reflection", [work])?.outcomeId).toBeUndefined();
+    expect(
+      select(text, "reflection", [work], {
+        recentMessages: [{ ...recentMessages[0]!, sessionId: "other" }],
+      })?.outcomeId,
+    ).toBeUndefined();
+    expect(
+      select(text, "reflection", [work], {
+        recentMessages: [
+          ...recentMessages,
+          ...Array.from({ length: 8 }, (_, index) =>
+            source(`later-${index}`, "天气很好。"),
+          ),
+        ],
+      })?.outcomeId,
+    ).toBeUndefined();
+    work.outcomes = [
+      ...work.outcomes,
+      outcome(work, "后来公司同意了我的纪录片研究补充申请。", "second-outcome"),
+    ];
+    expect(
+      select(text, "reflection", [work], {
+        recentMessages: [
+          ...recentMessages,
+          source("second-outcome-source", work.outcomes[1]!.summary, OLD),
+        ],
+      })?.outcomeId,
+    ).toBeUndefined();
+  });
+
   it("does not choose between multiple older source-backed result predecessors", () => {
     const work = candidate("work", "接受副主编岗位", "current", OLD);
     work.dilemma!.options[0]!.description =

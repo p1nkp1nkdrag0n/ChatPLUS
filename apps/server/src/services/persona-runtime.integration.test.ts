@@ -155,6 +155,46 @@ describe("scoped persona runtime persistence and revision fences", () => {
     expect(capture("shadow").revision).toBe(1);
   });
 
+  it("skips stale-base shadow observations without writes while enforced capture still rejects the stale version", () => {
+    message("learned_before_publish");
+    capture("learned_before_publish");
+    message("stale_shadow", "我谈工作烦恼时，也请少追问。");
+    const published = CharacterSpecSchema.parse({
+      ...spec,
+      version: spec.version + 1,
+      dialogue: { ...spec.dialogue, warmth: 0.9 },
+      createdAtUtc: LATER,
+      updatedAtUtc: LATER,
+    });
+    store.transaction(() => {
+      store.insertCharacterVersion(published);
+      store.updateCharacterHead(published);
+    });
+    const changesBefore = database
+      .prepare("SELECT total_changes() AS totalChanges")
+      .get();
+    expect(
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "stale_shadow",
+        nowUtc: LATER,
+        mode: "shadow",
+      }),
+    ).toEqual({
+      revision: 1,
+      capturedObservationIds: [],
+      acceptedAdaptationIds: [],
+    });
+    expect(() => capture("stale_shadow", LATER)).toThrow(
+      "persona_base_version_conflict",
+    );
+    expect(
+      database.prepare("SELECT total_changes() AS totalChanges").get(),
+    ).toEqual(changesBefore);
+    expect(store.getCharacterSpec(spec.id)).toEqual(published);
+    expect(store.getCharacterSpec(spec.id, spec.version)).toEqual(spec);
+  });
+
   it("immediately excludes corrected memory sources while retaining the recorded historical projection", () => {
     message("source");
     capture("source");

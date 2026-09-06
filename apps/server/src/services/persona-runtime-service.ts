@@ -238,8 +238,10 @@ export class PersonaRuntimeService {
         throw new Error("persona_memory_revision_conflict");
       if (
         this.store.getCharacterSpec(agentId)?.version !== input.baseSpec.version
-      )
+      ) {
+        if (input.mode === "shadow") return result;
         throw new Error("persona_base_version_conflict");
+      }
       if (input.mode === "enforced") {
         this.reconcileBase({ baseSpec: input.baseSpec, nowUtc: input.nowUtc });
         this.reconcileSources({ agentId, nowUtc: input.nowUtc });

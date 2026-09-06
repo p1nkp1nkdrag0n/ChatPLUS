@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventCardSchema, type Memory } from "@personasim/contracts";
 
 import { openDatabase, type Database } from "../db/connection.js";
@@ -15,8 +15,15 @@ import { ContinuityIndexService } from "./continuity-index-service.js";
 import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
 import { ContinuityRepository } from "./continuity-repository.js";
 import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
+import { MemoryRecallService } from "./memory-recall-service.js";
+import { DateDigestService } from "./date-digest-service.js";
+import { ConversationContextService } from "./conversation-context-service.js";
+import type { ConversationContinuityService } from "./conversation-continuity-service.js";
+import type { CalendarService } from "./calendar-service.js";
 import {
   readMemoryEvidence,
+  readRecallCandidateRecords,
+  readStableExplicitUserMemoryScan,
   validateMergeAndPersistMemories,
 } from "./memory-service.js";
 
@@ -202,6 +209,378 @@ describe("memory correction derivation validity", () => {
     });
     return { prepared, cards };
   }
+
+  it("excludes naturally expired memory roots before current projection search limits without rewriting history", () => {
+    const memories = remember(
+      "source-expiring",
+      "我计划每周四晚上画画。我计划每周六上午游泳。",
+    );
+    const painting = memories.find((memory) =>
+      memory.content.includes("画画"),
+    )!;
+    const swimming = memories.find((memory) =>
+      memory.content.includes("游泳"),
+    )!;
+    database
+      .prepare("UPDATE memories SET valid_until_utc = ? WHERE id = ?")
+      .run(LATER, painting.id);
+    const { prepared } = deriveSnapshot(memories);
+    const clock = new FakeClock(NOW);
+    const index = new ContinuityIndexService(repository, clock);
+    const autobiography = new AutobiographyService(repository);
+    const memoryRevision = validity.currentRevision(AGENT);
+    expect(autobiography.latest(AGENT, clock.nowUtc())?.entries).toHaveLength(
+      2,
+    );
+    expect(
+      index.searchEventCards({ agentId: AGENT, query: "画画" }),
+    ).toHaveLength(1);
+
+    // Time alone changes validity: no source/status mutation or revision bump.
+    clock.setUtc(LATER);
+    expect(validity.currentRevision(AGENT)).toBe(memoryRevision);
+    expect(
+      autobiography
+        .latest(AGENT, clock.nowUtc())
+        ?.entries.map((entry) => entry.content),
+    ).toEqual([swimming.content]);
+    expect(index.searchEventCards({ agentId: AGENT, query: "画画" })).toEqual(
+      [],
+    );
+    expect(
+      index
+        .searchEventCards({ agentId: AGENT, query: "计划", limit: 1 })
+        .map((card) => card.summary),
+    ).toEqual([swimming.content]);
+    expect(
+      index.scanExplicitFactEventCards({
+        agentId: AGENT,
+        searchTerms: ["计划"],
+        scanLimit: 1,
+      }),
+    ).toMatchObject({
+      cards: [{ summary: swimming.content }],
+      truncated: false,
+    });
+    expect(
+      repository.getLatestAutobiography(AGENT, {
+        includeInvalidated: true,
+        nowUtc: LATER,
+      })?.snapshot,
+    ).toEqual(prepared.bundle.snapshot);
+    expect(autobiography.isCurrent(prepared, LATER)).toBe(false);
+    index.rebuildAgent(AGENT);
+    expect(index.searchEventCards({ agentId: AGENT, query: "画画" })).toEqual(
+      [],
+    );
+    expect(
+      repository.getLatestAutobiography(AGENT, { includeInvalidated: true })
+        ?.entries,
+    ).toHaveLength(2);
+    expect(
+      database
+        .prepare("SELECT status FROM memories WHERE id = ?")
+        .get(painting.id),
+    ).toEqual({ status: "active" });
+  });
+
+  it("excludes suppressed stable facts before the explicit-memory safety scan limit", () => {
+    const memories = remember(
+      "source-stable-facts",
+      "小雨是我的大学同学，现在住在上海。",
+    );
+    const relation = memories.find((memory) =>
+      memory.content.includes("大学同学"),
+    )!;
+    const location = memories.find((memory) =>
+      memory.content.includes("上海"),
+    )!;
+    expect(
+      readStableExplicitUserMemoryScan(store, AGENT, NOW, {
+        searchTerms: ["小雨"],
+        scanLimit: 1,
+      }).truncated,
+    ).toBe(true);
+    expect(
+      readStableExplicitUserMemoryScan(store, AGENT, NOW, {
+        searchTerms: ["小雨"],
+        scanLimit: 1,
+        suppressedMemoryIds: [relation.id],
+      }),
+    ).toMatchObject({ memories: [{ id: location.id }], truncated: false });
+    const index = new ContinuityIndexService(repository, new FakeClock(NOW));
+    expect(
+      index.searchVerbatim({ agentId: AGENT, query: "小雨" }),
+    ).toHaveLength(1);
+    expect(
+      index.searchVerbatim({
+        agentId: AGENT,
+        query: "小雨",
+        suppressedMemoryIds: [relation.id],
+      }),
+    ).toEqual([]);
+    const recall = new MemoryRecallService(store, undefined, {
+      continuityIndex: index,
+      dateDigests: new DateDigestService(new ContinuityMemoryRepository(store)),
+    });
+    const query = { query: "小雨的大学同学关系和上海居住地", minimumScore: 0 };
+    expect(
+      recall.preview({
+        agentId: AGENT,
+        query,
+        nowUtc: NOW,
+        timezone: "Asia/Shanghai",
+      }).result.abstained,
+    ).toBe(false);
+    // Both structured fallback and archive fallback must respect this turn's
+    // exclusions; the original shared utterance still exists for history.
+    expect(
+      recall.preview({
+        agentId: AGENT,
+        query,
+        nowUtc: NOW,
+        timezone: "Asia/Shanghai",
+        suppressedMemoryIds: memories.map((memory) => memory.id),
+      }).result,
+    ).toMatchObject({
+      abstained: true,
+      selectedMemoryIds: [],
+      selectedEvidenceIds: [],
+    });
+    expect(repository.listArchivedMessages(SESSION)).toHaveLength(1);
+  });
+
+  it("omits turn-suppressed memory dependencies while preserving independent facts from the same source", () => {
+    const memories = remember(
+      "source-suppressed",
+      "我计划每周四晚上画画。我计划每周六上午游泳。",
+    );
+    const painting = memories.find((memory) =>
+      memory.content.includes("画画"),
+    )!;
+    const swimming = memories.find((memory) =>
+      memory.content.includes("游泳"),
+    )!;
+    deriveSnapshot(memories);
+    const memoryRevision = validity.currentRevision(AGENT);
+    const suppressedMemoryIds = [painting.id];
+    const index = new ContinuityIndexService(repository, new FakeClock(NOW));
+    const autobiography = new AutobiographyService(repository);
+    expect(
+      autobiography
+        .latest(AGENT, NOW, suppressedMemoryIds)
+        ?.entries.map((entry) => entry.content),
+    ).toEqual([swimming.content]);
+    expect(
+      index
+        .searchEventCards({
+          agentId: AGENT,
+          query: "计划",
+          limit: 1,
+          suppressedMemoryIds,
+        })
+        .map((card) => card.summary),
+    ).toEqual([swimming.content]);
+    expect(
+      index.scanExplicitFactEventCards({
+        agentId: AGENT,
+        searchTerms: ["计划"],
+        scanLimit: 1,
+        suppressedMemoryIds,
+      }),
+    ).toMatchObject({
+      cards: [{ summary: swimming.content }],
+      truncated: false,
+    });
+    expect(
+      readRecallCandidateRecords(store, AGENT, NOW, {
+        candidateLimit: 1,
+        query: "计划",
+        suppressedMemoryIds,
+      }).map((memory) => memory.id),
+    ).toEqual([swimming.id]);
+
+    // A whole utterance reports both facts, so suppressing one excludes that
+    // entire derived report without discarding the independent swimming fact.
+    store.insertMessage({
+      id: "receipt-source-suppressed",
+      sessionId: SESSION,
+      agentId: AGENT,
+      role: "assistant",
+      messageKind: "assistant_reply",
+      content: "收到。",
+      metadata: {},
+      createdAtUtc: NOW,
+    });
+    deriveSnapshot(memories, true);
+    const afterSnapshotRevision = validity.currentRevision(AGENT);
+    expect(
+      autobiography.latest(AGENT, NOW, suppressedMemoryIds),
+    ).toBeUndefined();
+    expect(
+      index.searchEventCards({
+        agentId: AGENT,
+        query: "画画",
+        suppressedMemoryIds,
+      }),
+    ).toEqual([]);
+    expect(
+      index
+        .searchEventCards({
+          agentId: AGENT,
+          query: "游泳",
+          suppressedMemoryIds,
+        })
+        .map((card) => card.summary),
+    ).toEqual([swimming.content]);
+    expect(autobiography.latest(AGENT, NOW)?.entries).toHaveLength(2);
+    expect(
+      repository.getLatestAutobiography(AGENT, { includeInvalidated: true })
+        ?.entries,
+    ).toHaveLength(2);
+    expect(afterSnapshotRevision).toBe(memoryRevision);
+    expect(
+      validity.readSource(AGENT, "memory", painting.id, NOW),
+    ).toBeDefined();
+  });
+
+  it.each(["legacy", "shadow", "enforced"] as const)(
+    "filters current date evidence and shared message roots with %s recall mode",
+    (memoryRecallMode) => {
+      const yesterday = "2026-09-05T10:00:00.000Z";
+      // Seed previously persisted occurrence projections; this exercises current
+      // reading independently of the memory extraction/writing policy.
+      const insertFact = (
+        id: string,
+        sourceId: string,
+        content: string,
+        expiresAtUtc: string | null = null,
+      ) => {
+        if (
+          database
+            .prepare("SELECT id FROM messages WHERE id = ?")
+            .get(sourceId) === undefined
+        ) {
+          store.insertMessage({
+            id: sourceId,
+            sessionId: SESSION,
+            agentId: AGENT,
+            role: "user",
+            messageKind: "user",
+            content,
+            metadata: {},
+            createdAtUtc: yesterday,
+          });
+        }
+        database
+          .prepare(
+            `INSERT INTO memories(
+          id, agent_id, type, content, tags_json, importance, confidence,
+          source_message_id, created_at_utc, memory_json, namespace, certainty,
+          attribution, stability, status, temporal_status, occurred_start_at_utc,
+          recorded_at_utc, temporal_certainty, valid_until_utc
+        ) VALUES (?, ?, 'episodic', ?, '[]', 0.7, 1, ?, ?, '{}', 'user_model',
+          'explicit', 'user_explicit', 'one_off', 'active', 'occurred', ?, ?, 'exact', ?)`,
+          )
+          .run(
+            id,
+            AGENT,
+            content,
+            sourceId,
+            yesterday,
+            yesterday,
+            yesterday,
+            expiresAtUtc,
+          );
+        database
+          .prepare(
+            `INSERT INTO memory_evidence(
+          id, memory_id, source_type, source_id, quote, recorded_at_utc, evidence_json
+        ) VALUES (?, ?, 'message', ?, ?, ?, '{}')`,
+          )
+          .run(`evidence-${id}`, id, sourceId, content, yesterday);
+      };
+      insertFact(
+        "digest-withdrawn",
+        "digest-shared-message",
+        "我昨天尝了红茶，也把陶杯带回家。",
+      );
+      insertFact(
+        "digest-shared-other",
+        "digest-shared-message",
+        "用户昨天把陶杯带回家。",
+      );
+      insertFact(
+        "digest-independent",
+        "digest-independent-message",
+        "用户昨天归还了图书。",
+      );
+      insertFact(
+        "digest-expired",
+        "digest-expired-message",
+        "用户昨天领了票。",
+        NOW,
+      );
+      const dates = new DateDigestService(
+        new ContinuityMemoryRepository(store),
+      );
+      const baseQuery = {
+        agentId: AGENT,
+        text: "yesterday",
+        nowUtc: NOW,
+        timezone: "Asia/Shanghai",
+      };
+      expect(dates.query(baseQuery).digest?.items).toHaveLength(3);
+      const dateQuery = vi.spyOn(dates, "query");
+      const context = new ConversationContextService(
+        {
+          preparePrompt: () => ({ cueIds: [], careCues: [] }),
+        } as unknown as ConversationContinuityService,
+        new AutobiographyService(repository),
+        { selectPromptContext: () => [] } as unknown as CalendarService,
+        dates,
+        new ContinuityIndexService(repository, new FakeClock(NOW)),
+        "enforced",
+        memoryRecallMode,
+      ).prepare({
+        agentId: AGENT,
+        userText: "yesterday",
+        nowUtc: NOW,
+        timezone: "Asia/Shanghai",
+        suppressedMemoryIds: ["digest-withdrawn"],
+      });
+      const digest = (
+        dateQuery.mock.results[0]!.value as ReturnType<
+          DateDigestService["query"]
+        >
+      ).digest;
+      expect(digest).toMatchObject({
+        items: [
+          {
+            sourceId: "digest-independent",
+            sourceEvidenceIds: ["evidence-digest-independent"],
+          },
+        ],
+        sourceEvidenceIds: ["evidence-digest-independent"],
+      });
+      expect(digest?.items).toHaveLength(1);
+      const rendered = context.additionalPromptSegments
+        .map((segment) => segment.render({}))
+        .join("\n");
+      expect(rendered).not.toMatch(
+        /(?:红茶|陶杯|领了票|digest-withdrawn|digest-shared-other|digest-expired)/u,
+      );
+      if (memoryRecallMode === "enforced")
+        expect(rendered).not.toContain("图书");
+      else expect(rendered).toContain("图书");
+      expect(repository.listArchivedMessages(SESSION)).toHaveLength(3);
+      expect(
+        database
+          .prepare("SELECT COUNT(*) AS count FROM memories WHERE agent_id = ?")
+          .get(AGENT),
+      ).toEqual({ count: 4 });
+    },
+  );
 
   it("invalidates only the corrected fact and its projections while retaining shared-source history", () => {
     const originals = remember(

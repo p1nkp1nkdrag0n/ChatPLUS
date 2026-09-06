@@ -26,6 +26,7 @@ import {
 } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import {
   explicitFactCandidateScore,
   explicitFactValueResolution,
@@ -215,6 +216,8 @@ export function inspectContinuityRecall(
             agentId: input.agentId,
             query: candidateQuery,
             limit: searchLimit,
+            nowUtc: input.nowUtc,
+            suppressedMemoryIds: input.suppressedMemoryIds ?? [],
           }),
         )
         .map((card) => [card.id, card]),
@@ -285,6 +288,8 @@ export function inspectContinuityRecall(
           agentId: input.agentId,
           searchTerms: explicitFactSearchTerms,
           scanLimit: EXPLICIT_FACT_SAFETY_SCAN_LIMIT,
+          nowUtc: input.nowUtc,
+          suppressedMemoryIds: input.suppressedMemoryIds ?? [],
         });
   const eventCardPool = explicitEventCardScan?.cards ?? searchedCards;
   const eventCardRange =
@@ -349,6 +354,7 @@ export function inspectContinuityRecall(
       {
         searchTerms: explicitFactSearchTerms,
         scanLimit: EXPLICIT_FACT_SAFETY_SCAN_LIMIT,
+        suppressedMemoryIds: input.suppressedMemoryIds ?? [],
       },
     );
     const explicitFactEvidenceScan = readExplicitFactMemoryEvidenceScan(
@@ -723,6 +729,7 @@ export function inspectContinuityRecall(
     recallCandidateQueries(query).join("\n"),
     input.nowUtc,
     candidateLimit,
+    input.suppressedMemoryIds ?? [],
   );
   const basicCandidates = allBasicCandidates.filter((candidate) =>
     isEligibleDurableCandidateForIntent(
@@ -938,6 +945,7 @@ export function inspectContinuityRecall(
       temporal.digest,
       input.nowUtc,
       candidateLimit,
+      input.suppressedMemoryIds ?? [],
     );
     const digestPrepared = prepareCandidates(
       store,
@@ -996,6 +1004,7 @@ export function inspectContinuityRecall(
       agentId: input.agentId,
       query: query.query,
       limit: searchLimit,
+      suppressedMemoryIds: input.suppressedMemoryIds ?? [],
     })
     .filter(
       (message) =>
@@ -1059,6 +1068,7 @@ export function inspectContinuityRecall(
       temporal.digest,
       input.nowUtc,
       candidateLimit,
+      input.suppressedMemoryIds ?? [],
     );
     attempted = mergeCandidates(attempted, digestCandidates, candidateLimit);
     const digestPrepared = prepareCandidates(
@@ -1214,6 +1224,8 @@ function temporalContext(
       agentId: input.agentId,
       ...range,
       maxItems,
+      nowUtc: input.nowUtc,
+      suppressedMemoryIds: input.suppressedMemoryIds ?? [],
     });
 
     return {
@@ -1241,6 +1253,7 @@ function temporalContext(
     text: query.query,
     nowUtc: input.nowUtc,
     timezone,
+    suppressedMemoryIds: input.suppressedMemoryIds ?? [],
     anchors: temporalAnchorsFromEventCards(cards, query.query),
     maxItems,
   });
@@ -1434,8 +1447,18 @@ function dateDigestCandidates(
   digest: DateDigest,
   nowUtc: string,
   candidateLimit: number,
+  suppressedMemoryIds: readonly string[],
 ): HierarchyCandidate[] {
+  const suppressed = new Set(suppressedMemoryIds);
+  const validity = new MemoryValidityRepository(store);
   return digest.items
+    .filter(
+      (item) =>
+        item.sourceType !== "memory" ||
+        (!suppressed.has(item.sourceId) &&
+          validity.readSource(agentId, "memory", item.sourceId, nowUtc) !==
+            undefined),
+    )
     .slice(0, candidateLimit)
     .flatMap((item): HierarchyCandidate[] => {
       const memoryId =
@@ -1535,11 +1558,13 @@ function basicMemoryCandidates(
   query: string,
   nowUtc: string,
   candidateLimit: number,
+  suppressedMemoryIds: readonly string[],
 ): HierarchyCandidate[] {
   const memories = readRecallCandidateRecords(store, agentId, nowUtc, {
     candidateLimit,
     query,
     keywordLimit: 50,
+    suppressedMemoryIds,
   });
   return basicMemoryCandidatesFromMemories(store, memories);
 }

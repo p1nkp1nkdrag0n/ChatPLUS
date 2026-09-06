@@ -55,6 +55,7 @@ export class ConversationContextService {
     userText: string;
     nowUtc: string;
     timezone: string;
+    suppressedMemoryIds?: readonly string[];
   }): PreparedConversationContext {
     const continuity = this.continuity.preparePrompt({
       agentId: input.agentId,
@@ -66,9 +67,12 @@ export class ConversationContextService {
       text: input.userText,
       nowUtc: input.nowUtc,
       timezone: input.timezone,
+      suppressedMemoryIds: input.suppressedMemoryIds ?? [],
       anchors: this.continuityIndex.temporalAnchors({
         agentId: input.agentId,
         query: input.userText,
+        nowUtc: input.nowUtc,
+        suppressedMemoryIds: input.suppressedMemoryIds ?? [],
         limit: 20,
       }),
       maxItems: 20,
@@ -102,7 +106,11 @@ export class ConversationContextService {
     ];
     const autobiography =
       this.autobiographyMode === "enforced"
-        ? this.autobiographies.latest(input.agentId)?.snapshot
+        ? this.autobiographies.latest(
+            input.agentId,
+            input.nowUtc,
+            input.suppressedMemoryIds,
+          )?.snapshot
         : undefined;
 
     return {

@@ -47,6 +47,8 @@ describe("ConversationContextService", () => {
     });
     expect(fixture.temporalAnchors).toHaveBeenCalledWith({
       agentId: "agent-1",
+      nowUtc: NOW,
+      suppressedMemoryIds: [],
       query: "\u665a\u4f1a\u4e4b\u540e\u53d1\u751f\u4e86\u4ec0\u4e48\uff1f",
       limit: 20,
     });
@@ -167,6 +169,29 @@ describe("ConversationContextService", () => {
     expect(result.additionalPromptSegments).toEqual([]);
   });
 
+  it("forwards the turn clock and projection exclusions to autobiography and temporal anchors", () => {
+    const fixture = createFixture({
+      dateQuery: { resolution: { kind: "none" } },
+      autobiographyMode: "enforced",
+    });
+    fixture.service.prepare({
+      agentId: "agent-1",
+      userText: "最近怎么样？",
+      nowUtc: NOW,
+      timezone: "Asia/Shanghai",
+      suppressedMemoryIds: ["memory-withdrawn-preference"],
+    });
+    expect(fixture.latestAutobiography).toHaveBeenCalledWith("agent-1", NOW, [
+      "memory-withdrawn-preference",
+    ]);
+    expect(fixture.temporalAnchors).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nowUtc: NOW,
+        suppressedMemoryIds: ["memory-withdrawn-preference"],
+      }),
+    );
+  });
+
   it("adds bounded safe relationship artifacts through the optional provider", () => {
     const relationshipArtifacts = vi.fn(() => ({
       correspondence: [
@@ -227,6 +252,7 @@ function createFixture(input: {
   queryDateDigest: ReturnType<typeof vi.fn>;
   temporalAnchors: ReturnType<typeof vi.fn>;
   autobiographySnapshot: AgentAutobiographySnapshot;
+  latestAutobiography: ReturnType<typeof vi.fn>;
 } {
   const prepareContinuity = vi.fn(() => ({
     cueIds: ["cue-1", "cue-2"],
@@ -253,8 +279,12 @@ function createFixture(input: {
   const autobiographySnapshot = {
     id: "autobiography-1",
   } as unknown as AgentAutobiographySnapshot;
+  const latestAutobiography = vi.fn(() => ({
+    snapshot: autobiographySnapshot,
+    entries: [],
+  }));
   const autobiographies = {
-    latest: vi.fn(() => ({ snapshot: autobiographySnapshot, entries: [] })),
+    latest: latestAutobiography,
   } as unknown as AutobiographyService;
 
   const selectCalendar = vi.fn(() => []);
@@ -293,5 +323,6 @@ function createFixture(input: {
     queryDateDigest,
     temporalAnchors,
     autobiographySnapshot,
+    latestAutobiography,
   };
 }

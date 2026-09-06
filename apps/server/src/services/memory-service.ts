@@ -48,6 +48,7 @@ export function readActiveMemoryRecords(
   agentId: string,
   nowUtc: string,
   limit = 20,
+  suppressedMemoryIds: readonly string[] = [],
 ): Memory[] {
   const safeLimit = Math.max(0, Math.min(500, Math.trunc(limit)));
   if (safeLimit === 0) return [];
@@ -66,9 +67,15 @@ export function readActiveMemoryRecords(
        WHERE agent_id = ? AND status = 'active'
          AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND id NOT IN (SELECT value FROM json_each(?))
        ORDER BY importance DESC, created_at_utc DESC, id ASC LIMIT ?`,
     )
-    .all(agentId, nowUtc, safeLimit) as MemoryRow[];
+    .all(
+      agentId,
+      nowUtc,
+      JSON.stringify(suppressedMemoryIds),
+      safeLimit,
+    ) as MemoryRow[];
   return rows.map(memoryFromRow);
 }
 
@@ -76,6 +83,7 @@ export type RecallCandidatePoolInput = {
   candidateLimit: number;
   query: string;
   keywordLimit?: number;
+  suppressedMemoryIds?: readonly string[];
 };
 
 export type StableExplicitUserMemoryScan = {
@@ -94,7 +102,11 @@ export function readStableExplicitUserMemoryScan(
   store: DatabaseStore,
   agentId: string,
   nowUtc: string,
-  input: { searchTerms: readonly string[]; scanLimit: number },
+  input: {
+    searchTerms: readonly string[];
+    scanLimit: number;
+    suppressedMemoryIds?: readonly string[];
+  },
 ): StableExplicitUserMemoryScan {
   const scanLimit = Math.max(1, Math.min(500, Math.trunc(input.scanLimit)));
   const searchTerms = [
@@ -130,6 +142,7 @@ export function readStableExplicitUserMemoryScan(
          AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (claim_disposition IS NULL OR claim_disposition NOT IN ('cancelled', 'completed'))
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND id NOT IN (SELECT value FROM json_each(?))
          AND (${termClauses})
        ORDER BY importance DESC, created_at_utc DESC, id ASC
        LIMIT ?`,
@@ -137,6 +150,7 @@ export function readStableExplicitUserMemoryScan(
     .all(
       agentId,
       nowUtc,
+      JSON.stringify(input.suppressedMemoryIds ?? []),
       ...searchTerms.flatMap((term) => [term, term]),
       scanLimit + 1,
     ) as MemoryRow[];
@@ -171,6 +185,7 @@ export function readRecallCandidateRecords(
     agentId,
     nowUtc,
     candidateLimit,
+    input.suppressedMemoryIds ?? [],
   );
   const exactAnchors = recallExactIdentifierAnchors(input.query);
   const exactRows =
@@ -191,6 +206,7 @@ export function readRecallCandidateRecords(
              WHERE agent_id = ? AND status = 'active'
                AND superseded_by_id IS NULL AND merged_into_id IS NULL
                AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND id NOT IN (SELECT value FROM json_each(?))
                AND (${exactAnchors
                  .flatMap(() => [
                    "(' ' || lower(content) || ' ') GLOB ?",
@@ -203,6 +219,7 @@ export function readRecallCandidateRecords(
           .all(
             agentId,
             nowUtc,
+            JSON.stringify(input.suppressedMemoryIds ?? []),
             ...exactAnchors.flatMap((anchor) => {
               const pattern = `*[^a-z0-9_.:/-]${anchor}[^a-z0-9_.:/-]*`;
               return [pattern, pattern];
@@ -260,10 +277,15 @@ export function readRecallCandidateRecords(
        FROM memories
        WHERE agent_id = ? AND status = 'active'
          AND superseded_by_id IS NULL AND merged_into_id IS NULL
-         AND (valid_until_utc IS NULL OR valid_until_utc > ?)`,
+         AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND id NOT IN (SELECT value FROM json_each(?))`,
     )
-    .get(...keywordParams, agentId, nowUtc) as
-    Record<string, number | null> | undefined;
+    .get(
+      ...keywordParams,
+      agentId,
+      nowUtc,
+      JSON.stringify(input.suppressedMemoryIds ?? []),
+    ) as Record<string, number | null> | undefined;
   const scoreExpression = keywordTokens
     .map((_, index) => {
       const frequency = Number(frequencyRow?.[`token_${index}`] ?? 0);
@@ -289,6 +311,7 @@ export function readRecallCandidateRecords(
        WHERE agent_id = ? AND status = 'active'
          AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
+         AND id NOT IN (SELECT value FROM json_each(?))
          AND (${keywordClauses})
        ORDER BY (${scoreExpression}) DESC, importance DESC, created_at_utc DESC, id ASC
        LIMIT ?`,
@@ -296,6 +319,7 @@ export function readRecallCandidateRecords(
     .all(
       agentId,
       nowUtc,
+      JSON.stringify(input.suppressedMemoryIds ?? []),
       ...keywordParams,
       ...keywordParams,
       keywordLimit,

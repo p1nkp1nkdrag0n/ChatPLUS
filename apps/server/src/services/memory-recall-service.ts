@@ -53,6 +53,8 @@ export type AgentMemoryRecallInput = {
   limit?: number;
   maxEvidence?: number;
   contextPlan?: ConversationContextPlan;
+  /** Turn-local projection exclusions; underlying memories remain historical data. */
+  suppressedMemoryIds?: readonly string[];
   /**
    * Enforced chat prompts require every selected candidate to resolve to a
    * persisted, supported evidence source. Verified persisted EventCards
@@ -651,6 +653,7 @@ function prepareRecall(
       candidateLimit,
       query: recallCandidateQueries(query).join("\n"),
       keywordLimit: DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT,
+      suppressedMemoryIds: input.suppressedMemoryIds ?? [],
     },
   );
   const rawEvidence = readMemoryEvidence(

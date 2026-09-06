@@ -111,7 +111,10 @@ export class CheckpointService {
     const expectedMemoryRevision = validity.currentRevision(input.agentId);
     let proposal: AutobiographyRevisionProposal;
     try {
-      const previous = this.autobiography.latest(input.agentId);
+      const previous = this.autobiography.latest(
+        input.agentId,
+        this.clock.nowUtc(),
+      );
       // Intentionally outside a database transaction. The final phase fences
       // this asynchronous result with both the session revision and source hash.
       proposal = await this.model.generateAutobiography({
@@ -217,10 +220,20 @@ export class CheckpointService {
         ) {
           return this.invalidate(checkpoint.id, "source_changed");
         }
-        if (!this.autobiography.isCurrent(preparedAutobiography)) {
+        if (
+          !this.autobiography.isCurrent(
+            preparedAutobiography,
+            this.clock.nowUtc(),
+          )
+        ) {
           return this.invalidate(checkpoint.id, "autobiography_changed");
         }
-        if (!this.autobiography.persistPrepared(preparedAutobiography)) {
+        if (
+          !this.autobiography.persistPrepared(
+            preparedAutobiography,
+            this.clock.nowUtc(),
+          )
+        ) {
           return this.invalidate(checkpoint.id, "autobiography_changed");
         }
         this.continuityIndex.persistPrepared(preparedCards);

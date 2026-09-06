@@ -47,8 +47,15 @@ export type PreparedAutobiographyRevision =
 export class AutobiographyService {
   constructor(private readonly repository: ContinuityRepository) {}
 
-  latest(agentId: string): AutobiographyBundle | undefined {
-    return this.repository.getLatestAutobiography(agentId);
+  latest(
+    agentId: string,
+    nowUtc?: string,
+    suppressedMemoryIds: readonly string[] = [],
+  ): AutobiographyBundle | undefined {
+    return this.repository.getLatestAutobiography(agentId, {
+      ...(nowUtc === undefined ? {} : { nowUtc }),
+      suppressedMemoryIds,
+    });
   }
 
   prepareRevision(input: {
@@ -190,6 +197,7 @@ export class AutobiographyService {
 
   isCurrent(
     prepared: Extract<PreparedAutobiographyRevision, { accepted: true }>,
+    nowUtc = prepared.bundle.snapshot.createdAtUtc,
   ): boolean {
     const current = this.repository.getLatestAutobiography(
       prepared.bundle.snapshot.agentId,
@@ -200,7 +208,11 @@ export class AutobiographyService {
       validity.currentRevision(prepared.bundle.snapshot.agentId) ===
         prepared.expectedMemoryRevision &&
       prepared.sources.every((source) =>
-        validity.isSourceCurrent(prepared.bundle.snapshot.agentId, source),
+        validity.isSourceCurrent(
+          prepared.bundle.snapshot.agentId,
+          source,
+          nowUtc,
+        ),
       ) &&
       (current?.snapshot.revision ?? 0) === prepared.expectedPreviousRevision &&
       current?.snapshot.id === prepared.expectedPreviousSnapshotId
@@ -209,9 +221,10 @@ export class AutobiographyService {
 
   persistPrepared(
     prepared: Extract<PreparedAutobiographyRevision, { accepted: true }>,
+    nowUtc = prepared.bundle.snapshot.createdAtUtc,
   ): boolean {
-    if (!this.isCurrent(prepared)) return false;
-    this.repository.insertAutobiography(prepared.bundle);
+    if (!this.isCurrent(prepared, nowUtc)) return false;
+    this.repository.insertAutobiography(prepared.bundle, nowUtc);
     return true;
   }
 }

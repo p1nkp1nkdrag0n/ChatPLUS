@@ -82,6 +82,8 @@ export class ContinuityMemoryRepository {
     agentId: string;
     fromUtc: string;
     toUtc: string;
+    nowUtc?: string;
+    suppressedMemoryIds?: readonly string[];
   }): DateDigestFactRow[] {
     const activities = this.store.database
       .prepare(
@@ -99,9 +101,23 @@ export class ContinuityMemoryRepository {
       .prepare(
         `SELECT id, content, namespace, attribution,
           occurred_start_at_utc, occurred_end_at_utc
-         FROM memories
+         FROM memories AS candidate
          WHERE agent_id = ?
            AND status IN ('active', 'aging')
+           AND superseded_by_id IS NULL AND merged_into_id IS NULL
+           AND (? IS NULL OR valid_until_utc IS NULL OR valid_until_utc > ?)
+           AND id NOT IN (SELECT value FROM json_each(?))
+           AND NOT EXISTS (
+             SELECT 1 FROM memory_evidence candidate_source
+             JOIN memory_evidence excluded_source
+               ON excluded_source.source_type = 'message'
+               AND excluded_source.source_id = candidate_source.source_id
+             JOIN memories excluded_memory ON excluded_memory.id = excluded_source.memory_id
+             WHERE candidate_source.memory_id = candidate.id
+               AND candidate_source.source_type = 'message'
+               AND excluded_memory.agent_id = candidate.agent_id
+               AND excluded_memory.id IN (SELECT value FROM json_each(?))
+           )
            AND namespace IN ('shared_relationship', 'user_model')
            AND temporal_status = 'occurred'
            AND certainty = 'explicit'
@@ -110,7 +126,15 @@ export class ContinuityMemoryRepository {
            AND COALESCE(occurred_end_at_utc, occurred_start_at_utc) >= ?
          ORDER BY occurred_start_at_utc, rowid`,
       )
-      .all(input.agentId, input.toUtc, input.fromUtc) as Array<{
+      .all(
+        input.agentId,
+        input.nowUtc ?? null,
+        input.nowUtc ?? null,
+        JSON.stringify(input.suppressedMemoryIds ?? []),
+        JSON.stringify(input.suppressedMemoryIds ?? []),
+        input.toUtc,
+        input.fromUtc,
+      ) as Array<{
       id: string;
       content: string;
       namespace: "shared_relationship" | "user_model";

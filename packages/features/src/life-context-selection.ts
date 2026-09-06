@@ -3,8 +3,10 @@ import type {
   FuzzyLifePromptContext,
 } from "@personasim/contracts";
 
+import { deriveCurrentConversationRequests } from "./conversation-requests.js";
+
 const PROGRESS_REQUEST =
-  /(?:怎么样|怎样|如何|进展|进度|近况|后来|做完了吗|画完了吗|写完了吗|完成了吗|how (?:is|was|did)|what happened|any (?:news|progress)|finished)/iu;
+  /(?:怎么样|怎样|如何|做完了吗|画完了吗|写完了吗|完成了吗|(?:有|有什么).{0,8}(?:进展|进度|变化|消息).{0,3}(?:吗|没|呢)|(?:说说|讲讲|告诉我).{0,12}(?:进展|进度|近况)|(?:进展|进度|近况).{0,4}[?？]|how (?:is|was|did)|what happened|any (?:news|progress)|(?:is it|have you) finished)/iu;
 const OTHER_OWNER =
   /(?:别人|他人|其他人|(?:我|他|她|朋友|同事|妹妹|姐姐|弟弟|哥哥)的|(?:他|她|朋友|同事).{0,5}(?:有|画|写)|\b(?:someone else|their|her|his|my)\b)/iu;
 const EXCLUDED_LIFE =
@@ -20,18 +22,20 @@ const ARTIFACT_ALIASES = [
   /(?:剪辑)/u,
 ] as const;
 
-function matchingTitles(
-  query: string,
-  titles: readonly string[],
-  requestedHelp: boolean,
-): string[] {
+function matchingTitles(query: string, titles: readonly string[]): string[] {
   const matches = new Set<string>();
-  for (const clause of query
-    .replace(QUOTED_TEXT, "")
-    .split(/[。！？!?；;\n]/u)) {
+  const activeQuery = query.replace(QUOTED_TEXT, (quoted) => {
+    const content = quoted.slice(1, -1);
+    return titles.includes(content) ? content : "";
+  });
+  for (const clause of activeQuery.split(/(?<=[。！？!?；;\n])/u)) {
+    const requests = deriveCurrentConversationRequests(clause);
+    const requestedHelp =
+      requests.adviceRequested ||
+      requests.detailedAnalysisRequested ||
+      /(?:还记得|记不记得|回顾|回想|do you remember|look back)/iu.test(clause);
     if (
       OTHER_OWNER.test(clause) ||
-      EXCLUDED_LIFE.test(clause) ||
       (!PROGRESS_REQUEST.test(clause) && !requestedHelp)
     )
       continue;
@@ -228,25 +232,44 @@ export function selectLifeContextForTurn(input: {
       (key) => key !== "authority" && key !== "semantics",
     ),
   });
-  if (EXCLUDED_LIFE.test(plan.originalQuery)) return omitted();
-  const titles = matchingTitles(
-    plan.originalQuery,
-    [
-      ...new Set(
-        [
-          ...context.ongoingThreads,
-          ...context.unresolvedDilemmas,
-          ...context.recentDecisionDilemmas,
-        ].map((item) => item.title),
-      ),
-    ],
-    plan.intent === "help" ||
-      plan.intent === "recollection" ||
-      plan.intent === "relationship_repair",
+  const availableTitles = [
+    ...new Set(
+      [
+        ...context.ongoingThreads,
+        ...context.unresolvedDilemmas,
+        ...context.recentDecisionDilemmas,
+      ].map((item) => item.title),
+    ),
+  ];
+  const activeQuery = plan.originalQuery.replace(QUOTED_TEXT, (quoted) =>
+    availableTitles.includes(quoted.slice(1, -1)) ? quoted.slice(1, -1) : "",
   );
+  if (
+    activeQuery
+      .split(/[，,。！？!?；;\n]/u)
+      .some(
+        (clause) =>
+          EXCLUDED_LIFE.test(clause) &&
+          (availableTitles.some((title) => clause.includes(title)) ||
+            /(?:你的|你(?:最近|今天)|项目|近况|生活|your (?:project|life|day))/iu.test(
+              clause,
+            )),
+      )
+  )
+    return omitted();
+  const titles = matchingTitles(plan.originalQuery, availableTitles);
   // Retrieval expansions are candidate discovery, never permission to mention a life topic.
-  if (titles.length > 0) {
-    const selected = selectRelatedContext(context, titles, new Set());
+  const sourceIds = new Set(
+    plan.resolvedCurrentTopic?.basis === "recent_user_continuity"
+      ? plan.resolvedCurrentTopic.sourceMessageIds
+      : [],
+  );
+  if (titles.length > 0 || sourceIds.size > 0) {
+    const selected = selectRelatedContext(context, titles, sourceIds);
+    const hasSelectedEvidence = keys.some(
+      (key) => Array.isArray(selected[key]) && selected[key].length > 0,
+    );
+    if (!hasSelectedEvidence) return omitted();
     return {
       context: selected,
       omittedSections: keys.filter(

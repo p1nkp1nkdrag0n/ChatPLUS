@@ -84,6 +84,10 @@ describe("life context for conversation", () => {
     "城市速写画得怎么样了？",
     "你最近的城市速写进度如何？",
     "城市速写完成了吗？",
+    "“城市速写”画得怎么样了？",
+    "城市速写进展？",
+    "不用给我提建议，城市速写画得怎么样了？",
+    "她说“先别聊你的项目”。城市速写画得怎么样了？",
   ])(
     "selects the named project and its evidence without unrelated life: %s",
     (query) => {
@@ -158,6 +162,9 @@ describe("life context for conversation", () => {
     "我今天想买一本城市速写。",
     "她问我“城市速写画得怎么样了”，我觉得挺意外。",
     "我想到城市速写这个词。",
+    "城市速写后来搁置了，我只是转述这件事。",
+    "城市速写有进展这件事让我挺意外的。",
+    "今天看见城市速写。请帮我选晚饭。",
   ])(
     "does not authorize project disclosure from mentions, exclusions, or other owners: %s",
     (query) => {
@@ -177,6 +184,25 @@ describe("life context for conversation", () => {
     expect(
       selectLifeContextForTurn({ context: projectContext(), plan }).context,
     ).toBeUndefined();
+  });
+
+  it("keeps a proven conversational continuation within its linked causal branch", () => {
+    const plan = planFor("她又提了修改意见。");
+    plan.resolvedCurrentTopic = {
+      basis: "recent_user_continuity",
+      text: "城市速写的编辑让我改稿，她比较严格。\n她又提了修改意见。",
+      sourceMessageIds: ["sketch-message"],
+      policyVersion: "scoped_topic_v1",
+    };
+    const selected = selectLifeContextForTurn({
+      context: projectContext(),
+      plan,
+    }).context;
+    expect(
+      selected?.canonicalCausalFacts.map((item) => item.dilemmaId),
+    ).toEqual(["sketch-dilemma"]);
+    expect(selected?.ongoingThreads).toEqual([]);
+    expect(JSON.stringify(selected)).not.toContain("吉他");
   });
 });
 

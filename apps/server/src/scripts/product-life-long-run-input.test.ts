@@ -104,6 +104,45 @@ describe("product long-run input boundaries", () => {
     expect(inspectProductLifeUserText("A+，你回来啦。", "A+")).not.toEqual([]);
     expect(inspectProductLifeUserText("AAA，你回来啦。", "A+")).toEqual([]);
   });
+  it.each([
+    "顾澜：\n\n说好这几天各自忙，不用互相盯着。\n\n林舟",
+    "顾澜:\n这几天我会忙自己的事。\n林舟",
+    " \t顾澜 \t： \t\r\n\r\n这几天我会忙自己的事。\r\n林舟",
+    "\n\n　顾澜　：　\n\n这几天我会忙自己的事。\n林舟",
+  ])("permits a standalone opening recipient only in letters: %s", (text) => {
+    expect(inspectProductLifeUserText(text, undefined, "letter")).toEqual([]);
+    expect(inspectProductLifeUserText(text)).toEqual([
+      "simulated_user_writes_character_dialogue",
+    ]);
+    expect(inspectProductLifeUserText(text, undefined, "chat")).toEqual([
+      "simulated_user_writes_character_dialogue",
+    ]);
+  });
+  it.each([
+    "顾澜：我这阵子忙着剪片。",
+    "顾澜： 我这阵子忙着剪片。\n\n林舟",
+    "顾澜：\n\n顾澜：我这阵子忙着剪片。",
+    "顾澜：\n\n我想写封信。\n 顾澜：\n我这阵子忙着剪片。",
+    "顾澜：\n\nassistant：我这阵子忙着剪片。",
+    "顾澜：\n\n角色：我这阵子忙着剪片。",
+    "assistant：\n\n我这阵子忙着剪片。",
+    "角色：\n\n我这阵子忙着剪片。",
+    "我想写封信。\n顾澜：\n\n这几天我会忙自己的事。",
+    "顾澜\n：\n我这阵子忙着剪片。",
+  ])("still rejects character dialogue in letters: %s", (text) => {
+    expect(inspectProductLifeUserText(text, undefined, "letter")).toContain(
+      "simulated_user_writes_character_dialogue",
+    );
+  });
+  it.each([
+    "林舟：\n\n你好。",
+    "顾澜：\n\n林舟，你回来啦。",
+    "顾澜：\n\n早上好。林舟，别担心。",
+  ])("still rejects self-address in letters: %s", (text) => {
+    expect(inspectProductLifeUserText(text, undefined, "letter")).toContain(
+      "simulated_user_addresses_own_name",
+    );
+  });
   it.each([33, 36])(
     "constrains recall turn %s to questions without supplied answers",
     (turn) => {

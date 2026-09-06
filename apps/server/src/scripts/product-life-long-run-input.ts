@@ -111,6 +111,7 @@ export function productLifeRecallProbe(turn: number):
 export function inspectProductLifeUserText(
   text: string,
   userName = PRODUCT_LIFE_USER_NAME,
+  textKind: "chat" | "letter" = "chat",
 ): string[] {
   const escaped = userName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const selfAddress = new RegExp(
@@ -121,9 +122,15 @@ export function inspectProductLifeUserText(
     `(?:^|\\n)\\s*(?:顾澜|assistant|角色)\\s*[:：]`,
     "iu",
   );
+  // Only a letter's opening recipient line is a salutation. Keep every later
+  // speaker label and all self-address checks active, without changing the text.
+  const dialogueText =
+    textKind === "letter"
+      ? text.replace(/^\s*顾澜[^\S\r\n]*[:：][^\S\r\n]*\r?\n/u, "")
+      : text;
   return [
     ...(selfAddress.test(text) ? ["simulated_user_addresses_own_name"] : []),
-    ...(speakerLabel.test(text)
+    ...(speakerLabel.test(dialogueText)
       ? ["simulated_user_writes_character_dialogue"]
       : []),
   ];

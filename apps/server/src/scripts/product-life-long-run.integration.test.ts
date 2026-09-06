@@ -72,7 +72,7 @@ class FullRunFixtureUser extends FixtureLlmProvider {
       return Promise.resolve(
         input.schema.parse({
           subject: "一碗热汤的近况",
-          body: "顾澜，这几天我会少上线。最近开始认真给自己做晚饭，还没把每一个问题都想明白，但愿意从一碗热汤慢慢开始。谢谢你听我聊，等回来时也想听听你的近况。",
+          body: "顾澜：\n\n这几天我会少上线。最近开始认真给自己做晚饭，还没把每一个问题都想明白，但愿意从一碗热汤慢慢开始。谢谢你听我聊，等回来时也想听听你的近况。\n\n林舟",
         }),
       );
     }

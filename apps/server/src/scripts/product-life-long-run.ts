@@ -51,6 +51,7 @@ import {
 } from "./provider-metrics-summary.js";
 import {
   PRODUCT_LIFE_INPUT_PROTOCOL,
+  PRODUCT_LIFE_USER_NAME,
   appendProductLifeHistory,
   inspectProductLifeUserText,
   productLifePublicContext,
@@ -360,6 +361,7 @@ export async function runProductLifeLongRun(
     schema: z.ZodType<T>,
     brief: string,
     purpose: string,
+    textKind: "chat" | "letter" = "chat",
   ): Promise<T> {
     const publicContext = productLifePublicContext(history, clock.nowUtc());
     const input = {
@@ -441,6 +443,8 @@ export async function runProductLifeLongRun(
       const content = output as { text?: string; body?: string };
       repairIssues = inspectProductLifeUserText(
         content.text ?? content.body ?? "",
+        PRODUCT_LIFE_USER_NAME,
+        textKind,
       );
       append("model-io.jsonl", {
         actor: "user",
@@ -685,6 +689,7 @@ export async function runProductLifeLongRun(
               LetterSchema,
               "你将有几天不来聊天。写一封真实具体的信，回应此前顾澜公开说过的生活近况，讲清你自己已经做出的选择以及尚未发生的事，不预演回信。可以写一点对关系的感受，不要求制造纪念品。",
               "simulate_product_life_letter",
+              "letter",
             ),
           );
           const sent = await feature("letter-dispatch", () =>

@@ -482,6 +482,9 @@ export class ConversationService {
         : { liveWorldEffectsMode: this.options.liveWorldEffectsMode }),
     });
     const decidedTurn = await this.decisions.decide({
+      ...(selectedLifeContext.context === undefined
+        ? {}
+        : { lifeContext: selectedLifeContext.context }),
       ...(appliedContextPlan === undefined
         ? {}
         : { conversationPlan: appliedContextPlan }),

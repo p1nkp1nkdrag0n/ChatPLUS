@@ -1,6 +1,7 @@
 import type {
   ConversationContextPlan,
   EffectivePersonaSnapshot,
+  FuzzyLifePromptContext,
 } from "@personasim/contracts";
 
 import {
@@ -64,6 +65,7 @@ export class ReplyRepairService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    lifeContext?: FuzzyLifePromptContext;
     userText: string;
     invalidDecision: AgentTurnDecision | undefined;
     issues: unknown;
@@ -90,6 +92,7 @@ export class ReplyRepairService {
             ).character.persona,
             effectivePersona: practiceContext(input.effectivePersona),
             currentRequest: requestContext(input.conversationPlan),
+            lifeContext: input.lifeContext,
           },
         )}`,
         schema: agentTurnDecisionSchema,
@@ -104,6 +107,7 @@ export class ReplyRepairService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    lifeContext?: FuzzyLifePromptContext;
     userText: string;
     invalidResponse: PersonaChatResponse | undefined;
     issues: unknown;
@@ -133,6 +137,7 @@ export class ReplyRepairService {
             ).character.persona,
             effectivePersona: practiceContext(input.effectivePersona),
             currentRequest: requestContext(input.conversationPlan),
+            lifeContext: input.lifeContext,
             dialogue: input.effectivePersona?.dialogue ?? input.spec.dialogue,
             forbiddenMetaKnowledge: input.spec.knowledge.forbiddenMetaKnowledge,
           })}\n` +

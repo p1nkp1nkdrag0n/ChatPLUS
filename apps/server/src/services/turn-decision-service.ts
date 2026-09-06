@@ -1,6 +1,7 @@
 import type {
   ConversationContextPlan,
   EffectivePersonaSnapshot,
+  FuzzyLifePromptContext,
 } from "@personasim/contracts";
 import { DateTime } from "luxon";
 import {
@@ -312,6 +313,7 @@ export class TurnDecisionService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    lifeContext?: FuzzyLifePromptContext;
     userText: string;
     agentId: string;
     nowUtc: string;
@@ -403,6 +405,7 @@ export class TurnDecisionService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    lifeContext?: FuzzyLifePromptContext;
     userText: string;
     agentId: string;
     nowUtc: string;
@@ -487,6 +490,9 @@ export class TurnDecisionService {
       repairAttempted = true;
       const repaired = await this.repairs.repairFixtureDecision({
         spec: input.spec,
+        ...(input.lifeContext === undefined
+          ? {}
+          : { lifeContext: input.lifeContext }),
         ...(input.effectivePersona === undefined
           ? {}
           : { effectivePersona: input.effectivePersona }),
@@ -588,6 +594,7 @@ export class TurnDecisionService {
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
+    lifeContext?: FuzzyLifePromptContext;
     userText: string;
     agentId: string;
     nowUtc: string;
@@ -754,6 +761,9 @@ export class TurnDecisionService {
       repairAttempted = true;
       const repaired = await this.repairs.repairPersonaReply({
         spec: input.spec,
+        ...(input.lifeContext === undefined
+          ? {}
+          : { lifeContext: input.lifeContext }),
         ...(input.effectivePersona === undefined
           ? {}
           : { effectivePersona: input.effectivePersona }),

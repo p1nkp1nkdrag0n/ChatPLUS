@@ -285,10 +285,7 @@ export class ConversationService {
         : this.personaRuntime!.snapshot({
             baseSpec: spec,
             nowUtc,
-            topicText: [
-              input.text,
-              ...(contextPlan?.expandedQueries ?? []),
-            ].join("\n"),
+            topicText: contextPlan?.resolvedCurrentTopic?.text ?? input.text,
           });
     const effectivePersona =
       personaRuntimeMode === "enforced" ? personaSnapshot : undefined;

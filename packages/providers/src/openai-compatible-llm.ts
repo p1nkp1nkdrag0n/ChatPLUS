@@ -378,9 +378,11 @@ function responseMetricFields(untrusted: unknown): ResponseMetricFields {
   const rawFinishReason = choice?.finish_reason;
   const inputTokens = tokenCount(usage?.prompt_tokens);
   const outputTokens = tokenCount(usage?.completion_tokens);
-  // Qwen and GLM document this OpenAI-compatible read path; Qwen documents
-  // creation tokens in the same details object. Other protocols are not inferred.
-  const cacheReadTokens = tokenCount(details?.cached_tokens);
+  // Prefer the shared OpenAI-compatible path, with DeepSeek's documented field
+  // as a fallback. Cache misses are not cache writes and must not be inferred.
+  const nestedCacheReadTokens = tokenCount(details?.cached_tokens);
+  const cacheReadTokens =
+    nestedCacheReadTokens ?? tokenCount(usage?.prompt_cache_hit_tokens);
   const cacheWriteTokens = tokenCount(details?.cache_creation_input_tokens);
   return {
     usageSource: usage === undefined ? "unavailable" : "provider",
@@ -396,7 +398,10 @@ function responseMetricFields(untrusted: unknown): ResponseMetricFields {
       ? {}
       : {
           cacheReadTokens,
-          cacheReadSource: "usage.prompt_tokens_details.cached_tokens",
+          cacheReadSource:
+            nestedCacheReadTokens === undefined
+              ? "usage.prompt_cache_hit_tokens"
+              : "usage.prompt_tokens_details.cached_tokens",
         }),
     ...(cacheWriteTokens === undefined
       ? {}

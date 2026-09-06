@@ -17,6 +17,10 @@ import type {
   CheckpointAutobiographyModel,
   CheckpointAutobiographyModelInput,
 } from "./checkpoint-service.js";
+import {
+  continuitySemanticCatalog,
+  preserveUnverifiedAutobiographySources,
+} from "./evidence-validation-service.js";
 import type { LlmService } from "./llm-service.js";
 import {
   checkpointReportExcerpts,
@@ -320,31 +324,18 @@ function restoreProposal(
       continue;
     summaryParts.unshift(entry.content);
   }
-  const proposal = AutobiographyRevisionProposalSchema.parse({
+  let proposal = AutobiographyRevisionProposalSchema.parse({
     summaryFirstPerson: summaryParts.join("\n"),
     entries,
   });
-  // Report words come exclusively from complete server-owned excerpts.
-  // Other evidence summaries retain the existing grounding/occurrence checks.
+  const semanticCatalog = continuitySemanticCatalog(input);
+  proposal = preserveUnverifiedAutobiographySources({
+    proposal,
+    catalog: semanticCatalog,
+  });
   const validation = validateAutobiographyRevision({
     proposal,
-    evidenceCatalog: input.evidence.map((item) => ({
-      id: item.id,
-      sourceType: item.sourceType,
-      sourceId: item.sourceId,
-      text: item.text,
-      reliability: item.reliability,
-      ...(receipts.some((receipt) => receipt.evidenceId === item.id)
-        ? {
-            sourceReceipt: receipts.find(
-              (receipt) => receipt.evidenceId === item.id,
-            )!.content,
-          }
-        : {}),
-      ...(item.temporalStatus === undefined
-        ? {}
-        : { temporalStatus: item.temporalStatus }),
-    })),
+    evidenceCatalog: semanticCatalog,
   });
   if (!validation.accepted) {
     throw new CheckpointAutobiographyError(

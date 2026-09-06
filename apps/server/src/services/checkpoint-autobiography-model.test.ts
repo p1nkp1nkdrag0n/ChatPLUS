@@ -67,7 +67,7 @@ function fact(fields: Record<string, unknown> = {}) {
   return {
     basis: "evidence_summary",
     entryKind: "important_experience",
-    content: "我完成了公园跑步。",
+    content: activity.text,
     temporalStatus: "occurred",
     evidenceIds: [activity.id],
     fromUtc: activity.recordedAtUtc,
@@ -340,7 +340,7 @@ describe("checkpoint atomic report boundary", () => {
     const proposal = await model({
       entries: [fact()],
     }).model.generateAutobiography({ ...modelInput, evidence: [activity] });
-    expect(proposal.summaryFirstPerson).toBe("我完成了公园跑步。");
+    expect(proposal.summaryFirstPerson).toBe(activity.text);
     expect(proposal.entries[0]).toMatchObject({
       temporalStatus: "occurred",
       fromUtc: activity.recordedAtUtc,
@@ -410,12 +410,16 @@ describe("checkpoint atomic report boundary", () => {
     },
   );
 
-  it("still rejects ungrounded non-message summaries", async () => {
-    await expect(
-      model({
-        entries: [fact({ content: "月球采矿。" })],
-      }).model.generateAutobiography({ ...modelInput, evidence: [activity] }),
-    ).rejects.toThrow("entry_not_grounded");
+  it("replaces ungrounded non-message summaries with the complete source report", async () => {
+    const proposal = await model({
+      entries: [fact({ content: "月球采矿。" })],
+    }).model.generateAutobiography({ ...modelInput, evidence: [activity] });
+    expect(proposal.entries[0]).toMatchObject({
+      content: `来源记录原文：「${activity.text}」`,
+      temporalStatus: "unknown",
+      entryKind: "unresolved_thread",
+    });
+    expect(JSON.stringify(proposal)).not.toContain("月球采矿");
   });
 
   it("repairs an unknown excerpt ID once using the same server catalog", async () => {

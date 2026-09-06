@@ -419,8 +419,9 @@ describe("conversation continuity real path", () => {
     expect(evidence[0]).toMatchObject({
       sourceType: "message_archive",
       sourceId: archivedTurn.userMessage.id,
-      quote: archivedText.slice(0, 2_000),
+      contextSummary: "完整原文保存在消息档案中；本条不提供截断引文。",
     });
+    expect(evidence[0]?.quote).toBeUndefined();
     expect(evidence[0]?.id).not.toBe("evidence-checkpoint-fixture");
     expect(JSON.parse(entry?.source_evidence_ids_json ?? "[]")).toEqual([
       evidence[0]?.id,

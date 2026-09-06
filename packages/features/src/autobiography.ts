@@ -1,4 +1,7 @@
-import { normalizeText } from "./shared.js";
+import {
+  isCompleteEvidenceSelection,
+  validateEvidenceSemantics,
+} from "./evidence-semantics.js";
 
 export type AutobiographyEvidenceSourceTypeLike =
   "message_archive" | "activity_event" | "memory_evidence" | "domain_event";
@@ -19,6 +22,8 @@ export interface AutobiographyEvidenceCatalogItemLike extends AutobiographyEvide
   reliability: AutobiographyEvidenceReliabilityLike;
   /** A server-derived receipt for an oversized archived message. Never model-authored. */
   sourceReceipt?: string;
+  /** Server-owned full quote with verified speaker attribution. */
+  sourceReport?: string;
 }
 
 export type AutobiographyEntryKindLike =
@@ -71,46 +76,6 @@ export interface AutobiographyProjection {
   unresolvedThreads: string[];
   commitments: string[];
   sourceEvidenceIds: string[];
-}
-
-const STOP_WORDS = new Set([
-  "about",
-  "after",
-  "before",
-  "character",
-  "from",
-  "have",
-  "into",
-  "just",
-  "remember",
-  "that",
-  "their",
-  "then",
-  "this",
-  "with",
-]);
-
-function groundingFeatures(value: string): Set<string> {
-  const normalized = normalizeText(value);
-  const features = new Set<string>();
-  for (const word of normalized.match(/[a-z0-9]{3,}/gu) ?? []) {
-    if (!STOP_WORDS.has(word) && !/^\d+$/u.test(word)) features.add(word);
-  }
-  for (const run of normalized.match(/[\p{Script=Han}]{2,}/gu) ?? []) {
-    for (let index = 0; index < run.length - 1; index += 1) {
-      features.add(run.slice(index, index + 2));
-    }
-  }
-  return features;
-}
-
-function isGrounded(content: string, evidenceText: string): boolean {
-  const contentFeatures = groundingFeatures(content);
-  if (contentFeatures.size === 0) return false;
-  for (const feature of groundingFeatures(evidenceText)) {
-    if (contentFeatures.has(feature)) return true;
-  }
-  return false;
 }
 
 function supportsOccurrence(
@@ -190,7 +155,17 @@ export function validateAutobiographyRevision(input: {
     if (
       resolved.length > 0 &&
       !sourceReceipt &&
-      !resolved.some((evidence) => isGrounded(entry.content, evidence.text))
+      !resolved.some(
+        (evidence) =>
+          validateEvidenceSemantics({
+            candidate: entry.content,
+            sourceText: evidence.text,
+            allowVerbatim: evidence.sourceType !== "message_archive",
+            ...(evidence.sourceReport === undefined
+              ? {}
+              : { verifiedReport: evidence.sourceReport }),
+          }).verdict === "supported",
+      )
     ) {
       issues.push({
         code: "entry_not_grounded",
@@ -199,7 +174,8 @@ export function validateAutobiographyRevision(input: {
       });
     }
     if (
-      entry.temporalStatus === "occurred" &&
+      (entry.temporalStatus === "occurred" ||
+        entry.temporalStatus === "in_progress") &&
       !resolved.some(supportsOccurrence)
     ) {
       issues.push({
@@ -211,12 +187,12 @@ export function validateAutobiographyRevision(input: {
     }
   }
 
-  const combinedEntries = input.proposal.entries
-    .map((entry) => entry.content)
-    .join(" ");
   if (
     input.proposal.entries.length > 0 &&
-    !isGrounded(input.proposal.summaryFirstPerson, combinedEntries)
+    !isCompleteEvidenceSelection(
+      input.proposal.summaryFirstPerson,
+      input.proposal.entries.map((entry) => entry.content),
+    )
   ) {
     issues.push({
       code: "summary_not_grounded",

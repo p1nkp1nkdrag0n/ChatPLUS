@@ -17,7 +17,10 @@ import type {
   AutobiographyBundle,
   ContinuityRepository,
 } from "./continuity-repository.js";
-import { checkpointLongMessageReceipts } from "./checkpoint-report-excerpts.js";
+import {
+  continuitySemanticCatalog,
+  preserveUnverifiedAutobiographySources,
+} from "./evidence-validation-service.js";
 
 export interface VerifiedContinuityEvidence extends ContinuityEvidenceRef {
   text: string;
@@ -69,7 +72,7 @@ export class AutobiographyService {
     const catalogById = new Map(
       input.evidenceCatalog.map((evidence) => [evidence.id, evidence]),
     );
-    const authoritativeProposal = {
+    let authoritativeProposal = {
       ...parsedProposal.data,
       entries: parsedProposal.data.entries.map((entry) => ({
         ...entry,
@@ -86,27 +89,17 @@ export class AutobiographyService {
         }),
       })),
     };
-    const receipts = new Map(
-      checkpointLongMessageReceipts({
-        messages: input.sourceMessages,
-        evidence: input.evidenceCatalog,
-      }).map((item) => [item.evidenceId, item.content]),
-    );
+    const semanticCatalog = continuitySemanticCatalog({
+      messages: input.sourceMessages,
+      evidence: input.evidenceCatalog,
+    });
+    authoritativeProposal = preserveUnverifiedAutobiographySources({
+      proposal: authoritativeProposal,
+      catalog: semanticCatalog,
+    });
     const validation = validateAutobiographyRevision({
       proposal: authoritativeProposal,
-      evidenceCatalog: input.evidenceCatalog.map((evidence) => ({
-        id: evidence.id,
-        sourceType: evidence.sourceType,
-        sourceId: evidence.sourceId,
-        text: evidence.text,
-        ...(evidence.temporalStatus === undefined
-          ? {}
-          : { temporalStatus: evidence.temporalStatus }),
-        reliability: evidence.reliability,
-        ...(receipts.has(evidence.id)
-          ? { sourceReceipt: receipts.get(evidence.id)! }
-          : {}),
-      })),
+      evidenceCatalog: semanticCatalog,
     });
     const projection = buildAutobiographyProjection({
       proposal: authoritativeProposal,
@@ -192,7 +185,9 @@ export function messageEvidence(
     id: stableId("evidence", `message_archive:${message.id}`),
     sourceType: "message_archive",
     sourceId: message.id,
-    quote: message.content.slice(0, 2_000),
+    ...(message.content.length <= 2_000
+      ? { quote: message.content }
+      : { contextSummary: "完整原文保存在消息档案中；本条不提供截断引文。" }),
     temporalStatus: "unknown",
     reliability: "reported",
     recordedAtUtc: message.createdAtUtc,

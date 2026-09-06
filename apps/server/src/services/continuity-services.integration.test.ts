@@ -61,6 +61,83 @@ describe("continuity services", () => {
     database.close();
   });
 
+  it.each([
+    ["我没有辞职，只是考虑过。", "用户已经辞职。"],
+    ["我不是不喜欢父亲，今天只是不想谈。", "用户不喜欢父亲。"],
+    ["她说自己准备搬家。", "用户准备搬家。"],
+    ["如果拿到录取，我就搬过去。", "用户已经决定搬家。"],
+    ["今天我什么人都不想见。", "用户不喜欢社交。"],
+    ["我已经通过面试。", "系统独立验证用户已通过面试。"],
+  ])(
+    "preserves the complete source through checkpoint persistence: %s",
+    async (original, invented) => {
+      insertMessage(store, {
+        id: "semantic_user",
+        role: "user",
+        messageKind: "user",
+        content: original,
+        createdAtUtc: "2026-08-21T00:00:00.000Z",
+      });
+      insertMessage(store, {
+        id: "semantic_reply",
+        role: "assistant",
+        messageKind: "assistant_reply",
+        inReplyToMessageId: "semantic_user",
+        content: "我在听。",
+        createdAtUtc: "2026-08-21T00:01:00.000Z",
+      });
+      for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
+      const repository = new ContinuityRepository(store);
+      const model: CheckpointAutobiographyModel = {
+        async generateAutobiography(input) {
+          const evidence = input.evidence.find(
+            (item) => item.sourceId === "semantic_user",
+          )!;
+          return {
+            summaryFirstPerson: invented,
+            entries: [
+              {
+                entryKind: "important_experience",
+                content: invented,
+                temporalStatus: "unknown",
+                evidence: [toEvidenceRef(evidence)],
+              },
+            ],
+          };
+        },
+      };
+      const result = await createServices(
+        repository,
+        model,
+        clock,
+      ).checkpoints.createIfNeeded({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+      });
+      expect(result.status).toBe("committed");
+      const reloaded = new AutobiographyService(
+        new ContinuityRepository(store),
+      ).latest(AGENT_ID)!;
+      const report = `对方在对话中说过：「${original}」`;
+      expect(reloaded.entries[0]).toMatchObject({
+        content: report,
+        temporalStatus: "unknown",
+        entryKind: "unresolved_thread",
+      });
+      expect(reloaded.snapshot.summaryFirstPerson).toBe(report);
+      if (result.status === "committed")
+        expect(result.eventCards[0]).toMatchObject({
+          summary: report,
+          temporalMetadata: { temporalStatus: "unknown" },
+        });
+      expect(
+        repository
+          .listArchivedMessages(SESSION_ID)
+          .find((message) => message.id === "semantic_user")?.content,
+      ).toBe(original);
+    },
+  );
+
   it("persists repeated failures, backs off across service restarts, and commits the original window after recovery", async () => {
     for (let index = 0; index < 4; index += 1) insertLargeTurn(store, index);
     const repository = new ContinuityRepository(store);
@@ -1462,7 +1539,10 @@ class FakeCheckpointModel implements CheckpointAutobiographyModel {
     await this.beforeReturn?.();
     const evidence = input.evidence[0];
     if (evidence === undefined) throw new Error("Missing checkpoint evidence.");
-    const content = evidence.text.slice(0, 500).trim();
+    const source = input.messages.find(
+      (message) => message.id === evidence.sourceId,
+    );
+    const content = `${source?.role === "user" ? "对方" : "我"}在对话中说过：「${evidence.text.trim()}」`;
     return {
       summaryFirstPerson: content,
       entries: [

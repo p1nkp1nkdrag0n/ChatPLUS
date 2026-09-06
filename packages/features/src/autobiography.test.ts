@@ -17,11 +17,11 @@ const EVIDENCE: AutobiographyEvidenceCatalogItemLike = {
 
 function proposal(evidenceId = EVIDENCE.id) {
   return {
-    summaryFirstPerson: "I remember the morning run.",
+    summaryFirstPerson: EVIDENCE.text,
     entries: [
       {
         entryKind: "important_experience" as const,
-        content: "I finished the morning run.",
+        content: EVIDENCE.text,
         temporalStatus: "occurred" as const,
         evidence: [
           {
@@ -114,8 +114,8 @@ describe("autobiography evidence validation", () => {
         validation,
       }),
     ).toEqual({
-      summaryFirstPerson: "I remember the morning run.",
-      importantExperiences: ["I finished the morning run."],
+      summaryFirstPerson: EVIDENCE.text,
+      importantExperiences: [EVIDENCE.text],
       relationshipChanges: [],
       activeGoals: [],
       unresolvedThreads: [],

@@ -1,5 +1,6 @@
 export * from "./activity-affinity.js";
 export * from "./autobiography.js";
+export * from "./evidence-semantics.js";
 export * from "./calendar-relevance.js";
 export * from "./checkpoint.js";
 export * from "./character-time.js";

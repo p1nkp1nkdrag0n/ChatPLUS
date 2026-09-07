@@ -136,7 +136,7 @@ describe("companion character compilation", () => {
     const result = authoritativeOriginalDraft(candidate, INPUT, fallback);
     expect(result.persona.traits[0]).toMatchObject({
       ...fallback.persona.traits[0],
-      id: expect.any(String),
+      id: result.persona.traits[0]?.id,
     });
     expect(result.persona.traits[0]?.id).not.toBe("trait-1");
     expect(result.persona.traits[1]).toEqual({

@@ -63,6 +63,7 @@ describe("PersonaSim server integration", () => {
         "024_persona_runtime.sql",
         "025_continuity_grounding.sql",
         "026_pressure_evidence_validity.sql",
+        "027_stored_item_extraction_repair.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -1217,8 +1218,15 @@ describe("PersonaSim server integration", () => {
         ),
     ).toBe(true);
     expect(generated.persona.traits[0]?.description).toBe(
-      "这段模型生成的可观察描述应被保留。",
+      buildOriginalDraft(originalInput).persona.traits[0]?.description,
     );
+    expect(
+      generated.persona.traits.find((trait) => trait.name === "模型替换特质"),
+    ).toMatchObject({
+      description: "这段模型生成的可观察描述应被保留。",
+      origin: "model_inference",
+      sourceRefs: ["original-form"],
+    });
     expect(generated.persona.contradictions[0]?.sideA).toBe(
       originalInput.coreContradiction,
     );

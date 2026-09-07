@@ -92,6 +92,57 @@ describe("versioned relative state attribution", () => {
     );
   });
 
+  it.each(["user", "character"] as const)(
+    "keeps the %s speaker as experiencer of a coordinated mixed feeling",
+    (speakerRole) => {
+      const text = "这个结果让我又松了一口气，又有点难受。";
+      const result = candidates(text, speakerRole);
+      expect(result).toContainEqual(
+        expect.objectContaining({
+          sourceText: "又有点难受",
+          speakerRole,
+          experiencer: "speaker",
+          bindingMethod: "local_ellipsis",
+          modality: "asserted",
+        }),
+      );
+      for (const item of result) {
+        expect(text.slice(item.sourceSpan.start, item.sourceSpan.end)).toBe(
+          item.sourceText,
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["这个结果让她又松了一口气，又有点难受。", "third_party"],
+    ["这个结果让我又松了一口气，你又有点难受。", "addressee"],
+    ["这个结果让我又松了一口气。又有点难受。", "unknown"],
+    ["这个结果让我又松了一口气，另一个话题，又有点难受。", "unknown"],
+  ] as const)(
+    "retains subject and scope boundaries for repeated feelings: %s",
+    (text, experiencer) => {
+      expect(
+        candidates(text).find((item) => item.kind === "pressure"),
+      ).toMatchObject({ experiencer });
+    },
+  );
+
+  it.each([
+    "她说‘这个结果让我又松了一口气，又有点难受。’",
+    "如果这个结果让我又松了一口气，又有点难受。",
+  ])(
+    "does not assert a quoted or conditional coordinated feeling: %s",
+    (text) => {
+      expect(
+        candidates(text).filter(
+          (item) =>
+            item.experiencer === "speaker" && item.modality === "asserted",
+        ),
+      ).toEqual([]);
+    },
+  );
+
   it("retains quantified pressure and feedback with raw source spans", () => {
     const text =
       "🎬　我最近加班，　累得不行。\n我压力是 0.72。你这样说让我感到被理解，压力缓解了。";

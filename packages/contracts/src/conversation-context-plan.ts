@@ -38,7 +38,38 @@ export const ConversationContextPlanSchema = z
     advicePolicy: z
       .enum(["requested", "none_now", "optional_light"])
       .optional(),
-    advicePolicyVersion: z.enum(["advice_load_v1", "advice_load_v2"]).optional(),
+    advicePolicyVersion: z
+      .enum(["advice_load_v1", "advice_load_v2"])
+      .optional(),
+    questionIntent: z
+      .enum(["none", "natural_optional", "necessary_for_explicit_task"])
+      .optional(),
+    questionIntentReason: z
+      .enum([
+        "closed_vent",
+        "clarified_third_party",
+        "explicit_clarification",
+        "ordinary",
+      ])
+      .optional(),
+    expressionContext: z
+      .object({
+        policyVersion: z.literal("turn_expression_v1"),
+        windowSize: z.literal(5),
+        repeatedOpenings: z
+          .array(
+            z
+              .object({
+                text: z.string().min(1).max(80),
+                count: z.number().int().min(2).max(5),
+              })
+              .strict(),
+          )
+          .max(5),
+        protectedPhrases: z.array(z.string().max(200)).max(24),
+      })
+      .strict()
+      .optional(),
     /** Topic eligibility is separate from unresolved retrieval candidates. */
     resolvedCurrentTopic: z
       .object({

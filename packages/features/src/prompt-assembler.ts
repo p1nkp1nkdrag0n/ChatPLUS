@@ -10,6 +10,7 @@ import type {
 } from "@personasim/contracts";
 
 import { deriveAdvicePolicy } from "./advice-policy.js";
+import { turnExpressionPromptView } from "./turn-expression-policy.js";
 import { interactionEvidencePromptView } from "./interaction-attribution.js";
 import type { MemoryLike } from "./memory-engine.js";
 import { selectCharacterContextForTurn } from "./character-context-selection.js";
@@ -930,6 +931,7 @@ export function assembleChatPrompt(
             adviceRequested: input.conversationPlan.adviceRequested,
             helpTiming: input.conversationPlan.helpTiming,
             advicePolicy: deriveAdvicePolicy(input.conversationPlan),
+            expression: turnExpressionPromptView(input.conversationPlan),
             adviceGuidance:
               "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
             guidance:

@@ -8,11 +8,16 @@ import {
 import { deriveCurrentConversationRequests } from "./conversation-requests.js";
 import { resolveCurrentConversationTopic } from "./conversation-topic.js";
 import { ADVICE_POLICY_VERSION, deriveAdvicePolicy } from "./advice-policy.js";
+import {
+  buildTurnExpressionContext,
+  deriveQuestionIntent,
+} from "./turn-expression-policy.js";
 
 export interface ConversationContextPlanInput {
   originalQuery: string;
   agentId: string;
   sessionId: string;
+  protectedPhrases?: readonly string[];
   /** Chronological retained original messages from this conversation. */
   recentMessages: readonly Pick<
     Message,
@@ -99,6 +104,20 @@ export function buildConversationContextPlan(
     adviceRequested,
     detailedAnalysisRequested,
     supportStyle,
+    ...deriveQuestionIntent(originalQuery),
+    expressionContext: buildTurnExpressionContext({
+      assistantTexts: input.recentMessages
+        .filter(
+          (message) =>
+            message.agentId === input.agentId &&
+            message.sessionId === input.sessionId &&
+            message.role === "assistant",
+        )
+        .map((message) => message.text),
+      ...(input.protectedPhrases === undefined
+        ? {}
+        : { protectedPhrases: input.protectedPhrases }),
+    }),
     helpTiming: requests.helpTiming,
     requestPolicyVersion: "clause_requests_v1",
     advicePolicy: deriveAdvicePolicy({

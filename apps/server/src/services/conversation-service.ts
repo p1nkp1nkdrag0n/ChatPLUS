@@ -279,6 +279,11 @@ export class ConversationService {
             originalQuery: input.text,
             agentId: input.agentId,
             sessionId,
+            protectedPhrases: ["user_spec", "canon_extract"].includes(
+              spec.dialogue.frequentPhrasesOrigin ?? "",
+            )
+              ? spec.dialogue.frequentPhrases
+              : [],
             recentMessages: recentMessages.map((message) => ({
               id: message.id,
               agentId: message.agentId,

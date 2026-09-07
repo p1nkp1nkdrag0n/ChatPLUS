@@ -13,6 +13,7 @@ import {
   selectCharacterContextForTurn,
   deriveAdvicePolicy,
   interactionEvidencePromptView,
+  turnExpressionPromptView,
   type ReplyStrategy,
 } from "@personasim/features";
 
@@ -62,6 +63,7 @@ function requestContext(plan: ConversationContextPlan | undefined) {
     adviceRequested: plan.adviceRequested,
     helpTiming: plan.helpTiming,
     advicePolicy: deriveAdvicePolicy(plan),
+    expression: turnExpressionPromptView(plan),
     guidance:
       "Current explicit requests override stored defaults. For after_user_finishes, listen now and provide the requested help only after the user finishes. none_now permits no action instructions; optional_light permits at most one light optional suggestion, not a task list. If timing is unspecified, do not impose either conflicting style.",
   };

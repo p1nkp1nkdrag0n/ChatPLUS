@@ -2,7 +2,6 @@ import type { ConversationContextPlan } from "@personasim/contracts";
 import {
   deriveQuestionIntent,
   hasProtectedTurnOpening,
-  turnOpening,
   TURN_EXPRESSION_OPENINGS,
 } from "@personasim/features";
 
@@ -86,13 +85,10 @@ export function buildConversationQualityMetrics(input: {
     judgments.set(judgment.turnId, judgment);
   }
   const openingMetrics = phrases.map((phrase) => {
-    const isCommonMarker = (
-      TURN_EXPRESSION_OPENINGS as readonly string[]
-    ).includes(phrase);
+    // This worksheet counts literal phrase starts. Runtime cue detection is
+    // deliberately narrower and must not turn "听起来很惬意" into a zero start.
     const isOpening = (turn: ConversationQualityTurn) =>
-      isCommonMarker
-        ? turnOpening(turn.assistantText) === phrase
-        : turn.assistantText.trimStart().startsWith(phrase);
+      turn.assistantText.trimStart().startsWith(phrase);
     const occurrenceTurnIds = input.turns
       .filter((turn) => turn.assistantText.includes(phrase))
       .map((turn) => turn.turnId);

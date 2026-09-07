@@ -11,6 +11,22 @@ const turn = (
 ): ConversationQualityTurn => ({ turnId, assistantText, userText });
 
 describe("independent final-reply quality worksheet", () => {
+  it("counts literal opening phrases even when a sentence continues without punctuation", () => {
+    const result = buildConversationQualityMetrics({
+      turns: [
+        turn("t2", "听起来这一天挺耗神的。"),
+        turn("t10", "听起来很惬意。"),
+        turn("t11", "这件事听起来不错。"),
+      ],
+    });
+    expect(
+      result.openingMetrics.find((metric) => metric.phrase === "听起来"),
+    ).toMatchObject({
+      occurrenceTurns: 3,
+      openingTurns: 2,
+      openingTurnIds: ["t2", "t10"],
+    });
+  });
   it("counts occurrence turns, starts and consecutive runs separately", () => {
     const result = buildConversationQualityMetrics({
       turns: [

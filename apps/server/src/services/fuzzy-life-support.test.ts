@@ -1,8 +1,69 @@
 import { describe, expect, it } from "vitest";
+import qwenRegressions from "../test-fixtures/qwen-fresh-regressions.json";
 import {
   analyzeCharacterSupportOffer,
   analyzeSpeakerSelfDisclosure,
 } from "./fuzzy-life-support.js";
+
+// The complete delivered T8 reply from the fresh Qwen 2026-09-07 pilot.
+// Keeping the surrounding cognition and topic clauses catches ownership leakage
+// that the isolated fatigue clause does not reproduce.
+const QWEN_T8_REPLY = qwenRegressions.pressure.assistantText;
+
+describe("state experiencer boundaries", () => {
+  it("binds the person affected after a state predicate instead of the grammatical topic", () => {
+    expect(
+      analyzeSpeakerSelfDisclosure(
+        "最近工作上有件事一直压着我，我一想到要处理，肩膀就会绷起来。",
+      ).pressureText,
+    ).toContain("一直压着我");
+    expect(
+      analyzeSpeakerSelfDisclosure("最近这件事一直压着你。").pressureText,
+    ).toBe("");
+  });
+  it("keeps a locally contrasted pair of explicit self scales without inheriting a new emotional topic", () => {
+    expect(
+      analyzeSpeakerSelfDisclosure(
+        "我的压力还是 7/10，但清晰度大概到 5/10 了。",
+      ).pressureText,
+    ).toContain("清晰度大概到 5/10");
+    expect(
+      analyzeSpeakerSelfDisclosure("我压力 7/10，但最近她很累。").pressureText,
+    ).not.toContain("她");
+  });
+  it("does not give the character pressure from the complete real T8 analysis", () => {
+    expect(analyzeSpeakerSelfDisclosure(QWEN_T8_REPLY).pressureText).toBe("");
+  });
+
+  it.each([
+    "我觉得可以分开来看，这时你的疲惫是合理的反应。",
+    "我理解你的疲惫。",
+    "我觉得你很累。最近压力很大。",
+    "她说‘我压力很大’。",
+    "如果是我，我可能也会焦虑。",
+    "我并不疲惫，只是在理解你。",
+    "我最近加班。最近压力很大。",
+    "我最近加班，另外这个项目的压力很大。",
+  ])(
+    "does not infer a speaker state from a different or unresolved experiencer: %s",
+    (text) => {
+      expect(analyzeSpeakerSelfDisclosure(text).pressureText).toBe("");
+    },
+  );
+
+  it.each([
+    ["我最近压力很大，累得不行。", "我最近压力很大，累得不行"],
+    ["我最近加班，累得不行。", "累得不行"],
+    ["听你这么说，我也有点难受。", "我也有点难受"],
+    ["我觉得我有点累。", "我觉得我有点累"],
+    ["我最近压力很大。", "我最近压力很大"],
+  ])(
+    "retains explicit self experience and bounded ellipsis: %s",
+    (text, expected) => {
+      expect(analyzeSpeakerSelfDisclosure(text).pressureText).toBe(expected);
+    },
+  );
+});
 
 describe("speaker-owned disclosures and offered support", () => {
   it.each([
@@ -19,6 +80,15 @@ describe("speaker-owned disclosures and offered support", () => {
     expect(result.dilemmaText).toContain("重剪结尾和保留原版");
     expect(result.pressureText).toBe("我也有点累");
     expect(result.dilemmaText).not.toContain("你今天");
+  });
+
+  it("retains the affected speaker's feedback without inventing pressure relief", () => {
+    const result = analyzeSpeakerSelfDisclosure(
+      "你刚才的陪伴让我觉得被听见了一点，但压力还是 8/10，别自动把它写成已经缓解。",
+      true,
+    );
+    expect(result.feedbackText).toBe("你刚才的陪伴让我觉得被听见了一点");
+    expect(result.feedbackText).not.toContain("缓解");
   });
 
   it.each([

@@ -80,6 +80,7 @@ import {
   type LongRunTurnHttpResult,
 } from "./companion-long-run-v2-runtime.js";
 import {
+  buildLongRunV3ServerConfig,
   evaluateLongRunV3FrontendMigrationSources,
   type LongRunV3ExecutionContext,
 } from "./companion-long-run-v3-runner.js";
@@ -1502,32 +1503,8 @@ function createExecutionRuntime(
 ): LongRunV3Runtime {
   const fixture = context.options.profile === "fixture";
   const config: ServerConfig = {
-    ...context.serverConfig,
-    nodeEnv: "test",
-    profile: "companion-long-run-v3",
-    databasePath,
-    clockMode: "fake",
+    ...buildLongRunV3ServerConfig(context.serverConfig, databasePath, fixture),
     fakeClockStart: startAtUtc,
-    developerRoutes: true,
-    seedDemo: false,
-    chatEffectsMode: "gated",
-    lifePlanningMode: "fuzzy",
-    scheduleNegotiationMode: "legacy",
-    selfInitiatedPlanningMode: "off",
-    liveWorldEffectsMode: "enforced",
-    memoryRecallMode: "enforced",
-    autobiographyMode: "off",
-    ...(fixture
-      ? {
-          llm: {
-            provider: "fixture" as const,
-            baseUrl: "http://fixture.invalid",
-            model: "personasim-fixture-v1",
-            timeoutMs: 5_000,
-            maxRetries: 0,
-          },
-        }
-      : {}),
   };
   return new LongRunV3Runtime({
     databasePath,

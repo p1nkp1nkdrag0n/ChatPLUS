@@ -423,6 +423,26 @@ describe("companion long-run v3 artifacts", () => {
     expect(() =>
       assertLongRunV3ResumeCompatible(incompatible, checkpoint),
     ).toThrow("Checkpoint is incompatible");
+    for (const flag of [
+      "companionContextMode",
+      "personaRuntimeMode",
+    ] as const) {
+      expect(() =>
+        assertLongRunV3ResumeCompatible(
+          {
+            ...manifest,
+            featureFlags: { ...manifest.featureFlags, [flag]: "enforced" },
+          },
+          checkpoint,
+        ),
+      ).toThrow("Checkpoint is incompatible");
+    }
+    expect(() =>
+      assertLongRunV3ResumeCompatible(
+        { ...manifest, configSha256: "changed-final-config" },
+        checkpoint,
+      ),
+    ).toThrow("Checkpoint is incompatible");
 
     await writeFile(result.paths.conversation, "active growth", "utf8");
     await expect(

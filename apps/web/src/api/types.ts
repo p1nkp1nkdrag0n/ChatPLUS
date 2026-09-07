@@ -1,5 +1,6 @@
 import type {
   CharacterKnowledge,
+  CharacterAuthorityAudit,
   DialogueStyle,
   EvidenceBundle,
   FuzzyLifePromptContext,
@@ -95,6 +96,7 @@ export interface ValueRule extends ProvenanceRule {
 }
 
 export interface CharacterSpec {
+  authorityAudit?: CharacterAuthorityAudit | undefined;
   id: string;
   version: number;
   status: CharacterStatus;

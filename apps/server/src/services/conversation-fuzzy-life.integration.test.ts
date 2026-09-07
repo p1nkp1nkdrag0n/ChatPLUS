@@ -18,7 +18,9 @@ import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { LifeRepository } from "../repositories/life-repository.js";
 import { FakeClock } from "../runtime/clock.js";
+import qwenRegressions from "../test-fixtures/qwen-fresh-regressions.json";
 import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
+import { getLongRunV3Turn } from "../scenarios/companion-long-run-v3-manifest.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { FixtureTurnBehavior } from "./turn-decision-service.js";
 import {
@@ -83,6 +85,81 @@ describe("fuzzy-life conversation integration", () => {
     if (app !== undefined) await app.close();
     app = undefined;
     vi.restoreAllMocks();
+  });
+
+  it("persists T65 listening from its actual fixture reply without inventing a decision or outcome", async () => {
+    app = await createTestApp(companionLongRunV3FixtureBehavior);
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reviewed-t65-existing-pressure",
+      "最近工作上有件事一直压着我，我一想到要处理，肩膀就会绷起来。",
+    );
+    const supportCountBefore = scalarCount(app, "support_interventions");
+    const turn = getLongRunV3Turn(65);
+    if (typeof turn.userText !== "string")
+      throw new Error("Expected literal T65");
+    const response = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reviewed-t65-listen-only",
+      turn.userText,
+    );
+    expect(response.assistantMessage.content).toBe(
+      companionLongRunV3FixtureBehavior.semanticReply?.({
+        userText: turn.userText,
+        prompt: "",
+      }),
+    );
+    expect(scalarCount(app, "support_interventions")).toBe(
+      supportCountBefore + 1,
+    );
+    expect(
+      latestJson<SupportIntervention>(
+        app,
+        "support_interventions",
+        "intervention_json",
+      ),
+    ).toMatchObject({
+      mode: "listen_only",
+      sourceMessageId: response.assistantMessage.id,
+      offeredBy: "character",
+      receivedBy: "user",
+      pressureEpisodeId: latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      ).id,
+    });
+    expect(scalarCount(app, "decision_records")).toBe(0);
+    expect(scalarCount(app, "action_records")).toBe(0);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
+  });
+
+  it("does not persist Qwen T8's full analysis of the user's fatigue as character pressure", async () => {
+    app = await createTestApp({
+      semanticReply: () => qwenRegressions.pressure.assistantText,
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    const result = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "qwen-t8-attribution",
+      qwenRegressions.pressure.userText,
+    );
+    expect(result.assistantMessage.content).toBe(
+      qwenRegressions.pressure.assistantText,
+    );
+    expect(scalarCount(app, "pressure_episodes")).toBe(0);
+    expect(domainEventCount(app, "life.pressure_disclosed_by_character")).toBe(
+      0,
+    );
   });
 
   it("keeps two real conversation branches separate across sessions, stages, and replay", async () => {
@@ -435,6 +512,7 @@ describe("fuzzy-life conversation integration", () => {
           "我最近为《夜航》的剪辑发愁。我在重剪结尾和保留原版之间犹豫，压力 6/10。",
       });
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       const sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -484,6 +562,7 @@ describe("fuzzy-life conversation integration", () => {
             : "我现在轻松多了，谢谢你陪我。",
     });
     const character = await createAndPublish(app);
+    seedCharacterPressureBasis(app, character.id);
     const sessionId = await createSession(app, character.id);
     const disclosure = await sendChat(
       app,
@@ -576,6 +655,7 @@ describe("fuzzy-life conversation integration", () => {
           : "我现在轻松多了，谢谢你听我说。",
     });
     const character = await createAndPublish(app);
+    seedCharacterPressureBasis(app, character.id);
     const sessionId = await createSession(app, character.id);
     await sendChat(
       app,
@@ -627,6 +707,7 @@ describe("fuzzy-life conversation integration", () => {
           : "我现在压力 3/10。你的考试也很辛苦，我在听你说。",
     });
     const character = await createAndPublish(app);
+    seedCharacterPressureBasis(app, character.id);
     const sessionId = await createSession(app, character.id);
     await sendChat(
       app,
@@ -717,6 +798,7 @@ describe("fuzzy-life conversation integration", () => {
           ++replies === 1 ? "我最近剪片很累。" : "我听见你的意思了。",
       });
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       const sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -750,6 +832,7 @@ describe("fuzzy-life conversation integration", () => {
         clock,
       );
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       let sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -780,6 +863,7 @@ describe("fuzzy-life conversation integration", () => {
         semanticReply: () => (++replies === 1 ? "我最近剪片很累。" : reply),
       });
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       const sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -1264,7 +1348,7 @@ describe("fuzzy-life conversation integration", () => {
         sessionId,
         character.id,
         "mode-switch-older-pressure",
-        "刚下班。今天没有发生大事，就是被很多小消息磨得很累。",
+        "我刚下班。我被很多小消息磨得很累，今天没有遇到大事。",
       );
       const olderPressure = latestJson<PressureEpisode>(
         app,
@@ -2630,7 +2714,7 @@ describe("fuzzy-life conversation integration", () => {
     for (const [id, text] of [
       [
         "pressure-work-identity-facet",
-        "最难受的不是忙，而是我觉得自己每一天都在做不相信的东西。",
+        "我最难受的不是忙，而是我觉得自己每一天都在做不相信的东西。",
       ],
       [
         "pressure-work-fear-facet",
@@ -4130,4 +4214,15 @@ function asRecord(value: unknown): Record<string, unknown> {
     throw new TypeError("Expected a record value");
   }
   return value as Record<string, unknown>;
+}
+
+// Positive disclosure cases start from an independently authored simulation state.
+function seedCharacterPressureBasis(app: PersonaSimApp, agentId: string): void {
+  const state = app.personasim.store.getRuntimeState(agentId)!;
+  app.personasim.store.updateRuntimeState({
+    ...state,
+    stress: 0.75,
+    energy: 0.3,
+    moodValence: -0.25,
+  });
 }

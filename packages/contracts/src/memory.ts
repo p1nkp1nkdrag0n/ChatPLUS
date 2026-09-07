@@ -72,7 +72,10 @@ export type MemoryClaimDisposition = z.infer<
   typeof MemoryClaimDispositionSchema
 >;
 
-export const MemoryClaimRevisionIntentSchema = z.enum(["explicit_correction"]);
+export const MemoryClaimRevisionIntentSchema = z.enum([
+  "explicit_correction",
+  "temporal_update",
+]);
 export type MemoryClaimRevisionIntent = z.infer<
   typeof MemoryClaimRevisionIntentSchema
 >;

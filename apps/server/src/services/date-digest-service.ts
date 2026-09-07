@@ -21,6 +21,8 @@ export class DateDigestService {
     fromUtc: string;
     toUtc: string;
     maxItems?: number;
+    nowUtc?: string;
+    suppressedMemoryIds?: readonly string[];
   }): DateDigest | undefined {
     const facts = this.repository.listDateDigestFacts(input);
     return buildDateDigest({
@@ -38,6 +40,7 @@ export class DateDigestService {
     timezone: string;
     anchors?: readonly TemporalAnchorLike[];
     maxItems?: number;
+    suppressedMemoryIds?: readonly string[];
   }): DateDigestQueryResult {
     const resolution = resolveTemporalQuery({
       text: input.text,
@@ -50,6 +53,8 @@ export class DateDigestService {
       agentId: input.agentId,
       fromUtc: resolution.fromUtc,
       toUtc: resolution.toUtc,
+      nowUtc: input.nowUtc,
+      suppressedMemoryIds: input.suppressedMemoryIds ?? [],
       ...(input.maxItems === undefined ? {} : { maxItems: input.maxItems }),
     });
     return {

@@ -1,0 +1,663 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { CharacterSpecSchema, type CharacterSpec } from "@personasim/contracts";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { openDatabase, type Database } from "../db/connection.js";
+import { runMigrations } from "../db/migrations.js";
+import { DatabaseStore } from "../db/store.js";
+import { buildOriginalDraft } from "../domain/defaults.js";
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
+import { PersonaRuntimeRepository } from "../repositories/persona-runtime-repository.js";
+import { PersonaRuntimeService } from "./persona-runtime-service.js";
+import { CHARACTER_COMPILATION_POLICY_VERSION } from "./character-compiler.js";
+
+const NOW = "2026-09-06T12:00:00.000Z";
+const LATER = "2026-09-07T12:00:00.000Z";
+const PREF = "我谈工作烦恼时，先听我说，不急着建议。";
+
+describe("scoped persona runtime persistence and revision fences", () => {
+  let directory: string;
+  let database: Database;
+  let store: DatabaseStore;
+  let validity: MemoryValidityRepository;
+  let service: PersonaRuntimeService;
+  let spec: CharacterSpec;
+  let sessionId: string;
+
+  function reopen() {
+    database = openDatabase(join(directory, "persona.db"));
+    runMigrations(database);
+    store = new DatabaseStore(database);
+    validity = new MemoryValidityRepository(store);
+    service = new PersonaRuntimeService(store, validity);
+  }
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "personasim-scoped-persona-"));
+    reopen();
+    spec = CharacterSpecSchema.parse({
+      ...buildOriginalDraft(
+        {
+          name: "阿澄",
+          worldSetting: "当代城市",
+          workOrRole: "书店店员",
+          coreTraits: ["愿意倾听"],
+          initialRelationship: "邻居",
+          dialogueStyle: "轻松自然",
+          tier: "daily",
+          timezone: "Asia/Shanghai",
+        },
+        CHARACTER_COMPILATION_POLICY_VERSION,
+      ),
+      id: "agent_persona",
+      version: 1,
+      status: "published",
+      createdAtUtc: NOW,
+      updatedAtUtc: NOW,
+    });
+    store.insertCharacter(spec);
+    sessionId = store.createSession(spec.id, "Persona practice", NOW).id;
+  });
+  afterEach(() => {
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function message(
+    id: string,
+    text = PREF,
+    role: "user" | "assistant" = "user",
+    nowUtc = NOW,
+  ) {
+    store.insertMessage({
+      id,
+      sessionId,
+      agentId: spec.id,
+      role,
+      content: text,
+      messageKind: role === "user" ? "user" : "assistant_reply",
+      metadata: {},
+      createdAtUtc: nowUtc,
+    });
+  }
+  function capture(id: string, nowUtc = NOW) {
+    return service.captureExplicitPractice({
+      baseSpec: spec,
+      sourceMessageId: id,
+      nowUtc,
+      mode: "enforced",
+    });
+  }
+  function snapshot(topicText = "工作又遇到麻烦了", nowUtc = LATER) {
+    return service.snapshot({ baseSpec: spec, nowUtc, topicText });
+  }
+
+  it("keeps empty snapshots read-only and requires a user-authored enduring request", () => {
+    const before = database
+      .prepare("SELECT count(*) AS count FROM persona_runtime_heads")
+      .get();
+    expect(snapshot().revision).toBe(0);
+    expect(
+      database
+        .prepare("SELECT count(*) AS count FROM persona_runtime_heads")
+        .get(),
+    ).toEqual(before);
+    message("assistant", PREF, "assistant");
+    message("ordinary", "今天一起喝了咖啡，很开心。");
+    expect(capture("assistant").acceptedAdaptationIds).toEqual([]);
+    expect(capture("ordinary").revision).toBe(0);
+    expect(snapshot().persona).toEqual(spec.persona);
+  });
+
+  it("captures a local practice once, keeps original personality, and survives a new session and DB reopen", () => {
+    message("preference");
+    const result = capture("preference");
+    expect(result.revision).toBe(1);
+    expect(result.acceptedAdaptationIds).toHaveLength(1);
+    expect(snapshot().relationshipPractices[0]?.proposal.scope.topic).toBe(
+      "工作烦恼",
+    );
+    expect(snapshot("今天有点家庭烦恼").relationshipPractices).toEqual([]);
+    expect(
+      service.snapshot({
+        baseSpec: spec,
+        nowUtc: LATER,
+        topicText: "工作",
+        userId: "someone_else",
+      }).relationshipPractices,
+    ).toEqual([]);
+    const same = capture("preference");
+    expect(same.revision).toBe(1);
+    expect(same.acceptedAdaptationIds).toEqual([]);
+    expect(store.getCharacterSpec(spec.id)).toEqual(spec);
+    database.close();
+    reopen();
+    sessionId = store.createSession(spec.id, "New session", LATER).id;
+    message("again", PREF, "user", LATER);
+    expect(capture("again", LATER).revision).toBe(1);
+    expect(snapshot().relationshipPractices).toHaveLength(1);
+    expect(snapshot().persona.traits).toEqual(spec.persona.traits);
+  });
+
+  it("records shadow observations without creating memory or changing the authoritative revision", () => {
+    message("shadow");
+    const shadow = service.captureExplicitPractice({
+      baseSpec: spec,
+      sourceMessageId: "shadow",
+      nowUtc: NOW,
+      mode: "shadow",
+    });
+    expect(shadow.capturedObservationIds).toHaveLength(1);
+    expect(shadow.revision).toBe(0);
+    expect(validity.currentRevision(spec.id)).toBe(0);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(capture("shadow").revision).toBe(1);
+  });
+
+  it("persists plain expression and natural questions with message/memory provenance across sessions and restart", () => {
+    const text = "以后少打比方，直接说。以后你可以主动问一点。";
+    message("new_expression_preferences", text);
+    const captured = capture("new_expression_preferences");
+    expect(captured.acceptedAdaptationIds).toHaveLength(2);
+    const view = snapshot("普通闲聊");
+    expect(
+      view.relationshipPractices.map((item) => item.proposal.practice),
+    ).toEqual(["plain_expression", "natural_questions"]);
+    for (const practice of view.relationshipPractices) {
+      expect(practice.proposal.content).toBe(text);
+      expect(practice.sourceMessageId).toBe("new_expression_preferences");
+      expect(
+        practice.sources.map((source) => source.sourceType).sort(),
+      ).toEqual(["memory", "message"]);
+      expect(
+        practice.sources.every((source) =>
+          validity.isSourceCurrent(spec.id, source, LATER),
+        ),
+      ).toBe(true);
+    }
+    expect(capture("new_expression_preferences").revision).toBe(
+      captured.revision,
+    );
+    expect(store.getCharacterSpec(spec.id)).toEqual(spec);
+    database.close();
+    reopen();
+    sessionId = store.createSession(
+      spec.id,
+      "After expression feedback",
+      LATER,
+    ).id;
+    message("plain_current_share", "今天喝了乌龙茶。", "user", LATER);
+    expect(capture("plain_current_share", LATER).acceptedAdaptationIds).toEqual(
+      [],
+    );
+    expect(snapshot("普通闲聊")).toEqual(view);
+  });
+
+  it("supersedes the question direction and supports source-backed withdrawal without resurrecting fewer questions", () => {
+    message("old_question_direction", "以后少追问。");
+    capture("old_question_direction");
+    message("new_question_direction", "以后你可以主动问一点。", "user", LATER);
+    const changed = capture("new_question_direction", LATER);
+    expect(changed.revision).toBe(2);
+    expect(
+      snapshot().relationshipPractices.map((item) => item.proposal.practice),
+    ).toEqual(["natural_questions"]);
+    const history = new PersonaRuntimeRepository(store).listAdaptations(
+      spec.id,
+    );
+    expect(
+      history.find((item) => item.proposal.practice === "fewer_questions")
+        ?.status,
+    ).toBe("superseded");
+    message("temporary_question_exception", "今晚少问。", "user", LATER);
+    expect(capture("temporary_question_exception", LATER).revision).toBe(2);
+    expect(snapshot().relationshipPractices[0]?.proposal.practice).toBe(
+      "natural_questions",
+    );
+    message("withdraw_natural_questions", "以后不用主动问了。", "user", LATER);
+    expect(capture("withdraw_natural_questions", LATER).revision).toBe(3);
+    expect(capture("withdraw_natural_questions", LATER).revision).toBe(3);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    database.close();
+    reopen();
+    expect(snapshot().relationshipPractices).toEqual([]);
+  });
+
+  it("keeps expression feedback scoped and ignores short replies, skipped questions and quotations", () => {
+    message(
+      "scoped_expression",
+      "以后聊工作时，少打比方直接说。以后聊电影时，你可以主动问一点。",
+    );
+    expect(capture("scoped_expression").acceptedAdaptationIds).toHaveLength(2);
+    expect(
+      snapshot("工作").relationshipPractices.map(
+        (item) => item.proposal.practice,
+      ),
+    ).toEqual(["plain_expression"]);
+    expect(
+      snapshot("电影").relationshipPractices.map(
+        (item) => item.proposal.practice,
+      ),
+    ).toEqual(["natural_questions"]);
+    expect(snapshot("晚饭").relationshipPractices).toEqual([]);
+    for (const [index, text] of [
+      "嗯。",
+      "咖啡店。",
+      "我们换个话题。",
+      "同事说以后少打比方。",
+      "今晚你可以主动问一点。",
+    ].entries()) {
+      message(`no_preference_${index}`, text, "user", LATER);
+      expect(
+        capture(`no_preference_${index}`, LATER).acceptedAdaptationIds,
+      ).toEqual([]);
+    }
+    expect(snapshot().revision).toBe(1);
+    message(
+      "withdraw_plain_work",
+      "以后聊工作时，不用特意少打比方。",
+      "user",
+      LATER,
+    );
+    expect(capture("withdraw_plain_work", LATER).revision).toBe(2);
+    expect(snapshot("工作").relationshipPractices).toEqual([]);
+    expect(snapshot("电影").relationshipPractices[0]?.proposal.practice).toBe(
+      "natural_questions",
+    );
+  });
+
+  it("skips stale-base shadow observations without writes while enforced capture still rejects the stale version", () => {
+    message("learned_before_publish");
+    capture("learned_before_publish");
+    message("stale_shadow", "我谈工作烦恼时，也请少追问。");
+    const published = CharacterSpecSchema.parse({
+      ...spec,
+      version: spec.version + 1,
+      dialogue: { ...spec.dialogue, warmth: 0.9 },
+      createdAtUtc: LATER,
+      updatedAtUtc: LATER,
+    });
+    store.transaction(() => {
+      store.insertCharacterVersion(published);
+      store.updateCharacterHead(published);
+    });
+    const changesBefore = database
+      .prepare("SELECT total_changes() AS totalChanges")
+      .get();
+    expect(
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "stale_shadow",
+        nowUtc: LATER,
+        mode: "shadow",
+      }),
+    ).toEqual({
+      revision: 1,
+      capturedObservationIds: [],
+      acceptedAdaptationIds: [],
+    });
+    expect(() => capture("stale_shadow", LATER)).toThrow(
+      "persona_base_version_conflict",
+    );
+    expect(
+      database.prepare("SELECT total_changes() AS totalChanges").get(),
+    ).toEqual(changesBefore);
+    expect(store.getCharacterSpec(spec.id)).toEqual(published);
+    expect(store.getCharacterSpec(spec.id, spec.version)).toEqual(spec);
+  });
+
+  it("immediately excludes corrected memory sources while retaining the recorded historical projection", () => {
+    message("source");
+    capture("source");
+    const before = service.snapshotAsOf({
+      baseSpec: spec,
+      nowUtc: NOW,
+      topicText: "工作",
+    });
+    const adaptation = snapshot().relationshipPractices[0]!;
+    const memoryId = adaptation.sources.find(
+      (source) => source.sourceType === "memory",
+    )!.sourceId;
+    database
+      .prepare(
+        "UPDATE memories SET status = 'superseded', lifecycle_updated_at_utc = ? WHERE id = ?",
+      )
+      .run(LATER, memoryId);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(snapshot().suppressedMemoryIds).toContain(memoryId);
+    service.reconcileSources({ agentId: spec.id, nowUtc: LATER });
+    expect(snapshot().revision).toBe(2);
+    expect(
+      service.snapshotAsOf({ baseSpec: spec, nowUtc: NOW, topicText: "工作" }),
+    ).toEqual(before);
+    expect(
+      service.snapshotAsOf({ baseSpec: spec, nowUtc: LATER, topicText: "工作" })
+        .relationshipPractices,
+    ).toEqual([]);
+  });
+
+  it("withdraws overlapping topic practices, does not revive them in a new session, and preserves as-of history", () => {
+    message("listen");
+    capture("listen");
+    const history = service.snapshotAsOf({
+      baseSpec: spec,
+      nowUtc: NOW,
+      topicText: "工作",
+    });
+    message("withdraw", "以后聊工作不用总先听，直接给我建议。", "user", LATER);
+    expect(capture("withdraw", LATER).revision).toBe(2);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(snapshot().suppressedMemoryIds).toHaveLength(1);
+    expect(capture("withdraw", LATER).revision).toBe(2);
+    database.close();
+    reopen();
+    sessionId = store.createSession(spec.id, "After withdrawal", LATER).id;
+    message("new_chat", "工作又有点烦。", "user", LATER);
+    expect(capture("new_chat", LATER).revision).toBe(2);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(
+      service.snapshotAsOf({ baseSpec: spec, nowUtc: NOW, topicText: "工作" }),
+    ).toEqual(history);
+  });
+
+  it.each([
+    ["现在改一下，以后聊工作时可以直接给我建议。", true],
+    ["现在起，以后给建议。", true],
+    ["这次先给建议。", false],
+    ["以后还是先听，但今天可以分析。", false],
+    ["以后聊工作时还是先听，但今天可以直接给我建议。", false],
+  ])(
+    "persists the effective interval through another turn, session and restart: %s",
+    (text, withdrawn) => {
+      message("interval_preference");
+      capture("interval_preference");
+      const history = service.snapshotAsOf({
+        baseSpec: spec,
+        nowUtc: NOW,
+        topicText: "工作",
+      });
+      message("interval_change", text, "user", LATER);
+      const changed = capture("interval_change", LATER);
+      const expectedRevision = withdrawn ? 2 : 1;
+      expect(changed.revision).toBe(expectedRevision);
+      expect(snapshot().relationshipPractices).toHaveLength(withdrawn ? 0 : 1);
+      expect(capture("interval_change", LATER).revision).toBe(expectedRevision);
+
+      message("next_turn", "工作又有点烦。", "user", LATER);
+      expect(capture("next_turn", LATER).revision).toBe(expectedRevision);
+      expect(snapshot().relationshipPractices).toHaveLength(withdrawn ? 0 : 1);
+      sessionId = store.createSession(
+        spec.id,
+        "After interval change",
+        LATER,
+      ).id;
+      message("next_session", "工作上的事还没结束。", "user", LATER);
+      expect(capture("next_session", LATER).revision).toBe(expectedRevision);
+      const persisted = snapshot();
+      expect(persisted.relationshipPractices).toHaveLength(withdrawn ? 0 : 1);
+      expect(persisted.suppressedMemoryIds).toHaveLength(withdrawn ? 1 : 0);
+
+      database.close();
+      reopen();
+      expect(snapshot()).toEqual(persisted);
+      expect(
+        service.snapshotAsOf({
+          baseSpec: spec,
+          nowUtc: NOW,
+          topicText: "工作",
+        }),
+      ).toEqual(history);
+      if (withdrawn) {
+        const revision = new PersonaRuntimeRepository(store).historyAt(
+          spec.id,
+          LATER,
+        );
+        expect(revision?.state.changeSources).toEqual([
+          validity.readSource(spec.id, "message", "interval_change", LATER),
+        ]);
+      }
+    },
+  );
+
+  it("retains user, topic and revision fences for a withdrawal made now with future effect", () => {
+    message("scoped_work_preference");
+    capture("scoped_work_preference");
+    message(
+      "scoped_family_preference",
+      "我谈家庭烦恼时，先听我说，不急着建议。",
+    );
+    capture("scoped_family_preference");
+    message(
+      "scoped_withdrawal",
+      "现在改一下，以后聊工作时可以直接给我建议。",
+      "user",
+      LATER,
+    );
+    expect(
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "scoped_withdrawal",
+        userId: "someone_else",
+        nowUtc: LATER,
+        mode: "enforced",
+      }).revision,
+    ).toBe(2);
+    expect(() =>
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "scoped_withdrawal",
+        nowUtc: LATER,
+        mode: "enforced",
+        expectedRevision: 1,
+      }),
+    ).toThrow("persona_revision_conflict");
+    expect(() =>
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "scoped_withdrawal",
+        nowUtc: LATER,
+        mode: "enforced",
+        expectedMemoryRevision: validity.currentRevision(spec.id) + 1,
+      }),
+    ).toThrow("persona_memory_revision_conflict");
+    expect(snapshot().relationshipPractices).toHaveLength(1);
+    expect(capture("scoped_withdrawal", LATER).revision).toBe(3);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(snapshot("家庭烦恼").relationshipPractices).toHaveLength(1);
+  });
+
+  it("excludes a source corrected before a delayed arrival without needing a later persona reconciliation", () => {
+    message("delayed_source");
+    capture("delayed_source");
+    const before = service.snapshotAsOf({
+      baseSpec: spec,
+      nowUtc: NOW,
+      topicText: "工作",
+    });
+    const adaptation = snapshot().relationshipPractices[0]!;
+    const memoryId = adaptation.sources.find(
+      (source) => source.sourceType === "memory",
+    )!.sourceId;
+    database
+      .prepare(
+        "UPDATE memories SET status = 'superseded', lifecycle_updated_at_utc = ? WHERE id = ?",
+      )
+      .run(LATER, memoryId);
+    const delayedAt = "2026-09-08T12:00:00.000Z";
+    const atArrival = service.snapshotAsOf({
+      baseSpec: spec,
+      nowUtc: delayedAt,
+      topicText: "工作",
+    });
+    expect(atArrival.revision).toBe(1);
+    expect(atArrival.relationshipPractices).toEqual([]);
+    expect(atArrival.memoryRevision).toBeGreaterThan(before.memoryRevision);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(
+      service.snapshotAsOf({ baseSpec: spec, nowUtc: NOW, topicText: "工作" }),
+    ).toEqual(before);
+    // A later source mutation must not move the original invalidation past arrival.
+    database
+      .prepare(
+        "UPDATE memories SET content = content || 'changed again', lifecycle_updated_at_utc = ? WHERE id = ?",
+      )
+      .run("2026-09-09T12:00:00.000Z", memoryId);
+    expect(
+      service.snapshotAsOf({
+        baseSpec: spec,
+        nowUtc: delayedAt,
+        topicText: "工作",
+      }),
+    ).toEqual(atArrival);
+    database.close();
+    reopen();
+    expect(
+      service.snapshotAsOf({ baseSpec: spec, nowUtc: NOW, topicText: "工作" }),
+    ).toEqual(before);
+    expect(
+      service.snapshotAsOf({
+        baseSpec: spec,
+        nowUtc: delayedAt,
+        topicText: "工作",
+      }),
+    ).toEqual(atArrival);
+  });
+
+  it("rejects future author baselines and rechecks author relationship edits", () => {
+    message("relationship_edit");
+    capture("relationship_edit");
+    const future = CharacterSpecSchema.parse({
+      ...spec,
+      version: 2,
+      createdAtUtc: LATER,
+      updatedAtUtc: LATER,
+      userRelationship: {
+        ...spec.userRelationship,
+        sharedContext: "作者重新设定了关系相处约定。",
+      },
+    });
+    expect(() =>
+      service.snapshotAsOf({ baseSpec: future, nowUtc: NOW }),
+    ).toThrow(/base_as_of_conflict/u);
+    store.insertCharacterVersion(future);
+    store.updateCharacterHead(future);
+    service.reconcileBase({ baseSpec: future, nowUtc: LATER });
+    expect(
+      service.snapshot({ baseSpec: future, nowUtc: LATER, topicText: "工作" })
+        .relationshipPractices,
+    ).toEqual([]);
+    expect(
+      new PersonaRuntimeRepository(store).listAdaptations(spec.id)[0]?.status,
+    ).toBe("needs_review");
+    expect(
+      service.snapshotAsOf({ baseSpec: spec, nowUtc: NOW, topicText: "工作" })
+        .relationshipPractices,
+    ).toHaveLength(1);
+  });
+
+  it("fails revision and provenance conflicts atomically", () => {
+    message("conflict");
+    expect(() =>
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "conflict",
+        nowUtc: NOW,
+        mode: "enforced",
+        expectedRevision: 1,
+      }),
+    ).toThrow(/revision_conflict/u);
+    expect(() =>
+      service.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "conflict",
+        nowUtc: NOW,
+        mode: "enforced",
+        expectedMemoryRevision: 1,
+      }),
+    ).toThrow(/memory_revision_conflict/u);
+    const faulty = new PersonaRuntimeService(store, {
+      currentRevision: (id) => validity.currentRevision(id),
+      readSource: (...args) => validity.readSource(...args),
+      isSourceCurrent: (...args) => validity.isSourceCurrent(...args),
+      isDerivedCurrent: (...args) => validity.isDerivedCurrent(...args),
+      registerDependencies: () => false,
+    });
+    expect(() =>
+      faulty.captureExplicitPractice({
+        baseSpec: spec,
+        sourceMessageId: "conflict",
+        nowUtc: NOW,
+        mode: "enforced",
+      }),
+    ).toThrow(/evidence_changed/u);
+    expect(snapshot().revision).toBe(0);
+    expect(
+      database.prepare("SELECT count(*) AS count FROM memories").get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database
+        .prepare("SELECT count(*) AS count FROM persona_observations")
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("withdraws one facet without leaking its full source through the remaining practice", () => {
+    message("two_facets", "我谈工作烦恼时，先听我说，不急着建议，也不要追问。");
+    expect(capture("two_facets").acceptedAdaptationIds).toHaveLength(2);
+    message(
+      "one_withdrawal",
+      "以后聊工作不用总先听，直接给我建议。",
+      "user",
+      LATER,
+    );
+    capture("one_withdrawal", LATER);
+    expect(
+      snapshot().relationshipPractices.map((item) => item.proposal.facet),
+    ).toEqual(["follow_up_questions"]);
+    expect(snapshot().suppressedMemoryIds).toHaveLength(1);
+  });
+
+  it("preserves compatible author edits and marks practice-context changes for review", () => {
+    message("author");
+    capture("author");
+    const original = spec;
+    spec = CharacterSpecSchema.parse({
+      ...spec,
+      version: 2,
+      identity: { ...spec.identity, worldSetting: "另一条街上的书店" },
+      updatedAtUtc: LATER,
+    });
+    store.insertCharacterVersion(spec);
+    store.updateCharacterHead(spec);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    service.reconcileBase({ baseSpec: spec, nowUtc: LATER });
+    expect(snapshot().relationshipPractices).toHaveLength(1);
+    expect(snapshot().revision).toBe(2);
+    spec = CharacterSpecSchema.parse({
+      ...spec,
+      version: 3,
+      dialogue: { ...spec.dialogue, verbosity: 0.91 },
+    });
+    store.insertCharacterVersion(spec);
+    store.updateCharacterHead(spec);
+    service.reconcileBase({
+      baseSpec: spec,
+      nowUtc: "2026-09-08T12:00:00.000Z",
+    });
+    expect(snapshot().relationshipPractices).toEqual([]);
+    expect(
+      new PersonaRuntimeRepository(store).listAdaptations(spec.id)[0]?.status,
+    ).toBe("needs_review");
+    expect(store.getCharacterSpec(spec.id, 1)).toEqual(original);
+    const event = database
+      .prepare("SELECT id FROM persona_revision_events LIMIT 1")
+      .get() as { id: string };
+    expect(() =>
+      database
+        .prepare("DELETE FROM persona_revision_events WHERE id = ?")
+        .run(event.id),
+    ).toThrow(/immutable/iu);
+  });
+});

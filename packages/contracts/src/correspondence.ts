@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { LocalDateSchema } from "./life.js";
 import { KeepsakeKindSchema } from "./keepsake.js";
+import { EffectivePersonaSnapshotSchema } from "./persona-runtime.js";
 import {
   EntityIdSchema,
   IanaTimezoneSchema,
@@ -507,6 +508,10 @@ const LetterGenerationContextV1RawSchema = z
     effectiveAtUtc: UtcDateTimeSchema,
     sourceWindow: LetterGenerationSourceWindowSchema,
     character: LetterGenerationCharacterContextSchema,
+    effectivePersona: CorrespondenceJsonObjectSchema.refine(
+      (value) => EffectivePersonaSnapshotSchema.safeParse(value).success,
+      "Invalid effective persona at arrival",
+    ).optional(),
     runtimeState: CorrespondenceJsonObjectSchema,
     relationship: CorrespondenceJsonObjectSchema,
     fuzzyLife: LetterGenerationFuzzyLifeContextSchema,
@@ -541,12 +546,17 @@ type LetterGenerationContextV1Raw = z.infer<
 >;
 type LetterGenerationContextV1Base = Omit<
   LetterGenerationContextV1Raw,
-  "readyKeepsakes"
+  "readyKeepsakes" | "effectivePersona"
 >;
-export type LetterGenerationContextV1 =
+type LetterGenerationContextWithKeepsakes =
   | LetterGenerationContextV1Base
   | (LetterGenerationContextV1Base & {
       readyKeepsakes: LetterGenerationKeepsakeEvidence[];
+    });
+export type LetterGenerationContextV1 =
+  | LetterGenerationContextWithKeepsakes
+  | (LetterGenerationContextWithKeepsakes & {
+      effectivePersona: z.infer<typeof CorrespondenceJsonObjectSchema>;
     });
 
 // The union keeps old v1 objects (no property) and new v1 objects (a concrete

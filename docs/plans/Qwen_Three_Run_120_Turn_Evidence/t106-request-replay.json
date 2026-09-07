@@ -1,0 +1,212 @@
+{
+  "schema": "actual-request-offline-replay-v1",
+  "apiCalls": 0,
+  "sourceSha256": "56a6396a442f7d27c8ebace8b9d04ffc427d923d3be10b38fd801b9db9acca3b",
+  "runs": [
+    {
+      "runSlot": "R1",
+      "source": {
+        "file": "tmp/companion-continuity-real/cc-qwen-long-r1-20260907/turn-106.json",
+        "sha256": "ddb3322d56d6f0adfbc7b6a69465ab7d808508ce754206e98435a1211fc1ad6c"
+      },
+      "text": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+      "plan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "help",
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "requested",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 2,
+        "allowCharacterLifeMention": false
+      },
+      "offline": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      },
+      "finalText": "行，那就不聊正事。\n我这边刚把画材摆出来，阳光照得桌面有点晃眼。\n你那边怎么样，天气好吗？"
+    },
+    {
+      "runSlot": "R2",
+      "source": {
+        "file": "tmp/companion-continuity-real/cc-qwen-long-r2-20260907/turn-106.json",
+        "sha256": "c9fffd7b354b8f83eb2ccf26f991b4a0d759562652f0733b8a548450b163177c"
+      },
+      "text": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+      "plan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "help",
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "requested",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 2,
+        "allowCharacterLifeMention": false
+      },
+      "offline": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      },
+      "finalText": "行，那就不聊正事。早晨东京的风挺舒服的，适合发呆或者随便看看窗外。"
+    },
+    {
+      "runSlot": "R3",
+      "source": {
+        "file": "tmp/companion-continuity-real/cc-qwen-long-r3-20260907/turn-106.json",
+        "sha256": "63d879dfd12f4da65c73f4b7da4cd973a86f9ff942d251d4f6379e7b02204f32"
+      },
+      "text": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+      "plan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "help",
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "requested",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 2,
+        "allowCharacterLifeMention": false
+      },
+      "offline": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      },
+      "finalText": "收到。刚才整理桌面时，发现灰尘在晨光里飘的样子其实挺像某种抽象派画作。如果你也有类似的瞬间，随时分享；没有的话，我就继续琢磨怎么把这种视觉感用到新草稿里。"
+    }
+  ],
+  "controls": [
+    {
+      "text": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+      "result": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      }
+    },
+    {
+      "text": "我不需要你帮我决定。",
+      "result": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      }
+    },
+    {
+      "text": "我没有让你帮我决定。",
+      "result": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      }
+    },
+    {
+      "text": "请你帮我决定。",
+      "result": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      }
+    },
+    {
+      "text": "我没有需要你帮我下决定的事情，不过请给我一个建议。",
+      "result": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      }
+    }
+  ],
+  "diagnosis": "ADVICE matches 帮我下决定; prefix 我没有需要你 does not satisfy the end-anchored NEGATION alternatives (不需要 is supported but 没有需要你 is not). This flips explicit absence of decision help into requested help. Final replies still need independent scoring; incorrect plan is not proof each visible reply pushed a decision."
+}

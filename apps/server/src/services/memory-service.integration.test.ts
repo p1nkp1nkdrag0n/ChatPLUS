@@ -11,6 +11,7 @@ import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore } from "../db/store.js";
 import { FakeClock } from "../runtime/clock.js";
 import { companionLongRunV3Manifest } from "../scenarios/companion-long-run-v3-manifest.js";
+import { deriveServerOwnedUserMemoryCandidates } from "./turn-decision-service.js";
 import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
 import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
 import {
@@ -44,6 +45,111 @@ describe("memory service evidence integration", () => {
 
   afterEach(() => {
     database.close();
+  });
+
+  it.each([
+    ["我没有辞职，只是考虑过。", "用户已经辞职。"],
+    ["我不是不喜欢父亲，今天只是不想谈。", "用户不喜欢父亲。"],
+    ["她说自己准备搬家。", "用户准备搬家。"],
+    ["如果拿到录取，我就搬过去。", "用户已经决定搬家。"],
+    ["今天我什么人都不想见。", "用户不喜欢社交。"],
+    ["我已经通过面试。", "系统独立验证用户已通过面试。"],
+  ])(
+    "does not persist a model's unsupported interpretation: %s",
+    (original, invented) => {
+      const messageId = "semantic-source";
+      insertMessage(database, messageId, "user", original);
+      const memories = validateMergeAndPersistMemories({
+        store,
+        agentId: AGENT_ID,
+        nowUtc: NOW,
+        maxCandidates: 4,
+        authoritativeMessageId: messageId,
+        candidates: [stableUserCandidate({ content: invented })],
+      });
+      expect(memories.some((memory) => memory.content === invented)).toBe(
+        false,
+      );
+      for (const memory of memories.filter((item) =>
+        item.tags.includes("source report"),
+      )) {
+        expect(memory).toMatchObject({
+          content: `用户在对话中说过：「${original}」`,
+          stability: "one_off",
+          temporalMetadata: { temporalStatus: "unknown" },
+        });
+        expect(memory.claim).toBeUndefined();
+        expect(readMemoryEvidence(store, [memory.id])[0]?.quote).toBe(original);
+      }
+      expect(
+        readActiveMemoryRecords(store, AGENT_ID, NOW).some(
+          (memory) => memory.content === invented,
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("does not truncate an oversized source into independent memory evidence", () => {
+    const original =
+      "我已经通过面试。".repeat(250) + "以上是引用朋友的话，我自己没有通过。";
+    insertMessage(database, "oversized-source", "user", original);
+    const memories = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      nowUtc: NOW,
+      maxCandidates: 4,
+      authoritativeMessageId: "oversized-source",
+      candidates: [stableUserCandidate({ content: "用户已经通过面试。" })],
+    });
+    expect(memories).toEqual([]);
+    expect(
+      database
+        .prepare("SELECT content FROM messages WHERE id = ?")
+        .get("oversized-source"),
+    ).toEqual({ content: original });
+  });
+
+  it("restores canonical claim disposition and time instead of trusting copied server wording", () => {
+    const sourceId = "canonical-forgery-source";
+    const original = "我计划每周四晚上画画。";
+    insertMessage(database, sourceId, "user", original);
+    const canonical = deriveServerOwnedUserMemoryCandidates(original, NOW)[0]!;
+    const malicious = {
+      ...canonical,
+      claim: {
+        ...canonical.claim!,
+        disposition: "negated" as const,
+        revisionIntent: "explicit_correction" as const,
+      },
+      temporalMetadata: {
+        recordedAtUtc: NOW,
+        occurredStartAtUtc: NOW,
+        temporalCertainty: "exact" as const,
+        temporalStatus: "occurred" as const,
+      },
+      evidence: [
+        {
+          sourceType: "message" as const,
+          sourceId,
+          quote: original,
+          recordedAtUtc: NOW,
+        },
+      ],
+    };
+    const [persisted] = validateMergeAndPersistMemories({
+      store,
+      agentId: AGENT_ID,
+      nowUtc: NOW,
+      maxCandidates: 1,
+      candidates: [malicious],
+    });
+    expect(persisted).toMatchObject({
+      content: canonical.content,
+      claim: canonical.claim,
+      temporalMetadata: { temporalStatus: "planned" },
+    });
+    expect(persisted?.claim?.revisionIntent).toBeUndefined();
+    expect(persisted?.temporalMetadata?.occurredStartAtUtc).toBeUndefined();
   });
 
   it("adds semantic defaults and persists verified ActivityEvent evidence", () => {
@@ -993,9 +1099,15 @@ describe("memory service evidence integration", () => {
     expect(
       persisted.some((memory) => memory.content.includes("阳台画画")),
     ).toBe(true);
-    expect(persisted.some((memory) => memory.content.includes("修复稿"))).toBe(
-      false,
-    );
+    expect(
+      persisted.some((memory) => memory.content.includes("姨妈已经授权")),
+    ).toBe(false);
+    expect(persisted[0]).toMatchObject({
+      content: `用户在对话中说过：「${userText}」`,
+      stability: "one_off",
+      tags: ["source report"],
+      temporalMetadata: { temporalStatus: "unknown" },
+    });
   });
 
   it("rejects runtime and system context that lacks content-grounded formal evidence", () => {
@@ -1152,7 +1264,7 @@ function stableUserCandidate(
 ): MemoryCandidate {
   return MemoryCandidateSchema.parse({
     kind: "semantic",
-    content: "The user is vegetarian and prefers simple meals.",
+    content: "I am vegetarian and prefer simple meals.",
     importance: 0.9,
     confidence: 1,
     tags: ["diet", "vegetarian"],
@@ -1228,7 +1340,7 @@ function createWeeklyCorrection(database: Database, store: DatabaseStore) {
 function sharedExperienceCandidate(): MemoryCandidate {
   return MemoryCandidateSchema.parse({
     kind: "episodic",
-    content: "We watched colorful fireworks together.",
+    content: "We watched colorful fireworks together yesterday.",
     importance: 0.8,
     confidence: 0.95,
     tags: ["shared_experience", "fireworks"],

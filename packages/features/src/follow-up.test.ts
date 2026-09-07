@@ -85,8 +85,8 @@ describe("FollowUp grounding and time", () => {
       accepted: true,
       followUp: {
         sourceMessageId: "message-user-1",
-        earliestAtUtc: "2026-08-22T10:00:00.000Z",
-        expiresAtUtc: "2026-08-25T10:00:00.000Z",
+        earliestAtUtc: "2026-08-22T12:00:00.000Z",
+        expiresAtUtc: "2026-08-25T12:00:00.000Z",
       },
     });
   });

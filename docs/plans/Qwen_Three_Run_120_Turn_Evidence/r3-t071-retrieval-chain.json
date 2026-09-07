@@ -1,0 +1,160 @@
+{
+  "schema": "qwen-r3-T071-retrieval-chain-readonly-v1",
+  "createdAtUtc": "2026-09-07T12:51:50.268Z",
+  "apiCalls": 0,
+  "dbWrites": 0,
+  "snapshot": {
+    "path": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\before-process-exit.sqlite",
+    "stage": "before process exit at T64",
+    "beforeSha256": "fd88d0352aeef6522fc63233c0773aebdff47753dd0eaf6353f85e79404c531f",
+    "afterSha256": "fd88d0352aeef6522fc63233c0773aebdff47753dd0eaf6353f85e79404c531f",
+    "unchanged": true
+  },
+  "turn": {
+    "path": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\turn-071.json",
+    "sha256": "913a003003d6cc7fbecf815f02325be657b9511a7089f5840597b35163f61923",
+    "user": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+    "final": "编号你刚说还是原来那个，没再改；妹妹叫林禾，之前提过她想试陶艺；同事名字好像没聊到过。",
+    "plan": {
+      "policyVersion": "continuity_context_v2",
+      "originalQuery": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+      "expandedQueries": [],
+      "contextMessageIds": [],
+      "unresolvedReferences": [],
+      "intent": "casual",
+      "adviceRequested": false,
+      "detailedAnalysisRequested": false,
+      "supportStyle": "respond_naturally",
+      "helpTiming": "now",
+      "requestPolicyVersion": "clause_requests_v1",
+      "advicePolicy": "optional_light",
+      "advicePolicyVersion": "advice_load_v2",
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "expressionContext": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": []
+      },
+      "resolvedCurrentTopic": {
+        "text": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+        "basis": "current_message",
+        "sourceMessageIds": [],
+        "policyVersion": "scoped_topic_v1"
+      },
+      "maxRecallEvidence": 3,
+      "maxExplicitMemories": 2,
+      "allowCharacterLifeMention": false
+    },
+    "recall": {
+      "rolloutMode": "enforced",
+      "promptStrategy": "evidence_selected",
+      "legacyPromptMemoryIds": [
+        "memory_1ualooq",
+        "memory_01y2gqb",
+        "memory_1efb2et",
+        "memory_0spbq2s",
+        "memory_0v4j8sa",
+        "memory_1olw8hc",
+        "memory_0q0d7ap",
+        "memory_0uiikfa",
+        "memory_0ng4y7y",
+        "memory_0dgkl0u",
+        "memory_1f44uxw",
+        "memory_1aa1cqb"
+      ],
+      "promptMemoryIds": [],
+      "selectedMemoryIds": [],
+      "selectedEvidenceIds": [],
+      "rejectedMemoryIds": [
+        "memory_0uiikfa",
+        "memory_12mftm8",
+        "memory_0xueull",
+        "memory_0ng4y7y",
+        "memory_1w25qot",
+        "memory_1ualooq",
+        "memory_1dy5l4t",
+        "memory_0dgkl0u",
+        "memory_1f44uxw",
+        "memory_0slos50",
+        "memory_01y2gqb",
+        "memory_1efb2et",
+        "memory_0spbq2s",
+        "memory_1olw8hc",
+        "memory_0q0d7ap",
+        "memory_1aa1cqb",
+        "memory_14ga013",
+        "memory_0vkjshf",
+        "memory_069pebc",
+        "memory_1h3g5ot",
+        "memory_00i7vzf",
+        "memory_1y904lh"
+      ],
+      "recallMode": "none",
+      "score": 0.349558,
+      "abstained": true,
+      "abstentionReason": "durable_memory_below_relevance_threshold",
+      "durationMs": 14.456
+    },
+    "selectedEvidenceSegment": {
+      "id": "13_retrieved_evidence",
+      "placement": "prompt",
+      "priority": 90,
+      "tokenBudget": 4000,
+      "estimatedTokens": 0,
+      "required": false,
+      "included": false,
+      "truncated": false,
+      "cacheHit": false,
+      "localCacheHit": false,
+      "reason": "empty"
+    }
+  },
+  "memories": [
+    {
+      "id": "memory_1w25qot",
+      "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+      "status": "active",
+      "namespace": "user_model",
+      "certainty": "explicit",
+      "attribution": "user_explicit",
+      "source_message_id": "message_V48TTG1bDMel1VbWax7d6",
+      "claim_subject_key": null,
+      "superseded_by_id": null,
+      "inRejectedAtT71": true
+    },
+    {
+      "id": "memory_12mftm8",
+      "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+      "status": "active",
+      "namespace": "user_model",
+      "certainty": "explicit",
+      "attribution": "user_explicit",
+      "source_message_id": "message_Nc7ikr_2RA4pf40kv-LqG",
+      "claim_subject_key": null,
+      "superseded_by_id": null,
+      "inRejectedAtT71": true
+    }
+  ],
+  "source": [
+    {
+      "path": "apps/server/src/services/conversation-service.ts",
+      "sha256": "0da56ea88786128c8fa011e638b3df2e6257eac5761d5e7429efec1940159939"
+    },
+    {
+      "path": "apps/server/src/services/memory-recall-hierarchy.ts",
+      "sha256": "c6caa6311fa9e82ec43a6d8d6cf28e63160be0349695d600820579cad08e4f5e"
+    },
+    {
+      "path": "packages/features/src/conversation-context-plan.ts",
+      "sha256": "31cbff42fd425cf8a3d452651924e927dd354bd19cfd43caa480dfbcd1876948"
+    }
+  ],
+  "interpretation": {
+    "confirmed": "Correct user correction records already existed active at T64; both IDs were rejected at T71, no evidence selected, evidence segment empty. The observed failure includes retrieval, not merely model recall.",
+    "physicalPromptVerification": "Independent followup_grounding scan found actual reserved attempt75 lacks BGW-7429 and 林桥; attach its final evidence report.",
+    "implementationPath": "conversation-service requests durable evidence in enforced mode; memory-recall-hierarchy returns durable_memory_below_relevance_threshold before archival verbatim fallback. Query classified casual despite named multi-fact question; relevance score .349558 vs default canonical .35.",
+    "limit": "This snapshot proves prior existence, not every later validity transition; final read-only audit must check provenance/invalidation. Do not claim lowering threshold alone is an adequate repair."
+  }
+}

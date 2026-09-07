@@ -19,6 +19,22 @@ export const CharacterSourceKindSchema = z.enum([
 ]);
 export type CharacterSourceKind = z.infer<typeof CharacterSourceKindSchema>;
 
+export const CharacterCompilationPolicyVersionSchema = z.enum([
+  "legacy_template_v1",
+  "companion_character_v2",
+  "companion_character_v3",
+]);
+export type CharacterCompilationPolicyVersion = z.infer<
+  typeof CharacterCompilationPolicyVersionSchema
+>;
+export function isCompanionCharacterPolicy(
+  version: CharacterCompilationPolicyVersion | undefined,
+): boolean {
+  return (
+    version === "companion_character_v2" || version === "companion_character_v3"
+  );
+}
+
 export const ScheduleRigiditySchema = z.enum([
   "fixed",
   "committed",
@@ -155,6 +171,9 @@ export const BoundaryRuleSchema = z
     forbiddenBehavior: z.string().trim().min(1).max(500),
     responsePattern: z.string().trim().min(1).max(1_000),
     hard: z.boolean(),
+    /** Descriptive only; authorization is assigned by the server audit. */
+    origin: FieldOriginSchema.optional(),
+    sourceRefs: SourceRefsSchema.optional(),
   })
   .strict();
 export type BoundaryRule = z.infer<typeof BoundaryRuleSchema>;
@@ -238,7 +257,7 @@ export const CharacterPersonaSchema = z
     traits: z.array(TraitRuleSchema).min(1).max(24),
     values: z.array(ValueRuleSchema).min(1).max(24),
     contradictions: z.array(ContradictionRuleSchema).max(16),
-    goals: z.array(CharacterGoalSchema).min(1).max(20),
+    goals: z.array(CharacterGoalSchema).max(20),
     preferences: z.array(PreferenceRuleSchema).max(40),
     boundaries: z.array(BoundaryRuleSchema).max(30),
     biography: z.array(BiographyEntrySchema).max(40).optional(),
@@ -270,6 +289,14 @@ export const DialogueStyleSchema = z
     averageMessageLength: z.number().int().min(1).max(4_000),
     averageChunksPerTurn: z.number().int().min(1).max(12),
     frequentPhrases: z.array(z.string().trim().min(1).max(120)).max(40),
+    frequentPhrasesOrigin: z
+      .enum([
+        "user_spec",
+        "canon_extract",
+        "model_inference",
+        "legacy_unverified",
+      ])
+      .optional(),
     avoidedPhrases: z.array(z.string().trim().min(1).max(120)).max(40),
     greetingPatterns: z.array(z.string().trim().min(1).max(500)).max(20),
     refusalPatterns: z.array(z.string().trim().min(1).max(500)).max(20),
@@ -382,9 +409,90 @@ export const LockedCharacterPathSchema = z
   .max(240)
   .regex(/^[A-Za-z_][A-Za-z0-9_]*(?:\.(?:[A-Za-z_][A-Za-z0-9_]*|\d+))*$/);
 
+/** Optional on old specs. Neither provider output nor an edit may self-authorize. */
+export const CharacterAuthorityAuditSchema = z
+  .object({
+    policyVersion: z.literal("character_authority_v1"),
+    contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    originalCandidateSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    candidates: z
+      .array(
+        z
+          .object({
+            candidateId: z.string().min(1).max(100),
+            candidateSha256: z.string().regex(/^[a-f0-9]{64}$/),
+            target: LockedCharacterPathSchema,
+            ruleId: EntityIdSchema.optional(),
+            originalValue: z.string().max(100_000),
+            /** Exact corresponding provider value before source/ID normalization. */
+            providerValue: z.string().max(100_000).optional(),
+            effectiveValue: z.string().max(100_000).optional(),
+            strength: z.enum(["hard", "soft", "fact", "phrase", "lock"]),
+            status: z.enum(["accepted", "pending", "rejected"]),
+            reason: z.string().min(1).max(500),
+            source: z
+              .object({
+                kind: z.enum([
+                  "author_field",
+                  "source_quote",
+                  "author_confirmation",
+                  "legacy_unverified",
+                  "application_rule",
+                ]),
+                field: z.string().max(240),
+                sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+                quote: z.string().max(100_000),
+                start: z.number().int().nonnegative(),
+                end: z.number().int().nonnegative(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+      )
+      .max(1_000),
+  })
+  .strict();
+export type CharacterAuthorityAudit = z.infer<
+  typeof CharacterAuthorityAuditSchema
+>;
+
+/** Explicit structured author declarations, separate from generated candidates. */
+export const CharacterAuthoringSchema = z
+  .object({
+    boundaries: z.array(BoundaryRuleSchema).max(30).optional(),
+    dialogueRules: z.array(DialogueRuleSchema).max(30).optional(),
+    frequentPhrases: z
+      .array(z.string().trim().min(1).max(120))
+      .max(40)
+      .optional(),
+    sharedContext: z.string().trim().min(1).max(2_000).optional(),
+    knownFacts: z
+      .array(z.string().trim().min(1).max(1_000))
+      .max(200)
+      .optional(),
+    lockedPaths: z.array(LockedCharacterPathSchema).max(200).optional(),
+  })
+  .strict();
+export type CharacterAuthoring = z.infer<typeof CharacterAuthoringSchema>;
+
+export const CharacterAuthorityDecisionSchema = z
+  .object({
+    candidateId: z.string().min(1).max(100),
+    candidateSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    decision: z.enum(["accept", "reject"]),
+  })
+  .strict();
+export type CharacterAuthorityDecision = z.infer<
+  typeof CharacterAuthorityDecisionSchema
+>;
+
 const CharacterSpecContentShape = {
   tier: SimulationTierSchema,
   sourceType: CharacterSourceKindSchema,
+  /** Absent on historical specs; absence preserves legacy compilation semantics. */
+  compilationPolicyVersion: CharacterCompilationPolicyVersionSchema.optional(),
+  authorityAudit: CharacterAuthorityAuditSchema.optional(),
   identity: CharacterIdentitySchema,
   persona: CharacterPersonaSchema,
   dialogue: DialogueStyleSchema,
@@ -468,12 +576,23 @@ export const OriginalCharacterInputSchema = z
     name: z.string().trim().min(1).max(120),
     worldSetting: z.string().trim().min(1).max(4_000),
     workOrRole: z.string().trim().min(1).max(240),
-    coreTraits: z.array(z.string().trim().min(1).max(120)).length(3),
-    coreContradiction: z.string().trim().min(1).max(500),
-    mainGoal: z.string().trim().min(1).max(160),
+    coreTraits: z.array(z.string().trim().min(1).max(120)).min(1).max(8),
+    coreContradiction: z
+      .string()
+      .trim()
+      .max(500)
+      .transform((value) => value || undefined)
+      .optional(),
+    mainGoal: z
+      .string()
+      .trim()
+      .max(160)
+      .transform((value) => value || undefined)
+      .optional(),
     initialRelationship: z.string().trim().min(1).max(120),
     dialogueStyle: z.string().trim().min(1).max(500),
     characterBrief: z.string().trim().min(1).max(20_000).optional(),
+    authoring: CharacterAuthoringSchema.optional(),
     storyEra: z.string().trim().min(1).max(240).optional(),
     storyAnchorYear: z.number().int().min(1000).max(9999).optional(),
     tier: SimulationTierSchema,
@@ -492,6 +611,7 @@ export const ImportedCharacterInputSchema = z
     characterName: z.string().trim().min(1).max(120),
     workTitle: z.string().trim().min(1).max(200),
     storyStage: z.string().trim().min(1).max(240),
+    authoring: CharacterAuthoringSchema.optional(),
     tier: SimulationTierSchema,
     timezone: IanaTimezoneSchema.default("UTC"),
     sourceText: z

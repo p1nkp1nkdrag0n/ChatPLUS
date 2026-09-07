@@ -9,6 +9,9 @@ import type {
   FuzzyLifeService,
 } from "./fuzzy-life-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
+import type { MemoryReconciliationResult } from "./memory-lifecycle-service.js";
+import type { PersonaRuntimeService } from "./persona-runtime-service.js";
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import type { PersonalIntentService } from "./personal-intent-service.js";
 import type { ScheduleService } from "./schedule-service.js";
 import { deliveryModeForDecision } from "./turn-decision-service.js";
@@ -51,6 +54,7 @@ export class TurnCommitService {
     private readonly contexts?: ConversationContextService,
     private readonly options: TurnCommitServiceOptions = {},
     private readonly fuzzyLife?: FuzzyLifeService,
+    private readonly personaRuntime?: PersonaRuntimeService,
   ) {
     this.retrievalRuns = new RetrievalRunRepository(store.database);
     this.audits = new TurnCommitAuditWriter(store, options);
@@ -97,6 +101,9 @@ export class TurnCommitService {
         decisionPath: input.world.decisionPath,
         rejectedProposalCount: input.world.proposalRejections.length,
         scheduleActionAudit: input.world.scheduleActionAudit,
+        ...(input.turn.semanticGuardAudit === undefined
+          ? {}
+          : { semanticReplyGuard: input.turn.semanticGuardAudit }),
         ...(input.turn.explicitFactReplyGuardAudit === undefined
           ? {}
           : {
@@ -111,6 +118,15 @@ export class TurnCommitService {
           ? {}
           : { memoryRecall: input.recallDiagnostic }),
         promptSegmentTrace: input.promptSegmentTrace,
+        ...(input.memoryRevision === undefined
+          ? {}
+          : { memorySourceRevision: input.memoryRevision }),
+        ...(input.personaRuntimeDiagnostic === undefined
+          ? {}
+          : { personaRuntime: input.personaRuntimeDiagnostic }),
+        ...(input.companionContextDiagnostic === undefined
+          ? {}
+          : { companionContext: input.companionContextDiagnostic }),
         ...(input.preparedContext === undefined
           ? {}
           : {
@@ -131,6 +147,7 @@ export class TurnCommitService {
       : input.world.validation.accepted;
     let scheduleChanges: ScheduleItem[] = [];
     let memoryIds: string[] = [];
+    let memoryReconciliations: MemoryReconciliationResult[] = [];
     let personalIntentIds: string[] = [];
     let lifeImpact: ConversationLifeImpact | undefined;
     try {
@@ -140,6 +157,42 @@ export class TurnCommitService {
           input.command.clientMessageId,
         );
         if (duplicate) throw new DuplicateTurnError(duplicate);
+        if (input.effectivePersona !== undefined) {
+          const currentSpec = this.store.getCharacterSpec(
+            input.command.agentId,
+          );
+          const currentPersona =
+            currentSpec === undefined
+              ? undefined
+              : this.personaRuntime?.snapshot({
+                  baseSpec: currentSpec,
+                  nowUtc: input.nowUtc,
+                });
+          if (
+            currentPersona === undefined ||
+            currentPersona.baseCharacterVersion !==
+              input.effectivePersona.baseCharacterVersion ||
+            currentPersona.revision !== input.effectivePersona.revision ||
+            currentPersona.memoryRevision !==
+              input.effectivePersona.memoryRevision
+          )
+            throw new ApiError(
+              409,
+              "stale_effective_persona",
+              "Persona or memory sources changed before this turn could be committed.",
+            );
+        }
+        if (
+          input.memoryRevision !== undefined &&
+          new MemoryValidityRepository(this.store).currentRevision(
+            input.command.agentId,
+          ) !== input.memoryRevision
+        )
+          throw new ApiError(
+            409,
+            "stale_memory_sources",
+            "Memory sources changed before this turn could be committed.",
+          );
         const currentState = this.store.getRuntimeState(input.command.agentId);
         if (
           currentState === undefined ||
@@ -246,7 +299,24 @@ export class TurnCommitService {
               authoritativeMessageId: userMessage.id,
             }).map((memory) => memory.id)
           : [];
+        memoryReconciliations =
+          this.contexts?.reconcileMemories(input.command.agentId, memoryIds) ??
+          [];
         this.store.insertMessage(assistantMessage);
+        if (
+          this.options.personaRuntimeMode !== undefined &&
+          this.options.personaRuntimeMode !== "off" &&
+          contentDerivedSemanticsAllowed
+        ) {
+          if (this.personaRuntime === undefined)
+            throw new Error("Missing composed persona runtime");
+          this.personaRuntime.captureExplicitPractice({
+            baseSpec: input.spec,
+            sourceMessageId: userMessage.id,
+            nowUtc: input.nowUtc,
+            mode: this.options.personaRuntimeMode,
+          });
+        }
         if (fuzzyLifeEnabled && contentDerivedSemanticsAllowed) {
           if (this.fuzzyLife === undefined) {
             throw new Error(
@@ -267,6 +337,7 @@ export class TurnCommitService {
             assistantText: semanticMessages.assistantMessage.content,
             recordedAtUtc: input.nowUtc,
             correlationId: input.command.clientMessageId,
+            priorState: currentState,
           });
         }
         this.audits.persistConversationTurn({
@@ -301,6 +372,7 @@ export class TurnCommitService {
       userMessage,
       assistantMessage,
       memoryIds,
+      memoryReconciliations,
     });
     this.publisher.publish({
       ...input,
@@ -367,6 +439,7 @@ export class TurnCommitService {
       userMessage: StoredMessage;
       assistantMessage: StoredMessage;
       memoryIds: string[];
+      memoryReconciliations: MemoryReconciliationResult[];
     },
   ): Promise<void> {
     if (
@@ -389,6 +462,7 @@ export class TurnCommitService {
         timezone: input.spec.identity.timezone,
         ...semanticMessages,
         memoryIds: input.memoryIds,
+        preReconciled: input.memoryReconciliations,
         promptCueIds: input.preparedContext?.continuity.cueIds ?? [],
         ...(input.turn.continuityEffects === undefined
           ? {}

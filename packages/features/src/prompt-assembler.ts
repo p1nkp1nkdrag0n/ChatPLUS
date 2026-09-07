@@ -3,10 +3,20 @@ import type {
   CalendarPromptItem,
   CharacterAppearance,
   CharacterTemporalFrame,
+  ConversationContextPlan,
   EvidenceBundle,
+  EffectivePersonaSnapshot,
+  InteractionEvidenceSnapshot,
 } from "@personasim/contracts";
 
+import { deriveAdvicePolicy } from "./advice-policy.js";
+import { isFactHistoryQuery } from "./current-fact-projection.js";
+import { currentFactPromptEvidence } from "./prompt-segments/retrieved-evidence-segment.js";
+import { turnExpressionPromptView } from "./turn-expression-policy.js";
+import { interactionEvidencePromptView } from "./interaction-attribution.js";
 import type { MemoryLike } from "./memory-engine.js";
+import { selectCharacterContextForTurn } from "./character-context-selection.js";
+import type { MemoryUseSelection } from "./memory-use.js";
 import type { RelationshipStateLike } from "./relationship-engine.js";
 import {
   deriveReplyStrategy,
@@ -26,7 +36,9 @@ import {
   createDefaultPromptSegments,
   createFollowUpContextPromptSegment,
   createLifeContextPromptSegment,
+  estimatePromptTokens,
   PromptSegmentRegistry,
+  PromptSegmentRegistryError,
   type DefaultPromptContext,
   type PromptAssemblyTrace,
   type PromptSegment,
@@ -76,11 +88,15 @@ export interface PromptMessageLike {
 
 export interface AssemblePromptInput {
   character: CharacterForPrompt;
+  effectivePersona?: EffectivePersonaSnapshot;
   state: RuntimeStateLike;
   relationship?: RelationshipStateLike;
   schedule: readonly ScheduleItemLike[];
   memories: readonly MemoryLike[];
   memoryEvidence?: EvidenceBundle;
+  conversationPlan?: ConversationContextPlan;
+  interactionEvidence?: InteractionEvidenceSnapshot;
+  memoryUse?: MemoryUseSelection;
   autobiography?: AgentAutobiographySnapshot;
   calendarContext?: readonly CalendarPromptItem[];
   followUpContext?: unknown;
@@ -103,6 +119,8 @@ export interface AssemblePromptInput {
 }
 
 export interface AssembledPrompt {
+  /** Complete admitted grounding reused by bounded repair, with no new retrieval. */
+  replyGrounding: string;
   system: string;
   prompt: string;
   messages: PromptMessageLike[];
@@ -451,36 +469,11 @@ function compactTextList(values: readonly string[]): string[] {
 }
 
 function compactMemoryEvidence(bundle: EvidenceBundle): EvidenceBundle {
+  // Retrieval owns the item count. The final segment budget selects whole
+  // records, including qualifiers, source spans and attribution.
   return {
-    query: truncate(bundle.query, 1_000),
-    mode: bundle.mode,
-    generatedAtUtc: bundle.generatedAtUtc,
-    score: bundle.score,
-    evidence: bundle.evidence.slice(0, 3).map((item) => ({
-      memoryId: item.memoryId,
-      memoryContent: truncate(item.memoryContent, 1_000),
-      memoryKind: item.memoryKind,
-      namespace: item.namespace,
-      certainty: item.certainty,
-      attribution: item.attribution,
-      stability: item.stability,
-      ...(item.temporalMetadata === undefined
-        ? {}
-        : { temporalMetadata: item.temporalMetadata }),
-      evidence: {
-        ...item.evidence,
-        ...(item.evidence.quote === undefined
-          ? {}
-          : { quote: truncate(item.evidence.quote, 1_000) }),
-        ...(item.evidence.contextSummary === undefined
-          ? {}
-          : {
-              contextSummary: truncate(item.evidence.contextSummary, 1_000),
-            }),
-      },
-      score: item.score,
-      scoreBreakdown: item.scoreBreakdown,
-    })),
+    ...bundle,
+    evidence: bundle.evidence.map(currentFactPromptEvidence),
   };
 }
 
@@ -568,9 +561,12 @@ export function assembleChatPrompt(
   const relationship = input.relationship ?? input.state.relationship;
   const replyStrategy = deriveReplyStrategy(
     input.userMessage,
-    input.character.dialogue,
+    input.effectivePersona?.dialogue ?? input.character.dialogue,
     {
       state: input.state,
+      ...(input.conversationPlan === undefined
+        ? {}
+        : { conversationPlan: input.conversationPlan }),
       ...(relationship === undefined ? {} : { relationship }),
     },
   );
@@ -606,13 +602,19 @@ export function assembleChatPrompt(
       ? undefined
       : compactScheduleItem(currentActivityItem);
   const maximumMemories = boundedCount(input.maxMemories, 12, 20);
-  const memories = input.memories.slice(0, maximumMemories).map((memory) => ({
-    kind: memory.kind,
-    content: truncate(memory.content, 360),
-    importance: memory.importance,
-    confidence: memory.confidence,
-    createdAtUtc: memory.createdAtUtc,
-  }));
+  const memories = input.memories
+    .filter(
+      (memory) =>
+        !input.effectivePersona?.suppressedMemoryIds.includes(memory.id),
+    )
+    .slice(0, maximumMemories)
+    .map((memory) => ({
+      kind: memory.kind,
+      content: memory.content,
+      importance: memory.importance,
+      confidence: memory.confidence,
+      createdAtUtc: memory.createdAtUtc,
+    }));
   const explicitExcerpts = (input.sourceExcerpts ?? [])
     .slice(0, 5)
     .map((value) => truncate(value, 240));
@@ -628,10 +630,7 @@ export function assembleChatPrompt(
   const recentMessages =
     maximumRecentMessages === 0
       ? []
-      : input.recentMessages.slice(-maximumRecentMessages).map((message) => ({
-          ...message,
-          content: truncate(message.content, 1_500),
-        }));
+      : input.recentMessages.slice(-maximumRecentMessages);
 
   const decisionMode = input.decisionMode ?? "reply_only";
   const fuzzyLife = input.lifePlanningMode === "fuzzy";
@@ -768,22 +767,110 @@ export function assembleChatPrompt(
           ? " Top-level scheduleEffects is optional under the appended legacy contract."
           : " Omit top-level scheduleEffects."
       }`;
-  const compactCharacterData = compactCharacter(input.character);
+  const selectedCharacter = selectCharacterContextForTurn(
+    input.effectivePersona === undefined
+      ? input.character
+      : {
+          ...input.character,
+          persona: input.effectivePersona.persona,
+          dialogue: input.effectivePersona.dialogue,
+        },
+    input.conversationPlan,
+  );
+  const compactCharacterData = compactCharacter(selectedCharacter.character);
   const memoryEvidence =
     input.memoryEvidence === undefined
       ? undefined
-      : compactMemoryEvidence(input.memoryEvidence);
+      : compactMemoryEvidence({
+          ...input.memoryEvidence,
+          evidence: input.memoryEvidence.evidence.filter((item) => {
+            if (
+              input.effectivePersona?.suppressedMemoryIds.includes(
+                item.memoryId,
+              )
+            )
+              return false;
+            if (input.memoryUse === undefined) return true;
+            return (
+              input.memoryUse.backgroundEvidenceIds.includes(
+                item.evidence.id,
+              ) ||
+              input.memoryUse.behavioralPreferenceEvidenceIds.includes(
+                item.evidence.id,
+              ) ||
+              input.memoryUse.explicitMentionEvidenceIds.includes(
+                item.evidence.id,
+              )
+            );
+          }),
+        });
+  const retrievedEvidenceUses =
+    input.memoryUse === undefined
+      ? undefined
+      : Object.fromEntries(
+          (memoryEvidence?.evidence ?? []).map((item) => [
+            item.evidence.id,
+            [
+              ...(input.memoryUse!.backgroundEvidenceIds.includes(
+                item.evidence.id,
+              )
+                ? ["background"]
+                : []),
+              ...(input.memoryUse!.behavioralPreferenceEvidenceIds.includes(
+                item.evidence.id,
+              )
+                ? ["behavior_in_scope"]
+                : []),
+              ...(input.memoryUse!.explicitMentionEvidenceIds.includes(
+                item.evidence.id,
+              )
+                ? ["explicit_mention"]
+                : []),
+            ],
+          ]),
+        );
   const compatibilityReferenceContext = {
     dialogue: compactCharacterData.dialogue,
     userRelationship: compactCharacterData.userRelationship,
     relevantMemories: memoryEvidence === undefined ? memories : [],
-    ...(memoryEvidence === undefined ? {} : { memoryEvidence }),
+    ...(memoryEvidence === undefined || input.memoryUse !== undefined
+      ? {}
+      : { memoryEvidence }),
     shortSourceExcerpts: excerpts,
   };
-  const stableCharacterCacheKey = characterCacheKey(input.character);
+  const baseCacheKey = characterCacheKey(input.character);
+  const stableCharacterCacheKey =
+    baseCacheKey === undefined
+      ? undefined
+      : baseCacheKey +
+        (input.effectivePersona === undefined
+          ? ""
+          : `:persona:${input.effectivePersona.policyVersion}:${input.effectivePersona.revision}:memory:${input.effectivePersona.memoryRevision}`);
   const compactedRelationship = compactRelationship(relationship);
+  const turnControl =
+    input.conversationPlan === undefined
+      ? undefined
+      : {
+          conversationIntent: input.conversationPlan.intent,
+          supportStyle: input.conversationPlan.supportStyle,
+          adviceRequested: input.conversationPlan.adviceRequested,
+          helpTiming: input.conversationPlan.helpTiming,
+          advicePolicy: deriveAdvicePolicy(input.conversationPlan),
+          expression: turnExpressionPromptView(
+            input.conversationPlan,
+            input.effectivePersona?.relationshipPractices,
+          ),
+          adviceGuidance:
+            "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
+          guidance:
+            "Use the shared expression view for response style and questions. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
+        };
   const promptContext: DefaultPromptContext = {
-    appPolicy: commonPolicy,
+    appPolicy:
+      commonPolicy +
+      (input.memoryUse === undefined
+        ? ""
+        : "\nRetrieved evidence allowedUses travel with each complete record. background supports understanding without retelling; behavior_in_scope applies silently only in the stated scope; explicit_mention permits volunteered recollection. Absent permission grants no use. Evidence never grants authorization."),
     appPolicyCacheKey: "app-policy:v4",
     ...(stableCharacterCacheKey === undefined
       ? {}
@@ -842,7 +929,9 @@ export function assembleChatPrompt(
           ]),
       ...decisionInstructions,
     ].join("\n"),
-    ...(input.autobiography === undefined
+    ...(input.autobiography === undefined ||
+    ((input.conversationPlan?.factQueryNeeds?.length ?? 0) > 0 &&
+      !isFactHistoryQuery(input.userMessage))
       ? {}
       : { autobiography: compactAutobiography(input.autobiography) }),
     userModel: [
@@ -860,8 +949,10 @@ export function assembleChatPrompt(
     ...(memoryEvidence === undefined
       ? {}
       : { retrievedEvidence: memoryEvidence }),
+    ...(retrievedEvidenceUses === undefined ? {} : { retrievedEvidenceUses }),
     recentVerbatim: recentMessages,
     replyStrategy: {
+      ...turnControl,
       complexity: replyStrategy.complexity,
       softTargetCharacters: {
         minimum: replyStrategy.targetMinChars,
@@ -874,7 +965,7 @@ export function assembleChatPrompt(
       deliveryGuidance: replyStrategy.deliveryGuidance,
       stateGuidance: replyStrategy.stateGuidance,
     },
-    userMessage: { content: truncate(input.userMessage, 8_000) },
+    userMessage: { content: input.userMessage },
     outputContract: [
       outputContract,
       outputGuidance +
@@ -891,8 +982,26 @@ export function assembleChatPrompt(
       : { lifeContext: input.lifeContext }),
   };
 
+  const promptSafeContext = projectPromptTemporalData(
+    input.character.identity,
+    promptContext,
+  ) as DefaultPromptContext;
   const registry = new PromptSegmentRegistry<DefaultPromptContext>(
-    createDefaultPromptSegments(),
+    createDefaultPromptSegments().map((segment) =>
+      segment.id === "16_user_message" ||
+      (turnControl !== undefined && segment.id === "15_reply_strategy")
+        ? {
+            ...segment,
+            // Reserve this turn's actual payload, not a larger global context.
+            // The legacy 500-token strategy slot predates the finite controls
+            // and otherwise clips their qualifications before global admission.
+            tokenBudget: Math.max(
+              segment.tokenBudget,
+              estimatePromptTokens(segment.render(promptSafeContext) ?? ""),
+            ),
+          }
+        : segment,
+    ),
   );
   if (input.followUpContext !== undefined) {
     registry.register(createFollowUpContextPromptSegment());
@@ -906,16 +1015,89 @@ export function assembleChatPrompt(
   for (const segment of input.additionalPromptSegments ?? []) {
     registry.register(segment);
   }
-  const promptSafeContext = projectPromptTemporalData(
-    input.character.identity,
-    promptContext,
-  ) as DefaultPromptContext;
+  if (input.effectivePersona !== undefined) {
+    const effective = input.effectivePersona;
+    registry.register({
+      id: "03b_effective_persona",
+      placement: "system",
+      priority: 98,
+      tokenBudget: 3_000,
+      required: false,
+      cacheable: false,
+      globalOverflowPolicy: "drop",
+      render: () =>
+        "EFFECTIVE_PERSONA_JSON\n" +
+        JSON.stringify({
+          policyVersion: effective.policyVersion,
+          baseCharacterVersion: effective.baseCharacterVersion,
+          revision: effective.revision,
+          memoryRevision: effective.memoryRevision,
+          relationshipPractices: effective.relationshipPractices.map(
+            (item) => ({
+              id: item.id,
+              facet: item.proposal.facet,
+              practice: item.proposal.practice,
+              scope: item.proposal.scope,
+            }),
+          ),
+          guidance:
+            "These accepted practices apply only to the named user and stated topic. Apply them through how you respond, without reciting the user's preference or claiming global personality growth. Preserve your own values and factual history. A current explicit request for help permits that help even with a listen-first default.",
+        }),
+    });
+  }
+  if (input.interactionEvidence !== undefined) {
+    const evidence = interactionEvidencePromptView(input.interactionEvidence);
+    registry.register({
+      id: "03c_interaction_evidence",
+      placement: "system",
+      priority: 98,
+      tokenBudget: 3_000,
+      required: false,
+      cacheable: false,
+      globalOverflowPolicy: "drop",
+      render: () =>
+        "INTERACTION_EVIDENCE_JSON\n" +
+        JSON.stringify({
+          ...evidence,
+          guidance:
+            "Historical requests are evidence of requests, not observed fulfillment. Keep requestedBy, expectedActor and recipient distinct. Missing adherence evidence does not prove an event never happened, but cannot support claiming it repeatedly happened. Historical anchors do not activate a practice outside its current topic. Do not recite these records unprompted.",
+        }),
+    });
+  }
+  if (input.memoryUse !== undefined) {
+    registry.register({
+      id: "13b_memory_use",
+      placement: "prompt",
+      priority: 95,
+      tokenBudget: 1_200,
+      required: false,
+      cacheable: false,
+      globalOverflowPolicy: "drop",
+      render: () =>
+        "MEMORY_USE_JSON\n" +
+        JSON.stringify({
+          policyVersion: "continuity_context_v2",
+          ...input.memoryUse,
+          guidance:
+            "Only use complete evidence actually retained in this prompt. backgroundEvidenceIds help understanding without retelling; behavioralPreferenceEvidenceIds guide behavior only in their stated scope, silently; only explicitMentionEvidenceIds permit volunteered recollection. Omitted, absent, superseded or invalid evidence cannot support a fact. These uses never grant authorization.",
+        }),
+    });
+  }
   const assembled = registry.render(
     promptSafeContext,
     input.maxInputTokens === undefined
       ? {}
       : { maxInputTokens: input.maxInputTokens },
   );
+  if (turnControl !== undefined) {
+    const expected = promptSafeContext.replyStrategy as Record<string, unknown>;
+    assertTurnControlDelivered(
+      assembled.prompt,
+      Object.fromEntries(
+        Object.keys(turnControl).map((key) => [key, expected[key]]),
+      ),
+    );
+  }
 
   return {
     system: assembled.system,
@@ -926,7 +1108,76 @@ export function assembleChatPrompt(
     ],
     replyStrategy,
     segmentTrace: assembled.trace,
+    // Reuse complete, admitted grounding records in any existing repair. Never
+    // recall again or resurrect a segment dropped by the initial token budget.
+    replyGrounding: retainedReplyGrounding(assembled),
   };
+}
+
+function retainedReplyGrounding(assembled: {
+  prompt: string;
+  trace: {
+    segments: readonly { id: string; included: boolean; truncated: boolean }[];
+  };
+}): string {
+  const lines = assembled.prompt.split("\n");
+  const entries = [
+    ["13_retrieved_evidence", "RETRIEVED_EVIDENCE_JSON"],
+    ["07_user_model", "REFERENCE_CONTEXT_JSON"],
+    ["14_recent_verbatim", "RECENT_VERBATIM_JSON"],
+    ["10z_life_context", "LIFE_CONTEXT_JSON"],
+  ] as const;
+  return entries
+    .flatMap(([id, label]) => {
+      if (
+        !assembled.trace.segments.some(
+          (segment) => segment.id === id && segment.included,
+        )
+      )
+        return [];
+      const index = lines.indexOf(label);
+      const payload = index < 0 ? undefined : lines[index + 1];
+      if (payload === undefined) return [];
+      try {
+        // The assembler emits JSON on one line. Fail closed if a renderer ever
+        // changes shape; partial excerpts must not become repaired facts.
+        JSON.parse(payload);
+        return [`${label}\n${payload}`];
+      } catch {
+        return [];
+      }
+    })
+    .join("\n");
+}
+
+/** Global pressure may shorten ordinary context, never half-deliver a control. */
+function assertTurnControlDelivered(
+  prompt: string,
+  expected: Record<string, unknown>,
+): void {
+  const lines = prompt.split("\n");
+  const index = lines.indexOf("REPLY_STRATEGY_JSON");
+  let delivered: unknown;
+  try {
+    delivered = index < 0 ? undefined : JSON.parse(lines[index + 1] ?? "null");
+  } catch {
+    delivered = undefined;
+  }
+  if (
+    typeof delivered !== "object" ||
+    delivered === null ||
+    Array.isArray(delivered) ||
+    Object.entries(expected).some(
+      ([key, value]) =>
+        JSON.stringify((delivered as Record<string, unknown>)[key]) !==
+        JSON.stringify(value),
+    )
+  ) {
+    throw new PromptSegmentRegistryError(
+      "required_segments_exceed_budget",
+      "The prompt budget cannot retain the complete current-turn reply controls.",
+    );
+  }
 }
 
 export const assemblePrompt = assembleChatPrompt;

@@ -58,6 +58,14 @@ function compactLabeledJson(
   value: string,
   maximumCharacters: number,
 ): string | null | undefined {
+  const referencePrefix = "USER_MODEL_JSON\n";
+  if (value.startsWith(referencePrefix + "REFERENCE_CONTEXT_JSON\n")) {
+    const nested = compactLabeledJson(
+      value.slice(referencePrefix.length),
+      maximumCharacters - referencePrefix.length,
+    );
+    return typeof nested === "string" ? referencePrefix + nested : nested;
+  }
   const newline = value.indexOf("\n");
   if (newline <= 0) return undefined;
   const label = value.slice(0, newline);
@@ -70,6 +78,14 @@ function compactLabeledJson(
   }
   if (label === "AUTOBIOGRAPHY_JSON") {
     return compactWholeAutobiography(label, parsed, maximumCharacters);
+  }
+  if (label === "CURRENT_USER_MESSAGE_JSON") return null;
+  if (
+    label === "RETRIEVED_EVIDENCE_JSON" ||
+    label === "REFERENCE_CONTEXT_JSON" ||
+    label === "RECENT_VERBATIM_JSON"
+  ) {
+    return compactWholeEvidence(label, parsed, maximumCharacters);
   }
   const configurations = [
     [2_000, 20],
@@ -98,6 +114,46 @@ function compactLabeledJson(
   }
   const marker = `${label}\n{"_truncated":true}`;
   return marker.length <= maximumCharacters ? marker : null;
+}
+
+function compactWholeEvidence(
+  label: string,
+  value: unknown,
+  maximumCharacters: number,
+): string | null {
+  const render = (data: unknown) => `${label}\n${JSON.stringify(data)}`;
+  if (Array.isArray(value)) {
+    const selected: unknown[] = [];
+    // Recent dialogue is chronological; retain only complete messages.
+    for (const item of [...(value as unknown[])].reverse()) {
+      if (render([item, ...selected]).length <= maximumCharacters)
+        selected.unshift(item);
+    }
+    return render(selected).length <= maximumCharacters
+      ? render(selected)
+      : null;
+  }
+  const selected: Record<string, unknown> = { _truncated: true };
+  if (render(selected).length > maximumCharacters) return null;
+  if (typeof value !== "object" || value === null) return render(selected);
+  const original = value as Record<string, unknown>;
+  const keep = (key: string, item: unknown) => {
+    if (render({ ...selected, [key]: item }).length <= maximumCharacters)
+      selected[key] = item;
+  };
+  for (const [key, item] of Object.entries(original)) {
+    if (Array.isArray(item)) {
+      selected[key] = [];
+      for (const record of item)
+        keep(key, [...(selected[key] as unknown[]), record]);
+      if (render(selected).length > maximumCharacters) delete selected[key];
+    } else {
+      // Nested evidence bundles are atomic here. Their dedicated segment can
+      // still retain individual records without creating a contradictory copy.
+      keep(key, item);
+    }
+  }
+  return render(selected);
 }
 
 function compactWholeAutobiography(
@@ -165,9 +221,16 @@ function compactJsonValue(
 }
 
 function minimumPromptCharacters(value: string): number {
+  const referencePrefix = "USER_MODEL_JSON\n";
+  if (value.startsWith(referencePrefix + "REFERENCE_CONTEXT_JSON\n"))
+    return (
+      referencePrefix.length +
+      minimumPromptCharacters(value.slice(referencePrefix.length))
+    );
   const newline = value.indexOf("\n");
   if (newline <= 0) return 1;
   const label = value.slice(0, newline);
+  if (label === "CURRENT_USER_MESSAGE_JSON") return value.length;
   if (!/^[A-Z0-9_]+_JSON$/u.test(label)) return 1;
   try {
     JSON.parse(value.slice(newline + 1));

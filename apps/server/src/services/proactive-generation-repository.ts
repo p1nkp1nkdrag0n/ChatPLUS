@@ -2,6 +2,7 @@ import type { ProactiveDeliverySubjectLike } from "@personasim/features";
 
 import type { Database } from "../db/connection.js";
 import { createEntityId } from "../domain/id.js";
+import { FollowUpRepository } from "./follow-up-repository.js";
 
 export type ProactiveSubjectRef =
   | { kind: "activity_candidate"; id: string }
@@ -224,7 +225,7 @@ export class ProactiveGenerationRepository {
     agentId: string,
     nowUtc: string,
   ): ProactiveSubjectRecord | undefined {
-    const followUp = this.database
+    const followUps = this.database
       .prepare(
         `SELECT fui.*,
            EXISTS(
@@ -244,9 +245,13 @@ export class ProactiveGenerationRepository {
                AND pgr.status = 'generating'
            )
          ORDER BY fui.earliest_at_utc, fui.created_at_utc, fui.rowid
-         LIMIT 1`,
+         `,
       )
-      .get(agentId, nowUtc, nowUtc) as SqlRow | undefined;
+      .all(agentId, nowUtc, nowUtc) as SqlRow[];
+    const evidence = new FollowUpRepository(this.database);
+    const followUp = followUps.find((row) =>
+      evidence.isFollowUpEvidenceCurrent(String(row["id"])),
+    );
     if (followUp !== undefined) return mapFollowUpSubject(followUp);
 
     const candidate = this.database
@@ -276,6 +281,10 @@ export class ProactiveGenerationRepository {
 
   getSubject(ref: ProactiveSubjectRef): ProactiveSubjectRecord | undefined {
     if (ref.kind === "follow_up") {
+      if (
+        !new FollowUpRepository(this.database).isFollowUpEvidenceCurrent(ref.id)
+      )
+        return undefined;
       const row = this.database
         .prepare(
           `SELECT fui.*,
@@ -316,6 +325,13 @@ export class ProactiveGenerationRepository {
     snapshot: Record<string, unknown>;
     startedAtUtc: string;
   }): ClaimedGeneration | undefined {
+    if (
+      input.subject.kind === "follow_up" &&
+      !new FollowUpRepository(this.database).isFollowUpEvidenceCurrent(
+        input.subject.id,
+      )
+    )
+      return undefined;
     const nextEpoch = input.subject.generationEpoch + 1;
     const nextRevision = input.subject.revision + 1;
     const claimed =
@@ -485,6 +501,12 @@ export class ProactiveGenerationRepository {
           .get(run.sourceId, run.generationEpoch, run.claimToken) !== undefined
       );
     }
+    if (
+      !new FollowUpRepository(this.database).isFollowUpEvidenceCurrent(
+        run.sourceId,
+      )
+    )
+      return false;
     return (
       this.database
         .prepare(
@@ -505,6 +527,14 @@ export class ProactiveGenerationRepository {
     content: string;
     completedAtUtc: string;
   }): StoredProactiveMessage {
+    if (
+      input.subject.kind === "follow_up" &&
+      !new FollowUpRepository(this.database).isFollowUpEvidenceCurrent(
+        input.subject.id,
+      )
+    ) {
+      throw new Error("Follow-up evidence became invalid before delivery");
+    }
     const triggerEventId =
       input.subject.kind === "activity_candidate"
         ? input.subject.triggerEventId

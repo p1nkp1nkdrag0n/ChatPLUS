@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EvidenceBundle } from "@personasim/contracts";
+import { buildConversationContextPlan } from "./conversation-context-plan.js";
+import { turnExpressionPromptView } from "./turn-expression-policy.js";
 
 import {
   assembleChatPrompt,
@@ -8,6 +10,7 @@ import {
 import {
   DEFAULT_PROMPT_SEGMENT_IDS,
   estimatePromptTokens,
+  PromptSegmentRegistryError,
 } from "./prompt-segments/index.js";
 
 const NOW = "2026-08-21T12:00:00.000Z";
@@ -46,6 +49,197 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
     },
   ],
 };
+
+describe("complete evidence budgets", () => {
+  it("keeps complete records admitted by whole-record budget compaction in repair grounding", () => {
+    const evidence = Array.from({ length: 8 }, (_, index) => {
+      const memoryId = `budget-memory-${index}`;
+      return {
+        ...MEMORY_EVIDENCE.evidence[0]!,
+        memoryId,
+        memoryContent: `那是咖啡店${index}。${"当时公开的具体细节。".repeat(110)}`,
+        evidence: {
+          ...MEMORY_EVIDENCE.evidence[0]!.evidence,
+          id: `budget-evidence-${index}`,
+          memoryId,
+          quote: `我说的是咖啡店${index}。${"当时公开的具体细节。".repeat(110)}`,
+        },
+      };
+    });
+    const result = assembleChatPrompt(
+      baseInput({
+        memoryEvidence: { ...MEMORY_EVIDENCE, evidence },
+        memoryUse: {
+          backgroundEvidenceIds: evidence.map((item) => item.evidence.id),
+          behavioralPreferenceEvidenceIds: [],
+          explicitMentionEvidenceIds: [],
+          omissions: [],
+        },
+      }),
+    );
+    const admitted = promptSegmentJson(
+      result.prompt,
+      "RETRIEVED_EVIDENCE_JSON",
+    ) as { evidence: unknown[] };
+    expect(admitted.evidence.length).toBeGreaterThan(0);
+    expect(admitted.evidence.length).toBeLessThan(8);
+    expect(
+      result.segmentTrace.segments.find(
+        (item) => item.id === "13_retrieved_evidence",
+      )?.truncated,
+    ).toBe(true);
+    expect(
+      promptSegmentJson(result.replyGrounding, "RETRIEVED_EVIDENCE_JSON"),
+    ).toEqual(admitted);
+  });
+  it("shares corrected current values with repairs while retaining the original correction only in audit", () => {
+    const original: EvidenceBundle = {
+      ...MEMORY_EVIDENCE,
+      query: "同事叫什么？",
+      factCoverage: [{ entity: "同事", attribute: "name", covered: true }],
+      evidence: [
+        {
+          ...MEMORY_EVIDENCE.evidence[0]!,
+          memoryContent: "用户的同事姓名：林桥。",
+          currentFact: { entity: "同事", attribute: "name", value: "林桥" },
+          evidence: {
+            ...MEMORY_EVIDENCE.evidence[0]!.evidence,
+            quote: "同事叫林桥，不是林乔。",
+            contextSummary: "旧名字林乔已被纠正。",
+          },
+        },
+      ],
+    };
+    const result = assembleChatPrompt(
+      baseInput({ userMessage: original.query, memoryEvidence: original }),
+    );
+    expect(result.prompt).toContain("林桥");
+    expect(result.prompt).not.toContain("林乔");
+    expect(result.replyGrounding).toContain("林桥");
+    expect(result.replyGrounding).not.toContain("林乔");
+    expect(result.replyGrounding).toContain('"sourceId":"message-hiking"');
+    expect(original.evidence[0]?.evidence.quote).toContain("不是林乔");
+  });
+  it.each([undefined, 3_000, 4_000, 8_000])(
+    "keeps use permissions with evidence at %s tokens",
+    (budget) => {
+      const item = MEMORY_EVIDENCE.evidence[0]!;
+      const result = assembleChatPrompt(
+        baseInput({
+          memoryEvidence: MEMORY_EVIDENCE,
+          memoryUse: {
+            backgroundEvidenceIds: [item.evidence.id],
+            behavioralPreferenceEvidenceIds: [],
+            explicitMentionEvidenceIds: [],
+            omissions: [],
+          },
+          ...(budget === undefined ? {} : { maxInputTokens: budget }),
+        }),
+      );
+      const lines = result.prompt.split("\n");
+      const index = lines.indexOf("RETRIEVED_EVIDENCE_JSON");
+      if (index >= 0) {
+        const payload = JSON.parse(lines[index + 1]!) as {
+          evidence: { allowedUses: string[]; memoryContent: string }[];
+        };
+        for (const evidence of payload.evidence) {
+          expect(evidence.allowedUses).toEqual(["background"]);
+          expect(evidence.memoryContent).toBe(item.memoryContent);
+        }
+      }
+      const reference = lines.indexOf("REFERENCE_CONTEXT_JSON");
+      if (reference >= 0)
+        expect(JSON.parse(lines[reference + 1]!)).not.toHaveProperty(
+          "memoryEvidence",
+        );
+    },
+  );
+
+  it("does not render excluded evidence or unrelated initial goals in ordinary sharing", () => {
+    const original = baseInput({ memoryEvidence: MEMORY_EVIDENCE });
+    const userMessage = "今天路上看到一只小猫，挺开心。";
+    const result = assembleChatPrompt({
+      ...original,
+      userMessage,
+      conversationPlan: buildConversationContextPlan({
+        originalQuery: userMessage,
+        agentId: "agent-test",
+        sessionId: "session-test",
+        recentMessages: [],
+      }),
+      memoryUse: {
+        backgroundEvidenceIds: [],
+        behavioralPreferenceEvidenceIds: [],
+        explicitMentionEvidenceIds: [],
+        omissions: [],
+      },
+    });
+    expect(result.prompt).not.toContain("The user enjoys hiking.");
+    expect(promptSegmentJson(result.system, "CORE_PERSONA_JSON")).toMatchObject(
+      { goals: [] },
+    );
+    expect(
+      promptSegmentJson(result.system, "VALUES_CONFLICTS_JSON"),
+    ).toMatchObject({ contradictions: [] });
+    expect(original.character.persona.goals.length).toBeGreaterThan(0);
+  });
+  it.each([undefined, 4_000, 8_000])(
+    "keeps late qualifications intact at %s tokens",
+    (budget) => {
+      const quote =
+        "我原来以为她已经答应了。".repeat(100) +
+        "后来才发现没有，这只是我的猜想。";
+      const item = {
+        ...MEMORY_EVIDENCE.evidence[0]!,
+        memoryContent: quote,
+        evidence: {
+          ...MEMORY_EVIDENCE.evidence[0]!.evidence,
+          quote,
+          contextSummary: quote,
+        },
+      };
+      const result = assembleChatPrompt(
+        baseInput({
+          memoryEvidence: { ...MEMORY_EVIDENCE, evidence: [item] },
+          ...(budget === undefined ? {} : { maxInputTokens: budget }),
+        }),
+      );
+      const lines = result.prompt.split("\n");
+      for (const label of [
+        "RETRIEVED_EVIDENCE_JSON",
+        "REFERENCE_CONTEXT_JSON",
+      ]) {
+        const index = lines.indexOf(label);
+        if (index < 0) continue;
+        const payload = JSON.parse(lines[index + 1]!) as {
+          evidence?: EvidenceBundle["evidence"];
+          memoryEvidence?: EvidenceBundle;
+        };
+        const evidence =
+          payload.evidence ?? payload.memoryEvidence?.evidence ?? [];
+        for (const retained of evidence) {
+          expect(retained.memoryContent).toBe(quote);
+          expect(retained.evidence.quote).toBe(quote);
+          expect(retained.evidence.contextSummary).toBe(quote);
+        }
+      }
+    },
+  );
+
+  it("retains the complete accepted current message, including its final denial", () => {
+    const userMessage =
+      "这只是一个设想。".repeat(2_000) + "不要执行，我没有同意。";
+    const result = assembleChatPrompt(baseInput({ userMessage }));
+    const lines = result.prompt.split("\n");
+    expect(
+      (
+        JSON.parse(lines[lines.indexOf("CURRENT_USER_MESSAGE_JSON") + 1]!) as {
+          content: string;
+        }
+      ).content,
+    ).toBe(userMessage);
+  });
+});
 
 function baseInput(
   overrides: Partial<AssemblePromptInput> = {},
@@ -125,6 +319,126 @@ function promptSegmentJson(prompt: string, label: string): unknown {
   }
   return JSON.parse(serialized) as unknown;
 }
+
+describe("complete turn-control delivery", () => {
+  it("reuses only complete admitted grounding in repairs", () => {
+    const result = assembleChatPrompt(
+      baseInput({
+        userMessage: "那家店怎么样？",
+        recentMessages: [{ role: "user", content: "是咖啡店，灯光很舒服。" }],
+      }),
+    );
+    expect(result.replyGrounding).toContain("咖啡店");
+    expect(result.replyGrounding).toContain("RECENT_VERBATIM_JSON");
+    expect(result.replyGrounding).not.toContain("OUTPUT_CONTRACT_JSON");
+    expect(result.replyGrounding).not.toContain("REPLY_STRATEGY_JSON");
+  });
+  it.each([
+    "只是抱怨一下今天又改了方案，不用解决。",
+    "朋友说‘别再问我’，那是他对别人说的，不是在替我提要求。",
+    "请帮我分析一下，是哪里出了错，还有什么需要核对？",
+  ])("delivers the complete frozen guidance for %s", (userMessage) => {
+    const conversationPlan = buildConversationContextPlan({
+      originalQuery: userMessage,
+      agentId: "agent-test",
+      sessionId: "session-test",
+      recentMessages: [],
+      protectedPhrases: Array.from({ length: 24 }, (_, i) => `作者用语 ${i}`),
+    });
+    const before = structuredClone(conversationPlan);
+    const result = assembleChatPrompt(
+      baseInput({ userMessage, conversationPlan }),
+    );
+    const strategy = promptSegmentJson(
+      result.prompt,
+      "REPLY_STRATEGY_JSON",
+    ) as {
+      expression: ReturnType<typeof turnExpressionPromptView>;
+      guidance: string;
+    };
+    expect(strategy.expression).toEqual(turnExpressionPromptView(before));
+    expect(strategy.expression.questionGuidance).toContain(
+      "For a closed vent, do not announce that you are following a listening policy",
+    );
+    expect(strategy.expression.expressionGuidance).toContain(
+      "psychological traits or abilities",
+    );
+    expect(strategy.expression.analysisGuidance).toContain(
+      "Do not redefine an actual mistake as requiring irreversible harm",
+    );
+    expect(strategy.guidance).toContain(
+      "do not collapse the ordered request into advice now or indefinite listening",
+    );
+    expect(
+      result.segmentTrace.segments.find((s) => s.id === "15_reply_strategy"),
+    ).toMatchObject({ included: true, truncated: false });
+    expect(result.messages[1]!.content).toBe(result.prompt);
+    expect(conversationPlan).toEqual(before);
+  });
+
+  it("keeps turn controls complete while optional context competes for a fixed total budget", () => {
+    const userMessage = "先让我说完，再帮我详细分析。";
+    const conversationPlan = buildConversationContextPlan({
+      originalQuery: userMessage,
+      agentId: "agent-test",
+      sessionId: "session-test",
+      recentMessages: [],
+    });
+    const input = baseInput({ userMessage, conversationPlan });
+    const unconstrained = assembleChatPrompt(input);
+    const maximumTokens = unconstrained.segmentTrace.segments
+      .filter((segment) => segment.required)
+      .reduce((total, segment) => total + segment.estimatedTokens + 1, 100);
+    const constrained = assembleChatPrompt({
+      ...input,
+      maxInputTokens: maximumTokens,
+      recentMessages: Array.from({ length: 30 }, (_, i) => ({
+        role: "assistant" as const,
+        content: `历史 ${i}。${"这是一段较长的历史对话。".repeat(80)}`,
+      })),
+    });
+    expect(
+      (
+        promptSegmentJson(constrained.prompt, "REPLY_STRATEGY_JSON") as {
+          expression: unknown;
+          helpTiming: unknown;
+        }
+      ).expression,
+    ).toEqual(turnExpressionPromptView(conversationPlan));
+    expect(
+      promptSegmentJson(constrained.prompt, "REPLY_STRATEGY_JSON"),
+    ).toMatchObject({ helpTiming: "after_user_finishes" });
+    expect(constrained.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(
+      maximumTokens,
+    );
+    expect(
+      constrained.segmentTrace.segments.some(
+        (segment) =>
+          !segment.required &&
+          (segment.truncated || segment.reason === "global_budget"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects insufficient total space rather than sending a clipped turn instruction", () => {
+    const userMessage = "只是吐槽一句，不用解决。";
+    const conversationPlan = buildConversationContextPlan({
+      originalQuery: userMessage,
+      agentId: "agent-test",
+      sessionId: "session-test",
+      recentMessages: [],
+    });
+    expect(() =>
+      assembleChatPrompt(
+        baseInput({
+          userMessage,
+          conversationPlan,
+          maxInputTokens: 512,
+        }),
+      ),
+    ).toThrow(PromptSegmentRegistryError);
+  });
+});
 
 describe("assembleChatPrompt registry integration", () => {
   it.each(["reply_only", "schedule_negotiation", "legacy_effects"] as const)(
@@ -871,7 +1185,7 @@ describe("assembleChatPrompt registry integration", () => {
   it("honors the global input budget without dropping required segments", () => {
     const result = assembleChatPrompt(
       baseInput({
-        userMessage: "u".repeat(20_000),
+        userMessage: "我没有同意执行。",
         recentMessages: Array.from({ length: 300 }, (_, index) => ({
           role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
           content: "m".repeat(2_000),

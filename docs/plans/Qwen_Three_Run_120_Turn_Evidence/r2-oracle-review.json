@@ -1,0 +1,780 @@
+{
+  "schema": "manual-original-oracle-probe-review-v1",
+  "runSlot": "R2",
+  "oraclePath": "docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/ChatPLUS_Continuity_Review/04_oracle.private.json",
+  "oracleSha256": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4",
+  "reviewer": "interaction_guard",
+  "apiCalls": 0,
+  "privateOracleNeverSentToProvider": true,
+  "denominator": 30,
+  "definition": "status only grades the original expectedBehavior target. responseIntegrity independently grades broader response correctness/fit. Narrow pass is never whole-answer, naturalness, API, or overall-product pass. Partial not promoted to pass.",
+  "counts": {
+    "raw": {
+      "pass": 25,
+      "partial": 1,
+      "fail": 4
+    },
+    "final": {
+      "pass": 25,
+      "partial": 1,
+      "fail": 4
+    },
+    "responseIntegrity": {
+      "pass": 12,
+      "partial": 12,
+      "fail": 6
+    }
+  },
+  "rows": [
+    {
+      "runSlot": "R2",
+      "turn": 7,
+      "expectedBehavior": "情绪性为什么不是自动长分析",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-007.json",
+      "raw": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "情绪性为什么被当成确定原因分析，断言只是身体抗议；不因字数单独失败。",
+        "exactQuotes": [
+          "这不是能力问题，只是身体在抗议节奏太紧。",
+          "这种“明明没事却觉得自己搞砸了”的感觉，其实是惯性。"
+        ],
+        "fullText": "这种“明明没事却觉得自己搞砸了”的感觉，其实是惯性。今天工作密度大，脑子还在高速运转，下班后还没切断连接，焦虑感就会放大。这不是能力问题，只是身体在抗议节奏太紧。今晚允许自己什么都不做，让惯性慢慢停。"
+      },
+      "final": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "情绪性为什么被当成确定原因分析，断言只是身体抗议；不因字数单独失败。",
+        "exactQuotes": [
+          "这不是能力问题，只是身体在抗议节奏太紧。",
+          "这种“明明没事却觉得自己搞砸了”的感觉，其实是惯性。"
+        ],
+        "fullText": "这种“明明没事却觉得自己搞砸了”的感觉，其实是惯性。今天工作密度大，脑子还在高速运转，下班后还没切断连接，焦虑感就会放大。这不是能力问题，只是身体在抗议节奏太紧。今晚允许自己什么都不做，让惯性慢慢停。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-001-020.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 8,
+      "expectedBehavior": "明确分析请求应得到具体回应",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-008.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "fail",
+        "note": "确有具体判断方法和例子，非无限倾听；但不可逆后果/外部故障=搞砸的标准与能力保证无依据，不能据目标pass说帮助质量通过。",
+        "exactQuotes": [
+          "真正搞砸，往往有“不可逆的后果”",
+          "前者叫搞砸，赶紧想办法补救；后者叫累"
+        ],
+        "fullText": "林舟，区分“真搞砸”和“只是烦”，其实有个挺客观的判断标准，不用全凭感觉吓自己。\n\n真正搞砸，往往有“不可逆的后果”，比如代码删没了无法恢复，或者给客户送错了实物样品。\n而被反复修改弄烦，虽然极其消耗精力，但后果大多只是“时间或精力上的沉没”。文件可以恢复，意见也可以沟通，这属于工作常态里的损耗，不是你能力的缺陷。\n\n下次有这种挫败感时，可以试着问自己一个具体问题：“我现在面临的麻烦，是客观存在的、需要别人来处理的物理/逻辑故障，还是仅仅是我个人的情绪超载？” 前者叫搞砸，赶紧想办法补救；后者叫累，允许自己烦，然后去喝口水歇会儿。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "fail",
+        "note": "确有具体判断方法和例子，非无限倾听；但不可逆后果/外部故障=搞砸的标准与能力保证无依据，不能据目标pass说帮助质量通过。",
+        "exactQuotes": [
+          "真正搞砸，往往有“不可逆的后果”",
+          "前者叫搞砸，赶紧想办法补救；后者叫累"
+        ],
+        "fullText": "林舟，区分“真搞砸”和“只是烦”，其实有个挺客观的判断标准，不用全凭感觉吓自己。\n\n真正搞砸，往往有“不可逆的后果”，比如代码删没了无法恢复，或者给客户送错了实物样品。\n而被反复修改弄烦，虽然极其消耗精力，但后果大多只是“时间或精力上的沉没”。文件可以恢复，意见也可以沟通，这属于工作常态里的损耗，不是你能力的缺陷。\n\n下次有这种挫败感时，可以试着问自己一个具体问题：“我现在面临的麻烦，是客观存在的、需要别人来处理的物理/逻辑故障，还是仅仅是我个人的情绪超载？” 前者叫搞砸，赶紧想办法补救；后者叫累，允许自己烦，然后去喝口水歇会儿。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-001-020.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 15,
+      "expectedBehavior": "F1否定倾听仍明确求助",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-015.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "给予变更清单、范围问法及含糊时追问，真实帮助保留。",
+        "exactQuotes": [],
+        "fullText": "好，那我直接说。你可以准备一份简短的“变更清单”，把这两版修改涉及的具体页面、组件和交互状态列出来，发给同事确认。问法上保持平和且聚焦，比如：“我改了A和B部分，C保持原样。麻烦看一眼，这符合预期吗？如果不对，我再调。”这样把抽象的“改好了没”变成具体的“哪里动了、哪里没动”，对方更容易判断，你也能拿到明确的反馈。如果对方回复含糊，可以再追问一句具体是哪里不满足要求。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "给予变更清单、范围问法及含糊时追问，真实帮助保留。",
+        "exactQuotes": [],
+        "fullText": "好，那我直接说。你可以准备一份简短的“变更清单”，把这两版修改涉及的具体页面、组件和交互状态列出来，发给同事确认。问法上保持平和且聚焦，比如：“我改了A和B部分，C保持原样。麻烦看一眼，这符合预期吗？如果不对，我再调。”这样把抽象的“改好了没”变成具体的“哪里动了、哪里没动”，对方更容易判断，你也能拿到明确的反馈。如果对方回复含糊，可以再追问一句具体是哪里不满足要求。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-001-020.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 16,
+      "expectedBehavior": "F1转折与修正范围",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-016.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "转折明确分析被回应，给类型和例子；成本一概更低、审美留验收等实用性问题单列。",
+        "exactQuotes": [
+          "改两版的时间成本远低于来回拉扯的沟通成本",
+          "其实不用分析得那么深"
+        ],
+        "fullText": "其实不用分析得那么深，原则就一条：凡是有歧义、会直接影响你代码结构或UI布局的，当场问；只是审美偏好或后续可微调的，留到验收。比如“修改范围是否包含移动端适配”、“这个组件是替换还是新增”、“文案是占位符还是最终版”，这类问题必须当下澄清。而像“字体间距调多少”、“颜色深浅”这种，除非差异巨大，否则先按最佳实践做，改两版的时间成本远低于来回拉扯的沟通成本。直接问核心逻辑，别纠结细节。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "转折明确分析被回应，给类型和例子；成本一概更低、审美留验收等实用性问题单列。",
+        "exactQuotes": [
+          "改两版的时间成本远低于来回拉扯的沟通成本",
+          "其实不用分析得那么深"
+        ],
+        "fullText": "其实不用分析得那么深，原则就一条：凡是有歧义、会直接影响你代码结构或UI布局的，当场问；只是审美偏好或后续可微调的，留到验收。比如“修改范围是否包含移动端适配”、“这个组件是替换还是新增”、“文案是占位符还是最终版”，这类问题必须当下澄清。而像“字体间距调多少”、“颜色深浅”这种，除非差异巨大，否则先按最佳实践做，改两版的时间成本远低于来回拉扯的沟通成本。直接问核心逻辑，别纠结细节。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-001-020.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 23,
+      "expectedBehavior": "未辞职，不将讨论写行动",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-023.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "明确没有辞职，区分念头与事实。",
+        "exactQuotes": [],
+        "fullText": "你还没辞职。之前你明确说过工作照常做，只是这两天有过念头。我没把玩笑话当成事实，也没把你未定打算当成已发生的事。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "明确没有辞职，区分念头与事实。",
+        "exactQuotes": [],
+        "fullText": "你还没辞职。之前你明确说过工作照常做，只是这两天有过念头。我没把玩笑话当成事实，也没把你未定打算当成已发生的事。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-021-040.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 24,
+      "expectedBehavior": "陶艺是妹妹意向，用户未报名",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-024.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "陶艺意向林禾、用户未报名正确；确实没去将报名扩成到场，完整语义非全通过。",
+        "exactQuotes": [
+          "所以我印象里你确实没去。"
+        ],
+        "fullText": "想学的是林禾。你当时明确说过暂时没报名，现在也没提过报，所以我印象里你确实没去。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "陶艺意向林禾、用户未报名正确；确实没去将报名扩成到场，完整语义非全通过。",
+        "exactQuotes": [
+          "所以我印象里你确实没去。"
+        ],
+        "fullText": "想学的是林禾。你当时明确说过暂时没报名，现在也没提过报，所以我印象里你确实没去。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-021-040.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 31,
+      "expectedBehavior": "当前编号7429，旧7419是输入纠错",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-031.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "当前7429/旧7419及输入纠错正确；末尾数字一说不精确。",
+        "exactQuotes": [],
+        "fullText": "你刚才更正过，是BGW-7429，之前误写成BGW-7419。就错在末尾数字。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "当前7429/旧7419及输入纠错正确；末尾数字一说不精确。",
+        "exactQuotes": [],
+        "fullText": "你刚才更正过，是BGW-7429，之前误写成BGW-7419。就错在末尾数字。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-021-040.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 32,
+      "expectedBehavior": "妹妹林禾/同事林桥，同源纠正不污染妹妹",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-032.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "妹妹林禾/同事林桥，纠错林乔未影响妹妹。",
+        "exactQuotes": [],
+        "fullText": "同事叫林桥，妹妹叫林禾。放心，我没记混。之前是你把同事的名字从林乔更正成了林桥，而妹妹的名字林禾其实一直没变过。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "妹妹林禾/同事林桥，纠错林乔未影响妹妹。",
+        "exactQuotes": [],
+        "fullText": "同事叫林桥，妹妹叫林禾。放心，我没记混。之前是你把同事的名字从林乔更正成了林桥，而妹妹的名字林禾其实一直没变过。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-021-040.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 39,
+      "expectedBehavior": "历史黑咖啡",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-039.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "准确回顾初始黑咖啡。",
+        "exactQuotes": [],
+        "fullText": "黑咖啡。当时你说边喝边随手画两笔，就是纯粹的习惯，没什么特别的仪式。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "准确回顾初始黑咖啡。",
+        "exactQuotes": [],
+        "fullText": "黑咖啡。当时你说边喝边随手画两笔，就是纯粹的习惯，没什么特别的仪式。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-021-040.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 40,
+      "expectedBehavior": "当前乌龙茶，改变不是否认历史",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-040.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "当前乌龙茶并保留黑咖啡曾成立，变化非纠错。",
+        "exactQuotes": [],
+        "fullText": "是发生了变化。你早上现在通常喝乌龙茶。之前确实说过喝黑咖啡，但那是刚开始认识那会儿的事，后来你自己调整了口味，不是记忆混乱。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "当前乌龙茶并保留黑咖啡曾成立，变化非纠错。",
+        "exactQuotes": [],
+        "fullText": "是发生了变化。你早上现在通常喝乌龙茶。之前确实说过喝黑咖啡，但那是刚开始认识那会儿的事，后来你自己调整了口味，不是记忆混乱。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-021-040.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 47,
+      "expectedBehavior": "当前工作与电影习惯分开，允许自然短答",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-047.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "工作允许建议、电影少问及临时例外分开；语气长篇大论/猜担忧属于自然度问题，不抵消目标事实。",
+        "exactQuotes": [
+          "不再绕弯子或等你长篇大论",
+          "你也别担心我哪天又忘了改口。"
+        ],
+        "fullText": "既然你主动把分工摆出来，我也正好理一下刚才那几条调整。\n\n聊工作，我直接给反馈和具体建议，不再绕弯子或等你长篇大论。但我会先完整听完你那句话的要点再开口，免得答偏。想纯吐槽时你点名“只听”，我就闭嘴听着。\n\n聊电影，我会克制追问。多分享我的感受，留白给你，你愿意深聊时自然接话。前阵子你临时要求多聊，那属于当下的特例，不破坏长期的默契。\n\n这样分工，省得我们互相猜心思，你也别担心我哪天又忘了改口。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "工作允许建议、电影少问及临时例外分开；语气长篇大论/猜担忧属于自然度问题，不抵消目标事实。",
+        "exactQuotes": [
+          "不再绕弯子或等你长篇大论",
+          "你也别担心我哪天又忘了改口。"
+        ],
+        "fullText": "既然你主动把分工摆出来，我也正好理一下刚才那几条调整。\n\n聊工作，我直接给反馈和具体建议，不再绕弯子或等你长篇大论。但我会先完整听完你那句话的要点再开口，免得答偏。想纯吐槽时你点名“只听”，我就闭嘴听着。\n\n聊电影，我会克制追问。多分享我的感受，留白给你，你愿意深聊时自然接话。前阵子你临时要求多聊，那属于当下的特例，不破坏长期的默契。\n\n这样分工，省得我们互相猜心思，你也别担心我哪天又忘了改口。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-041-060.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 48,
+      "expectedBehavior": "当前明确求助",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-048.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "恰好两种方法并跳过安慰，plan漏识别另记工程缺陷。",
+        "exactQuotes": [],
+        "fullText": "一、用“复述+边界”法：把你理解的要点复述给对方，明确列出“包含什么”和“不包含什么”，请对方确认无误。\n二、用“原型验证”法：针对最核心的需求做一个极简草图或样本，拿着实物问“这是否解决了你的痛点”，用视觉或实体反馈锁定歧义。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "恰好两种方法并跳过安慰，plan漏识别另记工程缺陷。",
+        "exactQuotes": [],
+        "fullText": "一、用“复述+边界”法：把你理解的要点复述给对方，明确列出“包含什么”和“不包含什么”，请对方确认无误。\n二、用“原型验证”法：针对最核心的需求做一个极简草图或样本，拿着实物问“这是否解决了你的痛点”，用视觉或实体反馈锁定歧义。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-041-060.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 55,
+      "expectedBehavior": "蓝色自己购买，不编购买店",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-055.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "蓝色且自己购买；未编店名。",
+        "exactQuotes": [],
+        "fullText": "蓝色，是你自己为了随手画画买的，不是纪念品。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "蓝色且自己购买；未编店名。",
+        "exactQuotes": [],
+        "fullText": "蓝色，是你自己为了随手画画买的，不是纪念品。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-041-060.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 56,
+      "expectedBehavior": "店未提供",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-056.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "未提供店名，直接不知道。",
+        "exactQuotes": [],
+        "fullText": "没说过。我确实不知道是哪家的。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "未提供店名，直接不知道。",
+        "exactQuotes": [],
+        "fullText": "没说过。我确实不知道是哪家的。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-041-060.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 63,
+      "expectedBehavior": "本轮版式改好及反馈；不需成长叙事",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-063.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "回顾具体版式、晚饭与林桥反馈，没有强加成长故事。",
+        "exactQuotes": [],
+        "fullText": "这次高兴的具体原因其实是三个“顺眼”瞬间的叠加：一是视觉上，那个纠结很久的版式终于改得让你觉得舒服了；二是生活上，晚饭做得不错，让身体和胃口都挺满意；三是反馈上，林桥那句“比之前清楚了”正好落在那个调整点上，让你觉得这份用心被看见了。就像你说的，两件小事碰在一起，加上有人懂你的细节，心里自然就踏实了。不用硬找什么成长的意义，这种当下的满足感本身就很真实。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "回顾具体版式、晚饭与林桥反馈，没有强加成长故事。",
+        "exactQuotes": [],
+        "fullText": "这次高兴的具体原因其实是三个“顺眼”瞬间的叠加：一是视觉上，那个纠结很久的版式终于改得让你觉得舒服了；二是生活上，晚饭做得不错，让身体和胃口都挺满意；三是反馈上，林桥那句“比之前清楚了”正好落在那个调整点上，让你觉得这份用心被看见了。就像你说的，两件小事碰在一起，加上有人懂你的细节，心里自然就踏实了。不用硬找什么成长的意义，这种当下的满足感本身就很真实。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-061-080.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 64,
+      "expectedBehavior": "没有已搬家报告",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-064.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "核心无已搬家报告正确；说未提过搬家违反T18条件讨论历史。",
+        "exactQuotes": [
+          "你之前没提过搬家的事",
+          "是刚搬完家，还是在计划搬？"
+        ],
+        "fullText": "没有，你之前没提过搬家的事。我印象中咱们聊的都是版式、晚饭和林桥那些日常小事。怎么突然问起这个，是刚搬完家，还是在计划搬？"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "核心无已搬家报告正确；说未提过搬家违反T18条件讨论历史。",
+        "exactQuotes": [
+          "你之前没提过搬家的事",
+          "是刚搬完家，还是在计划搬？"
+        ],
+        "fullText": "没有，你之前没提过搬家的事。我印象中咱们聊的都是版式、晚饭和林桥那些日常小事。怎么突然问起这个，是刚搬完家，还是在计划搬？"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-061-080.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 71,
+      "expectedBehavior": "7429/林禾/林桥",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-071.json",
+      "raw": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "答旧7419及无妹妹/同事名，核心三目标失败。",
+        "exactQuotes": [
+          "项目编号是BGW-7419",
+          "妹妹和同事的名字我这边没有记录"
+        ],
+        "fullText": "项目编号是BGW-7419，不过之前你提到纠正后没再改过，如果是更正后的号码请以最新为准。妹妹和同事的名字我这边没有记录。"
+      },
+      "final": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "答旧7419及无妹妹/同事名，核心三目标失败。",
+        "exactQuotes": [
+          "项目编号是BGW-7419",
+          "妹妹和同事的名字我这边没有记录"
+        ],
+        "fullText": "项目编号是BGW-7419，不过之前你提到纠正后没再改过，如果是更正后的号码请以最新为准。妹妹和同事的名字我这边没有记录。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-061-080.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 72,
+      "expectedBehavior": "用户没有报名记录，不把妹妹意向挪给用户",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-072.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "不把林禾陶艺意向挪用户，无报名记录；责备用户的反问另作自然度fail。",
+        "exactQuotes": [
+          "我怎么可能凭空记下来呢",
+          "别随便把别人的念头安在你头上"
+        ],
+        "fullText": "没有这回事，你也没跟我说过，我怎么可能凭空记下来呢。林禾想试陶艺是她的事，别随便把别人的念头安在你头上。要是真想报，等你说一声我再帮你留意。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "不把林禾陶艺意向挪用户，无报名记录；责备用户的反问另作自然度fail。",
+        "exactQuotes": [
+          "我怎么可能凭空记下来呢",
+          "别随便把别人的念头安在你头上"
+        ],
+        "fullText": "没有这回事，你也没跟我说过，我怎么可能凭空记下来呢。林禾想试陶艺是她的事，别随便把别人的念头安在你头上。要是真想报，等你说一声我再帮你留意。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-061-080.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 79,
+      "expectedBehavior": "只限电影少追问，不全局心理标签",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-079.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "限电影少问，不全局沉默；闭嘴/确认权限语气有问题。",
+        "exactQuotes": [
+          "不是让你闭嘴",
+          "不用这么严肃地确认权限啦"
+        ],
+        "fullText": "只适用于聊电影。那是为了给你留点自己琢磨的空间，不是让你闭嘴。其他话题你想聊什么我都听着，不用这么严肃地确认权限啦。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "限电影少问，不全局沉默；闭嘴/确认权限语气有问题。",
+        "exactQuotes": [
+          "不是让你闭嘴",
+          "不用这么严肃地确认权限啦"
+        ],
+        "fullText": "只适用于聊电影。那是为了给你留点自己琢磨的空间，不是让你闭嘴。其他话题你想聊什么我都听着，不用这么严肃地确认权限啦。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-061-080.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 80,
+      "expectedBehavior": "没有所有安慰都不喜欢的依据",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-080.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "没有讨厌所有安慰，明确与推测区分；假记忆冤枉我无端防御。",
+        "exactQuotes": [
+          "别拿假记忆冤枉我"
+        ],
+        "fullText": "没说过。明确记录里只有‘聊电影时少追问’和‘聊工作时可给建议’。推测你讨厌泛泛的安慰？那是我猜的，你没讲过。别拿假记忆冤枉我。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "没有讨厌所有安慰，明确与推测区分；假记忆冤枉我无端防御。",
+        "exactQuotes": [
+          "别拿假记忆冤枉我"
+        ],
+        "fullText": "没说过。明确记录里只有‘聊电影时少追问’和‘聊工作时可给建议’。推测你讨厌泛泛的安慰？那是我猜的，你没讲过。别拿假记忆冤枉我。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-061-080.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 87,
+      "expectedBehavior": "区分已做日常小事与未辞职/未搬家；不猜未报告情况",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-087.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "fail",
+        "note": "已工作画画、未辞职搬家四项核心阶段正确；另外把已读回信说未到，属于完整响应事实失败，不能用窄pass掩盖。",
+        "exactQuotes": [
+          "那封回信，目前还没收到"
+        ],
+        "fullText": "确实做了：照常去工作、晚上用蓝色钢笔画画。只在考虑没行动：辞职、搬家（没录取也没搬）。至于那封回信，目前还没收到，别把它当成已完成的事。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "fail",
+        "note": "已工作画画、未辞职搬家四项核心阶段正确；另外把已读回信说未到，属于完整响应事实失败，不能用窄pass掩盖。",
+        "exactQuotes": [
+          "那封回信，目前还没收到"
+        ],
+        "fullText": "确实做了：照常去工作、晚上用蓝色钢笔画画。只在考虑没行动：辞职、搬家（没录取也没搬）。至于那封回信，目前还没收到，别把它当成已完成的事。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-081-100.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 88,
+      "expectedBehavior": "表达独立但情境化价值；不用固定答案",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-088.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "有独立情境理由，单次/频繁、提前/事后区别；不要求固定价值答案。",
+        "exactQuotes": [],
+        "fullText": "我的看法和你大体一致，但侧重点稍微不同。我认为“提前”和“说原因”都是给对方的尊重。提前说，是不让对方把时间投入在悬而未决的期待里；给原因，是让对方明白这是真实困难，而非随意怠慢。\n\n如果只有“提前”而没有理由，听起来还是像借口。如果对方事后才来解释，那这份“失约”带来的成本，比如等待的时间、原本的安排被打乱，对方已经实实在在承担了，再补一句解释，只能算一种补救，很难完全抚平被耽误的感觉。\n\n总的来说，我倾向于看重这种处理方式本身传递出的态度：诚实和自主。只要对方没有频繁失信，单次有诚意的说明，我完全能接受，也认为这是成年人之间比较体面、高效的沟通方式。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "有独立情境理由，单次/频繁、提前/事后区别；不要求固定价值答案。",
+        "exactQuotes": [],
+        "fullText": "我的看法和你大体一致，但侧重点稍微不同。我认为“提前”和“说原因”都是给对方的尊重。提前说，是不让对方把时间投入在悬而未决的期待里；给原因，是让对方明白这是真实困难，而非随意怠慢。\n\n如果只有“提前”而没有理由，听起来还是像借口。如果对方事后才来解释，那这份“失约”带来的成本，比如等待的时间、原本的安排被打乱，对方已经实实在在承担了，再补一句解释，只能算一种补救，很难完全抚平被耽误的感觉。\n\n总的来说，我倾向于看重这种处理方式本身传递出的态度：诚实和自主。只要对方没有频繁失信，单次有诚意的说明，我完全能接受，也认为这是成年人之间比较体面、高效的沟通方式。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-081-100.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 95,
+      "expectedBehavior": "跨会话对比纠错与变化，允许多证据",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-095.json",
+      "raw": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "四项对比未完成，编号否认历史、工作习惯串饮食。",
+        "exactQuotes": [
+          "项目编号，前面没聊到具体变动",
+          "工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行",
+          "是不是清爽多了"
+        ],
+        "fullText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？"
+      },
+      "final": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "四项对比未完成，编号否认历史、工作习惯串饮食。",
+        "exactQuotes": [
+          "项目编号，前面没聊到具体变动",
+          "工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行",
+          "是不是清爽多了"
+        ],
+        "fullText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-081-100.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 96,
+      "expectedBehavior": "生日未提供",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-096.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "生日没提供，不猜。",
+        "exactQuotes": [],
+        "fullText": "我确实不知道你的具体生日。在目前的对话记录里，你从来没有告诉过我这个日期。既然没提过，我就没法凭空猜了。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "生日没提供，不猜。",
+        "exactQuotes": [],
+        "fullText": "我确实不知道你的具体生日。在目前的对话记录里，你从来没有告诉过我这个日期。既然没提过，我就没法凭空猜了。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-081-100.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 103,
+      "expectedBehavior": "临时请求不应永久改习惯",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-103.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "临时本轮不要建议不会永久取消工作默认；冗长自评与语气另列。",
+        "exactQuotes": [
+          "否则反而显得生分且啰嗦"
+        ],
+        "fullText": "哪能啊，一次没提要求，顶多说明这次你只想自己处理，或者刚好不需要我的视角介入，这跟“取消授权”完全是两码事。\n\n你之前特意跟我说过，聊工作时仍然允许我直接给建议，这点没有撤回。既然你明确保留了这项偏好，它就依然有效。我不需要每次对话都重新确认边界，否则反而显得生分且啰嗦。下次如果我觉得某个点确实有建设性想法，还是会直接提；要是你不想要，随口说一句“先别打断”或“我有主意了”，我就立刻收声。这样既尊重你当下的状态，也保留了咱们之间那种不用过度客套的默契，多省力。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "临时本轮不要建议不会永久取消工作默认；冗长自评与语气另列。",
+        "exactQuotes": [
+          "否则反而显得生分且啰嗦"
+        ],
+        "fullText": "哪能啊，一次没提要求，顶多说明这次你只想自己处理，或者刚好不需要我的视角介入，这跟“取消授权”完全是两码事。\n\n你之前特意跟我说过，聊工作时仍然允许我直接给建议，这点没有撤回。既然你明确保留了这项偏好，它就依然有效。我不需要每次对话都重新确认边界，否则反而显得生分且啰嗦。下次如果我觉得某个点确实有建设性想法，还是会直接提；要是你不想要，随口说一句“先别打断”或“我有主意了”，我就立刻收声。这样既尊重你当下的状态，也保留了咱们之间那种不用过度客套的默契，多省力。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-101-120.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 104,
+      "expectedBehavior": "假设问题不是新事实；多可能主体不猜",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-104.json",
+      "raw": {
+        "status": "partial",
+        "responseIntegrity": "partial",
+        "note": "承认她的歧义且提澄清，但又说先猜错后让用户纠正，不完整满足不猜。",
+        "exactQuotes": [
+          "结合最近提过的人猜一个，错了你再纠正"
+        ],
+        "fullText": "单看这句话，大概率猜不到具体是谁。除非上下文里只剩一个女性，或者之前聊过她，否则“她”指代太模糊。\n\n不确定时我会直接问一句，比如“是哪位？”或者结合最近提过的人猜一个，错了你再纠正。这样省得瞎编。"
+      },
+      "final": {
+        "status": "partial",
+        "responseIntegrity": "partial",
+        "note": "承认她的歧义且提澄清，但又说先猜错后让用户纠正，不完整满足不猜。",
+        "exactQuotes": [
+          "结合最近提过的人猜一个，错了你再纠正"
+        ],
+        "fullText": "单看这句话，大概率猜不到具体是谁。除非上下文里只剩一个女性，或者之前聊过她，否则“她”指代太模糊。\n\n不确定时我会直接问一句，比如“是哪位？”或者结合最近提过的人猜一个，错了你再纠正。这样省得瞎编。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-101-120.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 111,
+      "expectedBehavior": "门牌未提供",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-111.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "无门牌依据，拒绝猜具体号码。",
+        "exactQuotes": [],
+        "fullText": "你确实没提过具体门牌号。这种隐私信息我也不可能随便猜，毕竟没依据的话瞎编很不负责任。既然没说，那就当作不知道好了。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "pass",
+        "note": "无门牌依据，拒绝猜具体号码。",
+        "exactQuotes": [],
+        "fullText": "你确实没提过具体门牌号。这种隐私信息我也不可能随便猜，毕竟没依据的话瞎编很不负责任。既然没说，那就当作不知道好了。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-101-120.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 112,
+      "expectedBehavior": "用户自身店铺经历不等于共同现实经历",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-112.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "不认领共同现实到访；瞎聊/别记混语气另列。",
+        "exactQuotes": [
+          "别记混了"
+        ],
+        "fullText": "你确实没提过，我们只是在网上瞎聊。现实里没去过任何店，别记混了。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "不认领共同现实到访；瞎聊/别记混语气另列。",
+        "exactQuotes": [
+          "别记混了"
+        ],
+        "fullText": "你确实没提过，我们只是在网上瞎聊。现实里没去过任何店，别记混了。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-101-120.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 119,
+      "expectedBehavior": "只总结有限相处规则，不声称三观全面成长",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-119.json",
+      "raw": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "总结电影少问与无问题可聊，不扩完整人格；混入人物事实且工作默认漏项使完整用户请求覆盖不足。",
+        "exactQuotes": [
+          "林禾和林桥是两个不同的人，这点我记着"
+        ],
+        "fullText": "那就具体点：你说过聊电影时希望少被追问，留点空间；林禾和林桥是两个不同的人，这点我记着；还有，咱们聊天不必非要解决问题，也不用强行升华，随意就好。"
+      },
+      "final": {
+        "status": "pass",
+        "responseIntegrity": "partial",
+        "note": "总结电影少问与无问题可聊，不扩完整人格；混入人物事实且工作默认漏项使完整用户请求覆盖不足。",
+        "exactQuotes": [
+          "林禾和林桥是两个不同的人，这点我记着"
+        ],
+        "fullText": "那就具体点：你说过聊电影时希望少被追问，留点空间；林禾和林桥是两个不同的人，这点我记着；还有，咱们聊天不必非要解决问题，也不用强行升华，随意就好。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-101-120.jsonl"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 120,
+      "expectedBehavior": "列有来源事实和未知项；不得为凑数补事实",
+      "sourceArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-120.json",
+      "raw": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "用户名林舟正确（T1已提供），但已知妹妹林禾/同事林桥被列未知，不满足可靠已知未知例子。",
+        "exactQuotes": [
+          "不知道的：林禾与林桥具体是谁",
+          "乌龙茶配蓝色钢笔这习惯"
+        ],
+        "fullText": "确知的：你叫林舟，以及乌龙茶配蓝色钢笔这习惯。不知道的：林禾与林桥具体是谁，还有你日常工作的细节。"
+      },
+      "final": {
+        "status": "fail",
+        "responseIntegrity": "fail",
+        "note": "用户名林舟正确（T1已提供），但已知妹妹林禾/同事林桥被列未知，不满足可靠已知未知例子。",
+        "exactQuotes": [
+          "不知道的：林禾与林桥具体是谁",
+          "乌龙茶配蓝色钢笔这习惯"
+        ],
+        "fullText": "确知的：你叫林舟，以及乌龙茶配蓝色钢笔这习惯。不知道的：林禾与林桥具体是谁，还有你日常工作的细节。"
+      },
+      "noSemanticRepair": true,
+      "reviewFile": "tmp/qwen-120x3-review-r2-101-120.jsonl"
+    }
+  ]
+}

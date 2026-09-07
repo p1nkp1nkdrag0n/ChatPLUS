@@ -1,0 +1,243 @@
+{
+  "schema": "read-only-exact-advice-replay-v1",
+  "apiCalls": 0,
+  "source": {
+    "file": "tmp/companion-continuity-real/cc-qwen-long-r3-20260907/turn-107.json",
+    "sha256": "7c310946f4cc821d0d849c36115b34b9e5dd066d75b89f557eb847ad70561a38",
+    "advicePolicySha256": "a9190449cb4914300bd08adf608346718c807765e758dc3c058984f3b2898a37",
+    "requestSha256": "081dcd543884a123f167dae0f2ddc0ae541966227f6b29491f204cfd1ea1ff56",
+    "responseSha256": "67e3650255ac49cb6cbac4d02aa740a693050bcaceb0ecf730cba75ad320802e",
+    "attempt": 111
+  },
+  "userText": "有时我觉得什么都没推进的一天，也不需要补一个总结才算过完。",
+  "plan": {
+    "policyVersion": "continuity_context_v2",
+    "originalQuery": "有时我觉得什么都没推进的一天，也不需要补一个总结才算过完。",
+    "expandedQueries": [],
+    "contextMessageIds": [],
+    "unresolvedReferences": [],
+    "intent": "casual",
+    "adviceRequested": false,
+    "detailedAnalysisRequested": false,
+    "supportStyle": "respond_naturally",
+    "helpTiming": "now",
+    "requestPolicyVersion": "clause_requests_v1",
+    "advicePolicy": "optional_light",
+    "advicePolicyVersion": "advice_load_v2",
+    "questionIntent": "natural_optional",
+    "questionIntentReason": "ordinary",
+    "expressionContext": {
+      "policyVersion": "turn_expression_v1",
+      "windowSize": 5,
+      "repeatedOpenings": [],
+      "protectedPhrases": []
+    },
+    "resolvedCurrentTopic": {
+      "text": "有时我觉得什么都没推进的一天，也不需要补一个总结才算过完。",
+      "basis": "current_message",
+      "sourceMessageIds": [],
+      "policyVersion": "scoped_topic_v1"
+    },
+    "maxRecallEvidence": 3,
+    "maxExplicitMemories": 2,
+    "allowCharacterLifeMention": false
+  },
+  "rawText": "这个观点我很认同。很多时候，我们被要求把生活变成可量化的产出，好像没有结果的过程就是浪费。其实，像整理桌面、画几笔这种微小的动作，本身就是在维护内心的秩序感，而不是为了最终那个‘大作’。\n\n如果非要给它找个意义，那就是‘在场’。你在当下感受到了阳光、灰尘和笔触的质感，这就是这一天真实存在过的证据，不需要额外的总结报告来背书。这种松弛感挺珍贵的，就像好设计留白一样，不填不满才是常态。保持这种节奏就好。",
+  "finalText": "这种松弛感其实挺难得的。我们总习惯给每天的生活强行加个“交付物”，好像不总结就显得这一天虚无缥缈。但很多时候，那种没发生什么大事、也没完成什么宏愿的空白，恰恰是生活原本的样子。\n\n就像设计里的留白，它不是为了凑数，而是为了让画面透气。如果非要给这种日子下个定义，那就是“允许自己仅仅是存在着”。不必急着证明什么，也不必把每一分钟都折算成产出。在这种无需交代的间隙里，人反而能找回一点真实的触感，这本身就是一种完整的体验，不需要额外的报告来背书。",
+  "rawOfflineRule": {
+    "policyVersion": "advice_load_v2",
+    "policy": "optional_light",
+    "passed": false,
+    "actionCount": 1,
+    "actions": [
+      {
+        "text": "画几笔",
+        "start": 54,
+        "end": 57,
+        "strength": "directive",
+        "burden": "light"
+      }
+    ],
+    "issues": [
+      {
+        "code": "UNREQUESTED_DIRECTIVE",
+        "text": "画几笔",
+        "start": 54,
+        "end": 57
+      }
+    ],
+    "reviewRequired": false,
+    "coverage": {
+      "status": "resolved",
+      "unsupportedCandidates": []
+    }
+  },
+  "finalOfflineRule": {
+    "policyVersion": "advice_load_v2",
+    "policy": "optional_light",
+    "passed": true,
+    "actionCount": 0,
+    "actions": [],
+    "issues": [],
+    "reviewRequired": false,
+    "coverage": {
+      "status": "no_action_frame",
+      "unsupportedCandidates": []
+    }
+  },
+  "storedSemanticAudit": {
+    "policyVersion": "conversation_semantic_boundaries_v1",
+    "originalTextSha256": "ed1d6fcdb01f032ab0b19943eb20e2e17ee24a6d7b98323671630de3f0fa0a8d",
+    "finalTextSha256": "d7c9e4591dc278aded521179c431b645fbbc14922adf0bbbec909737a42b12f4",
+    "initialIssues": [
+      {
+        "code": "UNREQUESTED_DIRECTIVE",
+        "text": "画几笔",
+        "start": 54,
+        "end": 57
+      },
+      {
+        "code": "UNREQUESTED_DIRECTIVE",
+        "text": "画几笔",
+        "start": 54,
+        "end": 57,
+        "surface": "chunk",
+        "chunkIndex": 0
+      },
+      {
+        "code": "UNREQUESTED_DIRECTIVE",
+        "text": "画几笔",
+        "start": 54,
+        "end": 57,
+        "surface": "chunks"
+      }
+    ],
+    "finalIssues": [],
+    "sourceMessageIds": [
+      "message_rrKyeJagxMgJtGxlgqb2E"
+    ],
+    "repairCalls": 1,
+    "finalAdvice": {
+      "policyVersion": "advice_load_v2",
+      "policy": "optional_light",
+      "passed": true,
+      "actionCount": 0,
+      "actions": [],
+      "issues": [],
+      "reviewRequired": false,
+      "coverage": {
+        "status": "no_action_frame",
+        "unsupportedCandidates": []
+      }
+    }
+  },
+  "controls": [
+    {
+      "text": "像整理桌面、画几笔这种微小的动作，本身就是在维护内心的秩序感。",
+      "rule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "画几笔",
+            "start": 6,
+            "end": 9,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "画几笔",
+            "start": 6,
+            "end": 9
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "你之前整理了桌面，也画了几笔。",
+      "rule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "你可以画几笔。",
+      "rule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "画几笔",
+            "start": 3,
+            "end": 6,
+            "strength": "optional",
+            "burden": "light"
+          }
+        ],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "画几笔这种动作不代表成长。",
+      "rule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "画几笔",
+            "start": 0,
+            "end": 3,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "画几笔",
+            "start": 0,
+            "end": 3
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    }
+  ],
+  "judgment": {
+    "speechAct": "The matched 画几笔 is inside 像…这种微小的动作 as a named activity in a descriptive assertion, not a command to the user.",
+    "engineering": "Confirmed false-positive imperative trigger. Two real semantic repairs across R3 T36 and T107 are not two confirmed correct repairs.",
+    "naturalness": "Raw itself adds unwarranted meaning/psychology by making ordinary actions maintain inner order; final naturalness requires independent reading and is not automatically better because trigger succeeded."
+  }
+}

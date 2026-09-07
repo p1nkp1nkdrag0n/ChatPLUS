@@ -20,6 +20,7 @@ import {
   assertLongRunV3BigModelProfileReady,
   assertLongRunV3DeepSeekProfileExpectation,
   artifactBranchForScope,
+  buildLongRunV3ConfigSnapshot,
   buildLongRunV3ServerConfig,
   evaluateLongRunV3FrontendMigrationSources,
   expectedArtifactTurns,
@@ -282,6 +283,70 @@ describe("companion long-run v3 runner pure helpers", () => {
     expect(config.databasePath).toBe("deepseek-run.sqlite");
     expect(config.lifePlanningMode).toBe("fuzzy");
     expect(config.scheduleNegotiationMode).toBe("legacy");
+  });
+
+  it("freezes actual continuity switches and effective settings while retaining the legacy autobiography boundary", () => {
+    const base = {
+      ...baseServerConfig("placeholder.sqlite"),
+      companionContextMode: "off" as const,
+      personaRuntimeMode: "off" as const,
+      instanceSecret: "first-instance-value",
+    };
+    const profile = reviewedDeepSeekProfileConfig(base);
+    const snapshot = buildLongRunV3ConfigSnapshot(
+      base,
+      "run.sqlite",
+      false,
+      profile,
+    );
+    expect(snapshot.featureFlags).toMatchObject({
+      companionContextMode: "off",
+      personaRuntimeMode: "off",
+      autobiographyMode: "off",
+    });
+    expect(snapshot.actualConfig).toMatchObject({
+      companionContextMode: "off",
+      personaRuntimeMode: "off",
+      autobiographyMode: "off",
+      databasePath: "run.sqlite",
+      clockMode: "fake",
+      llm: { maxOutputTokens: 32768, timeoutMs: 300000 },
+    });
+    for (const changed of [
+      { ...base, companionContextMode: "enforced" as const },
+      { ...base, personaRuntimeMode: "shadow" as const },
+      {
+        ...base,
+        conversationRetention: {
+          ...base.conversationRetention,
+          softTokenLimit: 2400,
+        },
+      },
+      { ...base, llm: { ...base.llm, timeoutMs: 400000 } },
+    ]) {
+      const other = buildLongRunV3ConfigSnapshot(
+        changed,
+        "run.sqlite",
+        false,
+        profile,
+      );
+      expect(other.configSha256).not.toBe(snapshot.configSha256);
+      expect(other.featureFlags.autobiographyMode).toBe("off");
+    }
+    const rotated = buildLongRunV3ConfigSnapshot(
+      {
+        ...base,
+        instanceSecret: "second-instance-value",
+        llm: { ...base.llm, apiKey: "second-api-value" },
+      },
+      "run.sqlite",
+      false,
+      profile,
+    );
+    expect(rotated.configSha256).toBe(snapshot.configSha256);
+    expect(JSON.stringify(snapshot)).not.toMatch(
+      /first-instance-value|test-only-deepseek-key/,
+    );
   });
 
   it("requires every paid DeepSeek runtime field to equal the reviewed profile", () => {

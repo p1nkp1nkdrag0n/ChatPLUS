@@ -483,9 +483,9 @@ describe("correspondence HTTP lifecycle", () => {
     expect(firstOpen.json<OpenLetterResponse>()).toMatchObject({
       letter: { id: replyLetterId, status: "read" },
       subject: "回复：阶段四主题（修订）",
-      salutation: "亲爱的朋友：",
+      salutation: "朋友：",
       closing: "顺颂安好",
-      signature: "回信人",
+      signature: "林夏",
     });
     expect(firstOpen.body).toContain("PRIVATE-USER-TEXT-UPDATED");
     expect(
@@ -517,9 +517,9 @@ describe("correspondence HTTP lifecycle", () => {
     expect(openedDetailBody).toMatchObject({
       letter: { status: "read" },
       subject: "回复：阶段四主题（修订）",
-      salutation: "亲爱的朋友：",
+      salutation: "朋友：",
       closing: "顺颂安好",
-      signature: "回信人",
+      signature: "林夏",
     });
     expect(typeof openedDetailBody.letter.previewText).toBe("string");
 
@@ -1166,14 +1166,21 @@ describe("correspondence HTTP lifecycle", () => {
     });
     internalFailure.mockRestore();
 
-    generate.mockResolvedValueOnce({
-      subject: "恢复后的真实回信",
-      salutation: "你好。",
-      paragraphs: ["我重新读过这封信，并认真写下这份回复。"],
-      closing: "祝安。",
-      signature: "Correspondent",
-      referencedEvidenceIds: [incomingLetterId],
-    });
+    generate.mockImplementationOnce((input) =>
+      Promise.resolve(
+        input.schema.parse({
+          subject: "恢复后的真实回信",
+          salutation: "你好。",
+          paragraphs: ["我重新读过这封信，并认真写下这份回复。"],
+          closing: "祝安。",
+          signature: "Correspondent",
+          referencedEvidenceIds: [
+            (JSON.parse(input.prompt) as { USER_LETTER: { id: string } })
+              .USER_LETTER.id,
+          ],
+        }),
+      ),
+    );
     const retryRequest = {
       clientRequestId: "reply-recovery-request-one",
     };

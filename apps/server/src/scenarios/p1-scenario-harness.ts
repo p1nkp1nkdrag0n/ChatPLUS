@@ -142,6 +142,8 @@ function runPlannedIsNotOccurred(): P1ScenarioReport {
     sourceType: "message_archive" as const,
     sourceId: "message-party-plan",
     text: "I plan to attend the party tomorrow evening.",
+    sourceReport:
+      "我在对话中说过：「I plan to attend the party tomorrow evening.」",
     temporalStatus: "planned" as const,
     reliability: "reported" as const,
   };
@@ -157,11 +159,11 @@ function runPlannedIsNotOccurred(): P1ScenarioReport {
     ],
   };
   const plannedProposal = {
-    summaryFirstPerson: "I plan to attend the party.",
+    summaryFirstPerson: evidence.sourceReport,
     entries: [
       {
         entryKind: "active_goal" as const,
-        content: "I plan to attend the party.",
+        content: evidence.sourceReport,
         temporalStatus: "planned" as const,
         evidence: [evidenceRef(evidence)],
       },

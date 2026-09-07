@@ -1,3 +1,4 @@
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -19,6 +20,10 @@ import {
 } from "@personasim/features";
 
 import { createEntityId } from "../domain/id.js";
+import {
+  loadInteractionEvidence,
+  projectInteractionHistory,
+} from "./interaction-history-service.js";
 import type { Clock } from "../runtime/clock.js";
 import type { AutobiographyService } from "./autobiography-service.js";
 import {
@@ -106,17 +111,43 @@ export class CheckpointService {
     );
     if ("status" in started) return started;
 
+    // Fence the immutable raw range as before, but never give a known erroneous
+    // assistant claim authority through its own transcript during consolidation.
+    const interactionEvidence = loadInteractionEvidence({
+      store: this.repository.store,
+      agentId: input.agentId,
+      nowUtc: started.messages.at(-1)!.createdAtUtc,
+    });
+    const projected = projectInteractionHistory(
+      started.messages,
+      interactionEvidence,
+    );
+    const projectedMessages = projected.messages.filter(
+      (message) =>
+        !message.content.startsWith("[此条角色回复中的互动历史声称缺少支持"),
+    );
+    const work = {
+      ...started,
+      messages: projectedMessages,
+      evidence: projectedMessages.map(messageEvidence),
+    };
+
+    const validity = new MemoryValidityRepository(this.repository.store);
+    const expectedMemoryRevision = validity.currentRevision(input.agentId);
     let proposal: AutobiographyRevisionProposal;
     try {
-      const previous = this.autobiography.latest(input.agentId);
+      const previous = this.autobiography.latest(
+        input.agentId,
+        this.clock.nowUtc(),
+      );
       // Intentionally outside a database transaction. The final phase fences
       // this asynchronous result with both the session revision and source hash.
       proposal = await this.model.generateAutobiography({
         agentId: input.agentId,
         sessionId: input.sessionId,
         checkpointId: started.checkpoint.id,
-        messages: started.messages,
-        evidence: started.evidence,
+        messages: work.messages,
+        evidence: work.evidence,
         ...(previous === undefined
           ? {}
           : { previousAutobiography: previous.snapshot }),
@@ -141,9 +172,9 @@ export class CheckpointService {
     const preparedAutobiography = this.autobiography.prepareRevision({
       agentId: input.agentId,
       checkpointId: started.checkpoint.id,
-      sourceMessages: started.messages,
+      sourceMessages: work.messages,
       proposal,
-      evidenceCatalog: started.evidence,
+      evidenceCatalog: work.evidence,
       nowUtc,
     });
     if (!preparedAutobiography.accepted) {
@@ -155,7 +186,7 @@ export class CheckpointService {
           .join("; "),
       );
     }
-    const sourceIndexOnlyEvidenceIds = checkpointLongMessageReceipts(started)
+    const sourceIndexOnlyEvidenceIds = checkpointLongMessageReceipts(work)
       .filter((receipt) =>
         preparedAutobiography.bundle.entries.some(
           (entry) =>
@@ -178,7 +209,7 @@ export class CheckpointService {
       sessionId: input.sessionId,
       checkpointId: started.checkpoint.id,
       drafts: cardDrafts,
-      evidenceCatalog: started.evidence,
+      evidenceCatalog: work.evidence,
       nowUtc,
     });
     if (!preparedCards.accepted) {
@@ -207,20 +238,35 @@ export class CheckpointService {
         const currentHash = checkpointSourceHash(currentMessages);
         if (
           session === undefined ||
+          validity.currentRevision(input.agentId) !== expectedMemoryRevision ||
           session.revision !== checkpoint.sourceRevision ||
           currentMessages.length !== checkpoint.sourceMessageCount ||
           currentHash !== checkpoint.sourceHash
         ) {
           return this.invalidate(checkpoint.id, "source_changed");
         }
-        if (!this.autobiography.isCurrent(preparedAutobiography)) {
+        if (
+          !this.autobiography.isCurrent(
+            preparedAutobiography,
+            this.clock.nowUtc(),
+          )
+        ) {
           return this.invalidate(checkpoint.id, "autobiography_changed");
         }
-        if (!this.autobiography.persistPrepared(preparedAutobiography)) {
+        if (
+          !this.autobiography.persistPrepared(
+            preparedAutobiography,
+            this.clock.nowUtc(),
+          )
+        ) {
           return this.invalidate(checkpoint.id, "autobiography_changed");
         }
         this.continuityIndex.persistPrepared(preparedCards);
         const artifact = {
+          interactionProjection: {
+            policyVersion: interactionEvidence.policyVersion,
+            annotations: projected.annotations,
+          },
           reportCoverage,
           summaryFirstPerson:
             preparedAutobiography.bundle.snapshot.summaryFirstPerson,

@@ -58,6 +58,12 @@ describe("PersonaSim server integration", () => {
         "019_correspondence_key_metadata.sql",
         "020_keepsakes.sql",
         "021_correspondence_reply_recovery.sql",
+        "022_retrieval_context_budget.sql",
+        "023_memory_derivation_validity.sql",
+        "024_persona_runtime.sql",
+        "025_continuity_grounding.sql",
+        "026_pressure_evidence_validity.sql",
+        "027_stored_item_extraction_repair.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -1121,7 +1127,7 @@ describe("PersonaSim server integration", () => {
     maliciousOriginal.persona.traits[0]!.sourceRefs = ["invented-source"];
     maliciousOriginal.persona.contradictions[0]!.sideA = "模型替换矛盾";
     maliciousOriginal.persona.goals[0]!.title = "模型替换目标";
-    maliciousOriginal.persona.values[0]!.description = "模型替换目标";
+    maliciousOriginal.persona.values[0]!.description = "重视诚实";
     maliciousOriginal.userRelationship.relationshipType = "模型替换关系";
     maliciousOriginal.knowledge.knownFacts = [];
     maliciousOriginal.persona.traits.push({
@@ -1212,8 +1218,15 @@ describe("PersonaSim server integration", () => {
         ),
     ).toBe(true);
     expect(generated.persona.traits[0]?.description).toBe(
-      "这段模型生成的可观察描述应被保留。",
+      buildOriginalDraft(originalInput).persona.traits[0]?.description,
     );
+    expect(
+      generated.persona.traits.find((trait) => trait.name === "模型替换特质"),
+    ).toMatchObject({
+      description: "这段模型生成的可观察描述应被保留。",
+      origin: "model_inference",
+      sourceRefs: ["original-form"],
+    });
     expect(generated.persona.contradictions[0]?.sideA).toBe(
       originalInput.coreContradiction,
     );
@@ -1223,11 +1236,9 @@ describe("PersonaSim server integration", () => {
       origin: "user_spec",
       sourceRefs: ["original-form"],
     });
-    expect(generated.persona.values[0]?.description).toBe(
-      originalInput.mainGoal,
-    );
+    expect(generated.persona.values[0]?.description).toBe("重视诚实");
     expect(generated.persona.values[0]).toMatchObject({
-      origin: "user_spec",
+      origin: "model_inference",
       sourceRefs: ["original-form"],
     });
     expect(generated.userRelationship.relationshipType).toBe(

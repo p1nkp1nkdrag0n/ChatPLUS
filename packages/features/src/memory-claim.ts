@@ -1,4 +1,10 @@
 import { normalizeText } from "./shared.js";
+import { extractExplicitCurrentFactProjections } from "./current-fact-projection.js";
+export {
+  extractExplicitCurrentFactProjections,
+  deriveFactQueryNeeds,
+  isFactHistoryQuery,
+} from "./current-fact-projection.js";
 
 export type ExplicitUserMemoryClaimCategory = "user_fact" | "user_preference";
 
@@ -84,6 +90,28 @@ export function deriveExplicitUserMemoryClaim(input: {
   evidenceText: string;
   candidateContent?: string;
 }): DerivedExplicitUserMemoryClaim | undefined {
+  const projected = extractExplicitCurrentFactProjections(
+    input.evidenceText,
+  ).filter(
+    (fact) =>
+      (input.category === "user_preference") ===
+      (fact.attribute === "usual_drink"),
+  );
+  const currentFact =
+    input.candidateContent === undefined
+      ? projected[0]
+      : projected.find(
+          (fact) =>
+            fact.content === input.candidateContent ||
+            extractExplicitCurrentFactProjections(
+              input.candidateContent ?? "",
+            ).some(
+              (candidate) =>
+                candidate.subjectKey === fact.subjectKey &&
+                candidate.value === fact.value,
+            ),
+        );
+  if (currentFact !== undefined) return claim(currentFact.subjectKey);
   const weeklyFacts = extractExplicitWeeklyPlanFacts(input.evidenceText);
   if (input.category === "user_fact") {
     if (input.candidateContent === undefined && weeklyFacts[0] !== undefined) {
@@ -152,6 +180,21 @@ export function hasExplicitMemoryCorrectionForClaim(input: {
   subjectKey: string;
   candidateContent?: string;
 }): boolean {
+  if (
+    extractExplicitCurrentFactProjections(input.evidenceText).some(
+      (fact) =>
+        fact.subjectKey === input.subjectKey &&
+        fact.revisionIntent === "explicit_correction" &&
+        (input.candidateContent === undefined ||
+          input.candidateContent === fact.content ||
+          extractExplicitCurrentFactProjections(input.candidateContent).some(
+            (candidate) =>
+              candidate.subjectKey === fact.subjectKey &&
+              candidate.value === fact.value,
+          )),
+    )
+  )
+    return true;
   if (input.subjectKey.startsWith("user_fact:weekly_plan:")) {
     const candidateFacts =
       input.candidateContent === undefined
@@ -454,18 +497,28 @@ export function extractExplicitStoredItemFact(
       continue;
     }
     const match = statement.match(
-      /(?:^|[，,:：])\s*(?:我(?:有|的|(?:已经|刚刚|刚才)?把))?(?:一[本份个把串件])?(?:(?:很)?重要的?)?([^，,。！？!?；;:：]{1,24}?)(?:[，,]\s*)?(?:(?:现在|目前|一直|仍然|依然|仍|还)?(?:存放|保存|保管|放|收|存|搁)(?:在|于)|(?:一直|仍然|依然|仍|还)在|(?:的)?(?:位置|存放处)(?:是|为))([^，,。！？!?；;:：]+)/u,
+      /(?:^|[，,:：])\s*(?:我(?:有|的|(?:已经|刚刚|刚才)?把))?(?:一[本份个把串件])?(?:(?:很)?重要的?)?([^，,。！？!?；;:：]{1,24}?)(?:[，,]\s*)?((?:现在|目前|一直|仍然|依然|仍|还)?(?:存放|保存|保管|放|收|存|搁)(?:在|于)|(?:一直|仍然|依然|仍|还)在|(?:的)?(?:位置|存放处)(?:是|为))([^，,。！？!?；;:：]+)/u,
     );
     const rawItem = match?.[1]?.trim();
-    const location = match?.[2]?.trim();
+    const predicate = match?.[2]?.trim();
+    const location = match?.[3]?.trim();
     if (
       rawItem === undefined ||
       location === undefined ||
-      /^(?:我|你|他|她|它)(?:们)?$/u.test(rawItem) ||
+      /^(?:(?:我|你|他|她|它)(?:们)?|也|还|仍然|依然|一直)$/u.test(rawItem) ||
       /(?:不是|并非|不再|没有|没|不|别|不要)$|(?:打算|计划|准备|想要|假如|如果)|^(?:我|你|他|她|它)(?:们)?(?:想|要|不|没)/u.test(
         rawItem,
       ) ||
-      /(?:哪里|哪儿|何处|什么地方)/u.test(location)
+      /(?:哪里|哪儿|何处|什么地方)/u.test(location) ||
+      // "还在" can mark an ongoing action. It establishes a location only
+      // when its complement supplies an actual place, never "用/想/做…".
+      (/^(?:一直|仍然|依然|仍|还)在$/u.test(predicate ?? "") &&
+        (/^(?:用|使用|想|考虑|做|看|读|写|等|找|忙|办理|工作|学习|讨论|尝试)/u.test(
+          location,
+        ) ||
+          !/(?:里|内|外|上|下|中|旁|边|层|室|处|柜|桌|家|包|抽屉|房间|办公室|仓库)$/u.test(
+            location,
+          )))
     ) {
       continue;
     }

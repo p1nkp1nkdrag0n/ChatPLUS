@@ -265,7 +265,7 @@ describe("memory recall runtime integration", () => {
       evidence: [
         {
           memoryId: seeded.teaMemoryId,
-          memoryContent: "The user prefers jasmine tea.",
+          memoryContent: "用户在对话中说过：「I prefer jasmine tea.」",
           evidence: {
             sourceType: "message",
             sourceId: seeded.teaMessageId,

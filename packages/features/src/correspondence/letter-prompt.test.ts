@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLetterReplyPrompt,
   deriveAllowedLetterReplyReferenceIds,
+  resolveLetterReplyReferences,
 } from "./letter-prompt.js";
 import { deriveLetterStrategy } from "./letter-strategy.js";
 
@@ -71,6 +72,36 @@ const snapshot: LetterGenerationSnapshot = {
 };
 
 describe("buildLetterReplyPrompt", () => {
+  it("resolves only unique exact references from this call, never durable IDs or repaired prefixes", () => {
+    const bindings = [
+      { localId: "ref_call_a_1", evidenceId: "letter-one" },
+      { localId: "ref_call_a_2", evidenceId: "memory-one" },
+    ];
+    expect(
+      resolveLetterReplyReferences(["ref_call_a_2", "ref_call_a_1"], bindings),
+    ).toEqual(["memory-one", "letter-one"]);
+    for (const ids of [
+      ["letter-one"],
+      ["ref_call_b_1"],
+      ["memory_call_a_1"],
+      ["ref_call_a_1", "ref_call_a_1"],
+    ]) {
+      expect(resolveLetterReplyReferences(ids, bindings)).toBeUndefined();
+    }
+    expect(
+      resolveLetterReplyReferences(
+        ["ref_call_a_1"],
+        [...bindings, { localId: "ref_call_a_1", evidenceId: "other-letter" }],
+      ),
+    ).toBeUndefined();
+    expect(
+      resolveLetterReplyReferences(
+        ["ref_call_a_1"],
+        [...bindings, { localId: "ref_call_a_3", evidenceId: "letter-one" }],
+      ),
+    ).toBeUndefined();
+  });
+
   it("uses the arrival snapshot without leaking processing time or live future facts", () => {
     const built = buildLetterReplyPrompt({
       snapshot,
@@ -88,20 +119,19 @@ describe("buildLetterReplyPrompt", () => {
     expect(built.system).toContain("A plan is not an outcome");
     expect(built.system).toContain("complete correspondence letter");
     expect(built.prompt).toContain(ARRIVAL);
-    expect(built.prompt).toContain("evidence-before-arrival");
-    expect(built.prompt).toContain("keepsake-before-arrival");
+    expect(built.prompt).not.toContain("evidence-before-arrival");
+    expect(built.prompt).not.toContain("keepsake-before-arrival");
     expect(built.prompt).toContain("雨夜票根");
     expect(built.prompt).not.toContain(PROCESSED);
     expect(built.prompt).not.toContain("future-evidence-from-september-9");
 
     const parsed = JSON.parse(built.prompt) as Record<string, unknown>;
     expect(parsed["ALLOWED_REFERENCED_EVIDENCE_IDS"]).toEqual([
-      ...snapshot.evidenceIds,
-      snapshot.incomingLetterId,
+      ...built.referenceBindings.map((item) => item.localId),
     ]);
     expect(
       (parsed["SNAPSHOT_EVIDENCE"] as Record<string, unknown>)["evidenceIds"],
-    ).toEqual(snapshot.evidenceIds);
+    ).toEqual(built.referenceBindings.slice(0, -1).map((item) => item.localId));
   });
 
   it("serializes stable named prompt sections and keeps strategy non-factual", () => {
@@ -121,6 +151,7 @@ describe("buildLetterReplyPrompt", () => {
       "ARRIVAL_TIME_AND_POSTMARK",
       "CHARACTER_SPEC_COMPACT",
       "LETTER_ARRIVAL_EFFECTIVE_TIME",
+      "LETTER_PARTICIPANTS",
       "LETTER_STRATEGY",
       "LIFE_INTERVAL_DIGEST",
       "PRIOR_CORRESPONDENCE_SUMMARY",
@@ -143,6 +174,164 @@ describe("buildLetterReplyPrompt", () => {
         evidenceIds: ["evidence-1", "letter-incoming-1"],
       }),
     ).toEqual(["evidence-1", "letter-incoming-1"]);
+  });
+
+  it("uses frozen finite practices while keeping raw adaptation text, provenance and suppressed memory out of model input", () => {
+    const effectivePersona = {
+      policyVersion: "scoped_practice_v1",
+      agentId: snapshot.agentId,
+      baseCharacterVersion: snapshot.characterVersion,
+      revision: 7,
+      memoryRevision: 13,
+      persona: {
+        traits: [
+          {
+            id: "trait_warm",
+            name: "温暖",
+            description: "愿意倾听",
+            strength: 0.6,
+            triggers: [],
+            exceptions: [],
+            origin: "user_spec",
+            sourceRefs: [],
+          },
+        ],
+        values: [
+          {
+            id: "value_truth",
+            name: "诚实",
+            description: "忠于事实",
+            priority: 0.8,
+            exceptions: [],
+            origin: "user_spec",
+            sourceRefs: [],
+          },
+        ],
+        contradictions: [],
+        goals: [],
+        preferences: [],
+        boundaries: [],
+      },
+      dialogue: {
+        primaryLanguage: "zh-CN",
+        formality: 0.4,
+        directness: 0.6,
+        warmth: 0.7,
+        verbosity: 0.5,
+        humor: 0.3,
+        averageMessageLength: 150,
+        averageChunksPerTurn: 1,
+        frequentPhrases: [],
+        avoidedPhrases: [],
+        greetingPatterns: [],
+        refusalPatterns: [],
+        comfortingPatterns: [],
+      },
+      relationshipPractices: [
+        {
+          id: "practice_at_arrival",
+          agentId: snapshot.agentId,
+          baseCharacterVersion: snapshot.characterVersion,
+          revision: 7,
+          proposal: {
+            kind: "relationship_practice",
+            facet: "advice_timing",
+            practice: "listen_first",
+            scope: { userId: "local_user", topic: "工作" },
+            content: "RAW_PERSONA_REQUEST_MUST_NOT_BECOME_A_PROMPT_INSTRUCTION",
+          },
+          sourceMessageId: "raw_persona_source_message",
+          sources: [
+            {
+              sourceType: "message",
+              sourceId: "raw_persona_source_message",
+              sourceHash: "d".repeat(64),
+            },
+            {
+              sourceType: "memory",
+              sourceId: "raw_persona_source_memory",
+              sourceHash: "e".repeat(64),
+            },
+          ],
+          status: "accepted",
+          effectiveFromUtc: "2026-09-07T12:00:00.000Z",
+          policyVersion: "scoped_practice_v1",
+        },
+      ],
+      excludedAdaptationIds: [],
+      suppressedMemoryIds: ["suppressed_preference"],
+    };
+    const frozen: LetterGenerationSnapshot = {
+      ...snapshot,
+      evidenceIds: [
+        ...snapshot.evidenceIds,
+        "suppressed_preference",
+        "suppressed_preference_alias",
+      ],
+      contextJson: {
+        ...snapshot.contextJson,
+        effectivePersona,
+        memoryEvidence: [
+          ...snapshot.contextJson.memoryEvidence,
+          {
+            id: "suppressed_preference",
+            content: "SUPPRESSED_MEMORY_MUST_NOT_RESTORE_WITHDRAWN_PRACTICE",
+          },
+          {
+            id: "suppressed_preference_alias",
+            memoryId: "suppressed_preference",
+            content: "SUPPRESSED_MEMORY_ALIAS_MUST_NOT_REMAIN_CITABLE",
+          },
+        ],
+      },
+    };
+    const before = JSON.stringify(frozen);
+    const built = buildLetterReplyPrompt({
+      snapshot: frozen,
+      incomingLetter: {
+        id: snapshot.incomingLetterId,
+        body: "工作有点烦恼，给你写信。",
+        contentHash: "b".repeat(64),
+      },
+      strategy: deriveLetterStrategy("工作有点烦恼，给你写信。"),
+    });
+    const parsed = JSON.parse(built.prompt) as Record<string, unknown>;
+    expect(parsed["EFFECTIVE_PERSONA_AT_ARRIVAL"]).toMatchObject({
+      baseCharacterVersion: 3,
+      revision: 7,
+      memoryRevision: 13,
+      relationshipPractices: [
+        {
+          id: "practice_at_arrival",
+          facet: "advice_timing",
+          practice: "listen_first",
+          scope: { userId: "local_user", topic: "工作" },
+        },
+      ],
+    });
+    expect(built.prompt).not.toContain(
+      "RAW_PERSONA_REQUEST_MUST_NOT_BECOME_A_PROMPT_INSTRUCTION",
+    );
+    expect(built.prompt).not.toContain("raw_persona_source_message");
+    expect(built.prompt).not.toContain("raw_persona_source_memory");
+    expect(built.prompt).not.toContain("suppressed_preference");
+    expect(built.prompt).not.toContain(
+      "SUPPRESSED_MEMORY_MUST_NOT_RESTORE_WITHDRAWN_PRACTICE",
+    );
+    expect(built.prompt).not.toContain(
+      "SUPPRESSED_MEMORY_ALIAS_MUST_NOT_REMAIN_CITABLE",
+    );
+    expect(deriveAllowedLetterReplyReferenceIds(frozen)).toEqual([
+      ...snapshot.evidenceIds,
+      snapshot.incomingLetterId,
+    ]);
+    expect(parsed["ALLOWED_REFERENCED_EVIDENCE_IDS"]).toEqual(
+      built.referenceBindings.map((item) => item.localId),
+    );
+    expect(
+      (parsed["SNAPSHOT_EVIDENCE"] as Record<string, unknown>)["evidenceIds"],
+    ).toEqual(built.referenceBindings.slice(0, -1).map((item) => item.localId));
+    expect(JSON.stringify(frozen)).toBe(before);
   });
 
   it("fails closed when the prompt letter does not match the snapshot", () => {

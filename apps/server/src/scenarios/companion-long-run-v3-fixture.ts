@@ -35,6 +35,11 @@ export function companionLongRunV3ReviewedSemanticReply(
 ): string | undefined {
   const normalized = text.normalize("NFKC").trim();
 
+  if (
+    /这个结果让我又松了一口气.*又有点难受.*先听我把矛盾说完/u.test(normalized)
+  ) {
+    return "我听着。松了一口气，也还是难受，这两种感觉都在，你慢慢说。";
+  }
   if (/从.*只听.*切换到一起分析/u.test(normalized)) {
     return "我陪你一起梳理这件事：先区分工作内容、现实条件和你在乎的东西，再比较短期代价与长期影响。具体选项还没说清，我先不替你选择。";
   }

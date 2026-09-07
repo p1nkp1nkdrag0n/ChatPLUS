@@ -42,6 +42,7 @@ export interface DefaultPromptContext extends PromptContext {
   readonly currentActivity?: unknown;
   readonly futureSchedule?: unknown;
   readonly retrievedEvidence?: EvidenceBundle | null;
+  readonly retrievedEvidenceUses?: Readonly<Record<string, readonly string[]>>;
   readonly recentVerbatim?: unknown;
   readonly replyStrategy?: unknown;
   readonly userMessage?: unknown;

@@ -4,6 +4,8 @@ import {
   DailyLifeContextSchema,
   DailyLifeIntentSchema,
   LifeOutcomeSchema,
+  LifeThreadSchema,
+  isCompanionCharacterPolicy,
   type CharacterGoal,
   type CharacterGoalMilestone,
   type CharacterSpec,
@@ -26,6 +28,10 @@ import { DateTime } from "luxon";
 
 import type { DatabaseStore } from "../db/store.js";
 import { buildTimeBasedGoalMilestones } from "../domain/defaults.js";
+import {
+  goalThreadBindingKey,
+  matchesGoalBinding,
+} from "./fuzzy-life-goal-binding.js";
 
 interface DailyIntentSeed {
   title: string;
@@ -63,7 +69,11 @@ export function createDailyLifeContext(input: {
     currentPeriod,
     availability: availabilityFor(input.state),
     availabilityConfidence: "inferred",
-    theme: input.threads[0]?.title ?? input.spec.persona.goals[0]?.title,
+    theme:
+      input.threads[0]?.title ??
+      (isCompanionCharacterPolicy(input.spec.compilationPolicyVersion)
+        ? undefined
+        : input.spec.persona.goals[0]?.title),
     currentFocus: focusForPeriod(input.intents, currentPeriod),
     todayFocus: input.intents.map((intent) => intent.title),
     intentIds: input.intents.map((intent) => intent.id),
@@ -135,8 +145,9 @@ export function buildDeterministicLifeOutcome(input: {
   evidenceId: string;
   effectiveLocalDate: string;
   recordedAtUtc: string;
+  outcomeKind?: LifeOutcome["outcomeKind"];
 }): LifeOutcome {
-  const outcomeKind = seededOutcome(input.intent.id);
+  const outcomeKind = input.outcomeKind ?? seededOutcome(input.intent.id);
   const summary = outcomeSummary(input.intent.title, outcomeKind);
   return LifeOutcomeSchema.parse({
     id: stableId("life_outcome", input.intent.id),
@@ -178,6 +189,76 @@ export function freezeTimelinePlan(
     ...unsigned,
     planSha256: hashTimelinePlan(unsigned),
   };
+}
+
+export function createEvidenceDrivenGoalThread(
+  spec: CharacterSpec,
+  goal: CharacterGoal,
+  atUtc: string,
+): LifeThread {
+  const key = goalThreadBindingKey(spec.id, goal);
+  const localDate = projectCharacterTime(spec.identity, atUtc).localDate;
+  return LifeThreadSchema.parse({
+    id: stableId("life_thread", key),
+    agentId: spec.id,
+    subject: "character",
+    title: goal.title,
+    summary: goal.description,
+    domain: inferDomain(`${goal.title} ${goal.description}`),
+    status: "active",
+    progressionPolicy: "evidence_driven_v2",
+    sourceGoalId: goal.id,
+    sourceCharacterVersion: spec.version,
+    currentStage: "当前关注",
+    progressNote: goal.description,
+    nextStepHint: "根据实际投入与处境决定是否继续、暂停或调整。",
+    startedLocalDate: localDate,
+    sourceMessageIds: [],
+    idempotencyKey: key,
+    revision: 1,
+    schemaVersion: 3,
+    createdAtUtc: atUtc,
+    updatedAtUtc: atUtc,
+  });
+}
+
+/** A day's result may change the current focus; it never proves the whole goal is complete. */
+export function projectGoalThreadOutcome(
+  thread: LifeThread,
+  outcome: LifeOutcome,
+  atUtc: string,
+): LifeThread | undefined {
+  if (
+    thread.progressionPolicy !== "evidence_driven_v2" ||
+    thread.agentId !== outcome.agentId ||
+    !outcome.threadIds.includes(thread.id) ||
+    outcome.sourceEvidenceIds.length === 0 ||
+    thread.pauseSourceMessageId !== undefined ||
+    thread.status === "resolved" ||
+    thread.status === "abandoned"
+  )
+    return undefined;
+  if (
+    outcome.effectiveLocalDate <
+    (thread.lastAdvancedLocalDate ?? thread.startedLocalDate)
+  )
+    return undefined;
+  const paused =
+    outcome.outcomeKind === "deferred" || outcome.outcomeKind === "cancelled";
+  const hasEffort =
+    outcome.outcomeKind === "completed" || outcome.outcomeKind === "partial";
+  return LifeThreadSchema.parse({
+    ...thread,
+    status: paused ? "paused" : hasEffort ? "active" : thread.status,
+    currentStage: paused ? "近期暂缓" : hasEffort ? "近期有投入" : "暂未投入",
+    progressNote: outcome.summary,
+    nextStepHint: paused
+      ? "先保留这次暂停；之后依据新的实际投入再决定是否继续或调整。"
+      : "只依据本次已有记录调整近期投入，不预设完成日期或最终成果。",
+    lastAdvancedLocalDate: outcome.effectiveLocalDate,
+    revision: thread.revision + 1,
+    updatedAtUtc: atUtc,
+  });
 }
 
 export function timelineLocalDate(
@@ -315,6 +396,14 @@ export function buildDailyIntents(
     `${spec.id}:${localDate}:${spec.version}`,
   );
   const goalIntents: DailyIntentSeed[] = spec.persona.goals
+    .filter(
+      (goal) =>
+        !isCompanionCharacterPolicy(spec.compilationPolicyVersion) ||
+        threads.some(
+          (thread) =>
+            thread.status === "active" && matchesGoalBinding(thread, goal),
+        ),
+    )
     .slice(0, 3)
     .map((goal, index) => ({
       title: goal.title,
@@ -327,8 +416,12 @@ export function buildDailyIntents(
       threadIds: threads
         .filter(
           (thread) =>
+            (thread.progressionPolicy === "evidence_driven_v2" &&
+              matchesGoalBinding(thread, goal)) ||
             thread.timelinePlan?.sourceGoalId === goal.id ||
-            (thread.timelinePlan === undefined && thread.title === goal.title),
+            (thread.progressionPolicy !== "evidence_driven_v2" &&
+              thread.timelinePlan === undefined &&
+              thread.title === goal.title),
         )
         .map((thread) => thread.id),
     }));

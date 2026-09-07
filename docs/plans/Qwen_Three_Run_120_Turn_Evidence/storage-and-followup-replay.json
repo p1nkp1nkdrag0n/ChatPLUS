@@ -1,0 +1,213 @@
+{
+  "schema": "qwen-long-storage-and-followup-pure-rule-replay-v1",
+  "apiCalls": 0,
+  "sourceHashes": {
+    "packages/features/src/memory-claim.ts": "fb3e5c7ac4c061724cca92c2aa65b8ba97d3c0b225d2ed64d567e448dea3ae1c",
+    "apps/server/src/services/turn-decision-service.ts": "17c1ec3e541ca4a776fb0f5a3e13ecfd0b7c609ddffc9053d5a6118544cdce97",
+    "packages/features/src/follow-up-grounding.ts": "6de7ce2d3d3f0f22055044f5b124563444067336ae9725ad76583a042a58f531"
+  },
+  "storeCases": [
+    {
+      "text": "早上照旧喝乌龙茶，蓝色钢笔也还在用。",
+      "extracted": {
+        "item": "蓝色钢笔也",
+        "subjectKey": "user_fact:item:蓝色钢笔也:storage"
+      },
+      "candidates": [
+        {
+          "kind": "semantic",
+          "content": "用户的蓝色钢笔也现在存放在：早上照旧喝乌龙茶,蓝色钢笔也还在用。",
+          "importance": 0.88,
+          "confidence": 1,
+          "tags": [
+            "user_fact",
+            "item_storage",
+            "about_user",
+            "关于我"
+          ],
+          "sourceMessageIds": [],
+          "sourceActivityEventIds": [],
+          "origin": "runtime_simulation",
+          "namespace": "user_model",
+          "certainty": "explicit",
+          "attribution": "user_explicit",
+          "stability": "stable",
+          "claim": {
+            "subjectKey": "user_fact:item:蓝色钢笔也:storage",
+            "disposition": "affirmed",
+            "recordedAtUtc": "2026-10-22T00:06:00.000Z"
+          },
+          "shouldWrite": true,
+          "forbiddenOverclaims": [],
+          "reasonCode": "explicit_user_fact",
+          "reasonSummary": "The user explicitly stated a durable fact or preference."
+        }
+      ]
+    },
+    {
+      "text": "蓝色钢笔还在用。",
+      "extracted": {
+        "item": "蓝色钢笔",
+        "subjectKey": "user_fact:item:蓝色钢笔:storage"
+      },
+      "candidates": [
+        {
+          "kind": "semantic",
+          "content": "用户的蓝色钢笔现在存放在：蓝色钢笔还在用。",
+          "importance": 0.88,
+          "confidence": 1,
+          "tags": [
+            "user_fact",
+            "item_storage",
+            "about_user",
+            "关于我"
+          ],
+          "sourceMessageIds": [],
+          "sourceActivityEventIds": [],
+          "origin": "runtime_simulation",
+          "namespace": "user_model",
+          "certainty": "explicit",
+          "attribution": "user_explicit",
+          "stability": "stable",
+          "claim": {
+            "subjectKey": "user_fact:item:蓝色钢笔:storage",
+            "disposition": "affirmed",
+            "recordedAtUtc": "2026-10-22T00:06:00.000Z"
+          },
+          "shouldWrite": true,
+          "forbiddenOverclaims": [],
+          "reasonCode": "explicit_user_fact",
+          "reasonSummary": "The user explicitly stated a durable fact or preference."
+        }
+      ]
+    },
+    {
+      "text": "蓝色钢笔现在放在抽屉里。",
+      "extracted": {
+        "item": "蓝色钢笔",
+        "subjectKey": "user_fact:item:蓝色钢笔:storage"
+      },
+      "candidates": [
+        {
+          "kind": "semantic",
+          "content": "用户的蓝色钢笔现在存放在：蓝色钢笔现在放在抽屉里。",
+          "importance": 0.88,
+          "confidence": 1,
+          "tags": [
+            "user_fact",
+            "item_storage",
+            "about_user",
+            "关于我"
+          ],
+          "sourceMessageIds": [],
+          "sourceActivityEventIds": [],
+          "origin": "runtime_simulation",
+          "namespace": "user_model",
+          "certainty": "explicit",
+          "attribution": "user_explicit",
+          "stability": "stable",
+          "claim": {
+            "subjectKey": "user_fact:item:蓝色钢笔:storage",
+            "disposition": "affirmed",
+            "recordedAtUtc": "2026-10-22T00:06:00.000Z"
+          },
+          "shouldWrite": true,
+          "forbiddenOverclaims": [],
+          "reasonCode": "explicit_user_fact",
+          "reasonSummary": "The user explicitly stated a durable fact or preference."
+        }
+      ]
+    },
+    {
+      "text": "我今天还在画画。",
+      "extracted": {
+        "item": "我今天",
+        "subjectKey": "user_fact:item:我今天:storage"
+      },
+      "candidates": [
+        {
+          "kind": "semantic",
+          "content": "用户的我今天现在存放在：我今天还在画画。",
+          "importance": 0.88,
+          "confidence": 1,
+          "tags": [
+            "user_fact",
+            "item_storage",
+            "about_user",
+            "关于我"
+          ],
+          "sourceMessageIds": [],
+          "sourceActivityEventIds": [],
+          "origin": "runtime_simulation",
+          "namespace": "user_model",
+          "certainty": "explicit",
+          "attribution": "user_explicit",
+          "stability": "stable",
+          "claim": {
+            "subjectKey": "user_fact:item:我今天:storage",
+            "disposition": "affirmed",
+            "recordedAtUtc": "2026-10-22T00:06:00.000Z"
+          },
+          "shouldWrite": true,
+          "forbiddenOverclaims": [],
+          "reasonCode": "explicit_user_fact",
+          "reasonSummary": "The user explicitly stated a durable fact or preference."
+        }
+      ]
+    }
+  ],
+  "followCases": [
+    {
+      "text": "接下来两天我想少看屏幕，多出去走走，不是宣布什么彻底改变。",
+      "result": {
+        "accepted": false,
+        "rejection": {
+          "reasonCode": "unsupported_follow_up_basis",
+          "reasonSummary": "No concrete, unqualified event, plan, or follow-up request is supported by the source speaker. Analysis and acknowledgement do not establish adoption."
+        }
+      }
+    },
+    {
+      "text": "明天我准备去公园走走。",
+      "result": {
+        "accepted": true,
+        "basis": {
+          "version": 1,
+          "basisKind": "user_plan",
+          "modality": "planned",
+          "matter": "明天我准备去公园走走。",
+          "timingSource": "event_or_plan",
+          "sourceMessageIds": [
+            "offline-source"
+          ]
+        },
+        "contextSummary": "明天我准备去公园走走。",
+        "expectedOutcomeDescription": "仅询问所述事项是否发生、是否尝试或安排有无变化，不预设执行或成功。来源原话：明天我准备去公园走走。",
+        "timingText": "明天我准备去公园走走。"
+      }
+    },
+    {
+      "text": "接下来两天我打算少看屏幕，多出去走走。",
+      "result": {
+        "accepted": true,
+        "basis": {
+          "version": 1,
+          "basisKind": "user_plan",
+          "modality": "planned",
+          "matter": "接下来两天我打算少看屏幕，多出去走走。",
+          "timingSource": "event_or_plan",
+          "sourceMessageIds": [
+            "offline-source"
+          ]
+        },
+        "contextSummary": "接下来两天我打算少看屏幕，多出去走走。",
+        "expectedOutcomeDescription": "仅询问所述事项是否发生、是否尝试或安排有无变化，不预设执行或成功。来源原话：接下来两天我打算少看屏幕，多出去走走。",
+        "timingText": "接下来两天我打算少看屏幕，多出去走走。"
+      }
+    }
+  ],
+  "notes": [
+    "T115真实最终库已有同一错误storage推导，此离线调用只重放，不写产品DB。",
+    "T61是真实有时段的局部意向，被跟进规则拒绝，属于保守覆盖缺口候选；此控制用于定位，不替代真实正例验收。"
+  ]
+}

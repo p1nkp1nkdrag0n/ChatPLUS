@@ -29,6 +29,236 @@ export interface LifeEvidenceAnalysis {
   clauses: LifeEvidenceClause[];
 }
 
+export const STATE_ATTRIBUTION_VERSION = "state_attribution_v1" as const;
+export type RelativeReferent =
+  "speaker" | "addressee" | "third_party" | "unknown";
+export type StateBindingMethod = "explicit" | "local_ellipsis" | "unresolved";
+
+/** State ownership is relative to the actual message speaker, independently
+ * of the legacy action parser's first-person `subject: "user"` convention. */
+export interface StateAttributionCandidate {
+  kind: "pressure" | "feedback";
+  speakerRole: "user" | "character";
+  experiencer: RelativeReferent;
+  bindingMethod: StateBindingMethod;
+  sourceMessageId: string;
+  sourceText: string;
+  /** UTF-16 offsets into the unmodified input message, end exclusive. */
+  sourceSpan: { start: number; end: number };
+  modality: EvidenceModality | "reported";
+  attributionVersion: typeof STATE_ATTRIBUTION_VERSION;
+}
+
+export const STATE_PRESSURE_PREDICATE =
+  /焦虑|压力|清晰度|难受|低落|撑不住|烦躁|崩溃|害怕|(?<=[我你他她])又怕|发愁|失眠|反复想|很乱|不知所措|累坏|累得(?:不行|够呛|慌|喘不过气)|(?:有点|很|真|太|挺|实在|一直|最近|也|都)累|疲惫|疲倦|一直.{0,6}压着|压得.{0,8}(?:喘不过气|难受)|肩膀.{0,8}(?:绷|紧)/u;
+const DENIED_PRESSURE =
+  /(?:并不|没有|不再|不觉得|没觉得|毫无|一点也不).{0,8}(?:焦虑|压力|难受|低落|烦躁|害怕|失眠|疲惫|疲倦|累)|不(?:焦虑|难受|害怕|累)|不是.{0,8}(?:焦虑|难受|累)/u;
+const STATE_TOPIC_MENTION =
+  /(?:话题|谈话|讨论).{0,20}(?:从|关于)|(?:刚才|之前|前面).{0,8}(?:说|聊|谈|提到).{0,12}(?:焦虑|压力)/u;
+const COGNITION_FRAME =
+  /(?:我|我们)(?:知道|觉得|认为|理解|听得出|看得出|听出来|看出来|听到|看到)/gu;
+const REFERENT_MENTION =
+  /(?:我|你|他|她)(?:的)?(?:朋友|同事|家人|伴侣|父母|母亲|父亲)|朋友|同事|家人|伴侣|父母|母亲|父亲|老师|医生|经理|他们|她们|他|她|我们|我|你们|你/gu;
+
+/** Returns candidates, including rejected/unknown ownership, for server-side
+ * validation. No candidate itself authorizes a persistent state transition. */
+export function analyzeStateAttributions(input: {
+  text: string;
+  speakerRole: "user" | "character";
+  sourceMessageId: string;
+}): StateAttributionCandidate[] {
+  const candidates: StateAttributionCandidate[] = [];
+  // Do not normalize or remove consent text here: every span must round-trip to
+  // the stored source. Quote masking alone is length-preserving.
+  const masked = maskEvidenceQuotes(input.text);
+  for (const sentence of alignedParts(
+    input.text,
+    masked,
+    /[。！？?!\n]+|(?<!\d)\.(?!\d)/gu,
+  )) {
+    let inherited: RelativeReferent = "unknown";
+    let ellipsisDepth = 0;
+    let previousSeparator = "";
+    let previousMetric = false;
+    let conditional = false;
+    let planned = false;
+    let reported = false;
+    const sentenceMeta =
+      EXAMPLE_FRAME.test(sentence.classifyText) ||
+      META.test(sentence.classifyText);
+    for (const clause of alignedParts(
+      sentence.sourceText,
+      sentence.classifyText,
+      /[，,；;：:]+|(?=(?:但|不过|而)(?:我|你|他|她))/gu,
+    )) {
+      const leadingSpace =
+        clause.sourceText.length - clause.sourceText.trimStart().length;
+      const sourceText = clause.sourceText.trim();
+      const value = clause.classifyText.trim();
+      if (!sourceText) continue;
+      const start = sentence.start + clause.start + leadingSpace;
+      const metricContinuation: boolean =
+        previousMetric &&
+        /^但(?:压力|清晰度).{0,12}\d+(?:\.\d+)?\s*\/\s*10/u.test(value);
+      const independent: boolean =
+        !metricContinuation &&
+        /^(?:另外|此外|另一个话题|但|不过|然而|可是|而)/u.test(value);
+      if (independent || !/^[，,]$/u.test(previousSeparator)) {
+        inherited = "unknown";
+        ellipsisDepth = 0;
+      }
+      if (/^(?:但|不过|而)我(?:现在|目前|确实|也|还是)/u.test(value)) {
+        reported = false;
+        conditional = false;
+        planned = false;
+      }
+      conditional ||= UNCERTAIN.test(value);
+      planned ||= FUTURE.test(value) || INTENTION.test(value);
+      // "听你这么说，我也难受" establishes a cause, not reported first person.
+      const contextualListening =
+        /^(?:听你这么说|听你这样说|听到你这么说)$/u.test(value);
+      reported ||=
+        !contextualListening &&
+        (REPORTED_SPEECH.test(value) ||
+          /(?:你|我)(?:刚才|之前)?说(?:过)?(?:我|你|他|她)/u.test(value));
+      const kinds: StateAttributionCandidate["kind"][] = [];
+      if (
+        STATE_PRESSURE_PREDICATE.test(value) ||
+        STATE_PRESSURE_PREDICATE.test(sourceText)
+      )
+        kinds.push("pressure");
+      if (PRESSURE_FEEDBACK.test(value) || PRESSURE_FEEDBACK.test(sourceText))
+        kinds.push("feedback");
+      let resolvedForContinuation: RelativeReferent = "unknown";
+      for (const kind of kinds) {
+        const predicatePattern =
+          kind === "pressure" ? STATE_PRESSURE_PREDICATE : PRESSURE_FEEDBACK;
+        const predicate = predicatePattern.exec(value);
+        const quotedOnly = !predicate;
+        // The first person inside "她说‘我压力很大’" belongs to the quoted
+        // speaker. Resolve only the outer reporter and keep reported modality.
+        const local = stateExperiencer(value, predicate?.index ?? value.length);
+        const canInherit: boolean =
+          local === "unknown" &&
+          inherited !== "unknown" &&
+          ellipsisDepth < 2 &&
+          isLocalStateEllipsis(
+            metricContinuation ? value.replace(/^但/u, "") : value,
+          ) &&
+          !quotedOnly &&
+          !independent;
+        const experiencer: RelativeReferent =
+          local !== "unknown" ? local : canInherit ? inherited : "unknown";
+        const modality: StateAttributionCandidate["modality"] =
+          sentenceMeta ||
+          STATE_TOPIC_MENTION.test(value) ||
+          /^(?:请|别|不要|不用|不必)(?!担心)/u.test(value)
+            ? "meta"
+            : reported || quotedOnly
+              ? "reported"
+              : /[?？]/u.test(sentence.separator) ||
+                  /是否|有没有|(?:吗|么)$|是不是/u.test(value)
+                ? "question"
+                : conditional
+                  ? "conditional"
+                  : planned
+                    ? "planned"
+                    : (kind === "pressure" && DENIED_PRESSURE.test(value)) ||
+                        NEGATED_STATE_CHANGE.test(value)
+                      ? "negated"
+                      : "asserted";
+        candidates.push({
+          kind,
+          speakerRole: input.speakerRole,
+          experiencer,
+          bindingMethod:
+            local !== "unknown"
+              ? "explicit"
+              : canInherit
+                ? "local_ellipsis"
+                : "unresolved",
+          sourceMessageId: input.sourceMessageId,
+          sourceText,
+          sourceSpan: { start, end: start + sourceText.length },
+          modality,
+          attributionVersion: STATE_ATTRIBUTION_VERSION,
+        });
+        if (modality === "asserted" || modality === "negated")
+          resolvedForContinuation = experiencer;
+      }
+      const explicitActor = stateExperiencer(value, value.length);
+      // Only local, unframed personal clauses supply an ellipsis antecedent.
+      // A cognitive "我觉得" alone never makes the next emotion speaker-owned.
+      if (
+        sentenceMeta ||
+        reported ||
+        conditional ||
+        planned ||
+        sourceText !== clause.classifyText.trim()
+      ) {
+        inherited = "unknown";
+        ellipsisDepth = 0;
+      } else if (kinds.length > 0) {
+        inherited = resolvedForContinuation;
+        ellipsisDepth = explicitActor !== "unknown" ? 0 : ellipsisDepth + 1;
+      } else {
+        inherited = explicitActor;
+        ellipsisDepth = 0;
+      }
+      previousSeparator = clause.separator;
+      previousMetric =
+        inherited !== "unknown" &&
+        /(?:压力|清晰度).{0,12}\d+(?:\.\d+)?\s*\/\s*10/u.test(value);
+    }
+  }
+  return candidates;
+}
+
+function stateExperiencer(
+  text: string,
+  predicateStart: number,
+): RelativeReferent {
+  // Some Chinese state predicates place the experiencer after the verb:
+  // "这件事一直压着我". The affected person wins over the topic subject.
+  const affected = /(?:压着|压得|困扰着?|折磨着?)(我|你|他|她)/u.exec(
+    text.slice(predicateStart),
+  )?.[1];
+  if (affected)
+    return affected === "我"
+      ? "speaker"
+      : affected === "你"
+        ? "addressee"
+        : "third_party";
+  // Remove only the reporting/understanding subject, keeping an embedded
+  // proposition such as "我觉得我有点累" and explicit possessors such as "你的疲惫".
+  const rawPrefix = text.slice(0, predicateStart);
+  if (
+    /(?:我|我们)(?:觉得|感觉|感到)(?:自己)?(?:(?:最近|现在|也|确实|还是|已经|一直|有点|有些|很|真|太|挺|实在)\s*)*$/u.test(
+      rawPrefix,
+    )
+  )
+    return "speaker";
+  const prefix = rawPrefix.replace(COGNITION_FRAME, (frame) =>
+    " ".repeat(frame.length),
+  );
+  const mentions = [...prefix.matchAll(REFERENT_MENTION)];
+  const last = mentions.at(-1)?.[0];
+  if (!last) return "unknown";
+  if (/^(?:我|我们)$/u.test(last)) return "speaker";
+  if (/^(?:你|你们)$/u.test(last)) return "addressee";
+  return "third_party";
+}
+
+function isLocalStateEllipsis(text: string): boolean {
+  const predicate = text.replace(
+    /^(?:(?:最近|现在|目前|一直|仍然|还是|已经|也|又|都|有点|很|真|太|挺|实在|整个人|心里|脑子|身体)\s*)+/u,
+    "",
+  );
+  return /^(?:压力|清晰度|焦虑|难受|低落|撑不住|烦躁|崩溃|害怕|发愁|失眠|反复想|很乱|不知所措|累|疲惫|疲倦|肩膀|绷|紧|被理解|被听见|轻松|松快|安静|放松|踏实|没那么|不|并不)/u.test(
+    predicate,
+  );
+}
+
 // One predicate inventory drives both occurrence and its negation. A few
 // verbs need an aspect marker in an affirmative report ("画了", not "画纸"),
 // while their bare stem must still be recognized after "没有".
@@ -427,11 +657,17 @@ function alignedParts(
   source: string,
   classified: string,
   boundary: RegExp,
-): Array<{ sourceText: string; classifyText: string; separator: string }> {
+): Array<{
+  sourceText: string;
+  classifyText: string;
+  separator: string;
+  start: number;
+}> {
   const parts: Array<{
     sourceText: string;
     classifyText: string;
     separator: string;
+    start: number;
   }> = [];
   let start = 0;
   for (const match of classified.matchAll(boundary)) {
@@ -440,6 +676,7 @@ function alignedParts(
       sourceText: source.slice(start, index),
       classifyText: classified.slice(start, index),
       separator: match[0],
+      start,
     });
     start = index + match[0].length;
   }
@@ -448,6 +685,7 @@ function alignedParts(
       sourceText: source.slice(start),
       classifyText: classified.slice(start),
       separator: "",
+      start,
     });
   return parts;
 }

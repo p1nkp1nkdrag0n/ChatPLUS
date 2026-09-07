@@ -58,6 +58,17 @@ function dilemma(labels: [string, string]): DilemmaEpisode {
 const userDilemma = dilemma(["留在上海的栖岸科技", "去杭州的山鸣影像"]);
 
 describe("reviewed v3 fixture support and decisions", () => {
+  it("offers listening when the user wants to finish describing mixed feelings", () => {
+    expect(analyzeSupportSpeechAct(userText(65))).toMatchObject({
+      supportMode: "listen_only",
+      explicitSupport: true,
+      delegated: false,
+    });
+    expect(analyzeCharacterSupportOffer(reply(65))?.mode).toBe("listen_only");
+    expect(matchDilemmaOption(userDilemma, reply(65))).toBeUndefined();
+    expect(analyzeSpeakerSelfDisclosure(reply(65), true).pressureText).toBe("");
+  });
+
   it("actually offers analysis when the reviewed turn switches from listening", () => {
     expect(analyzeSupportSpeechAct(userText(33))).toMatchObject({
       supportMode: "deliberate",

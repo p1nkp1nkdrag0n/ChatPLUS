@@ -1,0 +1,91 @@
+{
+  "schema": "correction-expression-pilot-evidence-v1",
+  "syntheticScenarioInputs": true,
+  "providerResponsesAreReal": true,
+  "totalPhysicalAttempts": 20,
+  "httpResponses": 19,
+  "validReplies": 17,
+  "invalidStructuredResponses": 2,
+  "totalObservedTokens": 26936,
+  "retriesAfterModelReply": 0,
+  "missingArmsWereNotResampled": true,
+  "limitations": [
+    "Prompt-only pilot with the same current planner; each controlled arm changes expressionGuidance or questionGuidance, not a historical product build.",
+    "First no-proxy TLS failure has unknown provider usage; all 19 observed responses including invalid JSON shapes are counted.",
+    "Baseline and plain-only arms stopped on format failures; remaining independent arms were run separately with fresh legal histories."
+  ],
+  "runs": [
+    {
+      "directory": "artifacts/correction-expression-qwen-20260907",
+      "physicalAttempts": 1,
+      "httpResponses": 0,
+      "transportFailures": 1,
+      "observedPromptTokens": null,
+      "observedCompletionTokens": null,
+      "usageForTransportFailure": "unknown",
+      "model": "qwen3.8-flash",
+      "profile": "qwen",
+      "reasoningEffort": "medium",
+      "structuredOutputMode": "json_object",
+      "maxRetries": 0,
+      "maxOutputTokens": 2500,
+      "sourceHead": "710d088cc4d7a3cc1f9fad88016050cb0277b8d8",
+      "sourceFingerprint": {
+        "revision": "710d088cc4d7a3cc1f9fad88016050cb0277b8d8",
+        "dirty": true,
+        "dirtyPatchSha256": "1bc5fd8d751a666766a8d51410f4e42c524fae92ccaf7f716ec75633f1a5412d"
+      },
+      "manifestSha256": "e6df9dc55831801f77cb5234a6fd85429077be143a87f071d5fce92f177b63f6",
+      "physicalLedgerSha256": "8438695b1d31f38e10ba1ec4e5165f73df8f26b94415a4b27ced4ae83a0f98e6",
+      "transcriptSha256": null
+    },
+    {
+      "directory": "artifacts/correction-expression-qwen-20260907-proxy",
+      "physicalAttempts": 5,
+      "httpResponses": 5,
+      "transportFailures": 0,
+      "observedPromptTokens": 4625.0,
+      "observedCompletionTokens": 1468.0,
+      "usageForTransportFailure": "unknown",
+      "model": "qwen3.8-flash",
+      "profile": "qwen",
+      "reasoningEffort": "medium",
+      "structuredOutputMode": "json_object",
+      "maxRetries": 0,
+      "maxOutputTokens": 2500,
+      "sourceHead": "710d088cc4d7a3cc1f9fad88016050cb0277b8d8",
+      "sourceFingerprint": {
+        "revision": "710d088cc4d7a3cc1f9fad88016050cb0277b8d8",
+        "dirty": true,
+        "dirtyPatchSha256": "e0f40a736d9d38c8a61ed0b77460a944fee9667b72343e6127bcc92a3465586d"
+      },
+      "manifestSha256": "f863a2d4e1d0cd684317eed7db6e24f4ff42930fad5c2884900e98d43b3169db",
+      "physicalLedgerSha256": "93bd3152e7c2af593db7494e9b603539d3fb2e75e56e430b4fc5414ab951a430",
+      "transcriptSha256": "11de27398da8d078be1844ad78f50bc9887d6f33af5397fde73b13b8523542e8"
+    },
+    {
+      "directory": "artifacts/correction-expression-qwen-20260907-remaining",
+      "physicalAttempts": 14,
+      "httpResponses": 14,
+      "transportFailures": 0,
+      "observedPromptTokens": 16109.0,
+      "observedCompletionTokens": 4734.0,
+      "usageForTransportFailure": "unknown",
+      "model": "qwen3.8-flash",
+      "profile": "qwen",
+      "reasoningEffort": "medium",
+      "structuredOutputMode": "json_object",
+      "maxRetries": 0,
+      "maxOutputTokens": 2500,
+      "sourceHead": "710d088cc4d7a3cc1f9fad88016050cb0277b8d8",
+      "sourceFingerprint": {
+        "revision": "710d088cc4d7a3cc1f9fad88016050cb0277b8d8",
+        "dirty": true,
+        "dirtyPatchSha256": "3f898525c7197f8e808fbc34ac3f85c7db315243b467a4346f6c14cc6619acf9"
+      },
+      "manifestSha256": "f94e8b0e6861b92dd1f5b937313d4c063d37e9ccc9dda7ad6a6654cde13db7ff",
+      "physicalLedgerSha256": "e06bdd814c125d6646cbc84f9cfeb36da57ce1497583e249422402c645ebdc99",
+      "transcriptSha256": "2469945df87a7c95618766cc8481e9682ef3a0181151f004539a89239def58c6"
+    }
+  ]
+}

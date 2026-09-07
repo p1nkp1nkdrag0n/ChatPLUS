@@ -108,12 +108,16 @@ export class ContinuityIndexService {
   persistPrepared(
     prepared: Extract<PreparedEventCards, { accepted: true }>,
   ): number {
-    return this.repository.upsertEventCards(prepared.cards);
+    return this.repository.upsertEventCards(
+      prepared.cards,
+      this.clock.nowUtc(),
+    );
   }
 
   upsertActivityEvents(events: readonly StoredActivityEvent[]): number {
     return this.repository.upsertEventCards(
       events.map((event) => activityEventCard(event)),
+      this.clock.nowUtc(),
     );
   }
 
@@ -121,21 +125,33 @@ export class ContinuityIndexService {
     agentId: string;
     query: string;
     limit?: number;
+    nowUtc?: string;
+    suppressedMemoryIds?: readonly string[];
   }): EventCard[] {
-    return this.repository.searchEventCards(input);
+    return this.repository.searchEventCards({
+      ...input,
+      nowUtc: input.nowUtc ?? this.clock.nowUtc(),
+    });
   }
 
   scanExplicitFactEventCards(input: {
     agentId: string;
     searchTerms: readonly string[];
     scanLimit: number;
+    nowUtc?: string;
+    suppressedMemoryIds?: readonly string[];
   }) {
-    return this.repository.scanExplicitFactEventCards(input);
+    return this.repository.scanExplicitFactEventCards({
+      ...input,
+      nowUtc: input.nowUtc ?? this.clock.nowUtc(),
+    });
   }
   temporalAnchors(input: {
     agentId: string;
     query: string;
     limit?: number;
+    nowUtc?: string;
+    suppressedMemoryIds?: readonly string[];
   }): TemporalAnchorLike[] {
     return temporalAnchorsFromEventCards(
       this.searchEventCards(input),
@@ -147,6 +163,7 @@ export class ContinuityIndexService {
     agentId: string;
     query: string;
     limit?: number;
+    suppressedMemoryIds?: readonly string[];
   }): ArchivedMessage[] {
     return this.repository.searchArchivedMessages(input);
   }
@@ -156,7 +173,7 @@ export class ContinuityIndexService {
     const cards = deduplicateCards([
       ...this.cardsFromCheckpointArtifacts(agentId),
       ...this.cardsFromActivities(agentId),
-      ...this.cardsFromAutobiography(agentId),
+      ...this.cardsFromAutobiography(agentId, nowUtc),
       ...this.cardsFromDomainEvents(agentId),
     ]);
     return this.repository.transaction(() => ({
@@ -165,7 +182,7 @@ export class ContinuityIndexService {
         agentId,
         nowUtc,
       ),
-      eventCardCount: this.repository.replaceEventCards(agentId, cards),
+      eventCardCount: this.repository.replaceEventCards(agentId, cards, nowUtc),
     }));
   }
 
@@ -205,9 +222,9 @@ export class ContinuityIndexService {
     );
   }
 
-  private cardsFromAutobiography(agentId: string): EventCard[] {
+  private cardsFromAutobiography(agentId: string, nowUtc: string): EventCard[] {
     return this.repository
-      .listAutobiographyEntries(agentId)
+      .listAutobiographyEntries(agentId, nowUtc)
       .flatMap((entry) => {
         const temporalMetadata = temporalFromEntry(entry);
         const parsed = EventCardSchema.safeParse({

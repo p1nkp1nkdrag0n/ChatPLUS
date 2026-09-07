@@ -162,8 +162,8 @@ export const api = {
       storyAnchorYear?: string;
       workOrRole: string;
       traits: string[];
-      coreContradiction: string;
-      primaryGoal: string;
+      coreContradiction?: string;
+      primaryGoal?: string;
       initialRelationship: string;
       dialogueStyle: string;
       characterBrief?: string;
@@ -182,9 +182,13 @@ export const api = {
             ? { storyAnchorYear: Number(input.storyAnchorYear) }
             : {}),
           workOrRole: input.workOrRole,
-          coreTraits: input.traits,
-          coreContradiction: input.coreContradiction,
-          mainGoal: input.primaryGoal,
+          coreTraits: input.traits.map((trait) => trait.trim()).filter(Boolean),
+          ...(input.coreContradiction?.trim()
+            ? { coreContradiction: input.coreContradiction.trim() }
+            : {}),
+          ...(input.primaryGoal?.trim()
+            ? { mainGoal: input.primaryGoal.trim() }
+            : {}),
           initialRelationship: input.initialRelationship,
           dialogueStyle: input.dialogueStyle,
           ...(input.characterBrief?.trim()
@@ -231,6 +235,19 @@ export const api = {
           body: body({ spec, expectedVersion: spec.version }),
         },
       ),
+    reviewAuthority: (
+      id: string,
+      expectedVersion: number,
+      decision: {
+        candidateId: string;
+        candidateSha256: string;
+        decision: "accept" | "reject";
+      },
+    ) =>
+      request<CharacterDetail | CharacterSpec>(`/api/characters/${id}/draft`, {
+        method: "PATCH",
+        body: body({ expectedVersion, authorityDecisions: [decision] }),
+      }),
     publish: (id: string, expectedVersion: number) =>
       request<CharacterDetail | CharacterSpec>(
         `/api/characters/${id}/publish`,

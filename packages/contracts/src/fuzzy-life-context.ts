@@ -7,6 +7,7 @@ import {
   LifeAvailabilitySchema,
   LifeDomainSchema,
   LifeSubjectSchema,
+  LifeThreadProgressionPolicySchema,
   LocalDateSchema,
   SupportModeSchema,
 } from "./life.js";
@@ -91,7 +92,7 @@ export const FuzzyLifePromptContextSchema = z
         actionsAreNotOutcomes: z.literal(true),
         characterTimePrecision: z.literal("day_or_period"),
         characterLifeOwner: z.literal("character"),
-        lifeThreadStagesAdvanceByCharacterLocalDate: z.literal(true),
+        lifeThreadStagesAdvanceByCharacterLocalDate: z.boolean(),
         lifeThreadStageIsNotDailyOutcome: z.literal(true),
         lifeThreadStageIsNotProofOfExternalSuccess: z.literal(true),
       })
@@ -129,6 +130,7 @@ export const FuzzyLifePromptContextSchema = z
             subject: z.literal("character"),
             title: z.string().trim().min(1).max(160),
             currentStage: NonEmptyTextSchema,
+            progressionPolicy: LifeThreadProgressionPolicySchema.optional(),
             progressNote: NonEmptyTextSchema.optional(),
             nextStepHint: NonEmptyTextSchema.optional(),
           })

@@ -62,9 +62,13 @@ export type MemoryRecallPreviewRejection = z.infer<
 
 export const MemoryRecallPreviewStrategySchema = z
   .object({
-    name: z.enum(["keyword_evidence_v1", "continuity_hierarchy_v1"]),
+    name: z.enum([
+      "keyword_evidence_v1",
+      "continuity_hierarchy_v1",
+      "continuity_context_v2",
+    ]),
     minimumScore: UnitIntervalSchema,
-    maxEvidence: z.number().int().min(1).max(3),
+    maxEvidence: z.number().int().min(1).max(8),
     candidateLimit: z.number().int().min(1).max(500),
   })
   .strict();
@@ -87,8 +91,8 @@ export const MemoryRecallPreviewResponseSchema = z
     candidateCount: z.number().int().nonnegative().max(500),
     evidenceCount: z.number().int().nonnegative().max(500),
     candidates: z.array(MemoryRecallPreviewCandidateSchema).max(500),
-    selectedItems: z.array(RetrievedMemoryEvidenceSchema).max(3),
-    evidence: z.array(MemoryEvidenceSchema).max(3),
+    selectedItems: z.array(RetrievedMemoryEvidenceSchema).max(8),
+    evidence: z.array(MemoryEvidenceSchema).max(8),
     rejections: z.array(MemoryRecallPreviewRejectionSchema).max(1_000),
     strategy: MemoryRecallPreviewStrategySchema,
     timing: MemoryRecallTimingSchema,
@@ -105,8 +109,8 @@ export const MemoryRecallRuntimeDiagnosticSchema = z
     promptStrategy: z.enum(["legacy_active", "evidence_selected"]),
     legacyPromptMemoryIds: z.array(EntityIdSchema).max(12),
     promptMemoryIds: z.array(EntityIdSchema).max(12),
-    selectedMemoryIds: z.array(EntityIdSchema).max(3),
-    selectedEvidenceIds: z.array(EntityIdSchema).max(3),
+    selectedMemoryIds: z.array(EntityIdSchema).max(8),
+    selectedEvidenceIds: z.array(EntityIdSchema).max(8),
     rejectedMemoryIds: z.array(EntityIdSchema).max(500),
     recallMode: z.enum([
       "event_card",

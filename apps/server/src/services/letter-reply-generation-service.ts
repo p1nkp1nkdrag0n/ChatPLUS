@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import {
   EncryptedLetterBodySchema,
@@ -20,8 +20,9 @@ import {
   canonicalLetterContent,
   canonicalLetterGenerationSnapshot,
   canonicalLetterReplyContent,
-  deriveAllowedLetterReplyReferenceIds,
   deriveLetterStrategy,
+  letterReplyParticipants,
+  resolveLetterReplyReferences,
   type LetterReplyPrompt,
 } from "@personasim/features";
 import type { ZodType } from "zod";
@@ -35,6 +36,10 @@ import type {
   ExternalTemporalTaskContext,
   ExternalTemporalTaskHandler,
 } from "./temporal-catch-up-service.js";
+import {
+  hasReversedLetterCandidatePerspective,
+  validateLetterReplyForSnapshot,
+} from "./letter-reply-validation.js";
 
 const GENERATION_TASK_KINDS = [
   "letter.reply_generation",
@@ -385,6 +390,7 @@ export class LetterReplyGenerationService {
         contentHash: incomingLetter.contentHash,
       },
       strategy,
+      referenceScope: randomBytes(8).toString("hex"),
     });
     return Object.freeze({
       status: "claimed",
@@ -414,19 +420,44 @@ export class LetterReplyGenerationService {
         maxRetries: this.#providerRepairAttempts,
         maxOutputTokens: prepared.prompt.maxOutputTokens,
       });
-      const proposal = LetterReplyProposalSchema.parse(generated);
-      const resultHash = sha256(canonicalCorrespondenceJson(proposal));
-      const allowedEvidenceIds = new Set(
-        deriveAllowedLetterReplyReferenceIds(prepared.snapshot),
+      const candidate = LetterReplyProposalSchema.parse(generated);
+      // Preserve the hash of the original model candidate for the run audit.
+      const resultHash = sha256(canonicalCorrespondenceJson(candidate));
+      const referencedEvidenceIds = resolveLetterReplyReferences(
+        candidate.referencedEvidenceIds,
+        prepared.prompt.referenceBindings,
       );
-      if (
-        proposal.referencedEvidenceIds.some(
-          (evidenceId) => !allowedEvidenceIds.has(evidenceId),
-        )
-      ) {
+      if (referencedEvidenceIds === undefined) {
         return Object.freeze({
           status: "failed",
           errorCode: "letter_reply_evidence_out_of_scope",
+          retryable: false,
+          resultHash,
+        });
+      }
+      if (hasReversedLetterCandidatePerspective(candidate, prepared.snapshot)) {
+        return Object.freeze({
+          status: "failed",
+          errorCode: "letter_reply_perspective_conflict",
+          retryable: false,
+          resultHash,
+        });
+      }
+      const participants = letterReplyParticipants(prepared.snapshot);
+      const proposal = LetterReplyProposalSchema.parse({
+        ...candidate,
+        salutation: participants.salutation,
+        signature: participants.author,
+        referencedEvidenceIds,
+      });
+      const errorCode = validateLetterReplyForSnapshot(
+        proposal,
+        prepared.snapshot,
+      );
+      if (errorCode !== undefined) {
+        return Object.freeze({
+          status: "failed",
+          errorCode,
           retryable: false,
           resultHash,
         });
@@ -489,6 +520,22 @@ export class LetterReplyGenerationService {
     }
     if (execution.status === "failed") {
       return this.failClaimedRun(prepared, execution, observedNowUtc);
+    }
+    const validationError = validateLetterReplyForSnapshot(
+      execution.proposal,
+      currentSnapshot,
+    );
+    if (validationError !== undefined) {
+      return this.failClaimedRun(
+        prepared,
+        {
+          status: "failed",
+          errorCode: validationError,
+          retryable: false,
+          resultHash: execution.resultHash,
+        },
+        observedNowUtc,
+      );
     }
 
     const replyLetterId = stableLetterReplyId(prepared.incomingLetter.id);

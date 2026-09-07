@@ -1,0 +1,92 @@
+{
+  "schema": "qwen-three-run-execution-deviations-v1",
+  "frozenProductCommit": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+  "newApiCallsForPackaging": 0,
+  "runs": [
+    {
+      "runSlot": "R1",
+      "runId": "cc-qwen-long-r1-20260907",
+      "originalStoppedAfter": 64,
+      "originalError": "continuity_correspondence_failed",
+      "underlyingError": "letter_reply_evidence_out_of_scope",
+      "recoveredTurns": 56,
+      "finalCompletedTurns": 120,
+      "originalRunnerUninterruptedPass": false,
+      "letterRetryPerformed": false,
+      "letterFailureRetained": true,
+      "finalLetterGeneration": {
+        "epoch": 0,
+        "attempt": 1,
+        "status": "failed",
+        "outgoingReply": null
+      },
+      "protocol": {
+        "schema": "qwen-observation-continuation-v1",
+        "createdAtUtc": "2026-09-07T12:44:33.784Z",
+        "originalRunId": "cc-qwen-long-r1-20260907",
+        "source": "E:\\2026\\ChatPLUS\\apps\\server\\src\\scripts\\companion-continuity-runner.ts",
+        "sourceSha256": "7fe44e2ac530de54782c909f2a7e5a72e8e09213ba5cf9b1fedb93e10c24121e",
+        "adapterSha256": "43e1d41d7248dd25d271404733098de9128b35e66d0a5fac897971d7bdc64254",
+        "frozenGit": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+        "failureAtCompletedTurn": 64,
+        "remainingTurns": 56,
+        "productCodeChanged": false,
+        "configurationChanged": false,
+        "scenarioChanged": false,
+        "providerRetry": false,
+        "originalPrefix": "failed-prefix",
+        "originalFailureStillCounts": true,
+        "reason": "Preregistered observation of ordinary semantic failures was blocked by harness throw. Only known failed letter check is retained while subsequent ordinary chat continues.",
+        "patch": {
+          "before": "if (letters.status === \"failed\")\n            throw new Error(\"continuity_correspondence_failed\");",
+          "after": "if (letters.status === \"failed\") {\n            const failedChecks = letters.checks.filter((check) => check.passed === false);\n            const failedRuns = database.prepare(\"SELECT generation_epoch,status,attempt,error_code,reply_letter_id,committed_at_utc FROM letter_generation_runs WHERE incoming_letter_id = ? ORDER BY generation_epoch DESC\").all(journal.letterId) as Array<Record<string, unknown>>;\n            const known = failedRuns.length === 1 && failedRuns[0]!.generation_epoch === 0 && failedRuns[0]!.attempt === 1 && failedRuns[0]!.status === \"failed\" && failedRuns[0]!.error_code === \"letter_reply_evidence_out_of_scope\" && failedRuns[0]!.reply_letter_id === null && failedRuns[0]!.committed_at_utc === null;\n            if (options.runId !== \"cc-qwen-long-r1-20260907\" || journal.letterId !== \"letter_pBUod0N2EzTrSk4tCCZ-S\" || failedChecks.length !== 1 || failedChecks[0]!.id !== \"reply_generation_committed\" || !known)\n              throw new Error(\"continuity_correspondence_failed\");\n            append(\"feature-evidence.jsonl\", { kind: \"retained_correspondence_failure_observation_continuation\", turn: step.turn, letterId: journal.letterId, error: \"letter_reply_evidence_out_of_scope\", originalFailurePreserved: true, retryPerformed: false, protocolSidecar: \"tmp/qwen-r1-observation-continuation-20260907-04/protocol.json\" });\n          }"
+        },
+        "allOtherFailedChecksStillStop": true,
+        "manifestInterpretation": "Original manifest identifies unchanged product/config/scenario. This explicit sidecar identifies the differing observation runner; do not label R1 an uninterrupted original-runner pass."
+      },
+      "protocolSource": {
+        "path": "tmp/qwen-r1-observation-continuation-20260907-04/protocol.json",
+        "sha256": "ce28311b5543ea747c2fa7c4e19f832d18d401c836f4c28379bea7fa20891ee5"
+      },
+      "adapterEntry": "tmp/qwen-r1-observation-continuation-20260907-04/entry-v2.ts",
+      "adapterEntryProvenance": {
+        "source": "E:\\2026\\ChatPLUS\\apps\\server\\src\\scripts\\companion-continuity-real.ts",
+        "sourceSha256": "fd4a9bb8a35b9d0a2a8221513da252ef99f2cf6ac3faf669735c1c71b84cc129",
+        "entrySha256": "fb0d7566776347c5751569ff028a21bf89bd388321793f45b00be5f7e68b3687",
+        "change": "imports relocated only; runner uses explicit observation continuation adapter"
+      },
+      "preservedPrefix": "tmp/qwen-r1-observation-continuation-20260907-04/failed-prefix",
+      "prefixManifest": {
+        "path": "tmp/qwen-r1-observation-continuation-20260907-04/prefix-manifest.json",
+        "sha256": "f02cd72caaa3dc1ed3d8ef47a4ce67afc23dd2447cf22181783395bf9a5d5230"
+      },
+      "logs": [
+        "tmp/qwen-long-r1-20260907.log",
+        "tmp/qwen-long-r1-observation-continuation-20260907.log"
+      ],
+      "qualification": "Resume updates journal/summary. Failed prefix is preserved separately. Adapter construction attempts did not produce API calls and are not extra trials."
+    },
+    {
+      "runSlot": "R2",
+      "runId": "cc-qwen-long-r2-20260907",
+      "finalCompletedTurns": 120,
+      "observationStopException": false
+    },
+    {
+      "runSlot": "R3",
+      "runId": "cc-qwen-long-r3-20260907",
+      "originalStoppedAfter": 87,
+      "originalError": "EPERM rename journal.json.tmp to journal.json",
+      "recoveredTurns": 33,
+      "finalCompletedTurns": 120,
+      "preservedPrefix": "tmp/qwen-r3-io-failure-T087-preserved-20260907",
+      "resumedWithOriginalRunner": true,
+      "sameRunIdAndBudget": true,
+      "productOrConfigChanged": false,
+      "duplicateClientOrReplyIds": [],
+      "log": "tmp/qwen-long-r3-resume-20260907.log",
+      "qualification": "Cause of the Windows file lock is unproven. Completed replies were not resampled; operational failure remains reported separately from semantic quality."
+    }
+  ],
+  "endCondition": "All 360 turns finished; no more API calls were made for reviews, reproduction, aggregation or packaging."
+}

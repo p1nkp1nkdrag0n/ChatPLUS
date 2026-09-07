@@ -94,7 +94,7 @@ export const RetrievalRunCandidateSchema = z
     decision: z.enum(["selected", "excluded"]),
     reasonCode: ReasonCodeSchema,
     reasonSummary: z.string().trim().min(1).max(1_000).optional(),
-    selectionRank: z.number().int().min(1).max(3).optional(),
+    selectionRank: z.number().int().min(1).max(8).optional(),
   })
   .strict()
   .superRefine((candidate, context) => {
@@ -1587,14 +1587,34 @@ export const RetrievalReplayInputSchema = z
     memories: z.array(MemorySchema).max(500),
     evidence: z.array(MemoryEvidenceSchema).max(10_000),
     minimumScore: UnitIntervalSchema,
-    maxEvidence: z.number().int().min(1).max(3),
+    maxEvidence: z.number().int().min(1).max(8),
     candidateLimit: z.number().int().min(1).max(500),
-    strategyVersion: z.literal("continuity_hierarchy_v1").optional(),
+    strategyVersion: z
+      .enum(["continuity_hierarchy_v1", "continuity_context_v2"])
+      .optional(),
     hierarchy: RetrievalHierarchySnapshotSchema.optional(),
     selectorAuditInput: ExplicitFactSelectorInputSnapshotSchema.optional(),
   })
   .strict()
   .superRefine((snapshot, context) => {
+    const contextual = snapshot.strategyVersion === "continuity_context_v2";
+    if (contextual !== (snapshot.query.contextPlan !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        message: "Context recall strategy requires its frozen query plan",
+        path: ["query", "contextPlan"],
+      });
+    }
+    if (
+      snapshot.maxEvidence >
+      (snapshot.query.contextPlan?.maxRecallEvidence ?? 3)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Recall evidence budget exceeds the frozen policy",
+        path: ["maxEvidence"],
+      });
+    }
     const memoryIds = new Set<string>();
     const replayMemoryById = new Map<string, Memory>();
     for (const [index, memory] of snapshot.memories.entries()) {
@@ -1637,8 +1657,10 @@ export const RetrievalReplayInputSchema = z
       evidenceIds.add(evidence.id);
     }
     if (
-      (snapshot.strategyVersion === "continuity_hierarchy_v1") !==
-      (snapshot.hierarchy !== undefined)
+      (snapshot.strategyVersion === "continuity_hierarchy_v1" &&
+        snapshot.hierarchy === undefined) ||
+      (snapshot.strategyVersion === undefined &&
+        snapshot.hierarchy !== undefined)
     ) {
       context.addIssue({
         code: "custom",
@@ -3543,10 +3565,7 @@ function orderedFactDiagnosticMemoryIds(
             : [
                 {
                   memoryId: candidate.memoryId,
-                  score: explicitFactCandidateScore(
-                    memory,
-                    facet.request,
-                  ),
+                  score: explicitFactCandidateScore(memory, facet.request),
                 },
               ];
         })

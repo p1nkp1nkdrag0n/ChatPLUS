@@ -64,6 +64,8 @@ export type LlmLogicalCallEvent =
     };
 
 export interface LlmServiceObservationOptions {
+  /** Isolated acceptance runners may meter each physical request at transport. */
+  fetch?: typeof fetch;
   onMetric?: LlmMetricSink;
   promptDiagnostics?: boolean;
   onLogicalCall?: (event: LlmLogicalCallEvent) => void;
@@ -107,6 +109,9 @@ export class LlmService {
         model: config.model,
         timeoutMs: config.timeoutMs,
         maxRetries: config.maxRetries,
+        ...(observation.fetch === undefined
+          ? {}
+          : { fetch: observation.fetch }),
         ...(observation.promptDiagnostics === undefined
           ? {}
           : { promptDiagnostics: observation.promptDiagnostics }),

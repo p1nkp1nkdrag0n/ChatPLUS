@@ -1,0 +1,3836 @@
+{
+  "frozenCommit": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+  "runConditions": "Same product, model profile, public scenario, author input. Fresh role/DB each. R1 observation-runner exception and R3 IO recovery must be read with execution-deviations.json.",
+  "runs": [
+    {
+      "runId": "cc-qwen-long-r1-20260907",
+      "agentId": "character_hcgK0q2XHksGx1FqJNhf2",
+      "status": "completed",
+      "completedTurns": 120,
+      "physicalRequests": 124,
+      "reservedTokenUnits": 6463134,
+      "budgetLimits": {
+        "maxPhysicalRequests": 240,
+        "maxReservedTokenUnits": 16000000
+      },
+      "budgetChecks": {
+        "physicalWithinLimit": true,
+        "reservationWithinLimit": true,
+        "sequentialReservationNumbers": true,
+        "reservationCalculationMatches": true
+      },
+      "usage": {
+        "prompt_tokens": 736676,
+        "completion_tokens": 148406,
+        "total_tokens": 885082,
+        "unknownUsageResponses": 0
+      },
+      "logicalPurposeCounts": {
+        "compile_character": 1,
+        "chat_turn": 120,
+        "letter_reply": 1,
+        "repair_chat_turn": 1
+      },
+      "transportFailures": [],
+      "unansweredReservations": [],
+      "blockedReservations": [],
+      "responseStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "counts": {
+        "messages": 240,
+        "memories": 29,
+        "memory_evidence": 29,
+        "memory_conflicts": 0,
+        "conversation_checkpoints": 0,
+        "autobiography_snapshots": 0,
+        "autobiography_entries": 0,
+        "care_cues": 2,
+        "follow_up_intents": 0,
+        "persona_adaptations": 2,
+        "pressure_episodes": 0,
+        "schedule_items": 0,
+        "schedule_negotiations": 0,
+        "personal_intentions": 0,
+        "letter_generation_runs": 1
+      },
+      "duplicateClientIds": [],
+      "duplicateReplyIds": [],
+      "finalMessagesMatch": true,
+      "idempotencyChecks": [
+        {
+          "turn": 1,
+          "assistantMessageId": "message_rlsuXnYyC8FZWe48nxuwJ",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 2,
+          "assistantMessageId": "message_nwHwYaLEWDzKrmqEke9HU",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 3,
+          "assistantMessageId": "message_ihaT8YQW5ScFU_HUxhxvH",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 4,
+          "assistantMessageId": "message_Rk71-ncWvW9P5rLbv3Uq8",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 5,
+          "assistantMessageId": "message_GFmGlT2CHtiDIP_hmgxzF",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 6,
+          "assistantMessageId": "message_cbVLgPhUJiyRFtLQUMYCB",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 7,
+          "assistantMessageId": "message_yn762PezSwfDED1VLC33O",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 8,
+          "assistantMessageId": "message_GrhXkpBkUA020vdPMaPh6",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 9,
+          "assistantMessageId": "message_OxlL-qoQikdZPTYwduCaP",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 10,
+          "assistantMessageId": "message_PeYQTPUfeZmIL1m9KkuPF",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 11,
+          "assistantMessageId": "message_POcbFxjwnaMHqxjYj66h6",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 12,
+          "assistantMessageId": "message_ERl-NZF2mmrumWpGllqpd",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 13,
+          "assistantMessageId": "message_dIm4nRRMTC_OAksQYKBSw",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 14,
+          "assistantMessageId": "message_CQ53dkpxArMPebq3gDtUj",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 15,
+          "assistantMessageId": "message_PvxA0nmuK62_eeGlxfQx5",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 16,
+          "assistantMessageId": "message_PW_Kym0fPMXKSFuqPNj4O",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 17,
+          "assistantMessageId": "message_WgAUVAXI3JP_qE-OAWzCu",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 18,
+          "assistantMessageId": "message_HobmNTw9qrLlt40KDnTgI",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 19,
+          "assistantMessageId": "message_5iePAAmlafITtvp2eMOVg",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 20,
+          "assistantMessageId": "message_7u6isv8QX1WNA219bWZO8",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 21,
+          "assistantMessageId": "message_6en_rdddO3OsovtWQeibB",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 22,
+          "assistantMessageId": "message_sRDKPHOqbwc0DL06e4B_n",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 23,
+          "assistantMessageId": "message_pw382F0NyKMbtfk4rPuHk",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 24,
+          "assistantMessageId": "message_w5y31i7Bi9-RreBfH_ypM",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 25,
+          "assistantMessageId": "message_ansiqolbqcQVKLUvhlUan",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 26,
+          "assistantMessageId": "message_7Gs67ep3MnOtG_4MfXn27",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 27,
+          "assistantMessageId": "message_Hwon680b7M3HVgG9E4UJE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 28,
+          "assistantMessageId": "message_clWn3VsMOE-K-9M3ZL-2P",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 29,
+          "assistantMessageId": "message_dP66sWRzxMF-yAbybspvH",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 30,
+          "assistantMessageId": "message_nKp48l5k32G4tEe2U0VTL",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 31,
+          "assistantMessageId": "message_1AkTgxuu1_F7F7H_SE6aa",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 32,
+          "assistantMessageId": "message_OWsRBn4yQeltbMaCDoF-s",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 33,
+          "assistantMessageId": "message_CJNVpYNAwjyQ58IfN3jIr",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 34,
+          "assistantMessageId": "message_P0AW1gaVMbZamk65D4plj",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 35,
+          "assistantMessageId": "message_Ji31JpJCL1w3wwNQHWXoi",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 36,
+          "assistantMessageId": "message_q5wkzWsCpDvjDBWVaKz0_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 37,
+          "assistantMessageId": "message_OaW1lxviHmpBmafwbZJpt",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 38,
+          "assistantMessageId": "message_Dk5ioEG83SswlB2lY9Tem",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 39,
+          "assistantMessageId": "message_66lhNKNmSS0vQzbiK9Jdb",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 40,
+          "assistantMessageId": "message_jXPCT9SqWis6Axp5gca9v",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 41,
+          "assistantMessageId": "message_F3nrYgedXJHxT9bjbgk6m",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 42,
+          "assistantMessageId": "message_pLnncFnN3Q_IOqZ9Hf-6j",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 43,
+          "assistantMessageId": "message_wrk3j2A6cWE9na9DlRjjJ",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 44,
+          "assistantMessageId": "message_yJ2HHTmy-M0WOqSfhywWN",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 45,
+          "assistantMessageId": "message_Imj28wd3RyLfKiYyrm_yj",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 46,
+          "assistantMessageId": "message_5-7_z5YORjykaQf2ZvWnU",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 47,
+          "assistantMessageId": "message_TvxVspSqBjllPhMUSVm8D",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 48,
+          "assistantMessageId": "message_PCVNBth64zUDWdnUeQDEe",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 49,
+          "assistantMessageId": "message_eXRasKZ0VDUTkW7JJrxZg",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 50,
+          "assistantMessageId": "message_2qJuDTyx2rA8RVZpgCTNm",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 51,
+          "assistantMessageId": "message_2Y87rlaur6WFQxgHnhmLL",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 52,
+          "assistantMessageId": "message_CLziBeYj8XYD_u1cpju5W",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 53,
+          "assistantMessageId": "message_JdT9RrnR13eaIUcMcp712",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 54,
+          "assistantMessageId": "message_aKTVg4xMMsVRDSlFwWqLW",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 55,
+          "assistantMessageId": "message_Ke-56KBf2IO0mwAJONEc8",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 56,
+          "assistantMessageId": "message_UTFJWPplf7RlMVtFAoaoB",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 57,
+          "assistantMessageId": "message_9NRMpy9bd6R-zh49angn8",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 58,
+          "assistantMessageId": "message_K9wf4nny77KcXZ5bG-FEO",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 59,
+          "assistantMessageId": "message_T6pdN3hka038jvKzIebYz",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 60,
+          "assistantMessageId": "message_IxMMCwO9wG2-5JObvrCOr",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 61,
+          "assistantMessageId": "message_JG68Au9FSngCGejNMk-dn",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 62,
+          "assistantMessageId": "message_M2-0GYkXIIvtpjR9vbztw",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 63,
+          "assistantMessageId": "message_iRzU0RYjTxSQHhyBwd3EY",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 64,
+          "assistantMessageId": "message_RAT4UfQlj8Daazf3KO9YV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 65,
+          "assistantMessageId": "message_YONAjHTGKkalGhpGVhiHb",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 66,
+          "assistantMessageId": "message_UeYlJ-qsgVl8TWI7B1mHN",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 67,
+          "assistantMessageId": "message_HPuXxZL0AviMrnfdMIDLL",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 68,
+          "assistantMessageId": "message_JNrTqWSRx956FwtDXm5CN",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 69,
+          "assistantMessageId": "message_DqOlbLkV9g5V-ESC7wMAz",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 70,
+          "assistantMessageId": "message_WaS7rmzsW5rAFODFMpIhX",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 71,
+          "assistantMessageId": "message_fLY_d0T-DM8ZCp220HNM5",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 72,
+          "assistantMessageId": "message_6IueyN35RLMx_J_EvnZum",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 73,
+          "assistantMessageId": "message_thXzk90tPGCmhtxx2xWLz",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 74,
+          "assistantMessageId": "message_X0qqWDXJf1DhTS10yvbFx",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 75,
+          "assistantMessageId": "message_P4hsM0tQmOeKCTEX0oDM0",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 76,
+          "assistantMessageId": "message_cXJa36zzKCbSnOXDkpczr",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 77,
+          "assistantMessageId": "message_5GFjOeEzJV7JkyA0tNqzO",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 78,
+          "assistantMessageId": "message_l_W0QhglzcRN099OIBvv4",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 79,
+          "assistantMessageId": "message_DOW3ZBfKSwmpGb9sf4Dpl",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 80,
+          "assistantMessageId": "message_Ast1xbdBKUknM_nNFFJWV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 81,
+          "assistantMessageId": "message_eTcz-z0dqDqrsp8OUmugF",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 82,
+          "assistantMessageId": "message_nJXKjO3i6bVcnkl9bu-fg",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 83,
+          "assistantMessageId": "message_Y47k9jP9pg7OedPghY-0O",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 84,
+          "assistantMessageId": "message_zN_4_J_6HN_Ap0FqDNQfF",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 85,
+          "assistantMessageId": "message_alq9GQRhnmkxTUCVfIb3J",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 86,
+          "assistantMessageId": "message_D0vMuAC6T52PCbXi0P04z",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 87,
+          "assistantMessageId": "message_NPeDAZB2lTXvJpss45syY",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 88,
+          "assistantMessageId": "message_zaWU58jOB0sS0Xcvls35M",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 89,
+          "assistantMessageId": "message_ewqkGo6a9hzKu1EgHBBjU",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 90,
+          "assistantMessageId": "message_MxYuZPfHrpQuHDzS9UUM4",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 91,
+          "assistantMessageId": "message_5XEYh2MD-Rvj4NnxX5rqD",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 92,
+          "assistantMessageId": "message_zBCwnQqNi4L9o_9Lv1SQw",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 93,
+          "assistantMessageId": "message_9WFSxNqoDDLf2F-08d2lm",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 94,
+          "assistantMessageId": "message_3hOXmx1oin_ULy5IGqYik",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 95,
+          "assistantMessageId": "message_OLnf8KsxJF-4WCdtOylON",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 96,
+          "assistantMessageId": "message_2KwXj26X3vJRREHeYtM5I",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 97,
+          "assistantMessageId": "message_1Cm8_w8naIwlY850Sseci",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 98,
+          "assistantMessageId": "message_GXkv6g1P_XFmlGGOshPa9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 99,
+          "assistantMessageId": "message_AU5cfwdJRnGaTI9GoUAsL",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 100,
+          "assistantMessageId": "message_5KIrQH3TTS1wC4rlV3hrB",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 101,
+          "assistantMessageId": "message_2X6adb2wiyP9m8hsTPU6r",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 102,
+          "assistantMessageId": "message_eCnKtBb07soLslodUPYzr",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 103,
+          "assistantMessageId": "message_OrhZcgZ5EQcpKVo4yIiou",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 104,
+          "assistantMessageId": "message_7j-32KQmOiWtty4zG-xL8",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 105,
+          "assistantMessageId": "message_RP0EphCmymBHyDh7mL-rq",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 106,
+          "assistantMessageId": "message_ntFZUajMXmyf_ScUFE-mC",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 107,
+          "assistantMessageId": "message_EZgmoA_pq8y9IQu3E1Cl3",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 108,
+          "assistantMessageId": "message_fjhjXRrhPFwYPem-eDdvG",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 109,
+          "assistantMessageId": "message_R1YybAUR2SEKGXgMikvwD",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 110,
+          "assistantMessageId": "message_J5Wioqe7vpYn8VWuXHwHE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 111,
+          "assistantMessageId": "message_b99Nfi60P-YFYkvlRL_RE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 112,
+          "assistantMessageId": "message_Xu7nxsgZomKnGz64DsK3l",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 113,
+          "assistantMessageId": "message_1qezWsgi5oFJBKtYzIwFI",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 114,
+          "assistantMessageId": "message_5Kuhzue9823NmNgs4nwnh",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 115,
+          "assistantMessageId": "message_JR7UO8oBWTd2svnleqqln",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 116,
+          "assistantMessageId": "message_47iEmfbJPBbl4VP8AWYPC",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 117,
+          "assistantMessageId": "message_A9GlKrc9IVmoery0CzOkU",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 118,
+          "assistantMessageId": "message_rs4QuW02knGq0xcOjUpfx",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 119,
+          "assistantMessageId": "message_JTVCd9vYzevvlfXz1EVM2",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 120,
+          "assistantMessageId": "message_dURIN_VWqU9o0oNT8Y0nY",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        }
+      ],
+      "letterRuns": [
+        {
+          "id": "letter_generation_run_6khVBMPddSDj85N5Gx2EI",
+          "incoming_letter_id": "letter_pBUod0N2EzTrSk4tCCZ-S",
+          "snapshot_id": "letter_snapshot_KcpPIuYZ2Hp6UEupsXS74",
+          "agent_id": "character_hcgK0q2XHksGx1FqJNhf2",
+          "reply_letter_id": null,
+          "claimed_at_utc": null,
+          "generation_epoch": 0,
+          "status": "failed",
+          "attempt": 1,
+          "lease_expires_at_utc": null,
+          "provider": "openai-compatible",
+          "model": "qwen3.8-flash",
+          "error_code": "letter_reply_evidence_out_of_scope",
+          "result_hash": "1e1ed448b9e9f8ba827f58d18e477166cf2d94bb3d18ae7c8e18f05c5e39254f",
+          "created_at_utc": "2026-09-25T00:00:00.000Z",
+          "updated_at_utc": "2026-09-25T00:00:00.000Z",
+          "committed_at_utc": null
+        }
+      ],
+      "snapshot": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\final.sqlite",
+      "snapshotSha256": "c53b064eac458c044868acb0458d8bfb585c8e28971ece0e312b0ad87827107a",
+      "preservationAllUnchanged": true,
+      "sourceIdentity": {
+        "git": {
+          "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+          "dirty": true,
+          "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+        },
+        "experiment": {
+          "schema": "companion-continuity-real-v1",
+          "runId": "cc-qwen-long-r1-20260907",
+          "group": "A2",
+          "publicSha256": "0b3ca233b58242273c619c1013938b2aa0d1b13ddd937888de993586cffcc585",
+          "oracleSha256": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4",
+          "scenarioVersion": "companion-continuity-real-v1-proposal",
+          "characterInputSha256": "b188fca8cc7498168bd1d926909da9cac6ac9450bad07591ed0033a5339fba1f",
+          "maxTurns": 120,
+          "budget": {
+            "maxPhysicalRequests": 240,
+            "maxReservedTokenUnits": 16000000
+          },
+          "baselineSource": null,
+          "scheduler": false,
+          "transport": "TCP-loopback",
+          "restart": "exit-and-resume-at-turn-64",
+          "timezone": "Asia/Tokyo",
+          "node": "v24.16.0"
+        },
+        "configuration": {
+          "nodeEnv": "test",
+          "profile": "companion-continuity-real-v1",
+          "port": 3001,
+          "host": "127.0.0.1",
+          "webOrigin": "http://localhost:5173",
+          "selfHostedReverseProxy": false,
+          "serveWeb": false,
+          "webDistPath": "E:\\2026\\ChatPLUS\\apps\\web\\dist",
+          "databasePath": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\personasim.sqlite",
+          "clockMode": "fake",
+          "fakeClockStart": "2026-09-07T00:00:00.000Z",
+          "llm": {
+            "provider": "openai-compatible",
+            "profileName": "qwen",
+            "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "qwen3.8-flash",
+            "timeoutMs": 300000,
+            "maxRetries": 1,
+            "maxOutputTokens": 32768,
+            "capabilities": {
+              "structuredOutputMode": "json_object",
+              "supportsThinkingControl": false,
+              "supportsStreaming": false,
+              "reasoningEffort": "medium",
+              "reasoningRequestFormat": "openai_reasoning_effort",
+              "maxContextTokens": 1000000,
+              "maxOutputTokens": 32768
+            }
+          },
+          "conversationRetention": {
+            "fullVerbatimHours": 24,
+            "softTokenLimit": 8000,
+            "hardTokenLimit": 12000,
+            "minimumTailTokens": 3000,
+            "minimumRecentTurns": 12
+          },
+          "logLevel": "info",
+          "seedDemo": false,
+          "developerRoutes": true,
+          "chatEffectsMode": "gated",
+          "lifePlanningMode": "fuzzy",
+          "scheduleNegotiationMode": "off",
+          "selfInitiatedPlanningMode": "off",
+          "liveWorldEffectsMode": "enforced",
+          "memoryRecallMode": "enforced",
+          "autobiographyMode": "enforced",
+          "companionContextMode": "enforced",
+          "personaRuntimeMode": "enforced",
+          "correspondenceMode": "enforced",
+          "correspondenceExecution": "lazy",
+          "correspondenceTransitPolicy": "fixed_5d_v1",
+          "correspondenceGenerationLeaseMs": 1800000,
+          "correspondenceMaxOpenThreads": 1,
+          "keepsakeMode": "enforced",
+          "assetStoragePath": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\assets"
+        },
+        "publicHashMatches": true,
+        "oracleHashMatches": true,
+        "oraclePublicLinkMatches": true
+      },
+      "originalArtifactHashes": {
+        "attempts.jsonl": "a211d0f78ecd93a762f243813983006b3f700dd2333242f4c8ea418a608501de",
+        "baseline-character.json": "655634e3452936f587aec8ba3e2e07d593ca589dacec214ef4946a38d9559f26",
+        "baseline-manifest.json": "960a0a242dcf2dfeab2660e772d157a6fb784780cd1fa150ca8d10331f0c5fce",
+        "checkpoint-evidence.jsonl": "a60f35a14a492c546817d1912aae7633f08e874e45f31b8aae20c0ed33a41fe5",
+        "feature-evidence.jsonl": "f7b7f783cba0860f8b9c0e0a5656d44bf99c1a613491b667355c25044912e636",
+        "generated-character.json": "b2e2bcfa9494f2e10d0a7d2dde613aa423f63f4c41e13036587fc30c4cac401c",
+        "http.jsonl": "a70dbbfbb86be581025eb7f542292c2c45086dbd44d03101437e54511a54709d",
+        "input-journal.jsonl": "58c7d824d0bc771264635a35ba9d4ad780bdb9c6c2438d1e62932d29947af254",
+        "journal.json": "4df4d52534d1d5261a46c3ba64f91172643d5a656e9bf1325fde96bad954b2f8",
+        "manifest.json": "63fa3fac1f900b6c0a6a8c7a97aef002e0760afeae92577fd08391aaed41cc6c",
+        "model-io.jsonl": "4a29bcf4525d19460065f0dc6f4ec2d47cfd170d61c779a34dfbfe51c8fd6016",
+        "oracle.private.json": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4",
+        "provider-metrics.jsonl": "4f3ff637b88c784a813873bb9ed0ae0954657fb50ffaae769c2abe79e2990114",
+        "public-scenario.json": "0b3ca233b58242273c619c1013938b2aa0d1b13ddd937888de993586cffcc585",
+        "retrieval-runs.jsonl": "23a8ac417da16deff842876852f673576b71b18b9718407f1e2708ef9fc1e73e",
+        "run-summary.json": "9c9f0b98f18edf8baca29faad60b46b607775dcaa89e9654a851d0b82628f9f1",
+        "turn-001.json": "dc573115e7f5b5dbeee7e2f0a1b3930076d3e8ec38e30e188281e43d283c8cd3",
+        "turn-002.json": "b49a689ec42a9776b71034817aa94d3e38e292b9e2e20d33426dd5328e866c97",
+        "turn-003.json": "fc3d9a6808152b89dd95a155af667b846fb5af53c7ad98cb560aca87035a9aaf",
+        "turn-004.json": "e3e147ad79105f7faccb8e157eafaca906ca6438ca35798bfe9f29d434ffa48d",
+        "turn-005.json": "19228320811990fa973a517dbabb7574185885cad519f3a0b233a7bbdf61842d",
+        "turn-006.json": "bb3467746ad762afded653b404a61ba508913ce58467699537b9beda3c982d98",
+        "turn-007.json": "b5773dba444f56f215f540c3a2feca9f4ef5871381c9442e649f9e4dba1b6678",
+        "turn-008.json": "783f68de392e924655954c4d2b3949eadd25f91d8910b88a36b492de480a3582",
+        "turn-009.json": "31bcac3799e24f8bb903879cd3170414b024889d423fd1d4fb2a4a453f2568ea",
+        "turn-010.json": "bb06abdcf53c18b4a136b07d3d13b7404a8a44fbc473ffa012441863fe88909a",
+        "turn-011.json": "9bb558891c5a7c350e001af7a4cc778d6bdb8ad96c5badadc70fa40c85faa56e",
+        "turn-012.json": "e249e2471d6edd9838c4ccc59e605e30febff643e3d29989770f47781e568607",
+        "turn-013.json": "51c0a7d22b0b3c6e92dfa037c496949e64ee88fd5d074402768878b61b6ebc83",
+        "turn-014.json": "aad73354d2ac7a926c5f0cd516eb5aadd5aeca9cd707386f9efcb29f9969af96",
+        "turn-015.json": "c86ff0dae52b3314f199991388b095ff596b8d2c72d743f48b4144037c2d8fea",
+        "turn-016.json": "c2dc25fb14e14a26040005066b2e6f27626dee0e9f9ee519e087d93076688be6",
+        "turn-017.json": "44d65167cebb36f196595eea2ab88bf06613ff764ae25bf6f934f2d54f36ed08",
+        "turn-018.json": "45e297c6b01eed1e39e11b1ee2077f7643109fbdfaa2c2429faf9ee23bbd3cb0",
+        "turn-019.json": "70971f1979d2865222754b46210ddeb93900a24cfe67bdccbd3f2a6285e7fdd9",
+        "turn-020.json": "59b751642b8d313359e16e1391be7bf959863d79c43bc8351146324b4c064267",
+        "turn-021.json": "e6afecd8c8b66c8b84f0605542d7c69c05b9159031d4aa2fcf0750dd45f2c592",
+        "turn-022.json": "7d7fb7a7e5cf5bf783018b6b66f1400bc0d52dd989ab273b6e8c69209eaf0e53",
+        "turn-023.json": "270d3de7d2143ea5ec92e706d5c7121a7e8a92fbd34d4ac7b19d11a108ffcb3a",
+        "turn-024.json": "90acde99b787815e7939d57fad283976c225c4b2009375680d15f94651345b0c",
+        "turn-025.json": "4af3c0eae22a5dcc893f7e3cfaada9dfa190620739fe43c46f0471959614b127",
+        "turn-026.json": "a1ce878844aa4c6730b3e8a18a142916651963f2cc3e037dba667744dbdd7924",
+        "turn-027.json": "2b560540f132d0c013a504e729e4a8b37dfb9a2a37b93296f0fd177fb3a20b46",
+        "turn-028.json": "ee3664e0f794e55d5017ad867f67935af2ffc534234a2dcdb58bae7295edd72e",
+        "turn-029.json": "30d8aff8664604ae95090c2cda877df14fa5115cb8ac0cbd1fcdcb4fdef25a3b",
+        "turn-030.json": "9d93b070113e5f1512c62b494eddd4a7e321866ffb621a6e1b6f28a8e8a14c67",
+        "turn-031.json": "167ae29f8574d754de73986d3a45854ab78acc9324ce330dbb0f95defb41e0c8",
+        "turn-032.json": "4508006dc79807fb8c2444e0ca7d9594dc64c41317c889774bb4c0613edc5ef7",
+        "turn-033.json": "020d564d6fb8c39b60cc1bc4b4cf8af14125657de363da32346d9ba7996aa5fc",
+        "turn-034.json": "7b1897b4c02acb78461482540e7216fd6f75ea5f8976a6efa35a24787753e663",
+        "turn-035.json": "2775b4e489392c54dc35ffad4849ce97a9a7832e101ae2658c4da34e334df48c",
+        "turn-036.json": "91e35a26eab3485a59b42982ccaab96a62684bef5f329c7c0545a83b6c83fa7a",
+        "turn-037.json": "cb9869575aa5b55ab4303f922e43c4ca63003a79cc3be39eebcd628977fccf65",
+        "turn-038.json": "42d962cc1dbab6d888bce751a1f217f21e968524a159228bc38f150668a46c14",
+        "turn-039.json": "fa637733ec863485607874d76acf9e97413a76d557573825fd1264a9d3e6a5fd",
+        "turn-040.json": "4813fcd7349c17b0516069fa065ba48e641791cb48542f766c546506d5c75efa",
+        "turn-041.json": "6305c1a4bef9d2d4a1b6115b336a6a3d2b9aac35a0a378ca23e08f93f18f16c6",
+        "turn-042.json": "2cc65e1d6b098ca27367f128378e6c954c20683df77c18988be47102def70af5",
+        "turn-043.json": "317dee49898b669c9eac57a91e090e8bdb29efe6c23132251e6e1a2227097701",
+        "turn-044.json": "891e58c34983f54719c718b74f488d73c3c8d84dcfc43984cf48365a15c43df2",
+        "turn-045.json": "456dccaeb6afd36f32b6f9988c13eaa78e9fb55ef981ef8e00a3ba7e6b2823e4",
+        "turn-046.json": "252e1e1bef6e53a15d0646879b10f8994c0d4f3269016fb05148c6cc4bcd27aa",
+        "turn-047.json": "0f3ab58138664018363fe83af25005e17d6097c99562e9a26880d34d9466fb13",
+        "turn-048.json": "891a5a54fb2be179575d0cf65ccb28b6efb8d059f3c075552f071053f094b164",
+        "turn-049.json": "7c0d86de5f6d77bb174190c57ce85b839e66854f8870de13058c74892bff54e5",
+        "turn-050.json": "9bc91de4ef18e600f6715a38574f95e77499b310345c0bf34b1f2d81b81c5202",
+        "turn-051.json": "0762c951297f95e9eca2e0aaa4cbdc9f3a25e90a92bb579eef386df4cf68df30",
+        "turn-052.json": "2a1951f8c86a7276ce482c09a62ae461ee87ba84d7a26298b217a08ae6fbc10a",
+        "turn-053.json": "03b1967bdd5880db0196f1eed078040c47f1c4c6685458ed99d0cb3729893d3e",
+        "turn-054.json": "2e1dc4ca2a7685371ac0f25ad99fa4b9edd41b4f3b3eff0b7ae3becd648887fd",
+        "turn-055.json": "7141d66053fa6a824df7b3456157244c21577916cd9a0692b1f25cc12a28223a",
+        "turn-056.json": "a614dac0f3a37d4fce18d1b162fddb4430078575b7fcd93f4991fcbf0f1866ae",
+        "turn-057.json": "52b7617e3151ed953b2deaa1bb369616fe8b89d482d08a4a49cc57e83ffc3cce",
+        "turn-058.json": "b9b06245199394cacdc6849900af2dfaaead70bdeafd4efb96b272bba296b6ae",
+        "turn-059.json": "f3e76e5aca2c4a7d0102ab98b7873ffc40a4a0cbdaae9987e7ef2e5cdf51f922",
+        "turn-060.json": "9588a8e9363ae678f595b8081c181c9f11bd1331ca04071ee9bf38cebfc31fbd",
+        "turn-061.json": "3a5bb8278b06ba7928f27303e4c99c8e6647ccbd2798f63342bfc424d22b5bd5",
+        "turn-062.json": "0641b6b9a03f85ebec152dc4bba5a3bb7ddbef099321cd4cf1653f5d9090353f",
+        "turn-063.json": "826414b8b4e6dc2baf2d1a4fff54e0d8c40c0433c6e97728452ad1a4469e0b90",
+        "turn-064.json": "d7e974c9780fdce422715726489a268d740dda29e650df667c14fdc24dadb33f",
+        "turn-065.json": "8cef3760a3ecc3bfdd13f78565cf5bfcf6b0c582c96da91bb710c88345e06b40",
+        "turn-066.json": "26eb27e9046c10951e89241196be072816fc7efa1cc16caf47542f9ac676b9dd",
+        "turn-067.json": "5d5727c85b9121f17fbc0b97184e3677a8d62437eb527bfec777fdf289ee91fd",
+        "turn-068.json": "628034385cce2b27acb05f22ac2c73ef8752960191dd4240ed64dd25c714c085",
+        "turn-069.json": "15490ee4e04dcd9e6da70071cdda46aaf8af77429a4cf95986291d614ea32bce",
+        "turn-070.json": "e22593c4a1a86169e038eae0fc73bc0d9055788545999adcac901400d304a789",
+        "turn-071.json": "495a9d43b9905f03bab5cc37906edff7a12e0a64b1579872960c946a48cd41f6",
+        "turn-072.json": "80da9cfff1d98679003d18be09deaa60f8c4168986520c0072789060250df2c0",
+        "turn-073.json": "bec946cd6f9215d0e3fb3e555c78a92b7d1ca49da10c13b3b0c2922450e39e46",
+        "turn-074.json": "00da2821f0c0df01d595ad2c027ca176e714f5dda52b7824806cc4f69c2f20f9",
+        "turn-075.json": "c2960369586778d9ac9dd405ae0b8bcc0fc09f24eae1bd771ac65004448dc1e0",
+        "turn-076.json": "725381c60654767698aef587e1b6c8a788637edc99cb8e6e1bfe7df6c2f01a3c",
+        "turn-077.json": "0dc31935a34a25805e99fff16a581a2fd1d9b02b086f4e37c9b47372b1ba7500",
+        "turn-078.json": "c25064921c070c99c7ec6c9f973c7b839e0d18bf9d89bfad8a98aa9be04d927f",
+        "turn-079.json": "db30f2223fa7463066caf53ea372f897898b11e0cf29b9b16f19353b9574b402",
+        "turn-080.json": "e3317cc970327a68cbf7ce4cb53e2ae99ef6364cf28de067ee640290d9ed0539",
+        "turn-081.json": "28224ebd47aac67cd1f0d25c13e2344f74ff72afe1e83e13123cc8f4c91ac703",
+        "turn-082.json": "3189a03a0eb412ebe0f667a9c2fedc2c68ec1aa854e7d52de3665e8b8e7fd3ae",
+        "turn-083.json": "790d5c344dd4d27a3b3b434cea86e59981bde3bcdeeb40865d9715d721e5a8b2",
+        "turn-084.json": "dcf8678463c84dcb262270159d1883a78da62b7c408bfe04853c52c8ca03b0e0",
+        "turn-085.json": "7cbf0fe4f3e61dd0f4bfe184f2faf07ef07808d58fab8583207ebed062819357",
+        "turn-086.json": "1b127d5af7f9217cb778420286173f4fad941db20ea84cd6e185f5838bb91dae",
+        "turn-087.json": "7dc184fc67cda367eb0262b523f5ebbcf645a7551dafff6d3b3500fd937a9437",
+        "turn-088.json": "57170ad4b31dcdea62cde961789e044d8b34dfecb0f5d91e8abf51448c0e2e4c",
+        "turn-089.json": "27aca087997dcdac4eba21c5343d572333bacc5bcf1d9d3d89f744ee6115f456",
+        "turn-090.json": "bd2f45eeda98960c7eb91c5b74494ebb481019dba6382d45800d7c418397ec2d",
+        "turn-091.json": "6d0e91f691449508e28095ec9c0dbf1d10910f9db70652b37fa5b0da0229ede3",
+        "turn-092.json": "44019cecec5f5a27e58d7fdfb4cb55d2849670f4032ce66b8e0ab8caaf9caa96",
+        "turn-093.json": "6dada69bb9dacfb3036e6b423cfc133e5117ee6f83cf6715cebb85b4ff329a88",
+        "turn-094.json": "bb1960adff81881f42f6df30218c395701b20880eb37a3df454cc1410b14ec2c",
+        "turn-095.json": "ea57f2d5d1458068f13721ff98def9f6b24585dfbe3a5f2a3947ea030915171c",
+        "turn-096.json": "6b9378b670394951efe39965b3a7d513d88ea74c4bfa2385f3c1155b451a43c7",
+        "turn-097.json": "d95cf6fc7bc8495912a1efed7b9612a2a35489d014bea45c413886056bc9eeda",
+        "turn-098.json": "15482974c5e255c1a36b413d7e7fce7cc5cec6ca53243dae0c4e85d6d74bd5dd",
+        "turn-099.json": "ca863bc9b798b81408beb00035261aa506858aea60da97c36d804ee5677c8812",
+        "turn-100.json": "c2447e48f397942dba3c40bc78dd9bafddbb97486620b6ec1862e973b2157b43",
+        "turn-101.json": "8da0cf592a69a811215fc02c945ed21e380b89102f8bfec4810d0f68c0c8ca78",
+        "turn-102.json": "2abc97d981a6f75e8d05f6243f186a297454cc977bc42783395eb914500675ed",
+        "turn-103.json": "d522f33d575c95648b39f71b32f8367b024429f7a00e64e4b908fd95b60d65a1",
+        "turn-104.json": "2ba667c9264c85672c9ac3e311720540bef8c0c1eb898ccdb5a714c13b0262eb",
+        "turn-105.json": "f9d2ffb67855ae5225b74a9433edbc0ad6408127a95f509bb26f85c61d095f63",
+        "turn-106.json": "ddb3322d56d6f0adfbc7b6a69465ab7d808508ce754206e98435a1211fc1ad6c",
+        "turn-107.json": "89fcf85657435fa6f3a17c83165e2c099b54fd66cd6bb1386a2941a139c60f9c",
+        "turn-108.json": "cdb48ec3c0bc6a39ded79905e0fd18842f1bcd0f5945df463c80509cea6c3fdc",
+        "turn-109.json": "382b7975ad3525cde14873177b1bc28bc818c32724e0a8b8f50aeab2dfc699c8",
+        "turn-110.json": "5f0211a5303ae7d3e749c034bd50bf821b9ae62c0f2481856919b359244ffa85",
+        "turn-111.json": "ad25ed7ecc8d84ebb58f61fbf7bebea2cb11eb0a07a9224f2de93f3a0c85d964",
+        "turn-112.json": "41dc9e5cbcf49c93624e1b36d340359584a396791ae797a75f682611ee315a98",
+        "turn-113.json": "25ec6425355533102da902f1f74754484da7446c6a44fca0f965c2a3a800b4e3",
+        "turn-114.json": "9f5f7d3efdffc8b3dd60e76900b58470d4bfbb2374ee3e045f7a15dcd3397cb1",
+        "turn-115.json": "137e32832f92ed5918e1cee1ed795c4578963643d2a8c39816b6ebd4c21fa273",
+        "turn-116.json": "aa16c0b09e593794f787fd93e6d42508bbc03bf1f3ec5371db956dbdf9577118",
+        "turn-117.json": "5d8830ca9789949f2b20999fbfb50d4d33a1924fefa6f0191d68116b1cbc34eb",
+        "turn-118.json": "b08181ade2e5f062a236d9acf770506f6351d23c1d7d3d2de2e6e59cc6e5058e",
+        "turn-119.json": "aad30810f13acacf71702f0b56417b4d1a92f0153f143bba9c283446d2f43c98",
+        "turn-120.json": "a3b98ef115c48ca1d2290aaa1eefa90540aeab136d12cb8ad360a4af279490ae",
+        "turn-evidence.jsonl": "29737e3216a9250142292403f89f1070aa30dbc6befa8082d3274c0e14a02898",
+        "final.sqlite": "c53b064eac458c044868acb0458d8bfb585c8e28971ece0e312b0ad87827107a"
+      }
+    },
+    {
+      "runId": "cc-qwen-long-r2-20260907",
+      "agentId": "character_upAZMW9GMnJOQsd2Bzr6f",
+      "status": "completed",
+      "completedTurns": 120,
+      "physicalRequests": 123,
+      "reservedTokenUnits": 6457547,
+      "budgetLimits": {
+        "maxPhysicalRequests": 240,
+        "maxReservedTokenUnits": 16000000
+      },
+      "budgetChecks": {
+        "physicalWithinLimit": true,
+        "reservationWithinLimit": true,
+        "sequentialReservationNumbers": true,
+        "reservationCalculationMatches": true
+      },
+      "usage": {
+        "prompt_tokens": 751256,
+        "completion_tokens": 118689,
+        "total_tokens": 869945,
+        "unknownUsageResponses": 0
+      },
+      "logicalPurposeCounts": {
+        "compile_character": 1,
+        "chat_turn": 120,
+        "letter_reply": 1
+      },
+      "transportFailures": [],
+      "unansweredReservations": [],
+      "blockedReservations": [],
+      "responseStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "counts": {
+        "messages": 240,
+        "memories": 31,
+        "memory_evidence": 31,
+        "memory_conflicts": 0,
+        "conversation_checkpoints": 0,
+        "autobiography_snapshots": 0,
+        "autobiography_entries": 0,
+        "care_cues": 1,
+        "follow_up_intents": 0,
+        "persona_adaptations": 2,
+        "pressure_episodes": 0,
+        "schedule_items": 0,
+        "schedule_negotiations": 0,
+        "personal_intentions": 0,
+        "letter_generation_runs": 1
+      },
+      "duplicateClientIds": [],
+      "duplicateReplyIds": [],
+      "finalMessagesMatch": true,
+      "idempotencyChecks": [
+        {
+          "turn": 1,
+          "assistantMessageId": "message_I302QDwgdzGEd-OJEQmTG",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 2,
+          "assistantMessageId": "message_boR0ShPP43TqkuRM2oz3Q",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 3,
+          "assistantMessageId": "message_BchKHK2iPlaLXIyfFmYy_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 4,
+          "assistantMessageId": "message_EtnDWA-Yo5B2eRUsPgBlM",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 5,
+          "assistantMessageId": "message_DkX4YXfVbIaCalEXsDjpY",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 6,
+          "assistantMessageId": "message_Kzh7VT1-GJWpP0jtqClFi",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 7,
+          "assistantMessageId": "message_TCjoo3Ar3hLKZI2UJbNoS",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 8,
+          "assistantMessageId": "message_BdEByaoxmI5kZFmR7Ojxv",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 9,
+          "assistantMessageId": "message_WKOdFSbmxfQqBHaV6W6Dd",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 10,
+          "assistantMessageId": "message_vn6HPs0Xt982g7tAOAzfV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 11,
+          "assistantMessageId": "message_TGnLrE_VguexEJXYOX_A9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 12,
+          "assistantMessageId": "message_-lBjZoMjn4IZU05y_Qnjg",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 13,
+          "assistantMessageId": "message_9yTT7XFpzXaCJK8z3Khkl",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 14,
+          "assistantMessageId": "message_Zq9d1aWHjpJOOPYIwqXVl",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 15,
+          "assistantMessageId": "message_PhlKETkxKvX7e0pmlJ9g5",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 16,
+          "assistantMessageId": "message_XWJpTSRKP3U6Vb7gTZL4r",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 17,
+          "assistantMessageId": "message_KbSAIJf_i-Bx5F9TWjrn9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 18,
+          "assistantMessageId": "message_if3mZe2UlsaLLPzkdiFvu",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 19,
+          "assistantMessageId": "message_V_54A0rfb5qGVDUGo1J7V",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 20,
+          "assistantMessageId": "message_dbDEabRXEBufDGPwhbzyR",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 21,
+          "assistantMessageId": "message_MhDETsqu25B3WZduBA86y",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 22,
+          "assistantMessageId": "message_eggOVF9AjZDsjcziLbR2G",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 23,
+          "assistantMessageId": "message_3-Ul8tkwvLAe3tm2NS-sa",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 24,
+          "assistantMessageId": "message_DvgNozdLb3vq1cdHLFyKK",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 25,
+          "assistantMessageId": "message_YARozQ3STHfdDNh-0VcPZ",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 26,
+          "assistantMessageId": "message_XpA1LSMPuENTucJb6Z5Rv",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 27,
+          "assistantMessageId": "message_pJdvzNc_mdcuqA2COd2ln",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 28,
+          "assistantMessageId": "message_kWjBptcRk4u1q_twW9naV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 29,
+          "assistantMessageId": "message_4-phKrer44_QOnnoLEURU",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 30,
+          "assistantMessageId": "message_e1qgST5r7FdS_LUPg3Ezb",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 31,
+          "assistantMessageId": "message_hH_xB6fDDEWPpfwwXcTjq",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 32,
+          "assistantMessageId": "message_v87Exx_ikDhQApFbj8_MN",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 33,
+          "assistantMessageId": "message_ZqbyVIwP53w-Z8vrIeoYr",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 34,
+          "assistantMessageId": "message_fysP9wJWLOyqhBBifSXGN",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 35,
+          "assistantMessageId": "message_gl9GZPh9U9i4g-3fED9p5",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 36,
+          "assistantMessageId": "message_2NFonnN6epKleQcKg6vvp",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 37,
+          "assistantMessageId": "message_AUIMIp0U9xLAVwO0p4Rfd",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 38,
+          "assistantMessageId": "message_F_I0A8xf5L4C3ltCNRJhk",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 39,
+          "assistantMessageId": "message_qxKXN-lP36vC9--GUH3Ga",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 40,
+          "assistantMessageId": "message_eAWtvcTMrbBUgUFTTd0kF",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 41,
+          "assistantMessageId": "message_IJdELKzs2Hom24bqc3ij1",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 42,
+          "assistantMessageId": "message_caZZ2cJv2gh-0BiXXPvMx",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 43,
+          "assistantMessageId": "message_TV3vN_FOJ1mppIM_XvWW2",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 44,
+          "assistantMessageId": "message_wzJO1RZ0GNucZSqiVR_IO",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 45,
+          "assistantMessageId": "message_LirrVFYaRXu2NMRaQfs7c",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 46,
+          "assistantMessageId": "message_vz_fDQwltx3Tmb6SOtRNa",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 47,
+          "assistantMessageId": "message_HiqYE0f7xuGpG64SGh39n",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 48,
+          "assistantMessageId": "message_3sEZJx3zSv1j979eaRDgE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 49,
+          "assistantMessageId": "message_x8FfO0Q7J_DHODh8g0N7G",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 50,
+          "assistantMessageId": "message_AaQpCjOpO28VGX6pbV__2",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 51,
+          "assistantMessageId": "message_iklp41ZH6zH4RGwVtjkGV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 52,
+          "assistantMessageId": "message_2zBuIqapsc4rC9hHqWFY7",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 53,
+          "assistantMessageId": "message_pQyj0xp7J64I-1prIDoOk",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 54,
+          "assistantMessageId": "message_asTcc5fesNkBxbBeGUF9_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 55,
+          "assistantMessageId": "message_86qT-QfOjT64S6H2SdHRI",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 56,
+          "assistantMessageId": "message_wb1bjkBvfLKWkDnaC4lmq",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 57,
+          "assistantMessageId": "message_eYkuWRgXwFf3MRcwmPznL",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 58,
+          "assistantMessageId": "message_H3Ph3l3Kdr-egTBPRDBBD",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 59,
+          "assistantMessageId": "message_Pai47KyqQsN6ImK6nFkUm",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 60,
+          "assistantMessageId": "message_0iXyo3BFbRnwdZecbbg9r",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 61,
+          "assistantMessageId": "message_HL3MY2NNoUANNZXFMkOcW",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 62,
+          "assistantMessageId": "message_uh0HjSO7aGVIYaAsZszn3",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 63,
+          "assistantMessageId": "message_mXvVAvuaCILaKrsymMQH_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 64,
+          "assistantMessageId": "message_j-Dxc5kbLLa6QHq0zt_S_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 65,
+          "assistantMessageId": "message_37BqGlT6x6Q0ebsiNwbCf",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 66,
+          "assistantMessageId": "message_RJXcWLBBFt7cKfS5RrGRp",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 67,
+          "assistantMessageId": "message_bLgM-W3-zokdEEWBJeko9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 68,
+          "assistantMessageId": "message_t8dZ809-TAYjy-O9Cv4uy",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 69,
+          "assistantMessageId": "message_DJkgNLr5r6bMG9ojalL8U",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 70,
+          "assistantMessageId": "message_Bk7G52OBZPnygSIyCSw9s",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 71,
+          "assistantMessageId": "message_wr-sDE7yFAF3yk97sojkV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 72,
+          "assistantMessageId": "message_oso3Kw7UEV7FGDicQowQE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 73,
+          "assistantMessageId": "message_N7YppX4h5_yhB0VtA3_Wh",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 74,
+          "assistantMessageId": "message_AGqfvHY0-qQJolty0b48b",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 75,
+          "assistantMessageId": "message_Sv8RimgVC73OlIi7UoqDa",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 76,
+          "assistantMessageId": "message_lmsmcbrX9xLt-GAZJVhHr",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 77,
+          "assistantMessageId": "message_DSW9KL7G_5ZMBQOa6POyk",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 78,
+          "assistantMessageId": "message_kPZd33Dbu10m7NRyfYniB",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 79,
+          "assistantMessageId": "message_yjFvboijr9RtuHbWSstVc",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 80,
+          "assistantMessageId": "message_Tj62SW5nq8N6ngf-SQImk",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 81,
+          "assistantMessageId": "message_EcLhS9EkmiOw4svKdG0On",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 82,
+          "assistantMessageId": "message_oib0utXfHc4rFwogd7NiA",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 83,
+          "assistantMessageId": "message_8-svo1iFUlzDyNSyoiUYe",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 84,
+          "assistantMessageId": "message_UbL3lG7E9F4XMzIa9ak_W",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 85,
+          "assistantMessageId": "message_jPAuTVfFA6zmya54S0I5r",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 86,
+          "assistantMessageId": "message_ANPJj4PetfH4eRDqxa4pY",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 87,
+          "assistantMessageId": "message_NsL7wXNcusYKlLNB3V-3y",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 88,
+          "assistantMessageId": "message_uTk8FKMKPwcAohs4JvWpQ",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 89,
+          "assistantMessageId": "message_yDuc6xB07nMiC85yEW1Uk",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 90,
+          "assistantMessageId": "message_L4zEG03fYKrqXi70ahz7U",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 91,
+          "assistantMessageId": "message_yIsXmjDhHDqm2ykv_WC6z",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 92,
+          "assistantMessageId": "message_DW_C2QVbHscxIy4XYuP19",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 93,
+          "assistantMessageId": "message_GHC67ZHp3OZcZSCYOKyFh",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 94,
+          "assistantMessageId": "message_qw8ubB0RxqQQ2pszOqyGI",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 95,
+          "assistantMessageId": "message_vf4mtrpCZe6iYPGkzEgnW",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 96,
+          "assistantMessageId": "message_WyEMuucQOHYUX0LJlrsi1",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 97,
+          "assistantMessageId": "message_fx4KpuVNyjRx67lKHbajs",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 98,
+          "assistantMessageId": "message_rOroHbmQ8_w0kBqCcF_Wm",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 99,
+          "assistantMessageId": "message_QXcjpJqnp4dkwN-IczPNW",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 100,
+          "assistantMessageId": "message_WtXZVnmaDnPuBviGNjaPc",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 101,
+          "assistantMessageId": "message_-DjNNYCSHM7dJSoh8ekbO",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 102,
+          "assistantMessageId": "message_koTCckcD8f8uv-ZsOgs4_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 103,
+          "assistantMessageId": "message_0NOQYLi6sSfByu4pySiy_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 104,
+          "assistantMessageId": "message_dsaIyPIp0EFS_SKuVD2yd",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 105,
+          "assistantMessageId": "message_mc9iC28Cgdup2CRswshJl",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 106,
+          "assistantMessageId": "message_m44zGxCxo5eOFq_yRWoLE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 107,
+          "assistantMessageId": "message_okwhrGGfOFCxvBr2pll4v",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 108,
+          "assistantMessageId": "message_PVTxznqYOuEbGz0gB_eTI",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 109,
+          "assistantMessageId": "message_64ydWNVQYU-2Z78IYRJbB",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 110,
+          "assistantMessageId": "message_00BQ_jxiwktf9HJweHIgy",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 111,
+          "assistantMessageId": "message_F0bEi9L3hbCoNaDLbzuzd",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 112,
+          "assistantMessageId": "message_p_Vfb2V2g8jcrGf5I0FOO",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 113,
+          "assistantMessageId": "message_BBzxmTbrIWWoQNMvyr4DT",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 114,
+          "assistantMessageId": "message_KZ_1v5yQS97SP3USG16RX",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 115,
+          "assistantMessageId": "message_TukPKIB85dKoRY7JbBmEH",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 116,
+          "assistantMessageId": "message_aEFjwCDkkfSv_ChHBsdGo",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 117,
+          "assistantMessageId": "message_TJjJ-ibXdromm-dmOZbYS",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 118,
+          "assistantMessageId": "message_ntlpVjEl2wWJDJvgjSl36",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 119,
+          "assistantMessageId": "message_70UytZqH1z-UP_yQbO0IT",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 120,
+          "assistantMessageId": "message_h4CIJiaFPnKfFZZ_UjZPK",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        }
+      ],
+      "letterRuns": [
+        {
+          "id": "letter_generation_run_asP-K45yoLTJA_551Fx_R",
+          "incoming_letter_id": "letter_sCCbs1HEVqcJjsBBy6F9T",
+          "snapshot_id": "letter_snapshot__UH9CLpAaAG0XLqMLuRwk",
+          "agent_id": "character_upAZMW9GMnJOQsd2Bzr6f",
+          "reply_letter_id": "letter_reply_44e43b5902afb88886a9cce540383486",
+          "claimed_at_utc": null,
+          "generation_epoch": 0,
+          "status": "committed",
+          "attempt": 1,
+          "lease_expires_at_utc": null,
+          "provider": "openai-compatible",
+          "model": "qwen3.8-flash",
+          "error_code": null,
+          "result_hash": "1be2ed88913c91e1e799cc69151f2737910a456cdb6da314e08752673feb7e31",
+          "created_at_utc": "2026-09-25T00:00:00.000Z",
+          "updated_at_utc": "2026-09-25T00:00:00.000Z",
+          "committed_at_utc": "2026-09-25T00:00:00.000Z"
+        }
+      ],
+      "snapshot": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\final.sqlite",
+      "snapshotSha256": "c4ca16a05c625110e524778343115fdd37285286ac118d20cd66dc217280fe49",
+      "preservationAllUnchanged": true,
+      "sourceIdentity": {
+        "git": {
+          "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+          "dirty": true,
+          "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+        },
+        "experiment": {
+          "schema": "companion-continuity-real-v1",
+          "runId": "cc-qwen-long-r2-20260907",
+          "group": "A2",
+          "publicSha256": "0b3ca233b58242273c619c1013938b2aa0d1b13ddd937888de993586cffcc585",
+          "oracleSha256": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4",
+          "scenarioVersion": "companion-continuity-real-v1-proposal",
+          "characterInputSha256": "b188fca8cc7498168bd1d926909da9cac6ac9450bad07591ed0033a5339fba1f",
+          "maxTurns": 120,
+          "budget": {
+            "maxPhysicalRequests": 240,
+            "maxReservedTokenUnits": 16000000
+          },
+          "baselineSource": null,
+          "scheduler": false,
+          "transport": "TCP-loopback",
+          "restart": "exit-and-resume-at-turn-64",
+          "timezone": "Asia/Tokyo",
+          "node": "v24.16.0"
+        },
+        "configuration": {
+          "nodeEnv": "test",
+          "profile": "companion-continuity-real-v1",
+          "port": 3001,
+          "host": "127.0.0.1",
+          "webOrigin": "http://localhost:5173",
+          "selfHostedReverseProxy": false,
+          "serveWeb": false,
+          "webDistPath": "E:\\2026\\ChatPLUS\\apps\\web\\dist",
+          "databasePath": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\personasim.sqlite",
+          "clockMode": "fake",
+          "fakeClockStart": "2026-09-07T00:00:00.000Z",
+          "llm": {
+            "provider": "openai-compatible",
+            "profileName": "qwen",
+            "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "qwen3.8-flash",
+            "timeoutMs": 300000,
+            "maxRetries": 1,
+            "maxOutputTokens": 32768,
+            "capabilities": {
+              "structuredOutputMode": "json_object",
+              "supportsThinkingControl": false,
+              "supportsStreaming": false,
+              "reasoningEffort": "medium",
+              "reasoningRequestFormat": "openai_reasoning_effort",
+              "maxContextTokens": 1000000,
+              "maxOutputTokens": 32768
+            }
+          },
+          "conversationRetention": {
+            "fullVerbatimHours": 24,
+            "softTokenLimit": 8000,
+            "hardTokenLimit": 12000,
+            "minimumTailTokens": 3000,
+            "minimumRecentTurns": 12
+          },
+          "logLevel": "info",
+          "seedDemo": false,
+          "developerRoutes": true,
+          "chatEffectsMode": "gated",
+          "lifePlanningMode": "fuzzy",
+          "scheduleNegotiationMode": "off",
+          "selfInitiatedPlanningMode": "off",
+          "liveWorldEffectsMode": "enforced",
+          "memoryRecallMode": "enforced",
+          "autobiographyMode": "enforced",
+          "companionContextMode": "enforced",
+          "personaRuntimeMode": "enforced",
+          "correspondenceMode": "enforced",
+          "correspondenceExecution": "lazy",
+          "correspondenceTransitPolicy": "fixed_5d_v1",
+          "correspondenceGenerationLeaseMs": 1800000,
+          "correspondenceMaxOpenThreads": 1,
+          "keepsakeMode": "enforced",
+          "assetStoragePath": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\assets"
+        },
+        "publicHashMatches": true,
+        "oracleHashMatches": true,
+        "oraclePublicLinkMatches": true
+      },
+      "originalArtifactHashes": {
+        "attempts.jsonl": "660852b6227983fc44edd5599342fecd3a380dff613af652adf6ae9520999535",
+        "baseline-character.json": "d75b10a978dc98e1fa66d73d2a69a781440b60b7ab5f97eb8d5b5b94e698f35a",
+        "baseline-manifest.json": "89aec8f2a4c238e7db860a39dcfa46d1956e18897bc56a7181025c84b5b72c08",
+        "checkpoint-evidence.jsonl": "a60f35a14a492c546817d1912aae7633f08e874e45f31b8aae20c0ed33a41fe5",
+        "feature-evidence.jsonl": "440b1b763aa677cb80343e40bd61991c72276e3a97ee450bd9bc702c42c19351",
+        "generated-character.json": "63fcfcc58755a94b96d5c8c4bc3513ca2d49c5ef33637c235d9813ba0c7a079d",
+        "http.jsonl": "9771cf1bf90cb84eb58c390f23cf96374cae0df7577759614c17ea409f3b76cd",
+        "input-journal.jsonl": "362b20ae9f77635a99790668d8f8b4a03490d8d3d71f8bf777f7c74e7828b388",
+        "journal.json": "31ae31d7e04b14ccb3ed37307d4a29ae7583f760abfda66c70d08bd10b4015e3",
+        "manifest.json": "d14876697ef052906d6992d6d0da14213202b250edd39e9060986cbe15be7fb7",
+        "model-io.jsonl": "0ab0bca6aa77d915734a9c605517995b8701bd9fdabf0876572b1672c4a8bdc7",
+        "oracle.private.json": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4",
+        "provider-metrics.jsonl": "d01a17397aa2db3f3f0e16e9d9dc24e34359e2e7972cda942de1bedc11e9c90c",
+        "public-scenario.json": "0b3ca233b58242273c619c1013938b2aa0d1b13ddd937888de993586cffcc585",
+        "retrieval-runs.jsonl": "a3a616f3abf69a9b92a20d6d2ddca201d93fd9d3f84c10cc14dad2fbe5b006e5",
+        "run-summary.json": "9c9f0b98f18edf8baca29faad60b46b607775dcaa89e9654a851d0b82628f9f1",
+        "turn-001.json": "f55b13d6cc187e8d126c62139c528467281690a0a7da039e2db32ecf9402e578",
+        "turn-002.json": "d1a8420d27830ff4ab1d44612879f161f57d3689f22c8cd22139629d0fe72435",
+        "turn-003.json": "099afc777898751c23bd35dec29b03fcfd0416af03e993384ce2dafc73211c6c",
+        "turn-004.json": "25e86d6caae64f90514fa5025794fd44cbacf8565e28b3d60c61b6811ffb6c4c",
+        "turn-005.json": "b7acc68816288dd014f34d97fb57e81830346f6fc891bfa8a3c8915f7b42f431",
+        "turn-006.json": "f24d050fe4237b25a3024f4d3c897a66d6a16e9397cfdfa73edc25451b145b35",
+        "turn-007.json": "37664259be4289413517df0a2b03b78666a8671c23938ed39b26067550b2b3c3",
+        "turn-008.json": "9cdc6a6ca9f8c7ea4500f2b62e7cb7dadb444e8cd1cacbe4c5092d23606b6989",
+        "turn-009.json": "6fad2cde4b868567d92d88c51c598139a2e514e27c0ef256e866f31d47e5fc7c",
+        "turn-010.json": "d91a4d6e85f687ccdfe22c9b171a82292f78f6cbb3e419ab095852a9b85a9189",
+        "turn-011.json": "a1a20a3b3e107005962b2b71e5565de9aebb4dcb5dfee9680eb2965ab0adf098",
+        "turn-012.json": "4d8e0fbd095135615fada6d130040a3be310a52b29a133d663f5751eea793cd3",
+        "turn-013.json": "757197c39ab7eb6a7d0ae888c366f02e30277de2324b6cb4333962eaa11902c0",
+        "turn-014.json": "1e24584c13007fda1567e13d924902619d930024f5f3c4a621aefc2708094394",
+        "turn-015.json": "1698075105c1ae061c725c86d646be9706647d7e0a333759f81fb010f80dd2f2",
+        "turn-016.json": "35c4699a10b8effeebde7117b92e17bfefec1c8b802e7a9a8b80d00f87ae323d",
+        "turn-017.json": "2cdcde04788430e59c23119685365a2af1ef2b46cd4383a59ad3f38dc0bf5554",
+        "turn-018.json": "689a1fbeaf81c0fa0c61e23b00c5432330f91dde4b3253bd3092af0ae89e527f",
+        "turn-019.json": "43a83f53c9b85ff275f33a3e7f43002a727c08c49d4be7b3735faeea3f663986",
+        "turn-020.json": "41fb24b999b6dcbd169b04601706074deff5fd7d188907b5348484da0edbe8a3",
+        "turn-021.json": "8abb381278e23ba4926e3eab20d60e83af816574b99e0772fb1673d1b194682c",
+        "turn-022.json": "3580ea55a7d85a94c14b40a6be1c060bd51133dcffaf6b1998fe009288c08819",
+        "turn-023.json": "5dbec91b949ffbb46893b4cceb2ec1e8e880654ef57136c12429be298e6eb25c",
+        "turn-024.json": "bebd4938ec3b1a6826f2005bf17ebcd97c2e74465a0b567f5a80ae7f82252481",
+        "turn-025.json": "d5d1dba01302db1caee4a8f6106c0c398b63dd9060f5d0e9badd7a60497f273c",
+        "turn-026.json": "931c8289cda4a9c1d77382135efce4bee50922f77609878a03736b25d849d3c0",
+        "turn-027.json": "ac0f3b7f23fe7f63e22de37d528feb39232c9bdaa02e2341c2bfa4790d652b0f",
+        "turn-028.json": "b6c8fbad8b4e10b1dfd0e7e5d6551401017ce3e4801395c6df5276189ad88a0e",
+        "turn-029.json": "92b307d5d3f702cb28869285752618013502b1455cddf9b0db8d5f03aae82347",
+        "turn-030.json": "c4074aaff88d643ecdd741c49d99f8fd66438abcad7ad873f2f4cc9df9bfe471",
+        "turn-031.json": "7ab307fb3df46276ba233ead694d1a7a365e09f46ad1957da02fc56331c436a0",
+        "turn-032.json": "778763541f5abd8a9d6cfe69e1e68a3dcf478ae56d12fe4c4f577347ba900fda",
+        "turn-033.json": "e8e96afbe793ce34145d0d411983848113641a6fa0894c28abc2ca2dee9b5b02",
+        "turn-034.json": "5cc9fcae34125913eba3ef634234302e203c0c71d23252a60e8d96743d5d5bf6",
+        "turn-035.json": "3ad7aa0bab8d08d9cb60fdc1c63233d669c73bd353b11b5b23180a4856806fcf",
+        "turn-036.json": "db2525d8f99990a28bfde8481ac83efe6fcd2fd2b5fd005b831516e063217254",
+        "turn-037.json": "e22d047c707e5f7de86cff31a011307f7415056101eb7a4bba719c4192361cfe",
+        "turn-038.json": "cb15fa17de10415a63740687ba283b469cc30b8c91c9d45ed7b9e4f9d6e43c8e",
+        "turn-039.json": "2d93e267d00e57c133ad11e08675b8cfe1055de59449a93833016f2147dbfd5e",
+        "turn-040.json": "ffe5a98220b9ee952f76fb9189659aabdfeb2c9c5a57ac1d94eb03456d672bbd",
+        "turn-041.json": "6e191ab28dac73107292b649283f401a385c33f32310578589b92d9cd79890ef",
+        "turn-042.json": "9fed9b7b2aa3cc6503a85e286b8ed2f70aabd62f0deb4ba5b64a5a0b81f53ffd",
+        "turn-043.json": "210db682492e78c6f39a9e96a9311ec338650b3612f1cd8880f09aa9133526ea",
+        "turn-044.json": "75b90a146ada4de6da2d188b48754ac67be4c300942b4d4590ca4c249b27a5af",
+        "turn-045.json": "040ac782be91cc7719d11e1b8fbfc9e428157ca2f2ecdac0d93e6e9b739cb41e",
+        "turn-046.json": "445b0d06e03b961311366e32dbdbdffd75f86833e6f36c2640f2184cd9299601",
+        "turn-047.json": "4645d5fb1116da6b83f7a5c4121a76ed32bdcb97c35ed695422c9dd5be0dc8a0",
+        "turn-048.json": "1db918a11f04fa3b04b598ace42f11c0c050354b6d538b6b583233fbb74b2c4b",
+        "turn-049.json": "9076301921abb622bdbb2986bf868b5600f938322becceb531a24792248843bd",
+        "turn-050.json": "28c3b7ffc69336d7d168a6b5c56ec4e14a60d607c99db5664b58549ba4a7e03b",
+        "turn-051.json": "2f16b04a524c0e527ed9164106ef0b5345611b8c0106b9b742df473c1d4a3292",
+        "turn-052.json": "a199177ccdc9b870ea8428800b693f636651a5099989db79ea779c060e7c448c",
+        "turn-053.json": "4459f3f7737abc4449b639d4d83b13fe2651e008298959cb8da945a6d8a0cb2e",
+        "turn-054.json": "c153f7193743945bb4463488ef60b12e16aaedbda20cb2c570cff51871159d2a",
+        "turn-055.json": "7b210d990149c250ef030ee23cbaf4b19d45f1f733932995a8f0131f8ff88bcc",
+        "turn-056.json": "9e51d54897db29b2a58da722ab08dbfda8697c8c41a8af9081db45516b3239f2",
+        "turn-057.json": "dad5926dfa869966058f0674cbfa70bcf8f4c7c5f5fa33b652406cb8540e330b",
+        "turn-058.json": "af16834f32ffbf968cfecea8bec5b1342f5a38d32ef55dddfe13d6c9dee70762",
+        "turn-059.json": "1575405b78dc7d0e791cd4c801a266495439a10592667dee99e2cd5e33c59d32",
+        "turn-060.json": "71152ee68ebdd0e82e80da40ac991898f1173983ae8c53351a2f8d73730a4573",
+        "turn-061.json": "7bdf823b1b66d8846bdaa12f943dfaf0f834ff78fe027d275c45c082c4de8967",
+        "turn-062.json": "b030c46f7453f535a02b2855e94e0d4326ca68efff33a21cc05c8f8fb1ad771b",
+        "turn-063.json": "4fbee94a865f8353ec8d3ec9f111d420e194fd6e3888c5d7b82eb547cfcdaa2d",
+        "turn-064.json": "4fe07e472827b47a8a45d555781e1b648e045ac99e9f02a4d279813f31926ec4",
+        "turn-065.json": "8759c68aba24262019ba2c1b942d35ef5803a064f82fbad62a1d6179fb10fba5",
+        "turn-066.json": "70a1e7e759a76c1c3074cddae7125e7a8f31ffc206f65d3edab7947f073cf906",
+        "turn-067.json": "1ad27f4439fc0a4ce2c384c0232bcb50899b45f1f879c7a1367ea1bd68042ead",
+        "turn-068.json": "36eb54f9b68808439ee55be6858abe03ee459dcbfa97dbc788645afb78856305",
+        "turn-069.json": "2708b64bf1322d7a90a9d553029cdd729380e20ded36399d2a71f896f72ac62e",
+        "turn-070.json": "45eae17728ae9f9621c83d2176269d6c571a5c8558be1705df0d21c5b8d1111b",
+        "turn-071.json": "d7607261801a308b752f7cd012e5ecf4efc8f99ec39a7a23418fedc2379dca76",
+        "turn-072.json": "15298a3bcb0798467db68e94238dc7e9afbec6b8a2cff311751606434d349d5a",
+        "turn-073.json": "aec2c603299b8af6c457b7dfeaf7caf0cd0ef6fa48b692c8020cb598e9898300",
+        "turn-074.json": "9f1c9383e65a0269967b63712e828c3428dab754e8a3ce55a08469dbf7f4fd7b",
+        "turn-075.json": "61b491283212aa6848948056675a2ce4378c1d0779d1fac735b73b64129b1087",
+        "turn-076.json": "c1240de59b75f037f04c0e8192c5b34f892bbc44e7ae563a07bb721717b91084",
+        "turn-077.json": "372ca3fefda5658e7cc330bcfdcae1d4dc23501f7aca5690729e6bbc8ab4e3ee",
+        "turn-078.json": "33a8a9c39edef1074343b6de4198cd949a85e90ee2c39657533b08c54821e1f3",
+        "turn-079.json": "7ec02f099c223e03af9a4f8f1655160cd420b32a03496d179df00d273365b495",
+        "turn-080.json": "208ec1fba75fc0ae20ddecdf34d38129ef7c3cb804349cba4f1690ab3834c91c",
+        "turn-081.json": "1aa3cafcd872269084af4a211dad1c754f2923774549fe25e4999a5869e96a5e",
+        "turn-082.json": "5b9e193b4b3525606864b8faf3c492a80dac5990863c53efb090582ffc61b7ae",
+        "turn-083.json": "e147f6c4590460461ea6e620e91c1a3eacdae0992dea846882578a9bd01d94a0",
+        "turn-084.json": "898354739a3596da6af5d5c9df6d69dd13104f50efe9212edf20632a59b1e1a2",
+        "turn-085.json": "c2d133c66b790aba73a1e83f99061a7846d3f9b83b52fec9973ffc2f95cf55a2",
+        "turn-086.json": "30cc7cec465306203221d3e3294583a6da936e18ca93c035764f191c484a11e5",
+        "turn-087.json": "543f8e6b348e4249919227ec6646b2afef3e20bb1fb7669d4fbbce5a2eef31a4",
+        "turn-088.json": "36af636c6dc8316fe0d55817b8dc8359236e246697cb2e9e0fc0393d6e362159",
+        "turn-089.json": "a3bb567eef3031438243b7d2ca05d24aaf4b3db2aabc27becad7252e93cab8f6",
+        "turn-090.json": "bc89e5e2ec03f175bd679b3734dcc44ccd4bd0e38376eeb6d7d51ab92bb266b4",
+        "turn-091.json": "ec4b45307e7f7f81abd699f98eb15a6a89f515d8676351cdf1dcdb613d6991b2",
+        "turn-092.json": "a403e083b3106cfb1a664dd14a0c49c2168b0b6f1c0f23b7f656371db27a8189",
+        "turn-093.json": "26ed62445d18f163dd4275d2b6f5cdb4c6e805cb7e41aa803d4b22725e0ed73d",
+        "turn-094.json": "f74ced467ba8328543f3672fcc39869d82a7f5700d6b0dfba5d6f6188f018dec",
+        "turn-095.json": "fa1b13aa520bf29443a25d70467ad0c2cf6fce5d914c993adb120c9846ef05ff",
+        "turn-096.json": "575dca6c7bff94393f5141a6bf2ae4f110ee8479289142b0e06dc7ea15995671",
+        "turn-097.json": "f20adf7fc73db9e78195d04e55b7cebc806ecc9d9ecff7a36f4656635f64ff2c",
+        "turn-098.json": "b28933b733bd0761bf449ed46dcd33350169dd5a94bdfbb842cd256a781ce967",
+        "turn-099.json": "2633e3309766d015b2c76d0c3831a7568b18a81fd1b065dda492e5dcfc826cff",
+        "turn-100.json": "24825c71d864f41d3095afbe51b54637c80102d5ef4d6caee6efe9d800011d2a",
+        "turn-101.json": "01a5922402bef7a1e92f2f3ec25b610df08978c2ebe0513923fa34cd67fb5a6e",
+        "turn-102.json": "6cf1d7c819897cc0ce5f2807d0bfb1d67195c6433e490ac4a16c09a9e99941db",
+        "turn-103.json": "cc61a4f017b76ebb54ea0a511fc072fae7288052d7992e0d5b561ee73c87f297",
+        "turn-104.json": "0d6bcda8097856d19ebfcdaff6634f2d4a7a40b217565a77d7f3ead525f0ef22",
+        "turn-105.json": "f7ca88ab0d9957568f6df86bc6ec12fce436d3347de2a7718bdbb40dacf35bac",
+        "turn-106.json": "c9fffd7b354b8f83eb2ccf26f991b4a0d759562652f0733b8a548450b163177c",
+        "turn-107.json": "e69187ab9bc2da874855325d7ab83c8cdc8ec50d2e923a4d1732d91974ecdf44",
+        "turn-108.json": "3c26aa967fa6d2eeaa110254db2ce7e0939559c96d5687543c42f9e90b063f2d",
+        "turn-109.json": "406c6fcb473ca0f741c5237c5c309257a34cde088b48a122ffb69de7be6604e7",
+        "turn-110.json": "c2312eedc98c8ac896c9efe7f92ac5d1d1e6280b97081caa8fd2d6b79aeac00c",
+        "turn-111.json": "ec4301d04d13fb8a53c702bff8f1ba1e1fcabd5533f07324f34297d0bc801b0a",
+        "turn-112.json": "b07ed44997b6f61e5ba2f5df7486cffcff0356261b60608e260104dd93b4ef85",
+        "turn-113.json": "c38b1f36d2159fc69ce082f0f6509b58bbf875b84d3cea225f5b1e0f60de2353",
+        "turn-114.json": "e62575fa610b693cbbdb628ca3d9294c91b5639dd725fd2905b1a45430abc31b",
+        "turn-115.json": "490b5e5fe6bc20b1d6be1990878bad15c415880cdb14e287737fdbd1b6c4fd08",
+        "turn-116.json": "c38eb92b76a95718d9b301933b4a0c58262ba9145ac640d87546a0030b8b0a39",
+        "turn-117.json": "000acc7dd95a2f63518226a60f2b54a1078f6530af93fd7df6dd1c6ef0238a26",
+        "turn-118.json": "b75539b3d85cbc1b136b1f6ac7e2d3820a277139aae2c72b152af2143b9b2fe6",
+        "turn-119.json": "42de671c812048cb0b1460a1cc547426f9653b4a2e749270c370308f29500f9a",
+        "turn-120.json": "382edcafa8e0b35b60c9f0089d25b7f6124cc7ddcb597189f1761ae217a877ca",
+        "turn-evidence.jsonl": "5f2d8821585d33dd66f396619adae3fd33241007a3432ca36341bbaa55d9a5bc",
+        "final.sqlite": "c4ca16a05c625110e524778343115fdd37285286ac118d20cd66dc217280fe49"
+      }
+    },
+    {
+      "runId": "cc-qwen-long-r3-20260907",
+      "agentId": "character_Z-2cnancFKxTk5fAv1ont",
+      "status": "completed",
+      "completedTurns": 120,
+      "physicalRequests": 125,
+      "reservedTokenUnits": 6517114,
+      "budgetLimits": {
+        "maxPhysicalRequests": 240,
+        "maxReservedTokenUnits": 16000000
+      },
+      "budgetChecks": {
+        "physicalWithinLimit": true,
+        "reservationWithinLimit": true,
+        "sequentialReservationNumbers": true,
+        "reservationCalculationMatches": true
+      },
+      "usage": {
+        "prompt_tokens": 757060,
+        "completion_tokens": 121547,
+        "total_tokens": 878607,
+        "unknownUsageResponses": 0
+      },
+      "logicalPurposeCounts": {
+        "compile_character": 1,
+        "chat_turn": 120,
+        "repair_chat_turn": 2,
+        "letter_reply": 1
+      },
+      "transportFailures": [],
+      "unansweredReservations": [],
+      "blockedReservations": [],
+      "responseStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "counts": {
+        "messages": 240,
+        "memories": 33,
+        "memory_evidence": 33,
+        "memory_conflicts": 0,
+        "conversation_checkpoints": 0,
+        "autobiography_snapshots": 0,
+        "autobiography_entries": 0,
+        "care_cues": 4,
+        "follow_up_intents": 0,
+        "persona_adaptations": 2,
+        "pressure_episodes": 0,
+        "schedule_items": 0,
+        "schedule_negotiations": 0,
+        "personal_intentions": 0,
+        "letter_generation_runs": 1
+      },
+      "duplicateClientIds": [],
+      "duplicateReplyIds": [],
+      "finalMessagesMatch": true,
+      "idempotencyChecks": [
+        {
+          "turn": 1,
+          "assistantMessageId": "message_lwrcvqF4UfgyAzB_splow",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 2,
+          "assistantMessageId": "message_EseWUVxphMqnwpeTKn496",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 3,
+          "assistantMessageId": "message_i32Wd_5HYDSPTQlfmdOKz",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 4,
+          "assistantMessageId": "message_8PRHni-J--xT2nCZJDgYt",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 5,
+          "assistantMessageId": "message_4jnb0XUOzinDio19KmqXw",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 6,
+          "assistantMessageId": "message_9hJit0vXpgwEUh_at4da4",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 7,
+          "assistantMessageId": "message_EgByyz_wySJTdym5w516B",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 8,
+          "assistantMessageId": "message_d4O1aR6UNPzI-k0xO_RM9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 9,
+          "assistantMessageId": "message_91UI7AXJ1AOpmBEPjvCKA",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 10,
+          "assistantMessageId": "message_s5rz1wLpgqz-cfLfTMW2R",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 11,
+          "assistantMessageId": "message_Bihov9oW0AWWsbo9xa7mO",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 12,
+          "assistantMessageId": "message_V0gJZ-pc8EVLIQYR8W9MB",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 13,
+          "assistantMessageId": "message_ll2EaDZwkLdKEei1Y6Aw3",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 14,
+          "assistantMessageId": "message_VGbwQ15TAykz7cwWegYd7",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 15,
+          "assistantMessageId": "message_INV-guFtBP_g0Rz4y2S2u",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 16,
+          "assistantMessageId": "message_7aDBHG4Cg32okFD-WCACD",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 17,
+          "assistantMessageId": "message_m9AGl7F69ddtXpyvplwYs",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 18,
+          "assistantMessageId": "message_nNmM-KSMkhzXiYfdna7uy",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 19,
+          "assistantMessageId": "message_tJXmTR_OsSuSsHRdgHJEW",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 20,
+          "assistantMessageId": "message_wm1yd-sdUgiTN25t7m1BS",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 21,
+          "assistantMessageId": "message_vOYCkX2LnlVFBT6qSO8PD",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 22,
+          "assistantMessageId": "message_BAXT5tEFYU_BmY7yDptgs",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 23,
+          "assistantMessageId": "message_Jet7hZmSPs9K7Vw-mP51t",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 24,
+          "assistantMessageId": "message_xaPpH7bRt6ALRyk6mOTG9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 25,
+          "assistantMessageId": "message_BnIYmTtZrn3rTu-XHZA0v",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 26,
+          "assistantMessageId": "message_87UVHzZSq4lvAUzIaaHcH",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 27,
+          "assistantMessageId": "message_hjNcHA59w2zS-HQheUQuZ",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 28,
+          "assistantMessageId": "message_TOSHyyBnmK3h__ul00D62",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 29,
+          "assistantMessageId": "message_TgWfvfVq24wtOzC1zpOnF",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 30,
+          "assistantMessageId": "message_f_az88Ax7HVUxQ9ZXGhZA",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 31,
+          "assistantMessageId": "message_yxzLc9eKmFIMvMbnECbpV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 32,
+          "assistantMessageId": "message_bPKBfq1ltOvgoM1lrvMz9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 33,
+          "assistantMessageId": "message_Ht38IhZLVSEJCwT7PIUk2",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 34,
+          "assistantMessageId": "message_56gVofG4T8CtvnHNcGqJR",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 35,
+          "assistantMessageId": "message_hL1JaJI8dRd9WVFQcb80k",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 36,
+          "assistantMessageId": "message_2VfozJDz3cU6JrrykFFuJ",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 37,
+          "assistantMessageId": "message_ewvjMxn4axOb-QL0UFCo9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 38,
+          "assistantMessageId": "message_mxex52sy68c5t5G2gvXgp",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 39,
+          "assistantMessageId": "message_iD6M-4j4-i4QQSqi6CS6B",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 40,
+          "assistantMessageId": "message_RDEW_fiQqGO7AyJxTksWG",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 41,
+          "assistantMessageId": "message_x3bRCPzLRwHbSfs712PDW",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 42,
+          "assistantMessageId": "message_953xf0RZ-eby5dx7bXofQ",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 43,
+          "assistantMessageId": "message_RBq7ZJ9zKGM6GXVe1o1gq",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 44,
+          "assistantMessageId": "message_TmsOjiacEv8IJugi2a88R",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 45,
+          "assistantMessageId": "message_65Mo1kqWG2fN7K9JXVu2g",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 46,
+          "assistantMessageId": "message_Hr9t0ZZ-c6WknD0fYqyaa",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 47,
+          "assistantMessageId": "message_E7WM4GOZaLl7mO55yydxb",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 48,
+          "assistantMessageId": "message_e7hfsGNF1im1BjRWoJj99",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 49,
+          "assistantMessageId": "message_NwTLgvnqsQ59p25sfcUBj",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 50,
+          "assistantMessageId": "message_rR3PlGdbwVL0eb4U5VgxN",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 51,
+          "assistantMessageId": "message_Od4b7VyaSy3zGIBo6X6gT",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 52,
+          "assistantMessageId": "message_1FtsPDGS_e4sl-OYkVW2T",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 53,
+          "assistantMessageId": "message_Z0dVxNgshPjpCDHrCADDG",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 54,
+          "assistantMessageId": "message_WhaYrFZfSGQQZPdU73HMG",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 55,
+          "assistantMessageId": "message_GSV5c-aNq5CRiYhh5vGeC",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 56,
+          "assistantMessageId": "message_BMzoCJAN6hM90Ws2_Au0p",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 57,
+          "assistantMessageId": "message_EcO1XXKjvYG7iOff3w40k",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 58,
+          "assistantMessageId": "message_9MYoanjBnWRqd2JC45_0N",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 59,
+          "assistantMessageId": "message_BzMHg9bsNjxAJB4KziJ9U",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 60,
+          "assistantMessageId": "message__Sr7l-Sql9UfZcR2ZVu0H",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 61,
+          "assistantMessageId": "message_gpseFdDCSAChHs-UHUFEE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 62,
+          "assistantMessageId": "message_vrc9RE8XnVGzsZJAN5ii4",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 63,
+          "assistantMessageId": "message_VlAuKfqNtO4O0kYA-T-Gr",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 64,
+          "assistantMessageId": "message_DHJZ4JJfXPDu287FTet-O",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 65,
+          "assistantMessageId": "message_97QXsY4uSU8jg5_69WrN5",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 66,
+          "assistantMessageId": "message_lbcQDgSx_XZy7adbUb6aF",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 67,
+          "assistantMessageId": "message_zGoLY9naqq7hArdlfZV1T",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 68,
+          "assistantMessageId": "message_myRjfPpxl8nU9TIvLNYZ1",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 69,
+          "assistantMessageId": "message_h4e1vloTBA-eoz4RydJE0",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 70,
+          "assistantMessageId": "message_b6139RksNOHFHNWK7HZ9K",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 71,
+          "assistantMessageId": "message_EN3JuJQ1HakNzfeyMIxUK",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 72,
+          "assistantMessageId": "message_iBedzu-g85rP6FjH-6Hzf",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 73,
+          "assistantMessageId": "message_hQXrTTDh62rvoEpRtbBN0",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 74,
+          "assistantMessageId": "message_F00aDScIbexmgrrmgKP_7",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 75,
+          "assistantMessageId": "message_Mgq8apgOsdfSWCrsijcio",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 76,
+          "assistantMessageId": "message_zyg1cEBJZ1yFIPmNlYzbX",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 77,
+          "assistantMessageId": "message_mcZy993fVzV7r0613bBFl",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 78,
+          "assistantMessageId": "message_XvmpFyQCJzrv6TKaI9BfV",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 79,
+          "assistantMessageId": "message_i5evppZdzH4I9rYe7lhjt",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 80,
+          "assistantMessageId": "message_aCzBkDAsV9S8LwdfzW9Qv",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 81,
+          "assistantMessageId": "message_B-6SxyLRIMXbYQjMRhC_U",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 82,
+          "assistantMessageId": "message_FF5KdkaNhE3BB4Ew3diQU",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 83,
+          "assistantMessageId": "message_ImKnOIp3OU53EfNqNrEm2",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 84,
+          "assistantMessageId": "message_zv4-WfP_XH8sFt3yKZKdb",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 85,
+          "assistantMessageId": "message_IFtl3a63Z9ZAuZLeMIQpe",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 86,
+          "assistantMessageId": "message_4YaVsZi8JNDTkj154zSBt",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 87,
+          "assistantMessageId": "message_IdGjgVgkE59Oq4QynATfE",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 88,
+          "assistantMessageId": "message_5acjQ_QCN4Z89JTXA7Y2N",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 89,
+          "assistantMessageId": "message_mFgUSKXUZM0ZvzMg2-e1a",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 90,
+          "assistantMessageId": "message_B6euuNvCWdJWW1OS9gLv8",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 91,
+          "assistantMessageId": "message_SUnyjZtWHZrHpb3GMt-Vl",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 92,
+          "assistantMessageId": "message_1mrMxr1SU2ovMfQM9nOs6",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 93,
+          "assistantMessageId": "message_PIuOp2AD7JT4KNaLXZyLf",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 94,
+          "assistantMessageId": "message_AwyTrZcIotOprjg5BuG8_",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 95,
+          "assistantMessageId": "message_ulRJHKhxHe4Gzf7zMaewK",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 96,
+          "assistantMessageId": "message_HTQwrYDX3ONJNi4iQkD6w",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 97,
+          "assistantMessageId": "message_Y2iB7VvxTELL5qH3XjExg",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 98,
+          "assistantMessageId": "message_ovScOxtIT2VF6Pu9yrcFw",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 99,
+          "assistantMessageId": "message_GyeY_TBYcY3QnEsE7OXLY",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 100,
+          "assistantMessageId": "message_t6z6uYr7M39RsRhS5Jfyi",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 101,
+          "assistantMessageId": "message_qA8ia2W9xZ7WV19dcYzW9",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 102,
+          "assistantMessageId": "message_kHi0v9OVDazdNAtcvkb5g",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 103,
+          "assistantMessageId": "message_UGnYZ9FPR823zadJYm408",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 104,
+          "assistantMessageId": "message_o48zAqi9ctwsuHHQ4b5eH",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 105,
+          "assistantMessageId": "message_E_3KrGqOMQw3g3QnDry6k",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 106,
+          "assistantMessageId": "message_gqL_nZePZKd1yFFy2hY__",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 107,
+          "assistantMessageId": "message_MyLtQiF99Yv-t_7gfUJzb",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 108,
+          "assistantMessageId": "message_Czwa3FHmjV4OxE963PeDT",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 109,
+          "assistantMessageId": "message_f-49z98N8Zk6K1OwxmoOn",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 110,
+          "assistantMessageId": "message_VZw2x_7GeEZzNb790g-1P",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 111,
+          "assistantMessageId": "message_2bu5Zu_eP8JFN-uHAmFFy",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 112,
+          "assistantMessageId": "message_98ROnEI_K3_IYJmLedBb3",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 113,
+          "assistantMessageId": "message_rq9sAoMmX4ryKfRvqzR5Y",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 114,
+          "assistantMessageId": "message_-dLS--dqNZUZDq5PTMOYd",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 115,
+          "assistantMessageId": "message_Kv89HPlVRQTi5rQP8hBeR",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 116,
+          "assistantMessageId": "message_nlD9q5hXFPZH8fbbvUD0u",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 117,
+          "assistantMessageId": "message_eZDLWfV64nz1RRsYIpuhU",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 118,
+          "assistantMessageId": "message_MWNyBBGUm5231MR-x1gOa",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 119,
+          "assistantMessageId": "message_i69pil_BLyEQslyTCGNWq",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        },
+        {
+          "turn": 120,
+          "assistantMessageId": "message_57K0tecxGrBjvSGWymBXX",
+          "passed": true,
+          "independentCountersEqual": true,
+          "assistantMatchesTrace": true
+        }
+      ],
+      "letterRuns": [
+        {
+          "id": "letter_generation_run_pGdNZbQr2vj6SuZhwPCJm",
+          "incoming_letter_id": "letter_J6ibRJEVnJzfQ6eyR7Zj6",
+          "snapshot_id": "letter_snapshot_SRJXfTZgTvkA6WG6v2bHm",
+          "agent_id": "character_Z-2cnancFKxTk5fAv1ont",
+          "reply_letter_id": "letter_reply_657ec1499124ac051072343f836c3aa0",
+          "claimed_at_utc": null,
+          "generation_epoch": 0,
+          "status": "committed",
+          "attempt": 1,
+          "lease_expires_at_utc": null,
+          "provider": "openai-compatible",
+          "model": "qwen3.8-flash",
+          "error_code": null,
+          "result_hash": "af69ca9278588f4e489f551d1703bded1a8d22b4f350b472634308398474c773",
+          "created_at_utc": "2026-09-25T00:00:00.000Z",
+          "updated_at_utc": "2026-09-25T00:00:00.000Z",
+          "committed_at_utc": "2026-09-25T00:00:00.000Z"
+        }
+      ],
+      "snapshot": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\final.sqlite",
+      "snapshotSha256": "df2ab2e85f84a6de18f5b023dd36697109bb7a7cde3f9d93cb38d2754a3473db",
+      "preservationAllUnchanged": true,
+      "sourceIdentity": {
+        "git": {
+          "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+          "dirty": true,
+          "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+        },
+        "experiment": {
+          "schema": "companion-continuity-real-v1",
+          "runId": "cc-qwen-long-r3-20260907",
+          "group": "A2",
+          "publicSha256": "0b3ca233b58242273c619c1013938b2aa0d1b13ddd937888de993586cffcc585",
+          "oracleSha256": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4",
+          "scenarioVersion": "companion-continuity-real-v1-proposal",
+          "characterInputSha256": "b188fca8cc7498168bd1d926909da9cac6ac9450bad07591ed0033a5339fba1f",
+          "maxTurns": 120,
+          "budget": {
+            "maxPhysicalRequests": 240,
+            "maxReservedTokenUnits": 16000000
+          },
+          "baselineSource": null,
+          "scheduler": false,
+          "transport": "TCP-loopback",
+          "restart": "exit-and-resume-at-turn-64",
+          "timezone": "Asia/Tokyo",
+          "node": "v24.16.0"
+        },
+        "configuration": {
+          "nodeEnv": "test",
+          "profile": "companion-continuity-real-v1",
+          "port": 3001,
+          "host": "127.0.0.1",
+          "webOrigin": "http://localhost:5173",
+          "selfHostedReverseProxy": false,
+          "serveWeb": false,
+          "webDistPath": "E:\\2026\\ChatPLUS\\apps\\web\\dist",
+          "databasePath": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\personasim.sqlite",
+          "clockMode": "fake",
+          "fakeClockStart": "2026-09-07T00:00:00.000Z",
+          "llm": {
+            "provider": "openai-compatible",
+            "profileName": "qwen",
+            "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "qwen3.8-flash",
+            "timeoutMs": 300000,
+            "maxRetries": 1,
+            "maxOutputTokens": 32768,
+            "capabilities": {
+              "structuredOutputMode": "json_object",
+              "supportsThinkingControl": false,
+              "supportsStreaming": false,
+              "reasoningEffort": "medium",
+              "reasoningRequestFormat": "openai_reasoning_effort",
+              "maxContextTokens": 1000000,
+              "maxOutputTokens": 32768
+            }
+          },
+          "conversationRetention": {
+            "fullVerbatimHours": 24,
+            "softTokenLimit": 8000,
+            "hardTokenLimit": 12000,
+            "minimumTailTokens": 3000,
+            "minimumRecentTurns": 12
+          },
+          "logLevel": "info",
+          "seedDemo": false,
+          "developerRoutes": true,
+          "chatEffectsMode": "gated",
+          "lifePlanningMode": "fuzzy",
+          "scheduleNegotiationMode": "off",
+          "selfInitiatedPlanningMode": "off",
+          "liveWorldEffectsMode": "enforced",
+          "memoryRecallMode": "enforced",
+          "autobiographyMode": "enforced",
+          "companionContextMode": "enforced",
+          "personaRuntimeMode": "enforced",
+          "correspondenceMode": "enforced",
+          "correspondenceExecution": "lazy",
+          "correspondenceTransitPolicy": "fixed_5d_v1",
+          "correspondenceGenerationLeaseMs": 1800000,
+          "correspondenceMaxOpenThreads": 1,
+          "keepsakeMode": "enforced",
+          "assetStoragePath": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\assets"
+        },
+        "publicHashMatches": true,
+        "oracleHashMatches": true,
+        "oraclePublicLinkMatches": true
+      },
+      "originalArtifactHashes": {
+        "attempts.jsonl": "e2f44c1d753c5bc8a721c72cb740f83f9da4d4b2dda9d1424ca4eab908b736f9",
+        "baseline-character.json": "801e152bd0960b3d94b7c1bf9a36bc31963bf692ee3fc569a55291e7efb9d440",
+        "baseline-manifest.json": "e369c16e6cdb448608868e07327a186b6ba6bec9e351d8c193faea70000e7ef8",
+        "checkpoint-evidence.jsonl": "a60f35a14a492c546817d1912aae7633f08e874e45f31b8aae20c0ed33a41fe5",
+        "feature-evidence.jsonl": "58270df3e34faf1e2b05bedc11fb809a10ff12323a49eb588d8e2c4d466026c4",
+        "generated-character.json": "ec22b91cc6ab08a723b2578bf8b7838ad72c75baa715acc1df4fa36e4bbd060c",
+        "http.jsonl": "40a065c1313c73fca4cc950ed09514f9e255f8f7c24aad22f959c52d70dae13b",
+        "input-journal.jsonl": "328f727e9c8263bc8ac2579f8e9d941c041892efc57f2a9026ac04a829ba3501",
+        "journal.json": "3742f901aa7d0f0a8156861dccd4c5dcb797d7bfc6ff384f91dbceb39f643419",
+        "manifest.json": "ee88979f2ea1e899f00a4e0152d2164fb72c48a4ca4f28d375125af888ae23fb",
+        "model-io.jsonl": "1386e60e5d308fb920063ed9cbbf5da55220b9a968fd7d83915b5ea886d0292b",
+        "oracle.private.json": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4",
+        "provider-metrics.jsonl": "952eaf508415423ed53d3dbc5a664ef6ccfa3a1c0fc0a8536249d74b32e089a7",
+        "public-scenario.json": "0b3ca233b58242273c619c1013938b2aa0d1b13ddd937888de993586cffcc585",
+        "retrieval-runs.jsonl": "8f7c4264c584f024397cffd31b07772c92a9c83b926615feb8fa8cd2f50cd50e",
+        "run-summary.json": "9c9f0b98f18edf8baca29faad60b46b607775dcaa89e9654a851d0b82628f9f1",
+        "turn-001.json": "bd0c15323af66de60b04b5769957e9c85963bf3e8e810d7e8616e6d453133b5d",
+        "turn-002.json": "3d2a5fe61472bcb47eaf7492dfb5c9d4086115234e748b1ff73cfa188616f8f3",
+        "turn-003.json": "718a85703e7399154f9cabad9c1ffe27701f2e8e6348bdc74527363c76a0a0bf",
+        "turn-004.json": "08658dcf70f57a3fbde3c8a48c862f288233bed7182b2789221c6acf5a42a9b9",
+        "turn-005.json": "0da64984168aa1f54a82b91209b287b5437d2daff2302b3333e5863fa56ba506",
+        "turn-006.json": "9903acea6dcd5d0c30046a4e5fe215545cdd84ab0969b172ba3e63626f3279fc",
+        "turn-007.json": "038de766303a9db9183a99b6847b093fbb927e6aa485c1e99de0d485fb08d004",
+        "turn-008.json": "9633372eefaa42796c355915aac27cd0de0f2908852e248e3d1de1b50da141d6",
+        "turn-009.json": "3a47102f073be1372a50ea10acd4d3efa63f6be42b4252167c3a0d427739520d",
+        "turn-010.json": "728ddaedf9f6cb4f808d6406c1f46b6ffd46424ca17c7b0f3809f72ab0ad3591",
+        "turn-011.json": "d2a5181867198d81cea441fd21fb160fe85f8e44a6add207d0268773f78ff8bc",
+        "turn-012.json": "6c93a307b9c9f46d121656fba134ba8bd3f999f30eb768ad154afdf929b1521f",
+        "turn-013.json": "74d1e5334a492b9738444b22299082283dda8ebedb0ef1cf68f4c229e87bfb33",
+        "turn-014.json": "b723693d903165847279916afc1fe2a7c4bdfdff37444cf85aa51b535b8b8b0c",
+        "turn-015.json": "5fbceb1d6797b93d934e6d15dc2e5b3b3f295e2d4732c64c8b66b88d1a8f8e23",
+        "turn-016.json": "a450cf7e85520baecd8e3f9a0796f58421a5208b2ad51c55203150cc88d05a63",
+        "turn-017.json": "7b6a7fde98a88e5a5ffc4d438f85927c019763d9cd38a654cd9cf31131b3eec5",
+        "turn-018.json": "fe502fceb23b84a5a8f45ee09c8b84777699e6031aae548158567da89afcaa06",
+        "turn-019.json": "04f95ef1c538e24aaf7b3d216bf14f3892b26991f1a09c07f232982c1eb0b56c",
+        "turn-020.json": "f6c45b603aee49d185c5f7e03dd202aea40f987d8b1982bb836fc690edd78d1a",
+        "turn-021.json": "42f075ad173b846d82663b015adc32f3b98b62b7296774ca8c28b579c80c35e0",
+        "turn-022.json": "ab779f414de7c9958ab46d95be863823a76209619e74add20d3459f96c62bae5",
+        "turn-023.json": "a35755b5b6a3c858f4a3fc04b405bd8b4ea5d9fd7aeb1e2a61fb19fcf49ffe79",
+        "turn-024.json": "27a9cb60e95bcccbc566337a43f1a2d5e709f128007dca58ad6bde2d6585ad10",
+        "turn-025.json": "3750297689daaf2e6a41f8f9f28db5674fee902c5ab80fd87a2997658e725380",
+        "turn-026.json": "a5d67198796c48a92c508a60d3baa6f0d9063a842539c72fa7d9b25087995a6d",
+        "turn-027.json": "84699b694caed25e184dd818e56ce9711993c7b8533de182fcd13c308c19cc03",
+        "turn-028.json": "72595c2046100b51e453da8a2d277d668e6745c037011032ba2ab0284c53c55c",
+        "turn-029.json": "b671aeb7edf70d25914bc36b06647b43ef171da0a19c0e407e912a2ca5ab7f7f",
+        "turn-030.json": "11481f2d90a0599f5e9db031976f7f556c2668d625d1321b35d1974cadd62fd6",
+        "turn-031.json": "6f1a08c7865da59a59d4284f6e47c08f59d1866b193786af189d04aa6a07d675",
+        "turn-032.json": "03e6a9ee539e7e8659b886b69bf4ee92fb749ecbc75bfabb8264b4264133ac80",
+        "turn-033.json": "e95afc262b400c3355c33964f37ee34b4321d752390d7b29208bd9a7e4a6be77",
+        "turn-034.json": "b3ce9161d8316281398f7e074775c66b6acb0cdb8fd2c0a7dcad32f80a201b37",
+        "turn-035.json": "3a430d8f9b6df33b4d04b5ba33099173e2b93f924b3cf9da5b02bc9044f35242",
+        "turn-036.json": "155d089c0625cb98f829c8661ef99f617d435f191da744a1cfe6a34b4a138e2d",
+        "turn-037.json": "a1398d1676a87e9fc8acccc8de65d8865eeb1d99f7e46a3aeac3069c94c2506f",
+        "turn-038.json": "abc3719c46e1eef28127f2e84a8538ab15bc3b906a6d9be7ab4be975a9b64426",
+        "turn-039.json": "55d0ea66013d3b680eb734e68183fd1d3fb9602fdfde2126e6b40a479d03f81f",
+        "turn-040.json": "19a7385e912dfd712271e2e67550f3e58e9b8b262d6541baec381432ebfb4b53",
+        "turn-041.json": "688717462d21e2d9f6b50aeca52b5af3880de84cf235d718f467954c7ec9887f",
+        "turn-042.json": "403c05ad8f1c3a6ddb4b04f17099d29d5afbc00be460d25903cfe57e149520dd",
+        "turn-043.json": "5ae33b116ec792c1fa9c68b282f72e28fd948bfaf017d69af15e0472f12f8207",
+        "turn-044.json": "1d65c17167f922df3e16aefd0384d9e8194b48c8939377806c43fee53e373db0",
+        "turn-045.json": "265943a03b3d8732b5587a2c327a365509e16f9de5321cc3c42942dbdbf390af",
+        "turn-046.json": "456f61bb0d8fb65b0feb1e5b9af667c99e74f70107d4dba2f2a4d9211d85c1fa",
+        "turn-047.json": "08678afb0d968432b2e1cc114fcf334a3e8c39a7d6800afddf5ac9e623ea97d3",
+        "turn-048.json": "cf8f9162753b3f21729d32c8ab78fb2552bdca6167d522e5677d87c64e0208cb",
+        "turn-049.json": "58a2e1abc138e82afea052840ca0a3e553aec9cb44c7be3c20710deb68003734",
+        "turn-050.json": "2d0f13faab39cdc9c7ea0fba28eb9edb2f2425045578e1f81bd21b2d5721f3d4",
+        "turn-051.json": "4b154943cb249ba95efece0fd4f957dda8fae9f43935a15c631218c691496af8",
+        "turn-052.json": "9d6beb5efee7111550bc09372ebee1d16f7fec3cd74df38f8da14fd9c5bf5aaf",
+        "turn-053.json": "088347cb1c8031c6ad6c3185f2bf8b096b6844e74d03f551d884314d142d0477",
+        "turn-054.json": "04f2b5523bb44039aac5392e10047ebf497d36f23da47c5a132ec63ad19f578b",
+        "turn-055.json": "e2ddabdff8ccb2279985e95c2e443dde82f913959e27ee096b699f3f33c5b346",
+        "turn-056.json": "5a14488b7812234ffaa85c4933adfdcceaa43ea9d71ce54982984b9dc5da2853",
+        "turn-057.json": "d85f0b51cf215bb76f82da2b408f2236ba79b25c546cf84aaa768122264f1d5a",
+        "turn-058.json": "86fa2a5c3bd5eb90150df2e40a86b9cb28a56182352bdaf3783fd110c7798f29",
+        "turn-059.json": "0c47ddaad1dab92149ad5030055e432a2f4fc598fce1689c15f0d320d01cf154",
+        "turn-060.json": "e12190af0af908c72a5d678db7cc98b047490ae0d1af3ab8e5deace79f2c09be",
+        "turn-061.json": "e51f2f1246295e50ae03efa55903d7a32510b15bb0a29ef391da144404474e0e",
+        "turn-062.json": "6224d2fed5549d7a0bc5e0bbcfc6ec29d894e95739eece8e795a098ce9bb592e",
+        "turn-063.json": "f05615d2b3c481e0d101ef68f8fe45fd0a3d0cfbb8f18e6e35e128253f367aef",
+        "turn-064.json": "20012ab703a60dfe2fb8749f056138e5e85b7d06f74711d7c4722002280da319",
+        "turn-065.json": "a044e53ed25540cd2300879eb99efe4da97c6d232abe5527ac8055348296e0bc",
+        "turn-066.json": "d428b33c02e94de4a7d5c14bd5753d29363e9c6af99a4cedf1fed312142ff9f5",
+        "turn-067.json": "8750454cdaa9c7f2f191841b3fa97fba2823102299b069741df459f4ab872c78",
+        "turn-068.json": "4c390d539ef188c7b179a1e5f1997dfcd0fdcc15051b59894cbd9be1a2c3b58c",
+        "turn-069.json": "8a10f3d466af09ce7a28aff6710a55262a5c1bcda66035b4ca338f31817e6bb7",
+        "turn-070.json": "253c3d181be92494c492a38188fdd59023e895bb08f7e0e33ec6877e317644e3",
+        "turn-071.json": "913a003003d6cc7fbecf815f02325be657b9511a7089f5840597b35163f61923",
+        "turn-072.json": "c31615eb4935fa5f04dd02572331c88ba1fa5ce82cd05d5d33c36e2d2d0a4c68",
+        "turn-073.json": "09b8d091a2d929a228357d3878376562f02f113ef8c494d2e6afd7dfd5010edd",
+        "turn-074.json": "dc4e56feb13e2bab601be7e651a7e845a6c5d723f844f287d2d75d57d67a033c",
+        "turn-075.json": "65f590c20531c4eec920cd2068b969f80bc5a4883db815b828f26c393cf9e3af",
+        "turn-076.json": "0d61908326a1790528af7e1dc904501143166b450b1b6163aad7bc6f5a0d00ae",
+        "turn-077.json": "b09a84386cf645500dc00beabe7b254fefa8876b443c82b92c81dd005f347e68",
+        "turn-078.json": "982c10ab6a78a89c87bcfefa8726236a37ea83001a4f10a70a0387043314f54d",
+        "turn-079.json": "2e80a9d2d11b121a2261827f8ecd9bd6946d26bb343de32124b5d335547b4890",
+        "turn-080.json": "a904f4de9ec5c0d330e5994c78c39b8ea9d7684d7ab528967abe994bc4761be4",
+        "turn-081.json": "21aea6587c7e6ce0d2f5d0ead8bb53c883fd0e135064cbd6ad414bc0c5b5e3a8",
+        "turn-082.json": "b8c8c0b99ca601d24fa60028e769ffe9e773602e735c0a2b6c816f50c9c01d27",
+        "turn-083.json": "0c23128a8fe0dcec02074c4b07946a4a5916976ad30af3c3963eaafe950e7e01",
+        "turn-084.json": "51cf7f30e0d8bab360a583163de582db8096f9ee800ad37d76f3571e442edfae",
+        "turn-085.json": "9f3490253a8861d26327acc92aa735b987fadc0272f3c6af985754ce308a47d9",
+        "turn-086.json": "faf9c1e22a3d489f7b28fb4c3f901556cd90c4a4e1e903b28840a1cc10044cfe",
+        "turn-087.json": "11ef6c972a12f92afab4d0f3956e1cae8d1d5c1194f5f89634e810a3d2082329",
+        "turn-088.json": "11f7438c85bdc654b8b8d044b0a150b44d72068aabafbf816f9ff9fb3e4bbc12",
+        "turn-089.json": "8ced5e24b3b0d1521c5cc54d7e068919c8bf03ecf14e72619a6493de7ea6e682",
+        "turn-090.json": "1ec9d0e79bfa262fc82e91dffa508a825a4c84563b197a5f24595a9aa4e5efad",
+        "turn-091.json": "9c6bd7624a25242786c6180c71254b5ceaf8b4734bb8c4dd8802c5a41012293f",
+        "turn-092.json": "94d45f328693a6f1a1ee8422f57db17d50ec76e43b5a4c803791e08362774729",
+        "turn-093.json": "8cc4ec200e7f44eaa9f4879aaff39df8adeca7b7835b33e6b4b8d14405807759",
+        "turn-094.json": "7949ca51e29cfeb99e30231303ccf84b4f90697165fd513e4ace3a7db25fe4f1",
+        "turn-095.json": "d5c4379d14e947a6621496a0596a8653c06d492e82ac03c0109decc5c9ba73fc",
+        "turn-096.json": "017fac8fbb8d6d19f91f4cf980c2bfbe6041e93c8edd33c04f1251808cb4086c",
+        "turn-097.json": "3a9703bb43cc84061dc3079cf27e4622af0b0cc2d389cf43e8761b7a690ec021",
+        "turn-098.json": "208c7e1a070f3a82ab22eb507c896c060bb9193ecea4b9742424da195a217684",
+        "turn-099.json": "9c0c8fddab57b8759c5bd5e39e92fc35d898618582764511c02ded7361b92f0a",
+        "turn-100.json": "0bb54e8ba2d5eef64df5453110d33c65f41a00d0ef8dd58ee12120bedce0a2e2",
+        "turn-101.json": "8327832b17295fe0de9e139b4fb6822a2d95ec8c743245f00b06c806aa701e91",
+        "turn-102.json": "e6d0638eeaf5276b8032e76d15ee45da60536254cb46876a4d4125e601ed3680",
+        "turn-103.json": "0a145671ea025db2ce24afb0ea2ee1167aad55254ecee0920452ac1c268d1648",
+        "turn-104.json": "7cdf3aa7a3cf4ba556fc6caf0a47833923d4e505f9e8af12ec22306e8123bbbf",
+        "turn-105.json": "65b32e390e1897de9f8f91296006dafa9f7e9f2f6e7126cee0e381cb8a931a0e",
+        "turn-106.json": "63d879dfd12f4da65c73f4b7da4cd973a86f9ff942d251d4f6379e7b02204f32",
+        "turn-107.json": "7c310946f4cc821d0d849c36115b34b9e5dd066d75b89f557eb847ad70561a38",
+        "turn-108.json": "547be00394ca8a48f55d858f85eb2a183c8fadf59f22c7d2e05a1ddd7b6b52ad",
+        "turn-109.json": "bb6877a166918dc501ee14c105848d5c9fcbef8687c144a94d5b0fefd384776a",
+        "turn-110.json": "f3f53e5f6bbb120a7035cea339dfa7d05056b981543278cfbed3ff1f4dcbbbde",
+        "turn-111.json": "78ed5e28ee6e633cceb81b122497eb47d60eb425bb88eb9668639861c1d59011",
+        "turn-112.json": "2d8278297a433af31736ed8bbf6f82eb7ca121913833927cf48659a2932299a7",
+        "turn-113.json": "88af49b9bf35600deb9b7a0d49cf77b3c3a703ba999fd1558e6239082da538d5",
+        "turn-114.json": "4de3bc2d1de1ab90becd6f49081ee6cbcd22a5e5f127634584ea74ce6a58e62d",
+        "turn-115.json": "d920ca8dbd2f09d2efb67b18bbfd343be71ed15b1127e9ab333d1532c0cb8d5c",
+        "turn-116.json": "d4aba409d5add69a8c6279003956eef3ac47e315b1f3df294d56760b396c1f2e",
+        "turn-117.json": "0d434f60492a8103e8795fd2f8984d356c35e1e11cb540375611021992ef0e83",
+        "turn-118.json": "7c63ba5da5f761fdeb14a061d6d82ecd798db22d93b11a1cf47ab03c1b9ccf75",
+        "turn-119.json": "03a868b9efe3edf8436c333ae94264c79b58f32df95ff667ae36ce72a5dc69ec",
+        "turn-120.json": "c78d23eb3ca687aac2b982460725c0dd08ec7821fa18759e3f14bba32e8fafb1",
+        "turn-evidence.jsonl": "46136ddb55c04c53ee18f2e963f2cb25c8e46c7fc8e4269ea049e515cf887e88",
+        "final.sqlite": "df2ab2e85f84a6de18f5b023dd36697109bb7a7cde3f9d93cb38d2754a3473db"
+      }
+    }
+  ],
+  "totals": {
+    "dialogueTurns": 360,
+    "physicalRequests": 372,
+    "reservedTokenUnits": 19437795,
+    "budgetLimits": {
+      "maxPhysicalRequests": 720,
+      "maxReservedTokenUnits": 48000000
+    },
+    "usage": {
+      "prompt_tokens": 2244992,
+      "completion_tokens": 388642,
+      "total_tokens": 2633634,
+      "unknownUsageResponses": 0
+    }
+  }
+}

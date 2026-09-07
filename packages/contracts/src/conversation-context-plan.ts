@@ -1,0 +1,119 @@
+import { z } from "zod";
+
+import { EntityIdSchema } from "./primitives.js";
+
+export const CONVERSATION_CONTEXT_POLICY_VERSION = "continuity_context_v2";
+
+/** Retrieval and expression hints only; never a source of facts or authority. */
+export const ConversationContextPlanSchema = z
+  .object({
+    policyVersion: z.literal(CONVERSATION_CONTEXT_POLICY_VERSION),
+    originalQuery: z.string().min(1).max(20_000),
+    expandedQueries: z.array(z.string().min(1).max(1_200)).max(3),
+    contextMessageIds: z.array(EntityIdSchema).max(3),
+    unresolvedReferences: z.array(z.string().min(1).max(80)).max(8),
+    /** Retrieval targets only; never values or permission to mutate a fact. */
+    factQueryNeeds: z
+      .array(
+        z
+          .object({
+            subjectKey: z.string().min(1).max(200),
+            entity: z.string().min(1).max(80),
+            attribute: z.enum(["name", "identifier", "usual_drink"]),
+          })
+          .strict(),
+      )
+      .max(8)
+      .optional(),
+    intent: z.enum([
+      "sharing",
+      "venting",
+      "help",
+      "recollection",
+      "relationship_repair",
+      "casual",
+      "uncertain",
+    ]),
+    adviceRequested: z.boolean(),
+    detailedAnalysisRequested: z.boolean(),
+    supportStyle: z.enum([
+      "listen",
+      "respond_naturally",
+      "offer_requested_help",
+      "listen_then_help",
+    ]),
+    /** Optional for historical retrieval snapshots written before clause planning. */
+    helpTiming: z
+      .enum(["now", "after_user_finishes", "unspecified"])
+      .optional(),
+    requestPolicyVersion: z.literal("clause_requests_v1").optional(),
+    /** A response-load boundary; absent on older audit snapshots. */
+    advicePolicy: z
+      .enum(["requested", "none_now", "optional_light"])
+      .optional(),
+    advicePolicyVersion: z
+      .enum(["advice_load_v1", "advice_load_v2", "advice_load_v3"])
+      .optional(),
+    questionIntent: z
+      .enum(["none", "natural_optional", "necessary_for_explicit_task"])
+      .optional(),
+    questionIntentReason: z
+      .enum([
+        "closed_vent",
+        "clarified_third_party",
+        "explicit_clarification",
+        "ordinary",
+      ])
+      .optional(),
+    expressionContext: z
+      .object({
+        policyVersion: z.literal("turn_expression_v1"),
+        windowSize: z.literal(5),
+        repeatedOpenings: z
+          .array(
+            z
+              .object({
+                text: z.string().min(1).max(80),
+                count: z.number().int().min(2).max(5),
+              })
+              .strict(),
+          )
+          .max(5),
+        protectedPhrases: z.array(z.string().max(200)).max(24),
+        /** Bounded final dialogue for this turn only; never an unanswered-task queue. */
+        recentDialogue: z
+          .array(
+            z
+              .object({
+                role: z.enum(["user", "assistant"]),
+                text: z.string().min(1).max(1_200),
+              })
+              .strict(),
+          )
+          .max(6)
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    /** Topic eligibility is separate from unresolved retrieval candidates. */
+    resolvedCurrentTopic: z
+      .object({
+        text: z.string().max(20_000),
+        basis: z.enum([
+          "current_message",
+          "recent_user_continuity",
+          "unresolved",
+        ]),
+        sourceMessageIds: z.array(EntityIdSchema).max(1),
+        policyVersion: z.literal("scoped_topic_v1"),
+      })
+      .strict()
+      .optional(),
+    maxRecallEvidence: z.number().int().min(1).max(8),
+    maxExplicitMemories: z.number().int().min(0).max(8),
+    allowCharacterLifeMention: z.boolean(),
+  })
+  .strict();
+export type ConversationContextPlan = z.infer<
+  typeof ConversationContextPlanSchema
+>;

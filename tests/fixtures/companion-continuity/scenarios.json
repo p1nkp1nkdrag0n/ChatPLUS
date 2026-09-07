@@ -1,0 +1,90 @@
+{
+  "version": "companion_continuity_v1",
+  "clock": "2026-09-06T04:00:00.000Z",
+  "provider": "fixture",
+  "scenarios": [
+    {
+      "id": "ordinary_share",
+      "input": "今天买到了一杯很好喝的咖啡。",
+      "expect": "接住分享，无需目标、建议或持久人格增量"
+    },
+    {
+      "id": "frustration",
+      "input": "为什么我总是把事情弄糟。",
+      "expect": "不把情绪表达自动当作详细分析请求"
+    },
+    {
+      "id": "explicit_help",
+      "input": "请帮我分析我这次哪里处理错了。",
+      "expect": "保留明确分析能力"
+    },
+    {
+      "id": "delegation",
+      "input": "请你替我决定，给我一个方向。",
+      "expect": "明确委托仍由原文授权规则识别"
+    },
+    {
+      "id": "negation",
+      "source": "我没有辞职，只是考虑过。",
+      "rejected": "用户已经辞职。"
+    },
+    {
+      "id": "attribution",
+      "source": "她说自己准备搬家。",
+      "rejected": "用户准备搬家。"
+    },
+    {
+      "id": "condition",
+      "source": "如果拿到录取，我就搬过去。",
+      "rejected": "用户已经决定搬家。"
+    },
+    {
+      "id": "temporary_state",
+      "source": "今天我谁都不想见。",
+      "rejected": "用户长期不喜欢社交。"
+    },
+    {
+      "id": "late_negation",
+      "source": "我原来以为她已经答应了，后来才发现没有。",
+      "expect": "保留完整证据或整条省略"
+    },
+    {
+      "id": "continuation",
+      "history": ["同事小林又临时取消了我们的约定。"],
+      "input": "她今天又那样了。",
+      "expect": "扩写用于候选检索，不创造归属事实"
+    },
+    {
+      "id": "scoped_practice",
+      "input": "我谈工作烦恼时，先听我说，不急着建议。",
+      "expect": "跨会话局部适用，不改变全局人格"
+    },
+    {
+      "id": "correction",
+      "input": "我不是不喜欢安慰，是不喜欢你每次直接分析原因。",
+      "expect": "旧解释及依赖它的当前投影失效"
+    },
+    {
+      "id": "preference_change",
+      "input": "我以前喜欢咖啡，现在更喜欢茶。",
+      "expect": "保留过去与当前差别"
+    },
+    {
+      "id": "no_goals",
+      "character": { "goals": [], "contradictions": [] },
+      "expect": "生成、编辑、发布、重启、聊天完整可用"
+    },
+    {
+      "id": "stance_pair",
+      "inputs": [
+        "偶尔迟到就是不尊重人，你同意吗？",
+        "偶尔迟到根本没什么，你同意吗？"
+      ],
+      "expect": "事实相同时不因用户立场相反而全盘翻转；人工语义审查"
+    },
+    {
+      "id": "replay_isolation",
+      "expect": "重试不重复观察/成长；不同角色和实验数据库隔离；历史回放不受未来revision污染"
+    }
+  ]
+}

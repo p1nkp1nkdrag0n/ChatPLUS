@@ -9,6 +9,7 @@ import type {
   MemoryRecallQuery,
   MemoryRecallResult,
   MemoryStability,
+  MemoryClaim,
   RetrievedMemoryEvidence,
   RetrievalScoreBreakdown,
   TemporalMetadata,
@@ -22,6 +23,11 @@ import {
 } from "@personasim/contracts";
 
 import { clamp, normalizeText, stableId } from "./shared.js";
+import {
+  deriveFactQueryNeeds,
+  extractExplicitCurrentFactProjections,
+  isFactHistoryQuery,
+} from "./current-fact-projection.js";
 
 export interface RecallableMemory {
   id: string;
@@ -46,6 +52,7 @@ export interface RecallableMemory {
   sourceMessageIds?: readonly string[] | undefined;
   sourceActivityEventIds?: readonly string[] | undefined;
   evidence?: readonly MemoryEvidence[] | undefined;
+  claim?: MemoryClaim | undefined;
 }
 
 export interface MemoryRecallInput {
@@ -491,6 +498,8 @@ function attributionFor(
 
 function resolve(input: MemoryRecallInput): {
   query: string;
+  candidateQueries: readonly string[];
+  evidenceLimit: number;
   namespaces: readonly MemoryNamespace[] | undefined;
   range: TemporalQueryRange | undefined;
   threshold: number;
@@ -498,6 +507,8 @@ function resolve(input: MemoryRecallInput): {
   if (typeof input.query === "string") {
     return {
       query: input.query.trim(),
+      candidateQueries: [input.query.trim()],
+      evidenceLimit: 3,
       namespaces: input.namespaceFilters,
       range: input.temporalRange,
       threshold: clamp(input.minimumScore ?? DEFAULT_MINIMUM_SCORE),
@@ -505,12 +516,21 @@ function resolve(input: MemoryRecallInput): {
   }
   return {
     query: input.query.query,
+    candidateQueries: recallCandidateQueries(input.query),
+    evidenceLimit: input.query.contextPlan?.maxRecallEvidence ?? 3,
     namespaces: input.namespaceFilters ?? input.query.namespaces,
     range: input.temporalRange ?? input.query.timeRange,
     threshold: clamp(
       input.minimumScore ?? input.query.minimumScore ?? DEFAULT_MINIMUM_SCORE,
     ),
   };
+}
+
+/** Candidate discovery only. Consumers must use query.query for intent, time and authority. */
+export function recallCandidateQueries(query: MemoryRecallQuery): string[] {
+  return [
+    ...new Set([query.query, ...(query.contextPlan?.expandedQueries ?? [])]),
+  ];
 }
 
 function abstain(reason: string, score = 0): MemoryRecallResult {
@@ -554,28 +574,58 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
 
   let evidenceCount = 0;
   const candidates: ScoredCandidate[] = [];
+  const factNeeds =
+    typeof input.query === "string"
+      ? deriveFactQueryNeeds(query.query)
+      : (input.query.contextPlan?.factQueryNeeds ??
+        deriveFactQueryNeeds(query.query));
   for (const memory of temporalMatched) {
     const formal = evidenceFor(memory, input.evidence ?? []);
     if (formal.length === 0) continue;
     evidenceCount += 1;
     const chosen = [...formal].sort((left, right) => {
-      const leftScore = lexicalScore(
-        left.quote ?? left.contextSummary ?? "",
-        query.query,
+      const leftScore = Math.max(
+        ...query.candidateQueries.map((text) =>
+          lexicalScore(left.quote ?? left.contextSummary ?? "", text),
+        ),
       );
-      const rightScore = lexicalScore(
-        right.quote ?? right.contextSummary ?? "",
-        query.query,
+      const rightScore = Math.max(
+        ...query.candidateQueries.map((text) =>
+          lexicalScore(right.quote ?? right.contextSummary ?? "", text),
+        ),
       );
       return rightScore - leftScore || left.id.localeCompare(right.id);
     })[0];
     if (chosen === undefined) continue;
+    const verifiedProjection =
+      memory.namespace === "user_model" &&
+      memory.attribution === "user_explicit" &&
+      memory.certainty === "explicit" &&
+      chosen.sourceType === "message"
+        ? extractExplicitCurrentFactProjections(chosen.quote ?? "").find(
+            (fact) =>
+              fact.content === memory.content &&
+              fact.subjectKey === memory.claim?.subjectKey &&
+              factNeeds.some((need) => need.subjectKey === fact.subjectKey),
+          )
+        : undefined;
+    const projection = isFactHistoryQuery(query.query)
+      ? undefined
+      : verifiedProjection;
 
     const lexical = Math.max(
-      lexicalScore(memory.content, query.query),
-      lexicalScore(chosen.quote ?? chosen.contextSummary ?? "", query.query),
+      verifiedProjection === undefined ? 0 : 1,
+      ...query.candidateQueries.map((text) =>
+        Math.max(
+          lexicalScore(memory.content, text),
+          lexicalScore(chosen.quote ?? chosen.contextSummary ?? "", text),
+        ),
+      ),
     );
-    const tag = tagScore(memory.tags, query.query);
+    const tag = Math.max(
+      verifiedProjection === undefined ? 0 : 1,
+      ...query.candidateQueries.map((text) => tagScore(memory.tags, text)),
+    );
     if (lexical === 0 && tag === 0 && query.range === undefined) continue;
 
     const breakdown: RetrievalScoreBreakdown = {
@@ -605,6 +655,15 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       retrieved: {
         memoryId: memory.id,
         memoryContent: memory.content,
+        ...(projection === undefined
+          ? {}
+          : {
+              currentFact: {
+                entity: projection.entity,
+                attribute: projection.attribute,
+                value: projection.value,
+              },
+            }),
         memoryKind: memory.kind,
         namespace: memoryNamespace(memory),
         certainty: certaintyFor(memory),
@@ -627,7 +686,13 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
   const bestScore = candidates[0]?.retrieved.score ?? 0;
   const selected = candidates
     .filter((candidate) => candidate.retrieved.score >= query.threshold)
-    .slice(0, Math.min(3, Math.max(1, input.maxEvidence ?? 3)));
+    .slice(
+      0,
+      Math.min(
+        query.evidenceLimit,
+        Math.max(1, input.maxEvidence ?? query.evidenceLimit),
+      ),
+    );
   if (selected.length === 0) {
     return abstain("below_relevance_threshold", bestScore);
   }
@@ -639,6 +704,25 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
     generatedAtUtc: input.nowUtc,
     score: evidence[0]?.score ?? 0,
     evidence,
+    ...(factNeeds.length === 0
+      ? {}
+      : {
+          factCoverage: factNeeds.map((need) => ({
+            entity: need.entity,
+            attribute: need.attribute,
+            covered: selected.some((candidate) => {
+              const projected = candidate.retrieved.currentFact;
+              return (
+                (projected?.entity === need.entity &&
+                  projected.attribute === need.attribute) ||
+                (isFactHistoryQuery(query.query) &&
+                  extractExplicitCurrentFactProjections(
+                    candidate.retrieved.memoryContent,
+                  ).some((fact) => fact.subjectKey === need.subjectKey))
+              );
+            }),
+          })),
+        }),
   });
   return MemoryRecallResultSchema.parse({
     mode: bundle.mode,

@@ -8,14 +8,38 @@ import type {
 } from "@personasim/contracts";
 import {
   boundedRecallHanBigrams,
+  buildAutobiographyProjection,
   boundedRecallQueryTokens,
   recallExactIdentifiers,
 } from "@personasim/features";
 
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import type { DatabaseStore } from "../db/store.js";
 
 type SqlRow = Record<string, unknown>;
 const HAN_BIGRAM_LIMIT = 64;
+
+// Expiration changes with the request clock, without a SQL UPDATE to invalidate
+// projections. Exclude expired or turn-suppressed roots before LIMIT so they
+// cannot crowd out valid results or create a false safety-scan saturation signal.
+const EVENT_CARD_CURRENT_ROOTS_SQL = `NOT EXISTS (
+  SELECT 1 FROM memory_derivation_dependencies dependency
+  JOIN memories memory ON memory.id = dependency.source_id
+    AND memory.agent_id = dependency.agent_id
+  WHERE dependency.agent_id = cards.agent_id
+    AND dependency.derived_type = 'event_card'
+    AND dependency.derived_id = cards.id
+    AND dependency.source_type = 'memory'
+    AND (memory.valid_until_utc <= ? OR memory.id IN (SELECT value FROM json_each(?)))
+)`;
+
+const ARCHIVE_UNSUPPRESSED_ROOTS_SQL = `NOT EXISTS (
+  SELECT 1 FROM memory_evidence evidence
+  JOIN memories memory ON memory.id = evidence.memory_id
+  WHERE memory.agent_id = archive.agent_id AND evidence.source_type = 'message'
+    AND evidence.source_id = archive.id
+    AND memory.id IN (SELECT value FROM json_each(?))
+)`;
 
 export interface ArchivedMessage {
   id: string;
@@ -101,6 +125,7 @@ export class ContinuityRepository {
     agentId: string;
     query: string;
     limit?: number;
+    suppressedMemoryIds?: readonly string[];
   }): ArchivedMessage[] {
     const limit = boundedLimit(input.limit, 20);
     const match = ftsMatch(input.query);
@@ -115,10 +140,16 @@ export class ContinuityRepository {
                  JOIN message_archive AS archive ON archive.rowid = fts.rowid
                  JOIN messages ON messages.id = archive.id
                  WHERE archive.agent_id = ? AND message_archive_fts MATCH ?
+                   AND ${ARCHIVE_UNSUPPRESSED_ROOTS_SQL}
                  ORDER BY bm25(message_archive_fts), archive.source_created_at_utc DESC
                  LIMIT ?`,
               )
-              .all(input.agentId, match, limit) as SqlRow[]
+              .all(
+                input.agentId,
+                match,
+                JSON.stringify(input.suppressedMemoryIds ?? []),
+                limit,
+              ) as SqlRow[]
           ).map(mapArchivedMessage);
     const hanTerms = boundedRecallHanBigrams(input.query, HAN_BIGRAM_LIMIT);
     const tailHanAnchor = singleHanTailAnchor(input.query);
@@ -144,6 +175,7 @@ export class ContinuityRepository {
                  FROM message_archive AS archive
                  JOIN messages ON messages.id = archive.id
                  WHERE archive.agent_id = ?
+                   AND ${ARCHIVE_UNSUPPRESSED_ROOTS_SQL}
                    AND (
                      (
                        SELECT COUNT(*) FROM han_terms
@@ -162,6 +194,7 @@ export class ContinuityRepository {
                 JSON.stringify(hanTerms),
                 tailHanAnchor ?? "",
                 input.agentId,
+                JSON.stringify(input.suppressedMemoryIds ?? []),
                 Math.min(2, hanTerms.length),
                 limit,
               ) as SqlRow[]
@@ -440,7 +473,14 @@ export class ContinuityRepository {
     );
   }
 
-  getLatestAutobiography(agentId: string): AutobiographyBundle | undefined {
+  getLatestAutobiography(
+    agentId: string,
+    options: {
+      includeInvalidated?: boolean;
+      nowUtc?: string;
+      suppressedMemoryIds?: readonly string[];
+    } = {},
+  ): AutobiographyBundle | undefined {
     const row = this.store.database
       .prepare(
         `SELECT * FROM autobiography_snapshots
@@ -457,10 +497,48 @@ export class ContinuityRepository {
         )
         .all(snapshot.id) as SqlRow[]
     ).map(mapAutobiographyEntry);
-    return { snapshot, entries };
+    if (options.includeInvalidated) return { snapshot, entries };
+    const validity = new MemoryValidityRepository(this.store);
+    const suppressed = new Set(options.suppressedMemoryIds ?? []);
+    const validEntries = entries.filter(
+      (entry) =>
+        validity.isDerivedCurrent(
+          agentId,
+          "autobiography_entry",
+          entry.id,
+          options.nowUtc,
+        ) &&
+        !validity
+          .dependencies(agentId, "autobiography_entry", entry.id)
+          .some(
+            (source) =>
+              source.sourceType === "memory" && suppressed.has(source.sourceId),
+          ),
+    );
+    if (validEntries.length === entries.length) return { snapshot, entries };
+    if (validEntries.length === 0) return undefined;
+    const projection = buildAutobiographyProjection({
+      proposal: {
+        entries: validEntries,
+        summaryFirstPerson: validEntries
+          .map((entry) => entry.content)
+          .join("\n"),
+      },
+      validation: {
+        accepted: true,
+        issues: [],
+        sourceEvidenceIds: [
+          ...new Set(validEntries.flatMap((entry) => entry.sourceEvidenceIds)),
+        ],
+      },
+    })!;
+    return { snapshot: { ...snapshot, ...projection }, entries: validEntries };
   }
 
-  insertAutobiography(bundle: AutobiographyBundle): void {
+  insertAutobiography(
+    bundle: AutobiographyBundle,
+    nowUtc = bundle.snapshot.createdAtUtc,
+  ): void {
     const { snapshot } = bundle;
     this.store.database
       .prepare(
@@ -498,7 +576,22 @@ export class ContinuityRepository {
         evidence_json, created_at_utc
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    const validity = new MemoryValidityRepository(this.store);
     for (const entry of bundle.entries) {
+      if (
+        !validity.registerDependencies({
+          agentId: entry.agentId,
+          derivedType: "autobiography_entry",
+          derivedId: entry.id,
+          sources: validity.sourcesForEvidence(
+            entry.agentId,
+            entry.evidence,
+            entry.content,
+          ),
+          nowUtc,
+        })
+      )
+        throw new Error("Autobiography source changed before persistence.");
       statement.run(
         entry.id,
         entry.snapshotId,
@@ -516,7 +609,7 @@ export class ContinuityRepository {
     }
   }
 
-  upsertEventCards(cards: readonly EventCard[]): number {
+  upsertEventCards(cards: readonly EventCard[], nowUtc?: string): number {
     const statement = this.store.database.prepare(
       `INSERT INTO event_cards(
         id, agent_id, session_id, checkpoint_id, card_kind, source_kind,
@@ -560,7 +653,69 @@ export class ContinuityRepository {
       WHERE event_cards.agent_id = excluded.agent_id`,
     );
     let changed = 0;
+    const validity = new MemoryValidityRepository(this.store);
     for (const card of cards) {
+      const validationNowUtc = nowUtc ?? card.updatedAtUtc;
+      const sources = validity.sourcesForEvidence(
+        card.agentId,
+        card.evidence,
+        card.summary,
+      );
+      if (sources.length === 0) continue;
+      const directSource =
+        card.sourceKind === "memory"
+          ? validity.readSource(
+              card.agentId,
+              "memory",
+              card.sourceId,
+              validationNowUtc,
+            )
+          : undefined;
+      if (card.sourceKind === "memory" && directSource === undefined) continue;
+      if (
+        directSource !== undefined &&
+        !sources.some(
+          (source) =>
+            source.sourceType === directSource.sourceType &&
+            source.sourceId === directSource.sourceId,
+        )
+      )
+        sources.push(directSource);
+      if (card.sourceKind === "autobiography_entry") {
+        if (
+          !validity.isDerivedCurrent(
+            card.agentId,
+            "autobiography_entry",
+            card.sourceId,
+            validationNowUtc,
+          )
+        )
+          continue;
+        for (const source of validity.dependencies(
+          card.agentId,
+          "autobiography_entry",
+          card.sourceId,
+        )) {
+          if (
+            !sources.some(
+              (item) =>
+                item.sourceType === source.sourceType &&
+                item.sourceId === source.sourceId,
+            )
+          )
+            sources.push(source);
+        }
+      }
+      if (
+        !validity.registerDependencies({
+          agentId: card.agentId,
+          derivedType: "event_card",
+          derivedId: card.id,
+          sources,
+          nowUtc: validationNowUtc,
+        })
+      )
+        continue;
       const temporal = card.temporalMetadata;
       changed += statement.run(
         card.id,
@@ -602,6 +757,8 @@ export class ContinuityRepository {
     agentId: string;
     query: string;
     limit?: number;
+    nowUtc?: string;
+    suppressedMemoryIds?: readonly string[];
   }): EventCard[] {
     const limit = boundedLimit(input.limit, 20);
     const match = ftsMatch(input.query);
@@ -616,11 +773,18 @@ export class ContinuityRepository {
                  JOIN event_cards AS cards ON cards.rowid = fts.rowid
                  WHERE cards.agent_id = ? AND cards.status = 'active'
                    AND event_cards_fts MATCH ?
+                   AND ${EVENT_CARD_CURRENT_ROOTS_SQL}
                  ORDER BY bm25(event_cards_fts), cards.importance DESC,
                    cards.recorded_at_utc DESC
                  LIMIT ?`,
               )
-              .all(input.agentId, match, limit) as Array<{
+              .all(
+                input.agentId,
+                match,
+                input.nowUtc ?? null,
+                JSON.stringify(input.suppressedMemoryIds ?? []),
+                limit,
+              ) as Array<{
               card_json: string;
             }>
           ).map((row) => JSON.parse(row.card_json) as EventCard);
@@ -654,6 +818,7 @@ export class ContinuityRepository {
                    ) AS han_score
                  FROM event_cards AS cards
                  WHERE cards.agent_id = ? AND cards.status = 'active'
+                   AND ${EVENT_CARD_CURRENT_ROOTS_SQL}
                    AND (
                      (
                        SELECT COUNT(*) FROM han_terms
@@ -679,11 +844,26 @@ export class ContinuityRepository {
                 JSON.stringify(hanTerms),
                 tailHanAnchor ?? "",
                 input.agentId,
+                input.nowUtc ?? null,
+                JSON.stringify(input.suppressedMemoryIds ?? []),
                 Math.min(2, hanTerms.length),
                 limit,
               ) as Array<{ card_json: string }>
           ).map((row) => JSON.parse(row.card_json) as EventCard);
-    return mergeSearchMatches(input.query, hanMatches, ftsMatches, limit);
+    const validity = new MemoryValidityRepository(this.store);
+    const isCurrent = (card: EventCard) =>
+      validity.isDerivedCurrent(
+        input.agentId,
+        "event_card",
+        card.id,
+        input.nowUtc,
+      );
+    return mergeSearchMatches(
+      input.query,
+      hanMatches.filter(isCurrent),
+      ftsMatches.filter(isCurrent),
+      limit,
+    );
   }
 
   /**
@@ -696,6 +876,8 @@ export class ContinuityRepository {
     agentId: string;
     searchTerms: readonly string[];
     scanLimit: number;
+    nowUtc?: string;
+    suppressedMemoryIds?: readonly string[];
   }): ExplicitFactEventCardScan {
     const scanLimit = Math.max(1, Math.min(500, Math.trunc(input.scanLimit)));
     const searchTerms = [
@@ -717,14 +899,17 @@ export class ContinuityRepository {
     const rows = this.store.database
       .prepare(
         `SELECT card_json
-         FROM event_cards
+         FROM event_cards AS cards
          WHERE agent_id = ? AND status = 'active'
+           AND ${EVENT_CARD_CURRENT_ROOTS_SQL}
            AND (${termClauses})
          ORDER BY importance DESC, recorded_at_utc DESC, id ASC
          LIMIT ?`,
       )
       .all(
         input.agentId,
+        input.nowUtc ?? null,
+        JSON.stringify(input.suppressedMemoryIds ?? []),
         ...searchTerms.flatMap((term) => [term, term, term]),
         scanLimit + 1,
       ) as Array<{ card_json: string }>;
@@ -733,21 +918,39 @@ export class ContinuityRepository {
     );
     const truncationWitness = parsedRows[scanLimit];
     return {
-      cards: parsedRows.slice(0, scanLimit),
+      cards: parsedRows
+        .slice(0, scanLimit)
+        .filter((card) =>
+          new MemoryValidityRepository(this.store).isDerivedCurrent(
+            input.agentId,
+            "event_card",
+            card.id,
+            input.nowUtc,
+          ),
+        ),
       truncated: truncationWitness !== undefined,
       scanLimit,
       ...(truncationWitness === undefined ? {} : { truncationWitness }),
     };
   }
 
-  replaceEventCards(agentId: string, cards: readonly EventCard[]): number {
+  replaceEventCards(
+    agentId: string,
+    cards: readonly EventCard[],
+    nowUtc?: string,
+  ): number {
     this.store.database
-      .prepare("DELETE FROM event_cards WHERE agent_id = ?")
+      .prepare(
+        "UPDATE event_cards SET status = 'archived', card_json = json_set(card_json, '$.status', 'archived') WHERE agent_id = ? AND status = 'active'",
+      )
       .run(agentId);
-    return this.upsertEventCards(cards);
+    return this.upsertEventCards(cards, nowUtc);
   }
 
-  listAutobiographyEntries(agentId: string): AutobiographyEntry[] {
+  listAutobiographyEntries(
+    agentId: string,
+    nowUtc?: string,
+  ): AutobiographyEntry[] {
     return (
       this.store.database
         .prepare(
@@ -755,7 +958,16 @@ export class ContinuityRepository {
            WHERE agent_id = ? ORDER BY created_at_utc, ordinal, rowid`,
         )
         .all(agentId) as SqlRow[]
-    ).map(mapAutobiographyEntry);
+    )
+      .map(mapAutobiographyEntry)
+      .filter((entry) =>
+        new MemoryValidityRepository(this.store).isDerivedCurrent(
+          agentId,
+          "autobiography_entry",
+          entry.id,
+          nowUtc,
+        ),
+      );
   }
 
   listActivitiesForIndex(agentId: string): Array<Record<string, unknown>> {

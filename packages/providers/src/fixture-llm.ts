@@ -65,7 +65,12 @@ function arrayStrings(
   return values.length > 0 ? values : [...fallback];
 }
 
-function originalInput(payload: JsonValue): OriginalCharacterInput {
+type LegacyOriginalFixtureInput = OriginalCharacterInput & {
+  coreContradiction: string;
+  mainGoal: string;
+};
+
+function originalInput(payload: JsonValue): LegacyOriginalFixtureInput {
   const root = asRecord(payload);
   const nested = asRecord(root.input ?? root);
   const providedTraits = arrayStrings(nested.coreTraits, [
@@ -141,7 +146,7 @@ function importedInput(payload: JsonValue): ImportedCharacterInput {
 }
 
 function makeDraft(
-  input: OriginalCharacterInput,
+  input: LegacyOriginalFixtureInput,
   origin: "user_spec" | "canon_extract",
   sourceLabel: string,
   sourceExcerpt?: string,
@@ -767,6 +772,7 @@ function letterReplyFixture(request: LLMRequest): JsonValue {
   const prompt = parseFixturePrompt(payload["prompt"]);
   const snapshotEvidence = asRecord(prompt["SNAPSHOT_EVIDENCE"] ?? {});
   const userLetter = asRecord(prompt["USER_LETTER"] ?? {});
+  const participants = asRecord(prompt["LETTER_PARTICIPANTS"] ?? {});
   const subject = stringValue(userLetter["subject"], "回信");
   const body = stringValue(userLetter["body"], "谢谢你的来信。")
     .trim()
@@ -792,13 +798,13 @@ function letterReplyFixture(request: LLMRequest): JsonValue {
       : allowedReferenceIds.slice(0, 2_000);
   return {
     subject: `回复：${subject}`.slice(0, 240),
-    salutation: "亲爱的朋友：",
+    salutation: stringValue(participants["salutation"], "亲爱的朋友："),
     paragraphs: [
-      `你的来信我已经认真读过。${body}`.slice(0, 4_000),
+      `你的来信我已经认真读过。你在信里写道：“${body}”`.slice(0, 4_000),
       "愿这封回信在路上替我陪你一程，也愿你近来一切安好。",
     ],
     closing: "顺颂安好",
-    signature: "回信人",
+    signature: stringValue(participants["signature"], "回信人"),
     referencedEvidenceIds,
   };
 }

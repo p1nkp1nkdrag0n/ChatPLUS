@@ -10,10 +10,15 @@ import {
   shouldDismissCareCue,
   type CareCueCandidateLike,
   type FollowUpCandidateLike,
+  type FollowUpGroundingRejectionCode,
 } from "@personasim/features";
 import type { Clock } from "@personasim/providers";
 
 import { createEntityId } from "../domain/id.js";
+import {
+  sourceTextHash,
+  type StoredContinuityGrounding,
+} from "./follow-up-repository.js";
 import type {
   FollowUpRepository,
   StoredCareCue,
@@ -27,7 +32,10 @@ export type CandidateServiceRejectionCode =
   | "invalid_source_role"
   | "missing_grounded_quote"
   | "unrelated_context"
-  | "ambiguous_timing";
+  | "ambiguous_timing"
+  | "follow_up_not_revalidatable"
+  | "source_needs_review"
+  | FollowUpGroundingRejectionCode;
 
 export type CreateFollowUpResult =
   | {
@@ -94,6 +102,11 @@ export class FollowUpService {
         "A system message cannot own a follow-up subject.",
       );
     }
+    if (!this.repository.isSourceEvidenceUsable(input.agentId, source.id))
+      return rejected(
+        "source_needs_review",
+        "The source has superseded or unreviewed memory evidence.",
+      );
 
     const nowUtc = this.clock.nowUtc();
     const normalized = normalizeFollowUpCandidate({
@@ -104,7 +117,19 @@ export class FollowUpService {
         role: source.role,
         text: source.text,
       },
-      nowUtc,
+      supportingMessages: this.repository
+        .getAdjacentTurnMessages(source)
+        .filter(
+          (message) =>
+            message.role !== "system" &&
+            this.repository.isSourceEvidenceUsable(input.agentId, message.id),
+        )
+        .map((message) => ({
+          id: message.id,
+          role: message.role as "user" | "assistant",
+          text: message.text,
+        })),
+      nowUtc: source.createdAtUtc,
       timezone: input.timezone,
     });
     if (!normalized.accepted) {
@@ -115,6 +140,14 @@ export class FollowUpService {
     }
 
     return this.repository.transaction(() => {
+      const sources = normalized.followUp.grounding.sourceMessageIds.map((id) =>
+        this.repository.getSourceMessage(id),
+      );
+      if (sources.some((message) => message === undefined))
+        return rejected(
+          "source_message_not_found",
+          "The verified source chain is no longer available.",
+        );
       const inserted = this.repository.insertFollowUp({
         id: createEntityId("followup"),
         agentId: input.agentId,
@@ -128,12 +161,128 @@ export class FollowUpService {
         expiresAtUtc: normalized.followUp.expiresAtUtc,
         dedupeKey: normalized.followUp.dedupeKey,
         createdAtUtc: nowUtc,
+        grounding: {
+          version: 1,
+          basis: normalized.followUp.grounding,
+          contextSummary: normalized.followUp.contextSummary,
+          guidance: normalized.followUp.expectedOutcomeDescription,
+          sources: sources.map((message) => ({
+            id: message!.id,
+            role: message!.role,
+            hash: sourceTextHash(message!.text),
+            sessionId: message!.sessionId,
+            createdAtUtc: message!.createdAtUtc,
+          })),
+        },
       });
       return {
         accepted: true,
         inserted: inserted.inserted,
         followUp: inserted.record,
       };
+    });
+  }
+
+  /** Restore one legacy pending record only after the same public semantic
+   * check used for new candidates. Relative dates use the original creation
+   * instant, so reviewing an old "tomorrow" never postpones it to tomorrow. */
+  revalidateFollowUp(input: {
+    agentId: string;
+    id: string;
+    timezone: string;
+  }): CreateFollowUpResult {
+    return this.repository.transaction(() => {
+      const record = this.repository.getFollowUp(input.id);
+      if (
+        record === undefined ||
+        record.agentId !== input.agentId ||
+        record.status !== "pending" ||
+        record.attemptCount !== 0 ||
+        record.sentMessageId !== undefined
+      ) {
+        return rejected(
+          "follow_up_not_revalidatable",
+          "Only an unsent pending record belonging to this agent can be reviewed.",
+        );
+      }
+      const source = this.repository.getSourceMessage(record.sourceMessageId);
+      if (source === undefined || source.agentId !== record.agentId)
+        return rejected(
+          "source_message_not_found",
+          "The record's original source is no longer available.",
+        );
+      if (source.role === "system")
+        return rejected(
+          "invalid_source_role",
+          "A system message cannot establish a follow-up basis.",
+        );
+      if (!this.repository.isSourceEvidenceUsable(input.agentId, source.id))
+        return rejected(
+          "source_needs_review",
+          "The source has superseded or unreviewed memory evidence.",
+        );
+      const normalized = normalizeFollowUpCandidate({
+        agentId: record.agentId,
+        sourceMessage: { id: source.id, role: source.role, text: source.text },
+        supportingMessages: this.repository
+          .getAdjacentTurnMessages(source)
+          .filter(
+            (message) =>
+              message.role !== "system" &&
+              this.repository.isSourceEvidenceUsable(input.agentId, message.id),
+          )
+          .map((message) => ({
+            id: message.id,
+            role: message.role as "user" | "assistant",
+            text: message.text,
+          })),
+        candidate: {
+          subjectType: record.subjectType,
+          contextSummary: source.text.slice(0, 1_000),
+          expectedOutcomeDescription: record.expectedOutcomeDescription,
+          timingHint: source.text.slice(0, 240),
+          evidenceQuotes: [source.text],
+          reasonCode: "legacy_evidence_review",
+          reasonSummary:
+            "Rebuild a pending record from its actual stored source.",
+        },
+        nowUtc: record.createdAtUtc,
+        timezone: input.timezone,
+      });
+      if (!normalized.accepted) return normalized;
+      const basis = normalized.followUp;
+      const sources = basis.grounding.sourceMessageIds.map((id) =>
+        this.repository.getSourceMessage(id)!,
+      );
+      const restored = this.repository.restoreFollowUpGrounding({
+        id: record.id,
+        expectedRevision: record.revision,
+        contextSummary: basis.contextSummary,
+        expectedOutcomeDescription: basis.expectedOutcomeDescription,
+        earliestAtUtc: basis.earliestAtUtc,
+        expiresAtUtc: basis.expiresAtUtc,
+        dedupeKey: basis.dedupeKey,
+        grounding: {
+          version: 1,
+          basis: basis.grounding,
+          contextSummary: basis.contextSummary,
+          guidance: basis.expectedOutcomeDescription,
+          sources: sources.map((message) => ({
+            id: message.id,
+            role: message.role,
+            hash: sourceTextHash(message.text),
+            sessionId: message.sessionId,
+            createdAtUtc: message.createdAtUtc,
+          })),
+        },
+        updatedAtUtc: this.clock.nowUtc(),
+      });
+      return restored === undefined
+        ? rejected(
+            "follow_up_not_revalidatable",
+            "The pending record is claimed, changed, or duplicates another verified follow-up.",
+          )
+        : { accepted: true, inserted: false, followUp: restored };
     });
   }
 
@@ -164,6 +313,11 @@ export class FollowUpService {
         "A care cue must be grounded in a user message.",
       );
     }
+    if (!this.repository.isSourceEvidenceUsable(input.agentId, source.id))
+      return rejected(
+        "source_needs_review",
+        "The source has superseded or unreviewed memory evidence.",
+      );
 
     const nowUtc = this.clock.nowUtc();
     const normalized = normalizeCareCue({
@@ -191,6 +345,24 @@ export class FollowUpService {
         maxMentions: normalized.careCue.maxMentions,
         dedupeKey: normalized.careCue.dedupeKey,
         createdAtUtc: nowUtc,
+        grounding: {
+          version: 1,
+          basis: {
+            basisKind: "user_context",
+            matter: normalized.careCue.contextSummary,
+          },
+          contextSummary: normalized.careCue.contextSummary,
+          guidance: normalized.careCue.mentionGuidance,
+          sources: [
+            {
+              id: source.id,
+              role: source.role,
+              hash: sourceTextHash(source.text),
+              sessionId: source.sessionId,
+              createdAtUtc: source.createdAtUtc,
+            },
+          ],
+        } satisfies StoredContinuityGrounding,
         ...(normalized.careCue.earliestAtUtc === undefined
           ? {}
           : { earliestAtUtc: normalized.careCue.earliestAtUtc }),
@@ -277,7 +449,9 @@ export class FollowUpService {
     return this.repository.transaction(() => {
       this.repository.expireCareCues(input.agentId, nowUtc);
       return selectRelevantCareCues({
-        cues: this.repository.listActiveCareCues(input.agentId),
+        cues: this.repository
+          .listActiveCareCues(input.agentId)
+          .filter((cue) => this.repository.isCareCueEvidenceCurrent(cue.id)),
         userText: input.userText,
         nowUtc,
         ...(input.limit === undefined ? {} : { limit: input.limit }),
@@ -307,6 +481,7 @@ export class FollowUpService {
         if (
           cue === undefined ||
           cue.agentId !== input.agentId ||
+          !this.repository.isCareCueEvidenceCurrent(cue.id) ||
           !didMentionCareCue(cue, message.text)
         ) {
           continue;
@@ -377,11 +552,7 @@ function normalizeCareCue(input: {
   const window =
     timingHint === undefined || timingHint === ""
       ? undefined
-      : resolveFollowUpWindow(
-          [timingHint, input.source.text].join(" "),
-          input.nowUtc,
-          input.timezone,
-        );
+      : resolveFollowUpWindow(input.source.text, input.nowUtc, input.timezone);
   if (timingHint !== undefined && timingHint !== "" && window === undefined) {
     return rejected(
       "ambiguous_timing",
@@ -389,8 +560,11 @@ function normalizeCareCue(input: {
     );
   }
 
-  const contextSummary = compactText(input.candidate.contextSummary, 1_000);
-  const mentionGuidance = compactText(input.candidate.mentionGuidance, 1_000);
+  // A related quote cannot endorse instructions that presume an unaccepted
+  // activity. Preserve user context and generate bounded guidance ourselves.
+  const contextSummary = compactText(input.source.text, 1_000);
+  const mentionGuidance =
+    "仅在相关语境中回应用户原话所述感受、事项或关心方式；不要假定用户采纳建议、已行动或已经成功，也不要安排新任务。";
   const ttlDays = clampInteger(input.ttlDays ?? 14, 1, 30);
   const maxMentions = clampInteger(input.maxMentions ?? 1, 1, 3);
   const expiryAnchor = window?.earliestAtUtc ?? input.nowUtc;

@@ -9,6 +9,8 @@ import {
   RuntimeStateSchema,
   UtcDateTimeSchema,
   type JsonValue,
+  type CharacterSpec,
+  type EffectivePersonaSnapshot,
   type Letter,
   type LetterGenerationContextV1,
   type LetterGenerationSnapshot,
@@ -22,6 +24,10 @@ import { DateTime } from "luxon";
 
 import type { Database } from "../db/connection.js";
 import type { DatabaseStore } from "../db/store.js";
+import {
+  CURRENT_PRESSURE_PROJECTION_SQL,
+  CURRENT_PRESSURE_INTERVENTION_SQL,
+} from "../repositories/life-repository.js";
 import { registerFuzzyLifeEffectiveAtSqlFunction } from "../domain/fuzzy-life-effective-time.js";
 import {
   CorrespondenceRepository,
@@ -134,6 +140,11 @@ export class CorrespondenceSnapshotService {
   constructor(
     private readonly store: DatabaseStore,
     budgets: Partial<CorrespondenceSnapshotBudgets> = {},
+    private readonly personaAtArrival?: (
+      baseSpec: CharacterSpec,
+      nowUtc: string,
+      topicText: string,
+    ) => EffectivePersonaSnapshot,
   ) {
     // The repository must share this exact connection so all correspondence
     // writes participate in the store.transaction below.
@@ -189,6 +200,7 @@ export class CorrespondenceSnapshotService {
           delivered,
           input.task.dueAtUtc,
           this.#budgets,
+          this.personaAtArrival,
         );
         snapshot = this.#repository.insertSnapshot({
           incomingLetterId: delivered.id,
@@ -254,6 +266,11 @@ function buildSnapshot(
   incoming: Readonly<Letter>,
   effectiveAtUtc: string,
   budgets: CorrespondenceSnapshotBudgets,
+  personaAtArrival?: (
+    baseSpec: CharacterSpec,
+    nowUtc: string,
+    topicText: string,
+  ) => EffectivePersonaSnapshot,
 ): SnapshotBuildResult {
   const dispatchedAtUtc = incoming.dispatchedAtUtc;
   const timezone = incoming.transitTimezone;
@@ -499,6 +516,15 @@ function buildSnapshot(
   const contextJson = LetterGenerationContextV1Schema.parse({
     schemaVersion: 1,
     effectiveAtUtc,
+    ...(personaAtArrival === undefined
+      ? {}
+      : {
+          effectivePersona: personaAtArrival(
+            character,
+            effectiveAtUtc,
+            incoming.body ?? "",
+          ),
+        }),
     sourceWindow: {
       fromUtc: dispatchedAtUtc,
       throughUtc: effectiveAtUtc,
@@ -784,6 +810,7 @@ function selectMutableCausalRows(
                       ${jsonColumn} AS recordJson
                  FROM ${table}
                 WHERE agent_id = ? AND effective_local_date <= ?
+                  ${table === "pressure_episodes" ? `AND ${CURRENT_PRESSURE_PROJECTION_SQL}` : ""}
                   AND julianday(recorded_at_utc) <= julianday(?)
                   AND julianday(updated_at_utc) <= julianday(?)
                   AND julianday(fuzzy_life_effective_at_utc(
@@ -837,6 +864,7 @@ function selectImmutableCausalRows(
                       ${jsonColumn} AS recordJson
                  FROM ${table}
                 WHERE agent_id = ? AND effective_local_date <= ?
+                  ${table === "support_interventions" ? `AND ${CURRENT_PRESSURE_INTERVENTION_SQL}` : ""}
                   AND julianday(recorded_at_utc) <= julianday(?)
                   AND julianday(fuzzy_life_effective_at_utc(
                         effective_local_date, effective_period,

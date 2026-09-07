@@ -26,6 +26,10 @@ import type {
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { TierLabel } from "../components/TierLabel";
 import { ensureUserEditSource } from "../components/character-editor/source";
+import {
+  AuthorityReview,
+  type AuthorityDecision,
+} from "../components/character-editor/AuthorityReview";
 import type { SelectedField } from "../components/character-editor/types";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
 import { formatLocalDateTime } from "../lib/date";
@@ -36,6 +40,7 @@ const TABS = [
   ["dialogue", "语言风格"],
   ["relationship", "关系"],
   ["knowledge", "知识与边界"],
+  ["authority", "约束来源"],
   ["life", "生活策略"],
   ["json", "高级 JSON"],
   ["versions", "版本历史"],
@@ -123,6 +128,20 @@ export default function CharacterEditorPage() {
     },
   });
 
+  const authorityMutation = useMutation({
+    mutationFn: (decision: AuthorityDecision) => {
+      if (!spec) throw new Error("角色尚未加载");
+      return api.characters.reviewAuthority(spec.id, spec.version, decision);
+    },
+    onSuccess: (result) => {
+      const value = unwrapCharacter(result);
+      setSpec(value);
+      setBaseline(value);
+      setJsonText(JSON.stringify(value, null, 2));
+      void queryClient.invalidateQueries({ queryKey: ["characters"] });
+    },
+  });
+
   const isDirty = useMemo(
     () =>
       Boolean(
@@ -193,9 +212,15 @@ export default function CharacterEditorPage() {
     }
   };
 
-  const busy = saveMutation.isPending || publishMutation.isPending;
+  const busy =
+    saveMutation.isPending ||
+    publishMutation.isPending ||
+    authorityMutation.isPending;
   return (
     <div className="editor-page">
+      {authorityMutation.isError ? (
+        <ErrorBlock error={authorityMutation.error} />
+      ) : null}
       <header className="editor-header">
         <div>
           <div className="editor-header__name">
@@ -251,6 +276,16 @@ export default function CharacterEditorPage() {
 
       <div className="editor-workspace">
         <section className="editor-canvas">
+          {tab === "authority" ? (
+            <>
+              {isDirty ? <p>请先保存当前编辑，再确认约束候选。</p> : null}
+              <AuthorityReview
+                spec={spec}
+                busy={busy || isDirty}
+                onDecide={(decision) => authorityMutation.mutate(decision)}
+              />
+            </>
+          ) : null}
           {tab === "identity" ? (
             <IdentityEditor
               spec={spec}
@@ -667,11 +702,15 @@ function PersonaEditor({
 
       <div className="rule-section">
         <div className="rule-section__header">
-          <h3>核心矛盾</h3>
+          <h3>目前的犹豫与张力</h3>
         </div>
+        {spec.persona.contradictions.length === 0 ? (
+          <p>目前没有设定矛盾。角色可以自然相处，不需要固定的内心冲突。</p>
+        ) : null}
         {spec.persona.contradictions.map((item, index) => (
           <div className="contradiction-row" key={item.id}>
             <textarea
+              aria-label={`张力 ${index + 1}`}
               rows={2}
               value={`${item.sideA} ↔ ${item.sideB}`}
               onFocus={() =>
@@ -694,6 +733,29 @@ function PersonaEditor({
                 });
               }}
             />
+            <button
+              className="text-button"
+              type="button"
+              aria-label={`删除张力 ${index + 1}`}
+              disabled={spec.lockedPaths.some(
+                (path) =>
+                  path === "persona.contradictions" ||
+                  path.startsWith("persona.contradictions."),
+              )}
+              onClick={() =>
+                onChange({
+                  ...spec,
+                  persona: {
+                    ...spec.persona,
+                    contradictions: spec.persona.contradictions.filter(
+                      (value) => value.id !== item.id,
+                    ),
+                  },
+                })
+              }
+            >
+              <Trash2 size={15} /> 删除
+            </button>
           </div>
         ))}
       </div>
@@ -701,18 +763,74 @@ function PersonaEditor({
       <div className="rule-section">
         <div className="rule-section__header">
           <h3>
-            人生目标 <span>({spec.persona.goals.length})</span>
+            目前在意/想做的事 <span>({spec.persona.goals.length})</span>
           </h3>
         </div>
+        {spec.persona.goals.length === 0 ? (
+          <p>目前没有明确目标。可以直接保存、发布，之后再补充新的关注点。</p>
+        ) : null}
         <div className="goal-list">
           {spec.persona.goals.map((goal, index) => (
             <div className="goal-row" key={goal.id}>
               <span>{index + 1}</span>
-              <strong>{goal.title}</strong>
+              <input
+                aria-label={`目标 ${index + 1} 名称`}
+                value={goal.title}
+                maxLength={160}
+                disabled={spec.lockedPaths.some(
+                  (path) =>
+                    path === "persona.goals" ||
+                    path === `persona.goals.${index}` ||
+                    path.startsWith(`persona.goals.${index}.`),
+                )}
+                onChange={(event) => {
+                  const editSource = ensureUserEditSource(spec);
+                  onChange({
+                    ...spec,
+                    sources: editSource.sources,
+                    persona: {
+                      ...spec.persona,
+                      goals: spec.persona.goals.map((value) =>
+                        value.id === goal.id
+                          ? {
+                              ...value,
+                              title: event.target.value,
+                              origin: "user_spec",
+                              sourceRefs: [editSource.id],
+                            }
+                          : value,
+                      ),
+                    },
+                  });
+                }}
+              />
               <div className="goal-row__priority">
                 <span style={{ width: `${goal.priority * 100}%` }} />
               </div>
               <p>{goal.description}</p>
+              <button
+                className="text-button"
+                type="button"
+                aria-label={`删除目标 ${index + 1}`}
+                disabled={spec.lockedPaths.some(
+                  (path) =>
+                    path === "persona.goals" ||
+                    path.startsWith("persona.goals."),
+                )}
+                onClick={() =>
+                  onChange({
+                    ...spec,
+                    persona: {
+                      ...spec.persona,
+                      goals: spec.persona.goals.filter(
+                        (value) => value.id !== goal.id,
+                      ),
+                    },
+                  })
+                }
+              >
+                <Trash2 size={15} /> 删除
+              </button>
             </div>
           ))}
         </div>

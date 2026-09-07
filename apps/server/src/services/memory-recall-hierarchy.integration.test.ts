@@ -11,6 +11,7 @@ import {
   SendMessageResponseSchema,
   type EventCard,
   type MemoryCandidate,
+  type Memory,
 } from "@personasim/contracts";
 import { resolveTemporalQuery } from "@personasim/features";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -87,7 +88,7 @@ describe("continuity memory recall hierarchy", () => {
         createdAtUtc: `2026-08-20T0${index + 1}:00:00.000Z`,
       });
       cards.push(
-        sharedEventCard({
+        sharedEventCard(app, {
           id: `event-card-shared-trail-${index}`,
           agentId: harness.agentId,
           messageId,
@@ -148,16 +149,45 @@ describe("continuity memory recall hierarchy", () => {
       timezone: "Asia/Shanghai",
     });
     app = harness.app;
-    const card = sharedEventCard({
+    const sourceSession = app.personasim.conversations.createSession(
+      harness.agentId,
+      "Original EventCard evidence",
+    );
+    insertUserMessage(app, {
+      id: "message-original-source",
+      sessionId: sourceSession.id,
+      agentId: harness.agentId,
+      content: "The missing-source lantern walk was a shared experience.",
+      createdAtUtc: "2026-08-20T01:00:00.000Z",
+    });
+    const card = sharedEventCard(app, {
       id: "event-card-missing-source",
       agentId: harness.agentId,
-      messageId: "message-missing-source",
+      messageId: "message-original-source",
       title: "Missing-source lantern walk",
       summary: "The missing-source lantern walk was a shared experience.",
       occurredAtUtc: "2026-08-20T01:00:00.000Z",
     });
     const continuity = new ContinuityRepository(app.personasim.store);
     expect(continuity.upsertEventCards([card])).toBe(1);
+    // Simulate a preexisting corrupt projection after a valid write. New writes
+    // reject missing sources; recall must also distrust corrupt stored evidence.
+    const corruptCard = EventCardSchema.parse({
+      ...card,
+      evidence: card.evidence.map((evidence) => ({
+        ...evidence,
+        sourceId: "message-missing-source",
+      })),
+    });
+    app.personasim.store.database
+      .prepare(
+        "UPDATE event_cards SET evidence_json = ?, card_json = ? WHERE id = ?",
+      )
+      .run(
+        JSON.stringify(corruptCard.evidence),
+        JSON.stringify(corruptCard),
+        card.id,
+      );
     expect(
       continuity.searchEventCards({
         agentId: harness.agentId,
@@ -368,7 +398,7 @@ describe("continuity memory recall hierarchy", () => {
       content: EXPLICIT_FACT_SOURCE_TEXT,
       createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
     });
-    const targets = validateMergeAndPersistMemories({
+    const targets = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -424,7 +454,7 @@ describe("continuity memory recall hierarchy", () => {
         "还有，别把我不爱甜茶写成什么人格象征。我只是喝不加糖的红茶，这个事实到这里就够了。",
       createdAtUtc: "2026-10-11T08:00:00.000Z",
     });
-    const [boundaryMemory] = validateMergeAndPersistMemories({
+    const [boundaryMemory] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -451,7 +481,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我周末去暗房前会核对灯具清单，只记录事实。",
       createdAtUtc: "2026-10-11T09:00:00.000Z",
     });
-    const [contextMemory] = validateMergeAndPersistMemories({
+    const [contextMemory] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -477,7 +507,7 @@ describe("continuity memory recall hierarchy", () => {
       content: EXPLICIT_FACT_QUERY,
       createdAtUtc: "2026-10-11T09:30:00.000Z",
     });
-    const [queryEchoMemory] = validateMergeAndPersistMemories({
+    const [queryEchoMemory] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -498,7 +528,7 @@ describe("continuity memory recall hierarchy", () => {
     }
     expect(
       new ContinuityRepository(app.personasim.store).upsertEventCards([
-        sharedEventCard({
+        sharedEventCard(app, {
           id: "event-card-explicit-fact-context-decoy",
           agentId: harness.agentId,
           messageId: contextSourceMessageId,
@@ -837,7 +867,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我的朋友喝不加糖的绿茶。",
       createdAtUtc: "2026-10-11T09:40:00.000Z",
     });
-    const friendTeaMemory = validateMergeAndPersistMemories({
+    const friendTeaMemory = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -882,7 +912,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我还是喝不加糖的咖啡。",
       createdAtUtc: "2026-10-11T09:45:00.000Z",
     });
-    const continuingCoffeeMemory = validateMergeAndPersistMemories({
+    const continuingCoffeeMemory = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -1477,7 +1507,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我喝不加糖的红茶，不喜欢甜的。",
       createdAtUtc: "2026-10-11T10:30:00.000Z",
     });
-    const [reinforcingTea] = validateMergeAndPersistMemories({
+    const [reinforcingTea] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -1521,7 +1551,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我喝加糖的红茶，喜欢甜的。",
       createdAtUtc: "2026-10-11T11:00:00.000Z",
     });
-    const [conflictingTea] = validateMergeAndPersistMemories({
+    const [conflictingTea] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -1641,7 +1671,7 @@ describe("continuity memory recall hierarchy", () => {
       content: sourceText,
       createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
     });
-    const factMemories = validateMergeAndPersistMemories({
+    const factMemories = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -1914,7 +1944,7 @@ describe("continuity memory recall hierarchy", () => {
       content: sourceText,
       createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
     });
-    const [factMemory] = validateMergeAndPersistMemories({
+    const [factMemory] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -1999,7 +2029,7 @@ describe("continuity memory recall hierarchy", () => {
     });
     expect(
       new ContinuityRepository(app.personasim.store).upsertEventCards([
-        sharedEventCard({
+        sharedEventCard(app, {
           id: "event-card-complete-explicit-facts",
           agentId: harness.agentId,
           messageId,
@@ -2009,7 +2039,7 @@ describe("continuity memory recall hierarchy", () => {
         }),
       ]),
     ).toBe(1);
-    const [consistentTeaMemory] = validateMergeAndPersistMemories({
+    const [consistentTeaMemory] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -2101,7 +2131,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我喝加糖的红茶，喜欢甜的。",
       createdAtUtc: "2026-10-11T12:30:00.000Z",
     });
-    const [conflictingTeaMemory] = validateMergeAndPersistMemories({
+    const [conflictingTeaMemory] = seedLegacyRecallFixtureMemories({
       store: app.personasim.store,
       agentId: harness.agentId,
       candidates: [
@@ -2197,7 +2227,7 @@ describe("continuity memory recall hierarchy", () => {
         recordedAtUtc: `2026-10-11T13:0${index}:00.000Z`,
       };
     });
-    const card = sharedEventCard({
+    const card = sharedEventCard(app, {
       id: "event-card-redundant-explicit-facts",
       agentId: harness.agentId,
       messageId: evidenceSources[0]!.messageId,
@@ -2266,7 +2296,7 @@ describe("continuity memory recall hierarchy", () => {
     });
     const summary =
       "用户喝不加糖的红茶。用户的钴蓝色铁盒标签写着“1998 / 潮声”。";
-    const splitCard = sharedEventCard({
+    const splitCard = sharedEventCard(app, {
       id: "event-card-split-explicit-facts",
       agentId: harness.agentId,
       messageId: teaMessageId,
@@ -2416,8 +2446,8 @@ describe("continuity memory recall hierarchy", () => {
       content: "我喝不加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
       createdAtUtc: "2026-10-11T13:03:00.000Z",
     });
-    const conflictingCard = sharedEventCard({
-      id: splitCard.id,
+    const conflictingCard = sharedEventCard(app, {
+      id: "event-card-conflicting-split-explicit-facts",
       agentId: harness.agentId,
       messageId: teaMessageId,
       title: "分源核对事实",
@@ -2438,7 +2468,7 @@ describe("continuity memory recall hierarchy", () => {
         },
       ],
     });
-    const cleanCard = sharedEventCard({
+    const cleanCard = sharedEventCard(app, {
       id: "event-card-clean-explicit-facts",
       agentId: harness.agentId,
       messageId: cleanMessageId,
@@ -2526,7 +2556,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我的钴蓝色铁盒标签写着“1998 / 潮声”。",
       createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
     });
-    const splitCard = sharedEventCard({
+    const splitCard = sharedEventCard(app, {
       id: "event-card-scan-coupling-split",
       agentId: harness.agentId,
       messageId: teaMessageId,
@@ -2695,7 +2725,7 @@ describe("continuity memory recall hierarchy", () => {
       content: "我喝加糖的红茶。我的钴蓝色铁盒标签写着“1998 / 潮声”。",
       createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
     });
-    const conflictingCard = sharedEventCard({
+    const conflictingCard = sharedEventCard(app, {
       id: "event-card-scan-coupling-conflict",
       agentId: harness.agentId,
       messageId: conflictingMessageId,
@@ -2972,7 +3002,7 @@ describe("continuity memory recall hierarchy", () => {
       createdAtUtc: "2026-10-11T14:00:00.000Z",
     });
     const cards = Array.from({ length: 501 }, (_unused, index) =>
-      sharedEventCard({
+      sharedEventCard(app, {
         id: `event-card-explicit-scan-${index.toString().padStart(3, "0")}`,
         agentId: harness.agentId,
         messageId,
@@ -3081,7 +3111,7 @@ describe("continuity memory recall hierarchy", () => {
       });
       expect(
         new ContinuityRepository(app.personasim.store).upsertEventCards([
-          sharedEventCard({
+          sharedEventCard(app, {
             id: `event-card-${item.id}`,
             agentId: harness.agentId,
             messageId,
@@ -3275,7 +3305,7 @@ describe("continuity memory recall hierarchy", () => {
       abstained: false,
     });
 
-    const card = sharedEventCard({
+    const card = sharedEventCard(app, {
       id: "event-card-yesterday-saffron",
       agentId: harness.agentId,
       messageId: "message-yesterday-saffron",
@@ -3478,7 +3508,7 @@ describe("continuity memory recall hierarchy", () => {
   });
 
   it("uses only reliable occurred EventCards as named anchors and preserves ambiguity", () => {
-    const occurred = sharedEventCard({
+    const occurred = sharedEventCard(app, {
       id: "event-card-trip-occurred",
       agentId: "agent-anchor",
       messageId: "message-anchor",
@@ -3486,7 +3516,7 @@ describe("continuity memory recall hierarchy", () => {
       summary: "The trip occurred.",
       occurredAtUtc: "2026-08-20T04:00:00.000Z",
     });
-    const planned = sharedEventCard({
+    const planned = sharedEventCard(app, {
       id: "event-card-trip-planned",
       agentId: "agent-anchor",
       messageId: "message-anchor",
@@ -3828,6 +3858,115 @@ function chatTurnModelCallCount(app: PersonaSimApp): number {
   ).length;
 }
 
+/**
+ * These isolated recall tests intentionally include old paraphrases, conflicting
+ * facts, and a friend-owned fact misattributed to the user. Seed those legacy or
+ * corrupt projections directly: the current write validator must reject them,
+ * while recall must still defend against databases created before that validator.
+ * Keep complete authoritative source text so recall cannot rely on cherry-picked
+ * snippets supplied with the old candidate.
+ */
+function seedLegacyRecallFixtureMemories(
+  input: Parameters<typeof validateMergeAndPersistMemories>[0],
+): Memory[] {
+  const source = input.store.database
+    .prepare(
+      "SELECT id, content FROM messages WHERE agent_id = ? AND id = ? AND role = 'user'",
+    )
+    .get(input.agentId, input.authoritativeMessageId) as
+    { id: string; content: string } | undefined;
+  if (source === undefined)
+    throw new Error("Legacy recall fixture needs a user source");
+  return input.store.database.transaction(() =>
+    input.candidates.slice(0, input.maxCandidates).map((candidate, index) => {
+      const id = `legacy-recall-${createHash("sha256")
+        .update(
+          JSON.stringify([input.agentId, source.id, candidate.content, index]),
+        )
+        .digest("hex")
+        .slice(0, 24)}`;
+      const memory = MemorySchema.parse({
+        id,
+        agentId: input.agentId,
+        kind: candidate.kind,
+        content: candidate.content,
+        importance: candidate.importance,
+        confidence: candidate.confidence,
+        tags: candidate.tags,
+        sourceMessageIds: [source.id],
+        sourceActivityEventIds: [],
+        origin: candidate.origin,
+        namespace: candidate.namespace,
+        certainty: candidate.certainty,
+        attribution: candidate.attribution,
+        stability: candidate.stability,
+        ...(candidate.claim === undefined ? {} : { claim: candidate.claim }),
+        temporalMetadata: candidate.temporalMetadata,
+        status: "active",
+        dedupeKey: id,
+        createdAtUtc: input.nowUtc,
+        updatedAtUtc: input.nowUtc,
+      });
+      input.store.database
+        .prepare(
+          `INSERT INTO memories(
+          id, agent_id, type, content, tags_json, importance, confidence,
+          source_message_id, created_at_utc, memory_json, namespace, certainty,
+          attribution, stability, status, claim_subject_key, claim_disposition,
+          mentioned_at_utc, recorded_at_utc, temporal_certainty, temporal_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          memory.id,
+          memory.agentId,
+          memory.kind,
+          memory.content,
+          JSON.stringify(memory.tags),
+          memory.importance,
+          memory.confidence,
+          source.id,
+          memory.createdAtUtc,
+          JSON.stringify(memory),
+          memory.namespace,
+          memory.certainty,
+          memory.attribution,
+          memory.stability,
+          memory.status,
+          memory.claim?.subjectKey ?? null,
+          memory.claim?.disposition ?? null,
+          memory.temporalMetadata?.mentionedAtUtc ?? null,
+          memory.temporalMetadata?.recordedAtUtc ?? input.nowUtc,
+          memory.temporalMetadata?.temporalCertainty ?? "unknown",
+          memory.temporalMetadata?.temporalStatus ?? "unknown",
+        );
+      const evidence = MemoryEvidenceSchema.parse({
+        id: `evidence-${id}`,
+        memoryId: id,
+        sourceType: "message",
+        sourceId: source.id,
+        quote: source.content,
+        recordedAtUtc: input.nowUtc,
+      });
+      input.store.database
+        .prepare(
+          `INSERT INTO memory_evidence(
+          id, memory_id, source_type, source_id, quote, recorded_at_utc, evidence_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          evidence.id,
+          memory.id,
+          evidence.sourceType,
+          source.id,
+          evidence.quote,
+          evidence.recordedAtUtc,
+          JSON.stringify(evidence),
+        );
+      return memory;
+    }),
+  )();
+}
+
 function explicitUserFact(
   content: string,
   tags: string[],
@@ -3871,21 +4010,24 @@ function explicitUserFact(
   });
 }
 
-function sharedEventCard(input: {
-  id: string;
-  agentId: string;
-  messageId: string;
-  title: string;
-  summary: string;
-  occurredAtUtc?: string;
-  plannedAtUtc?: string;
-  evidenceSources?: Array<{
+function sharedEventCard(
+  app: PersonaSimApp | undefined,
+  input: {
     id: string;
+    agentId: string;
     messageId: string;
-    quote: string;
-    recordedAtUtc: string;
-  }>;
-}): EventCard {
+    title: string;
+    summary: string;
+    occurredAtUtc?: string;
+    plannedAtUtc?: string;
+    evidenceSources?: Array<{
+      id: string;
+      messageId: string;
+      quote: string;
+      recordedAtUtc: string;
+    }>;
+  },
+): EventCard {
   const evidenceId = `evidence-${input.id}`;
   const recordedAtUtc =
     input.occurredAtUtc ?? input.plannedAtUtc ?? SHANGHAI_NOW;
@@ -3922,12 +4064,32 @@ function sharedEventCard(input: {
       recordedAtUtc,
     },
   ];
+  const sourceId = `source-${input.id}`;
+  // Use a real fixture event as the projection root. A fake memory id would now
+  // be rejected before recall; adding a backing memory would also contaminate
+  // the BasicMemory scan whose isolation and saturation these tests exercise.
+  app?.personasim.store.database
+    .prepare(
+      `INSERT INTO domain_events(
+      id, agent_id, stream_type, stream_id, stream_version, event_type,
+      recorded_at_utc, effective_at_utc, payload_json, idempotency_key
+    ) VALUES (?, ?, 'recall_fixture', ?, 1, 'RecallFixtureRecorded', ?, ?, ?, ?)`,
+    )
+    .run(
+      sourceId,
+      input.agentId,
+      sourceId,
+      recordedAtUtc,
+      recordedAtUtc,
+      JSON.stringify({ summary: input.summary, evidence }),
+      sourceId,
+    );
   return EventCardSchema.parse({
     id: input.id,
     agentId: input.agentId,
     cardKind: "shared_experience",
-    sourceKind: "memory",
-    sourceId: `source-${input.id}`,
+    sourceKind: "domain_event",
+    sourceId,
     dedupeKey: input.id,
     title: input.title,
     summary: input.summary,

@@ -1,8 +1,16 @@
 import { DateTime } from "luxon";
+import {
+  loadInteractionEvidence,
+  projectInteractionHistory,
+} from "./interaction-history-service.js";
+import type { ReplyRepairBudget } from "./semantic-reply-guard.js";
 import type { MemoryRecallRuntimeDiagnostic } from "@personasim/contracts";
 import {
   DEFAULT_CONVERSATION_RETENTION_POLICY,
   assembleChatPrompt,
+  buildConversationContextPlan,
+  selectMemoryUseForTurn,
+  selectLifeContextForTurn,
   selectConversationRetention,
   type ConversationRetentionPolicy,
 } from "@personasim/features";
@@ -44,6 +52,8 @@ import { MemoryRecallService } from "./memory-recall-service.js";
 import { readActiveMemories } from "./memory-service.js";
 import { PersonalIntentService } from "./personal-intent-service.js";
 import { ReplyRepairService } from "./reply-repair-service.js";
+import type { PersonaRuntimeService } from "./persona-runtime-service.js";
+import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import type { ScheduleService } from "./schedule-service.js";
 import type { SettlementService } from "./settlement-service.js";
 import {
@@ -66,6 +76,8 @@ export interface ConversationServiceOptions {
   liveWorldEffectsMode?: "off" | "shadow" | "enforced";
   memoryRecallMode?: "legacy" | "shadow" | "enforced";
   lifePlanningMode?: "fuzzy" | "legacy_exact";
+  companionContextMode?: "off" | "shadow" | "enforced";
+  personaRuntimeMode?: "off" | "shadow" | "enforced";
   conversationRetention?: ConversationRetentionPolicy;
 }
 
@@ -75,6 +87,7 @@ export interface ConversationTurnCollaborators {
   worldEffects?: WorldEffectService;
   commits?: TurnCommitService;
   fuzzyLife?: FuzzyLifeService;
+  personaRuntime?: PersonaRuntimeService;
 }
 
 /**
@@ -87,6 +100,7 @@ export class ConversationService {
   private readonly worldEffects: WorldEffectService;
   private readonly commits: TurnCommitService;
   private readonly fuzzyLife: FuzzyLifeService | undefined;
+  private readonly personaRuntime: PersonaRuntimeService | undefined;
 
   constructor(
     private readonly store: DatabaseStore,
@@ -102,6 +116,7 @@ export class ConversationService {
     collaborators: ConversationTurnCollaborators = {},
   ) {
     this.fuzzyLife = collaborators.fuzzyLife;
+    this.personaRuntime = collaborators.personaRuntime;
     const intentService =
       personalIntents ?? new PersonalIntentService(store, clock);
     this.memoryRecalls = memoryRecalls ?? new MemoryRecallService(store);
@@ -129,6 +144,7 @@ export class ConversationService {
         contexts,
         options,
         this.fuzzyLife,
+        this.personaRuntime,
       );
   }
 
@@ -203,12 +219,6 @@ export class ConversationService {
     }
 
     const nowUtc = this.clock.nowUtc();
-    const preparedContext = this.contexts?.prepare({
-      agentId: input.agentId,
-      userText: input.text,
-      nowUtc,
-      timezone: spec.identity.timezone,
-    });
     const userMessageId = createEntityId("message");
     const assistantMessageId = createEntityId("message");
     const capabilities = capabilitiesForRuntime(
@@ -221,6 +231,115 @@ export class ConversationService {
           toUtc: DateTime.fromISO(nowUtc).plus({ hours: 72 }).toUTC().toISO()!,
         })
       : [];
+    const storedContextMessages = this.store.listMessagesForContext(sessionId);
+    const semanticEnabled =
+      this.options.companionContextMode === "enforced" ||
+      this.options.personaRuntimeMode === "enforced";
+    const historicalEvidence = semanticEnabled
+      ? loadInteractionEvidence({
+          store: this.store,
+          agentId: input.agentId,
+          nowUtc,
+        })
+      : undefined;
+    const historyProjection =
+      historicalEvidence === undefined
+        ? { messages: storedContextMessages, annotations: [] }
+        : projectInteractionHistory(storedContextMessages, historicalEvidence);
+    const contextSelection = selectConversationRetention({
+      messages: historyProjection.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        text: message.content,
+        createdAtUtc: message.createdAtUtc,
+        origin:
+          message.messageKind === "assistant_proactive"
+            ? "proactive"
+            : message.role === "user"
+              ? "user"
+              : message.messageKind === "system_notice"
+                ? "deterministic_fallback"
+                : "reactive",
+        stored: message,
+      })),
+      nowUtc,
+      policy:
+        this.options.conversationRetention ??
+        DEFAULT_CONVERSATION_RETENTION_POLICY,
+    });
+    const recentMessages = contextSelection.messages.map((message) => ({
+      ...message.stored,
+      content: message.text,
+    }));
+    const companionContextMode = this.options.companionContextMode ?? "off";
+    const contextPlan =
+      companionContextMode === "off"
+        ? undefined
+        : buildConversationContextPlan({
+            originalQuery: input.text,
+            agentId: input.agentId,
+            sessionId,
+            protectedPhrases: ["user_spec", "canon_extract"].includes(
+              spec.dialogue.frequentPhrasesOrigin ?? "",
+            )
+              ? spec.dialogue.frequentPhrases
+              : [],
+            recentMessages: recentMessages.map((message) => ({
+              id: message.id,
+              agentId: message.agentId,
+              sessionId: message.sessionId,
+              role: message.role === "user" ? "user" : "assistant",
+              text: message.content,
+            })),
+          });
+    const appliedContextPlan =
+      companionContextMode === "enforced" ? contextPlan : undefined;
+    const personaRuntimeMode = this.options.personaRuntimeMode ?? "off";
+    if (personaRuntimeMode !== "off" && this.personaRuntime === undefined)
+      throw new Error(
+        "Persona runtime requires a composed PersonaRuntimeService.",
+      );
+    if (personaRuntimeMode === "enforced") {
+      this.personaRuntime!.reconcileBase({ baseSpec: spec, nowUtc });
+      this.personaRuntime!.reconcileSources({ agentId: input.agentId, nowUtc });
+    }
+    const personaSnapshot =
+      personaRuntimeMode === "off"
+        ? undefined
+        : this.personaRuntime!.snapshot({
+            baseSpec: spec,
+            nowUtc,
+            topicText: contextPlan?.resolvedCurrentTopic?.text ?? input.text,
+          });
+    const effectivePersona =
+      personaRuntimeMode === "enforced" ? personaSnapshot : undefined;
+    const interactionEvidence = semanticEnabled
+      ? loadInteractionEvidence({
+          store: this.store,
+          agentId: input.agentId,
+          nowUtc,
+          ...(effectivePersona === undefined ? {} : { effectivePersona }),
+          currentUser: { id: userMessageId, text: input.text },
+        })
+      : undefined;
+    const repairBudget: ReplyRepairBudget = { remaining: 1, attempts: 0 };
+    const semanticContext = {
+      ...(interactionEvidence === undefined ? {} : { interactionEvidence }),
+      ...(appliedContextPlan === undefined
+        ? {}
+        : { conversationPlan: appliedContextPlan }),
+      repairBudget,
+    };
+    const memoryRevision = new MemoryValidityRepository(
+      this.store,
+    ).currentRevision(input.agentId);
+    const preparedContext = this.contexts?.prepare({
+      agentId: input.agentId,
+      userText: input.text,
+      nowUtc,
+      timezone: spec.identity.timezone,
+      suppressedMemoryIds: effectivePersona?.suppressedMemoryIds ?? [],
+    });
     const legacyMemories = capabilities.longTermMemory
       ? readActiveMemories(this.store, input.agentId, nowUtc)
       : [];
@@ -234,6 +353,10 @@ export class ConversationService {
             nowUtc,
             timezone: spec.identity.timezone,
             requireDurableEvidence: memoryRecallMode === "enforced",
+            suppressedMemoryIds: effectivePersona?.suppressedMemoryIds ?? [],
+            ...(appliedContextPlan === undefined
+              ? {}
+              : { contextPlan: appliedContextPlan }),
           })
         : undefined;
     const recallPreview = recallRecording?.preview;
@@ -251,6 +374,30 @@ export class ConversationService {
       !recallPreview.result.abstained
         ? recallPreview.result.evidenceBundle
         : undefined;
+    const memoryUse =
+      contextPlan === undefined
+        ? undefined
+        : selectMemoryUseForTurn({
+            plan: contextPlan,
+            evidence: memoryEvidence?.evidence ?? [],
+            suppressedMemoryIds: effectivePersona?.suppressedMemoryIds ?? [],
+            recentlyMentionedMemoryIds: storedContextMessages
+              .filter((message) => message.role === "assistant")
+              .slice(-3)
+              .flatMap((message) => {
+                const diagnostic = message.metadata["companionContext"];
+                if (
+                  typeof diagnostic !== "object" ||
+                  diagnostic === null ||
+                  !("explicitlyMentionedMemoryIds" in diagnostic)
+                )
+                  return [];
+                const ids = diagnostic.explicitlyMentionedMemoryIds;
+                return Array.isArray(ids)
+                  ? ids.filter((id): id is string => typeof id === "string")
+                  : [];
+              }),
+          });
     const recallDiagnostic: MemoryRecallRuntimeDiagnostic | undefined =
       recallPreview === undefined
         ? undefined
@@ -260,7 +407,6 @@ export class ConversationService {
             selectedRecallMemories,
             recallPreview,
           );
-    const storedContextMessages = this.store.listMessagesForContext(sessionId);
     // Elliptical permission questions may inherit only the immediately
     // preceding assistant turn. Searching farther back would let a generic
     // "后来有回复吗" resurrect stale consent context after the conversation
@@ -290,31 +436,6 @@ export class ConversationService {
             priorClaims: priorConsentClaims,
           })
         : undefined;
-    const contextSelection = selectConversationRetention({
-      messages: storedContextMessages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        text: message.content,
-        createdAtUtc: message.createdAtUtc,
-        origin:
-          message.messageKind === "assistant_proactive"
-            ? "proactive"
-            : message.role === "user"
-              ? "user"
-              : message.messageKind === "system_notice"
-                ? "deterministic_fallback"
-                : "reactive",
-        stored: message,
-      })),
-      nowUtc,
-      policy:
-        this.options.conversationRetention ??
-        DEFAULT_CONVERSATION_RETENTION_POLICY,
-    });
-    const recentMessages = contextSelection.messages.map((message) => ({
-      ...message.stored,
-      content: message.text,
-    }));
     const effects = this.worldEffects.prepareDecisionContext({
       sessionId,
       nowUtc,
@@ -332,6 +453,13 @@ export class ConversationService {
     const lifeContext = fuzzyLifeEnabled
       ? this.fuzzyLife!.promptContext(input.agentId, nowUtc)
       : undefined;
+    const selectedLifeContext =
+      lifeContext === undefined || appliedContextPlan === undefined
+        ? { context: lifeContext, omittedSections: [] }
+        : selectLifeContextForTurn({
+            context: lifeContext,
+            plan: appliedContextPlan,
+          });
     const additionalPromptSegments = [
       ...(preparedContext?.additionalPromptSegments ?? []),
       ...(consentModalityGuardContract === undefined
@@ -339,7 +467,15 @@ export class ConversationService {
         : [consentModalityPromptSegment(consentModalityGuardContract)]),
     ];
     const assembledPrompt = assembleChatPrompt({
+      ...semanticContext,
       character: spec,
+      ...(effectivePersona === undefined ? {} : { effectivePersona }),
+      ...(appliedContextPlan === undefined
+        ? {}
+        : { conversationPlan: appliedContextPlan }),
+      ...(companionContextMode !== "enforced" || memoryUse === undefined
+        ? {}
+        : { memoryUse }),
       state: toFeatureState(state),
       ...(preparedContext?.autobiography === undefined
         ? {}
@@ -373,7 +509,9 @@ export class ConversationService {
       ...(this.options.lifePlanningMode === undefined
         ? {}
         : { lifePlanningMode: this.options.lifePlanningMode }),
-      ...(lifeContext === undefined ? {} : { lifeContext }),
+      ...(selectedLifeContext.context === undefined
+        ? {}
+        : { lifeContext: selectedLifeContext.context }),
       decisionMode: turnEffectContext.scheduleNegotiationEligible
         ? this.options.scheduleNegotiationMode === "shadow"
           ? "schedule_negotiation_shadow"
@@ -386,7 +524,16 @@ export class ConversationService {
         : { liveWorldEffectsMode: this.options.liveWorldEffectsMode }),
     });
     const decidedTurn = await this.decisions.decide({
+      ...semanticContext,
+      replyGrounding: assembledPrompt.replyGrounding,
+      ...(selectedLifeContext.context === undefined
+        ? {}
+        : { lifeContext: selectedLifeContext.context }),
+      ...(appliedContextPlan === undefined
+        ? {}
+        : { conversationPlan: appliedContextPlan }),
       spec,
+      ...(effectivePersona === undefined ? {} : { effectivePersona }),
       userText: input.text,
       agentId: input.agentId,
       nowUtc,
@@ -415,8 +562,10 @@ export class ConversationService {
             contract: explicitFactReplyContract,
             inspectDecision: (decision) =>
               this.decisions.inspect({
+                ...semanticContext,
                 agentId: input.agentId,
                 spec,
+                ...(effectivePersona === undefined ? {} : { effectivePersona }),
                 decision,
                 nowUtc,
                 capabilities,
@@ -432,8 +581,12 @@ export class ConversationService {
               contract: consentModalityGuardContract,
               inspectDecision: (decision) =>
                 this.decisions.inspect({
+                  ...semanticContext,
                   agentId: input.agentId,
                   spec,
+                  ...(effectivePersona === undefined
+                    ? {}
+                    : { effectivePersona }),
                   decision,
                   nowUtc,
                   capabilities,
@@ -445,6 +598,10 @@ export class ConversationService {
             })
           : candidateTurn;
     const preparedWorld = await this.worldEffects.resolve({
+      ...semanticContext,
+      ...(appliedContextPlan === undefined
+        ? {}
+        : { conversationPlan: appliedContextPlan }),
       sessionId,
       agentId: input.agentId,
       userText: input.text,
@@ -453,6 +610,7 @@ export class ConversationService {
       assistantMessageId,
       nowUtc,
       spec,
+      ...(effectivePersona === undefined ? {} : { effectivePersona }),
       state,
       capabilities,
       recentMessages,
@@ -467,7 +625,7 @@ export class ConversationService {
             world: preparedWorld,
             contract: explicitFactReplyContract,
           });
-    const finalized =
+    let finalized =
       consentModalityGuardContract === undefined
         ? { turn: guardedTurn, world: guardedWorld }
         : finalizeConsentModalityWorld({
@@ -475,10 +633,53 @@ export class ConversationService {
             world: guardedWorld,
             contract: consentModalityGuardContract,
           });
+    if (semanticEnabled) {
+      const last = await this.decisions.finalizeSemanticReply({
+        ...semanticContext,
+        replyGrounding: assembledPrompt.replyGrounding,
+        spec,
+        agentId: input.agentId,
+        userText: input.text,
+        nowUtc,
+        capabilities,
+        ...(effectivePersona === undefined ? {} : { effectivePersona }),
+        ...(selectedLifeContext.context === undefined
+          ? {}
+          : { lifeContext: selectedLifeContext.context }),
+        replyStrategy: assembledPrompt.replyStrategy,
+        // Deterministic fact/consent presentations are already authoritative;
+        // a later semantic check may remove a bad sentence, never ask another
+        // model to rewrite those verified facts or permission boundaries.
+        allowModelRepair:
+          explicitFactReplyContract === undefined &&
+          consentModalityGuardContract === undefined,
+        ...(lifeContext === undefined ? {} : { causalContext: lifeContext }),
+        decision: finalized.world.decision,
+        ...(finalized.turn.semanticGuardAudit === undefined
+          ? {}
+          : { priorAudit: finalized.turn.semanticGuardAudit }),
+      });
+      finalized = {
+        turn: { ...finalized.turn, semanticGuardAudit: last.audit },
+        world: {
+          ...finalized.world,
+          decision: last.decision,
+          repairAttempted:
+            finalized.world.repairAttempted || repairBudget.attempts > 0,
+          usedFallback: finalized.world.usedFallback || last.usedFallback,
+          proposalRejections: [
+            ...finalized.world.proposalRejections,
+            ...last.rejections,
+          ],
+        },
+      };
+    }
     return this.commits.commit({
+      memoryRevision,
       sessionId,
       command: input,
       spec,
+      ...(effectivePersona === undefined ? {} : { effectivePersona }),
       nowUtc,
       userMessageId,
       ...(recallRecording === undefined
@@ -488,6 +689,55 @@ export class ConversationService {
       capabilities,
       ...(recallDiagnostic === undefined ? {} : { recallDiagnostic }),
       promptSegmentTrace: assembledPrompt.segmentTrace,
+      ...(personaSnapshot === undefined
+        ? {}
+        : {
+            personaRuntimeDiagnostic: {
+              mode: personaRuntimeMode,
+              policyVersion: personaSnapshot.policyVersion,
+              revision: personaSnapshot.revision,
+              memoryRevision: personaSnapshot.memoryRevision,
+              baseCharacterVersion: personaSnapshot.baseCharacterVersion,
+              adaptationIds: personaSnapshot.relationshipPractices.map(
+                (adaptation) => adaptation.id,
+              ),
+            },
+          }),
+      ...(contextPlan === undefined
+        ? {}
+        : {
+            companionContextDiagnostic: {
+              mode: companionContextMode,
+              plan: contextPlan,
+              memoryUse,
+              // Exact complete quotes only: retrieved candidates are not proof of a spoken recollection.
+              explicitlyMentionedMemoryIds:
+                companionContextMode !== "enforced"
+                  ? []
+                  : (memoryEvidence?.evidence ?? [])
+                      .filter((item) => {
+                        if (
+                          !memoryUse?.explicitMentionEvidenceIds.includes(
+                            item.evidence.id,
+                          )
+                        )
+                          return false;
+                        const reply =
+                          finalized.world.decision.reply.text.replace(
+                            /\s/gu,
+                            "",
+                          );
+                        return [item.memoryContent, item.evidence.quote].some(
+                          (text) =>
+                            text !== undefined &&
+                            text.replace(/\s/gu, "").length >= 4 &&
+                            reply.includes(text.replace(/\s/gu, "")),
+                        );
+                      })
+                      .map((item) => item.memoryId),
+              omittedLifeSections: selectedLifeContext.omittedSections,
+            },
+          }),
       ...(preparedContext === undefined ? {} : { preparedContext }),
       turn: finalized.turn,
       world: finalized.world,

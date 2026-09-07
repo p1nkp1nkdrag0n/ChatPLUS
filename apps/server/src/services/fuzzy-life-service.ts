@@ -38,7 +38,10 @@ import {
   type ReflectionRecord,
   type SupportIntervention,
   type SupportMode,
+  type RuntimeState,
+  isCompanionCharacterPolicy,
 } from "@personasim/contracts";
+import { validateCharacterPressureEvidence } from "./pressure-state-evidence.js";
 import { projectCharacterTime, stableId } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
@@ -65,6 +68,11 @@ import {
 } from "./fuzzy-life-association.js";
 import { readStructuredLifeEvidenceSources } from "./fuzzy-life-structured-evidence.js";
 import {
+  acceptsCharacterGoalControl,
+  explicitCharacterGoalControl,
+  matchesGoalBinding,
+} from "./fuzzy-life-goal-binding.js";
+import {
   assertTimelinePlanHash,
   buildDailyIntents,
   buildDeterministicLifeOutcome,
@@ -72,6 +80,8 @@ import {
   createDailyLifeContext,
   dayPeriod,
   freezeTimelinePlan,
+  createEvidenceDrivenGoalThread,
+  projectGoalThreadOutcome,
   inferDomain,
   localCalendarDayDifference,
   milestoneEffectiveLocalDate,
@@ -220,7 +230,16 @@ export class FuzzyLifeService {
       };
     }
 
-    const intents = this.repository.listDailyIntents(context.id);
+    const intents = this.repository
+      .listDailyIntents(context.id)
+      .filter(
+        (intent) =>
+          !isCompanionCharacterPolicy(spec.compilationPolicyVersion) ||
+          intent.sourceKind !== "goal" ||
+          intent.threadIds.some((id) =>
+            threads.some((thread) => thread.id === id),
+          ),
+      );
     const currentPressureEpisodeIds = this.repository
       .listOpenPressures(agentId, 4)
       .map((episode) => episode.id);
@@ -296,9 +315,23 @@ export class FuzzyLifeService {
             evidenceId,
             effectiveLocalDate: context.localDate,
             recordedAtUtc: toUtc,
+            ...(intent.sourceKind === "goal" &&
+            isCompanionCharacterPolicy(spec.compilationPolicyVersion) &&
+            !intent.threadIds.some((id) => {
+              const thread = this.repository.findThreadById(id);
+              return (
+                thread?.status === "active" &&
+                spec.persona.goals.some((goal) =>
+                  matchesGoalBinding(thread, goal),
+                )
+              );
+            })
+              ? { outcomeKind: "deferred" as const }
+              : {}),
           });
           if (this.repository.insertLifeOutcome(outcome)) {
             createdOutcomeIds.push(outcome.id);
+            this.applyGoalThreadOutcome(outcome, toUtc);
           }
           outcomeIds.push(outcome.id);
         }
@@ -343,7 +376,14 @@ export class FuzzyLifeService {
         actionsAreNotOutcomes: true,
         characterTimePrecision: "day_or_period",
         characterLifeOwner: "character",
-        lifeThreadStagesAdvanceByCharacterLocalDate: true,
+        lifeThreadStagesAdvanceByCharacterLocalDate:
+          snapshot.threads.length > 0
+            ? snapshot.threads.every(
+                (thread) => thread.progressionPolicy !== "evidence_driven_v2",
+              )
+            : !isCompanionCharacterPolicy(
+                this.store.getCharacterSpec(agentId)?.compilationPolicyVersion,
+              ),
         lifeThreadStageIsNotDailyOutcome: true,
         lifeThreadStageIsNotProofOfExternalSuccess: true,
       },
@@ -364,6 +404,7 @@ export class FuzzyLifeService {
         subject: "character",
         title: thread.title,
         currentStage: thread.currentStage,
+        progressionPolicy: thread.progressionPolicy ?? "legacy_calendar_v1",
         progressNote: thread.progressNote,
         nextStepHint: thread.nextStepHint,
       })),
@@ -568,6 +609,8 @@ export class FuzzyLifeService {
     assistantText: string;
     recordedAtUtc: string;
     correlationId: string;
+    /** State before this reply's effects; the reply cannot authorize itself. */
+    priorState?: RuntimeState;
   }): ConversationLifeImpact {
     // A user's offer can only refer to disclosures already visible before
     // this reply. New assistant disclosures are recorded afterwards.
@@ -581,6 +624,7 @@ export class FuzzyLifeService {
       dayPeriod(local.hour),
     );
     const characterImpact = this.recordCharacterDisclosure(input);
+    this.recordGoalThreadConversationEvidence(input, followUpImpact.actionId);
     return { ...characterImpact, ...participantImpact, ...followUpImpact };
   }
 
@@ -848,6 +892,10 @@ export class FuzzyLifeService {
         ...(dilemma === undefined ? {} : { dilemmaId: dilemma.id }),
         subject: "user",
         pressureKind: pressureKind(domain),
+        metricOrigin:
+          parseScaleMetric(userPressureClassifyText, "pressure") === undefined
+            ? "algorithm_initial"
+            : "explicit_self_report",
         triggerSummary: userDisclosure.pressureText,
         status: "open",
         initialPressure:
@@ -982,6 +1030,7 @@ export class FuzzyLifeService {
       );
       if (targetPressureId !== undefined) {
         this.linkPressureIntervention(
+          input.agentId,
           targetPressureId,
           interventionId,
           input.recordedAtUtc,
@@ -1350,12 +1399,6 @@ export class FuzzyLifeService {
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
   ): ConversationLifeImpact {
     const evidence = analyzeSpeakerSelfDisclosure(input.assistantText);
-    if (
-      !evidence.dilemmaText &&
-      !evidence.pressureText &&
-      !evidence.feedbackText
-    )
-      return {};
     const spec = this.store.getCharacterSpec(input.agentId);
     if (!spec) throw notFound("Character");
     const local = projectCharacterTime(spec.identity, input.recordedAtUtc);
@@ -1393,6 +1436,59 @@ export class FuzzyLifeService {
         this.repository.updateDilemma(dilemma);
       }
     }
+    const validation = validateCharacterPressureEvidence({
+      store: this.store,
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      messageId: input.assistantMessageId,
+      text: input.assistantText,
+      spec,
+      priorState: input.priorState ?? this.store.getRuntimeState(input.agentId),
+      hasExistingPressure:
+        this.selectCharacterPressure(
+          input,
+          [evidence.pressureText, evidence.feedbackText]
+            .filter(Boolean)
+            .join("，"),
+          supportTopicText(
+            [evidence.pressureText, evidence.feedbackText].join("，"),
+          ) === "",
+          dilemma,
+        ) !== undefined,
+    });
+    for (const { candidate, reason } of validation.rejected) {
+      this.recordEvent({
+        agentId: input.agentId,
+        streamType: "pressure_evidence",
+        streamId: stableId(
+          "pressure-candidate",
+          `${input.assistantMessageId}:${candidate.kind}:${candidate.sourceSpan.start}`,
+        ),
+        eventType: "life.pressure_candidate_rejected",
+        recordedAtUtc: input.recordedAtUtc,
+        effectiveAtUtc: input.recordedAtUtc,
+        payload: {
+          reason,
+          attributionVersion: candidate.attributionVersion,
+          kind: candidate.kind,
+          experiencer: candidate.experiencer,
+          modality: candidate.modality,
+          sourceMessageId: input.assistantMessageId,
+          sourceSpan: candidate.sourceSpan,
+        },
+        correlationId: input.correlationId,
+        causationId: input.assistantMessageId,
+        idempotencyKey: `pressure-rejected:${input.assistantMessageId}:${candidate.kind}:${candidate.sourceSpan.start}`,
+      });
+    }
+    evidence.pressureText = validation.accepted
+      .filter((item) => item.candidate.kind === "pressure")
+      .map((item) => item.candidate.sourceText)
+      .join("，");
+    evidence.feedbackText = validation.accepted
+      .filter((item) => item.candidate.kind === "feedback")
+      .map((item) => item.candidate.sourceText)
+      .join("，");
     const pressureText = [evidence.pressureText, evidence.feedbackText]
       .filter(Boolean)
       .join("，");
@@ -1460,6 +1556,12 @@ export class FuzzyLifeService {
               ? "worsening"
               : (pressure?.status ?? "open"),
       initialPressure: pressure?.initialPressure ?? currentPressure,
+      metricOrigin:
+        explicitPressure === undefined
+          ? pressure
+            ? "algorithm_update"
+            : "algorithm_initial"
+          : "explicit_self_report",
       currentPressure,
       initialClarity: pressure?.initialClarity ?? currentClarity,
       currentClarity,
@@ -1504,6 +1606,7 @@ export class FuzzyLifeService {
         dilemmaId: next.dilemmaId,
         subject: "character",
         evidenceMessageId: sourceId,
+        stateEvidence: validation.accepted,
         before: pressure ? pressureLifecycleSnapshot(pressure) : undefined,
         after: pressureLifecycleSnapshot(next),
       },
@@ -1771,6 +1874,7 @@ export class FuzzyLifeService {
     );
     if (pressureEpisodeId !== undefined) {
       this.linkPressureIntervention(
+        input.agentId,
         pressureEpisodeId,
         interventionId,
         input.recordedAtUtc,
@@ -2337,16 +2441,7 @@ export class FuzzyLifeService {
   }
 
   private listPressureEpisodes(agentId: string): PressureEpisode[] {
-    return (
-      this.store.database
-        .prepare(
-          `SELECT episode_json AS json FROM pressure_episodes
-           WHERE agent_id = ? ORDER BY updated_at_utc DESC, rowid DESC`,
-        )
-        .all(agentId) as { json: string }[]
-    ).map((row) =>
-      PressureEpisodeSchema.parse(JSON.parse(row.json) as unknown),
-    );
+    return this.repository.listPressures(agentId, 256);
   }
 
   private pressureEvidenceTexts(episode: PressureEpisode): string[] {
@@ -2363,19 +2458,13 @@ export class FuzzyLifeService {
   }
 
   private linkPressureIntervention(
+    agentId: string,
     pressureEpisodeId: string,
     interventionId: string,
     recordedAtUtc: string,
   ): void {
-    const row = this.store.database
-      .prepare(
-        "SELECT episode_json AS json FROM pressure_episodes WHERE id = ?",
-      )
-      .get(pressureEpisodeId) as { json: string } | undefined;
-    if (row === undefined) return;
-    const current = PressureEpisodeSchema.parse(
-      JSON.parse(row.json) as unknown,
-    );
+    const current = this.repository.findPressure(agentId, pressureEpisodeId);
+    if (current === undefined) return;
     if (current.interventionIds.includes(interventionId)) return;
     this.repository.updatePressure(
       PressureEpisodeSchema.parse({
@@ -2446,7 +2535,282 @@ export class FuzzyLifeService {
     return undefined;
   }
 
+  private applyGoalThreadOutcome(outcome: LifeOutcome, atUtc: string): void {
+    for (const threadId of outcome.threadIds) {
+      const thread = this.repository.findThreadById(threadId);
+      if (thread === undefined) continue;
+      const updated = projectGoalThreadOutcome(thread, outcome, atUtc);
+      if (updated === undefined) continue;
+      this.repository.updateThread(updated, thread.revision);
+      this.recordEvent({
+        agentId: outcome.agentId,
+        streamType: "life_thread",
+        streamId: thread.id,
+        streamVersion: updated.revision,
+        eventType: "life.thread_observation_applied",
+        recordedAtUtc: atUtc,
+        effectiveAtUtc: atUtc,
+        payload: {
+          threadId: thread.id,
+          outcomeId: outcome.id,
+          sourceEvidenceIds: outcome.sourceEvidenceIds,
+          progressionBasis: "evidence_driven_v2",
+          origin: outcome.origin,
+          previousStage: thread.currentStage,
+          currentStage: updated.currentStage,
+          status: updated.status,
+          effectiveLocalDate: outcome.effectiveLocalDate,
+          temporalPrecision: "day",
+        },
+        idempotencyKey: `life-thread:${thread.id}:outcome:${outcome.id}`,
+      });
+    }
+  }
+
+  private recordGoalThreadConversationEvidence(
+    input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
+    actionId: string | undefined,
+  ): void {
+    const spec = this.store.getCharacterSpec(input.agentId);
+    if (!spec || !isCompanionCharacterPolicy(spec.compilationPolicyVersion))
+      return;
+    const messages = this.store.listMessages(input.sessionId, 4);
+    const userMessage = messages.find(
+      (message) =>
+        message.id === input.userMessageId &&
+        message.agentId === input.agentId &&
+        message.role === "user" &&
+        message.content === input.userText,
+    );
+    if (userMessage === undefined) return;
+    const assistantMessage = messages.find(
+      (message) =>
+        message.id === input.assistantMessageId &&
+        message.agentId === input.agentId &&
+        message.role === "assistant" &&
+        message.inReplyToMessageId === input.userMessageId &&
+        message.content === input.assistantText,
+    );
+    const localDate = projectCharacterTime(
+      spec.identity,
+      input.recordedAtUtc,
+    ).localDate;
+    const analysis = analyzeLifeEvidence(input.userText);
+    const action =
+      actionId === undefined
+        ? undefined
+        : this.repository
+            .listRecentActions(input.agentId, 64)
+            .find(
+              (item) => item.id === actionId && item.subject === "character",
+            );
+    this.store.transaction(() => {
+      for (const thread of this.repository.listEvidenceDrivenGoalThreads(
+        input.agentId,
+      )) {
+        if (
+          (thread.status !== "active" && thread.status !== "paused") ||
+          !spec.persona.goals.some((goal) =>
+            matchesGoalBinding(thread, goal),
+          ) ||
+          localDate < (thread.lastAdvancedLocalDate ?? thread.startedLocalDate)
+        )
+          continue;
+        const requestedControl = explicitCharacterGoalControl(
+          input.userText,
+          thread.title,
+        );
+        const control =
+          requestedControl !== undefined &&
+          assistantMessage !== undefined &&
+          acceptsCharacterGoalControl(
+            input.assistantText,
+            thread.title,
+            requestedControl,
+          )
+            ? requestedControl
+            : undefined;
+        const userEffort = analysis.clauses.find(
+          (clause) =>
+            clause.action &&
+            clause.subject === "character" &&
+            clause.classifyText.includes(thread.title),
+        );
+        // Assistant statements only qualify through the existing validated decision/action chain.
+        const characterEffort =
+          action !== undefined &&
+          action.sourceEvidenceIds.includes(input.assistantMessageId) &&
+          analyzeLifeEvidence(input.assistantText).classifyText.includes(
+            thread.title,
+          )
+            ? action
+            : undefined;
+        const effort = userEffort?.sourceText ?? characterEffort?.summary;
+        if (
+          control === undefined &&
+          (effort === undefined || thread.pauseSourceMessageId !== undefined)
+        )
+          continue;
+        const status = control === "pause" ? "paused" : "active";
+        if (
+          control !== undefined &&
+          status === thread.status &&
+          (control === "resume" || thread.pauseSourceMessageId !== undefined)
+        )
+          continue;
+        const sourceId =
+          control !== undefined || userEffort !== undefined
+            ? input.userMessageId
+            : input.assistantMessageId;
+        const sourceIds =
+          control === undefined
+            ? [sourceId]
+            : [input.userMessageId, input.assistantMessageId];
+        const key = `life-thread:${thread.id}:message:${sourceId}:${control ?? "effort"}`;
+        if (this.store.getDomainEventByIdempotencyKey(key) !== undefined)
+          continue;
+        const previous = { ...thread };
+        delete previous.pauseSourceMessageId;
+        const updated = LifeThreadSchema.parse({
+          ...previous,
+          status,
+          ...(control === "pause" ? { pauseSourceMessageId: sourceId } : {}),
+          currentStage:
+            control === "pause"
+              ? "明确暂停"
+              : control === "resume"
+                ? "当前关注"
+                : "近期有投入",
+          progressNote:
+            control === undefined
+              ? effort
+              : control === "pause"
+                ? `角色明确接受了用户暂停“${thread.title}”的请求；这是一项计划调整。`
+                : `角色明确接受了用户恢复“${thread.title}”的请求；尚未据此宣称有实际进展。`,
+          nextStepHint:
+            control === "pause"
+              ? "保留暂停，直到双方明确同意恢复这项目标。"
+              : "后续进展仍需实际行动或已提交的生活结果。",
+          sourceMessageIds: [
+            ...new Set([...thread.sourceMessageIds, ...sourceIds]),
+          ].slice(-64),
+          lastAdvancedLocalDate: localDate,
+          revision: thread.revision + 1,
+          updatedAtUtc: input.recordedAtUtc,
+        });
+        this.repository.updateThread(updated, thread.revision);
+        this.recordEvent({
+          agentId: input.agentId,
+          streamType: "life_thread",
+          streamId: thread.id,
+          streamVersion: updated.revision,
+          eventType:
+            control === undefined
+              ? "life.thread_effort_reported"
+              : "life.thread_controlled",
+          recordedAtUtc: input.recordedAtUtc,
+          effectiveAtUtc: input.recordedAtUtc,
+          payload: {
+            threadId: thread.id,
+            sourceGoalId: thread.sourceGoalId,
+            control: control ?? "effort",
+            sourceMessageId: sourceId,
+            sourceMessageIds: sourceIds,
+            ...(characterEffort === undefined
+              ? {}
+              : { actionId: characterEffort.id }),
+            previousStatus: thread.status,
+            status,
+            progressionBasis: "evidence_driven_v2",
+            effectiveLocalDate: localDate,
+          },
+          causationId: sourceId,
+          correlationId: input.correlationId,
+          idempotencyKey: key,
+        });
+      }
+    });
+  }
+
+  private ensureEvidenceDrivenGoalThreads(
+    spec: CharacterSpec,
+    atUtc: string,
+  ): void {
+    const localDate = projectCharacterTime(spec.identity, atUtc).localDate;
+    this.store.transaction(() => {
+      const existing = this.repository.listEvidenceDrivenGoalThreads(spec.id);
+      for (const thread of existing) {
+        if (
+          (thread.status !== "active" && thread.status !== "paused") ||
+          spec.persona.goals.some((goal) => matchesGoalBinding(thread, goal))
+        )
+          continue;
+        const previous = { ...thread };
+        delete previous.pauseSourceMessageId;
+        const closed = LifeThreadSchema.parse({
+          ...previous,
+          status: "abandoned",
+          currentStage: "作者已调整设定",
+          nextStepHint: "原目标保留为历史；新目标使用独立的来源绑定。",
+          closedLocalDate:
+            localDate < thread.startedLocalDate
+              ? thread.startedLocalDate
+              : localDate,
+          revision: thread.revision + 1,
+          updatedAtUtc: atUtc,
+        });
+        this.repository.updateThread(closed, thread.revision);
+        this.recordEvent({
+          agentId: spec.id,
+          streamType: "life_thread",
+          streamId: thread.id,
+          streamVersion: closed.revision,
+          eventType: "life.thread_author_binding_retired",
+          recordedAtUtc: atUtc,
+          effectiveAtUtc: atUtc,
+          payload: {
+            threadId: thread.id,
+            sourceGoalId: thread.sourceGoalId,
+            sourceCharacterVersion: thread.sourceCharacterVersion,
+            newCharacterVersion: spec.version,
+            reason: "author_goal_changed_or_removed",
+          },
+          idempotencyKey: `life-thread:${thread.id}:author-version:${spec.version}`,
+        });
+      }
+      for (const goal of spec.persona.goals.slice(0, 4)) {
+        // Terminal matches are deliberate tombstones, including when the author later restores the same text.
+        if (existing.some((thread) => matchesGoalBinding(thread, goal)))
+          continue;
+        const thread = createEvidenceDrivenGoalThread(spec, goal, atUtc);
+        if (!this.repository.insertThread(thread)) continue;
+        this.recordEvent({
+          agentId: spec.id,
+          streamType: "life_thread",
+          streamId: thread.id,
+          streamVersion: thread.revision,
+          eventType: "life.thread_created",
+          recordedAtUtc: atUtc,
+          effectiveAtUtc: atUtc,
+          payload: {
+            threadId: thread.id,
+            sourceGoalId: goal.id,
+            sourceCharacterVersion: spec.version,
+            progressionBasis: "evidence_driven_v2",
+            effectiveLocalDate: thread.startedLocalDate,
+            temporalPrecision: "day",
+          },
+          idempotencyKey: `life-thread:${thread.id}:created`,
+        });
+      }
+    });
+  }
+
   private ensureGoalThreads(spec: CharacterSpec, atUtc: string): LifeThread[] {
+    if (isCompanionCharacterPolicy(spec.compilationPolicyVersion)) {
+      this.ensureEvidenceDrivenGoalThreads(spec, atUtc);
+      return this.repository.listActiveThreads(spec.id, 6);
+    }
     for (const goal of spec.persona.goals.slice(0, 4)) {
       const key = `life-thread:${spec.id}:goal:${goal.id}`;
       const existing = this.repository.findThreadByIdempotencyKey(key);
@@ -2518,7 +2882,12 @@ export class FuzzyLifeService {
       try {
         this.store.transaction(() => {
           const thread = this.repository.findThreadById(threadId);
-          if (thread === undefined || thread.status !== "active") return;
+          if (
+            thread === undefined ||
+            thread.status !== "active" ||
+            thread.progressionPolicy === "evidence_driven_v2"
+          )
+            return;
           const migration =
             thread.timelinePlan === undefined
               ? resolveLegacyTimelinePlan(this.store, thread)
@@ -2795,6 +3164,10 @@ export class FuzzyLifeService {
           ? explicitClarity
           : episode.initialClarity,
       currentPressure: nextPressure,
+      metricOrigin:
+        explicitPressure === undefined
+          ? "algorithm_update"
+          : "explicit_self_report",
       currentClarity: nextClarity,
       currentFeltUnderstood: nextFeltUnderstood,
       sourceMessageIds: [

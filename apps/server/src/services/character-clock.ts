@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import { isCompanionCharacterPolicy } from "@personasim/contracts";
 
 import type { DatabaseStore } from "../db/store.js";
 import { buildTimeBasedGoalMilestones } from "../domain/defaults.js";
@@ -22,6 +23,7 @@ export function applyLifePlanningAuthority(
 export function ensureTimeBasedGoalMilestones(
   draft: CharacterDraft,
 ): CharacterDraft {
+  if (isCompanionCharacterPolicy(draft.compilationPolicyVersion)) return draft;
   const next = structuredClone(draft);
   next.persona.goals = next.persona.goals.map((goal) => ({
     ...goal,

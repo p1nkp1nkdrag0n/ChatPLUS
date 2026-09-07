@@ -40,7 +40,7 @@ const AFTER_CRASH = "2026-09-09T01:06:00.000Z";
 
 const proposal: LetterReplyProposal = {
   subject: "九月回信",
-  salutation: "亲爱的朋友：",
+  salutation: "朋友：",
   paragraphs: ["你的来信我在抵达的那一刻认真读过。", "愿你一路平安。"],
   closing: "顺颂秋安",
   signature: "林",
@@ -64,6 +64,7 @@ class ScriptedLetterReplyModel implements LetterReplyModel {
       call: RecordedModelCall,
       index: number,
     ) => unknown,
+    private readonly localizeFixtureReferences = true,
   ) {}
 
   async generateObject<T>(input: LetterReplyModelRequest<T>): Promise<T> {
@@ -80,7 +81,36 @@ class ScriptedLetterReplyModel implements LetterReplyModel {
         : { maxOutputTokens: input.maxOutputTokens }),
     };
     const index = this.calls.push(call) - 1;
-    return input.schema.parse(await this.responder(call, index));
+    const candidate = await this.responder(call, index);
+    // The fixtures are stored with durable IDs for persistence assertions;
+    // emulate a model choosing the corresponding IDs from this call's prompt.
+    if (
+      this.localizeFixtureReferences &&
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "referencedEvidenceIds" in candidate &&
+      Array.isArray(candidate.referencedEvidenceIds)
+    ) {
+      const prompt = JSON.parse(call.prompt) as {
+        SNAPSHOT_EVIDENCE: { memoryEvidence: { id: string }[] };
+        USER_LETTER: { id: string };
+      };
+      const references = new Map([
+        [
+          "evidence-before-arrival",
+          prompt.SNAPSHOT_EVIDENCE.memoryEvidence[0]!.id,
+        ],
+        ["letter-incoming-generation", prompt.USER_LETTER.id],
+      ]);
+      return input.schema.parse({
+        ...candidate,
+        referencedEvidenceIds: candidate.referencedEvidenceIds.map(
+          (id: unknown) =>
+            typeof id === "string" ? (references.get(id) ?? id) : id,
+        ),
+      });
+    }
+    return input.schema.parse(candidate);
   }
 }
 
@@ -133,7 +163,8 @@ describe("LetterReplyGenerationService", () => {
     const model = new ScriptedLetterReplyModel((call) => {
       expect(call.purpose).toBe("letter_reply");
       expect(call.prompt).toContain(ARRIVAL);
-      expect(call.prompt).toContain("evidence-before-arrival");
+      expect(call.prompt).toContain("曾一起在秋天散步");
+      expect(call.prompt).not.toContain("evidence-before-arrival");
       expect(call.prompt).not.toContain(PROCESSED);
       expect(call.prompt).not.toContain(futureFact);
       return proposal;
@@ -251,6 +282,121 @@ describe("LetterReplyGenerationService", () => {
     expect(countReplies(database)).toBe(1);
   });
 
+  it("assigns the author and recipient from frozen application state after resolving local citations", async () => {
+    const seeded = seedReadyGeneration(repository);
+    const model = new ScriptedLetterReplyModel(() => ({
+      ...proposal,
+      salutation: "你好：",
+      signature: "伪造的寄件人",
+    }));
+    const encryptor = new FixtureEncryptor();
+    const { catchUp } = createGenerationHarness(model, encryptor);
+    await catchUp.catchUpAgent(AGENT_ID, PROCESSED);
+    expect(encryptor.encryptReply.mock.calls[0]?.[0].proposal).toMatchObject({
+      salutation: "朋友：",
+      signature: "林",
+      referencedEvidenceIds: ["evidence-before-arrival"],
+    });
+    expect(
+      repository.getGenerationRunForEpoch(seeded.incoming.id, 0)?.status,
+    ).toBe("committed");
+  });
+
+  it("rejects a durable reference even when it names an otherwise allowed source", async () => {
+    const seeded = seedReadyGeneration(repository);
+    const model = new ScriptedLetterReplyModel(() => proposal, false);
+    const encryptor = new FixtureEncryptor();
+    const { catchUp } = createGenerationHarness(model, encryptor);
+    await catchUp.catchUpAgent(AGENT_ID, PROCESSED);
+    expect(
+      repository.getGenerationRunForEpoch(seeded.incoming.id, 0),
+    ).toMatchObject({
+      status: "failed",
+      errorCode: "letter_reply_evidence_out_of_scope",
+    });
+    expect(encryptor.encryptReply).not.toHaveBeenCalled();
+  });
+
+  it("blocks the observed incoming-letter rewrite even when its references have been corrected", async () => {
+    const seeded = seedReadyGeneration(repository);
+    const model = new ScriptedLetterReplyModel(() => ({
+      ...proposal,
+      salutation: "林，",
+      paragraphs: [
+        "见信好。我可能少来一点。我买了一支蓝色钢笔，纯粹是自己随手画画用。",
+      ],
+      signature: "林舟",
+    }));
+    const encryptor = new FixtureEncryptor();
+    const { catchUp } = createGenerationHarness(model, encryptor);
+    await catchUp.catchUpAgent(AGENT_ID, PROCESSED);
+    expect(
+      repository.getGenerationRunForEpoch(seeded.incoming.id, 0),
+    ).toMatchObject({
+      status: "failed",
+      errorCode: "letter_reply_perspective_conflict",
+    });
+    expect(encryptor.encryptReply).not.toHaveBeenCalled();
+  });
+
+  it("allows a quoted user address without mistaking it for the writer perspective", async () => {
+    seedReadyGeneration(repository);
+    const model = new ScriptedLetterReplyModel(() => ({
+      ...proposal,
+      paragraphs: ["你在来信里写：‘林，你最近好吗？’我最近一切都好。"],
+    }));
+    const encryptor = new FixtureEncryptor();
+    const { catchUp } = createGenerationHarness(model, encryptor);
+    await catchUp.catchUpAgent(AGENT_ID, PROCESSED);
+    expect(encryptor.encryptReply).toHaveBeenCalledOnce();
+  });
+
+  it("does not let corrected citations or a server signature hide a reversed body perspective", async () => {
+    const seeded = seedReadyGeneration(repository);
+    const model = new ScriptedLetterReplyModel(() => ({
+      ...proposal,
+      paragraphs: ["林，你收到这封信时，我已经出发了。"],
+      signature: "用户",
+    }));
+    const encryptor = new FixtureEncryptor();
+    const { catchUp } = createGenerationHarness(model, encryptor);
+    await catchUp.catchUpAgent(AGENT_ID, PROCESSED);
+    expect(
+      repository.getGenerationRunForEpoch(seeded.incoming.id, 0),
+    ).toMatchObject({
+      status: "failed",
+      errorCode: "letter_reply_perspective_conflict",
+    });
+    expect(encryptor.encryptReply).not.toHaveBeenCalled();
+  });
+
+  it("revalidates mapped references and perspective at the commit boundary", async () => {
+    const seeded = seedReadyGeneration(repository);
+    const model = new ScriptedLetterReplyModel(() => proposal);
+    const encryptor = new FixtureEncryptor();
+    const generation = createGenerationService(model, encryptor);
+    const task = claimTask(
+      repository,
+      seeded.task.id,
+      PROCESSED,
+      ACTIVE_RUN_LEASE,
+      "validation-claim",
+    );
+    const prepared = generation.preflight({ task, observedNowUtc: PROCESSED });
+    const execution = await generation.compose(prepared);
+    if (execution.status !== "succeeded")
+      throw new Error("Expected a valid composed letter");
+    const tampered = {
+      ...execution,
+      proposal: { ...execution.proposal, paragraphs: ["你叫林。"] },
+    };
+    expect(() => generation.postflight(prepared, tampered, PROCESSED)).toThrow(
+      "Letter reply generation attempt did not commit",
+    );
+    expect(encryptor.encryptReply).not.toHaveBeenCalled();
+    expect(countReplies(database)).toBe(0);
+  });
+
   it("retries the same logical run with an identical snapshot and evidence", async () => {
     const seeded = seedReadyGeneration(repository);
     const model = new ScriptedLetterReplyModel((_call, index) => {
@@ -292,7 +438,12 @@ describe("LetterReplyGenerationService", () => {
 
     expect(second.completedTaskIds).toEqual([seeded.task.id]);
     expect(model.calls).toHaveLength(2);
-    expect(model.calls[1]?.prompt).toBe(model.calls[0]?.prompt);
+    expect(model.calls[1]?.prompt).not.toBe(model.calls[0]?.prompt);
+    const withoutCallScope = (prompt: string) =>
+      prompt.replace(/ref_[a-f0-9]{16}_/g, "ref_call_");
+    expect(withoutCallScope(model.calls[1]!.prompt)).toBe(
+      withoutCallScope(model.calls[0]!.prompt),
+    );
     expect(repository.getSnapshot(seeded.snapshot.id)).toEqual(frozenSnapshot);
     expect(
       repository.getGenerationRunForEpoch(seeded.incoming.id, 0),
@@ -480,7 +631,18 @@ describe("LetterReplyGenerationService", () => {
       status: "failed",
       attempt: 1,
       errorCode: "letter_reply_encryption_failed",
-      resultHash: sha256(canonicalCorrespondenceJson(proposal)),
+      resultHash: sha256(
+        canonicalCorrespondenceJson({
+          ...proposal,
+          referencedEvidenceIds: [
+            (
+              JSON.parse(model.calls[0]!.prompt) as {
+                ALLOWED_REFERENCED_EVIDENCE_IDS: string[];
+              }
+            ).ALLOWED_REFERENCED_EVIDENCE_IDS[0],
+          ],
+        }),
+      ),
     });
     expect(failedRun?.replyLetterId).toBeUndefined();
     expect(repository.getTask(seeded.task.id)).toMatchObject({

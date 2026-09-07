@@ -159,17 +159,19 @@ export default function CharacterGeneratorPage() {
             <div className="form-section__heading">
               <span>02</span>
               <div>
-                <h2>他如何选择</h2>
-                <p>性格不是形容词清单；矛盾和目标会决定未知场景中的取舍。</p>
+                <h2>他平时是什么样</h2>
+                <p>
+                  写下一些具体的相处习惯；目前没有目标或拿不准的事，也可以开始。
+                </p>
               </div>
             </div>
             <fieldset className="field fieldset-reset">
-              <legend>三个核心性格</legend>
+              <legend>性格或行为习惯（至少一项）</legend>
               <div className="trait-inputs">
                 {form.traits.map((trait, index) => (
                   <input
                     key={index}
-                    required
+                    required={index === 0}
                     maxLength={120}
                     value={trait}
                     onChange={(event) => {
@@ -186,9 +188,8 @@ export default function CharacterGeneratorPage() {
               </div>
             </fieldset>
             <label className="field">
-              <span>一个核心矛盾</span>
+              <span>最近拿不准的事情（可空）</span>
               <textarea
-                required
                 maxLength={500}
                 rows={3}
                 value={form.coreContradiction}
@@ -199,9 +200,8 @@ export default function CharacterGeneratorPage() {
               />
             </label>
             <label className="field">
-              <span>主要目标</span>
+              <span>目前在意/想做的事（可空）</span>
               <input
-                required
                 maxLength={160}
                 value={form.primaryGoal}
                 onChange={(event) => update("primaryGoal", event.target.value)}
@@ -253,7 +253,7 @@ export default function CharacterGeneratorPage() {
                 placeholder="可粘贴人物生平、重要经历、公开与私下的关系差异、语言或翻译规则、希望避免的表达套路，以及故事所处的年份。编译器会归纳而不是逐句照搬。"
               />
               <small>
-                冲突事实会保留为待确认项；外貌会保存，但不会压过人物的选择方式、关系行为和人生主线。
+                冲突事实会保留为待确认项。材料没有支持的目标和矛盾可以留空，当前愿望也可以在生活中变化。
               </small>
             </label>
           </div>

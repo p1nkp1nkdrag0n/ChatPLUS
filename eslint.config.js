@@ -12,6 +12,9 @@ export default tseslint.config(
       "playwright-report/**",
       "test-results/**",
       "tmp/**",
+      // Imported review probes are reference artifacts outside the TS project.
+      "docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/**/*.cjs",
+      "docs/plans/ChatPLUS_db446b8_三项问题修复方案/rule_probes.mjs",
     ],
   },
   js.configs.recommended,
@@ -45,6 +48,10 @@ export default tseslint.config(
   },
   {
     files: ["eslint.config.js"],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    files: ["docs/plans/Qwen_Three_Run_120_Turn_Evidence/verify-package.mjs"],
     ...tseslint.configs.disableTypeChecked,
   },
 );

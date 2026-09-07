@@ -16,6 +16,31 @@ const GOAL = {
 };
 
 describe("character authoring contracts", () => {
+  it("normalizes absent author tensions and goals without requiring three labels", () => {
+    const input = {
+      name: "阿澄",
+      worldSetting: "当代城市",
+      workOrRole: "书店店员",
+      coreTraits: ["习惯先听别人说完"],
+      initialRelationship: "邻居",
+      dialogueStyle: "轻松自然",
+      tier: "daily",
+    };
+    expect(OriginalCharacterInputSchema.parse(input)).toMatchObject({
+      coreTraits: ["习惯先听别人说完"],
+    });
+    const blank = OriginalCharacterInputSchema.parse({
+      ...input,
+      mainGoal: "  ",
+      coreContradiction: "",
+    });
+    expect(blank.mainGoal).toBeUndefined();
+    expect(blank.coreContradiction).toBeUndefined();
+    expect(
+      OriginalCharacterInputSchema.safeParse({ ...input, coreTraits: [] })
+        .success,
+    ).toBe(false);
+  });
   it("keeps legacy goals readable while validating time milestone order", () => {
     expect(CharacterGoalSchema.parse(GOAL)).not.toHaveProperty("milestones");
 

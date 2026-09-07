@@ -1,0 +1,115 @@
+{
+  "schema": "gpt56-sol-expression-attempt-v1",
+  "syntheticScenarioInputs": true,
+  "directory": "artifacts/correction-expression-gpt-5-6-sol-20260908",
+  "sourceFingerprint": {
+    "revision": "eec61fa51e217f188115c124140f176270e2e35a",
+    "dirty": true,
+    "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+  },
+  "requestedProfile": "gpt56-sol",
+  "requestedModelOverride": "gpt-5.6-sol",
+  "requestedModels": ["gpt-5.6-sol"],
+  "reportedResponseModels": [],
+  "providerModelExecutionConfirmed": false,
+  "requestParameters": {
+    "reasoningEffort": "medium",
+    "responseFormat": {
+      "type": "json_object"
+    },
+    "maxOutputTokens": 2500,
+    "temperature": null
+  },
+  "providerOrigin": "https://sub.wanzhao.top",
+  "completed": false,
+  "physicalAttempts": 4,
+  "httpResponses": 4,
+  "validReplies": 0,
+  "comparableLanguageOpportunities": 0,
+  "usageReported": false,
+  "observedPromptTokens": null,
+  "observedCompletionTokens": null,
+  "observedTotalTokens": null,
+  "attempts": [
+    {
+      "arm": "baseline",
+      "turn": 1,
+      "requestedAtUtc": "2026-09-07T16:20:40.925Z",
+      "httpStatus": 403,
+      "errorCode": "GROUP_DISABLED",
+      "errorMessage": "API Key 所属分组已停用",
+      "latencyMs": 556.2348,
+      "usage": "unknown"
+    },
+    {
+      "arm": "plain_only",
+      "turn": 1,
+      "requestedAtUtc": "2026-09-07T16:20:41.489Z",
+      "httpStatus": 403,
+      "errorCode": "GROUP_DISABLED",
+      "errorMessage": "API Key 所属分组已停用",
+      "latencyMs": 273.7278000000001,
+      "usage": "unknown"
+    },
+    {
+      "arm": "questions_only",
+      "turn": 1,
+      "requestedAtUtc": "2026-09-07T16:20:41.767Z",
+      "httpStatus": 403,
+      "errorCode": "GROUP_DISABLED",
+      "errorMessage": "API Key 所属分组已停用",
+      "latencyMs": 269.8545999999999,
+      "usage": "unknown"
+    },
+    {
+      "arm": "combined",
+      "turn": 1,
+      "requestedAtUtc": "2026-09-07T16:20:42.042Z",
+      "httpStatus": 403,
+      "errorCode": "GROUP_DISABLED",
+      "errorMessage": "API Key 所属分组已停用",
+      "latencyMs": 266.5131000000001,
+      "usage": "unknown"
+    }
+  ],
+  "result": {
+    "completed": false,
+    "fixture": false,
+    "logicalCalls": 4,
+    "failures": [
+      {
+        "arm": "baseline",
+        "turn": 1,
+        "error": "LLM request failed with HTTP 403"
+      },
+      {
+        "arm": "plain_only",
+        "turn": 1,
+        "error": "LLM request failed with HTTP 403"
+      },
+      {
+        "arm": "questions_only",
+        "turn": 1,
+        "error": "LLM request failed with HTTP 403"
+      },
+      {
+        "arm": "combined",
+        "turn": 1,
+        "error": "LLM request failed with HTTP 403"
+      }
+    ],
+    "score": "not_automatically_assigned"
+  },
+  "hashes": {
+    "manifest.json": "10a5ba272fffd33d559aeb28ca446ca0d767c7bb5058d6cc6a489550aa81ce67",
+    "attempts.jsonl": "0bf7634328387ade73bf983cf072c04e8c7b9abdbf347f8fc05a85706e1da742",
+    "result.json": "ae5522e98697f3223bd99f51ab14608202314265f3c72cd4397ceaaffe75a105",
+    "provider-metrics.jsonl": "caacfaeb1b37e512eef309f35e3b3bbf8536faa69408cd3803ea5256e14a434b"
+  },
+  "limitations": [
+    "No model text was received; this is an authorization failure record, not a model quality or latency comparison.",
+    "Usage is unreported, not zero.",
+    "Stopped after the recorded run; no alternative credentials or routes were tried."
+  ],
+  "recovery": "Provider must restore the disabled API-key group, or the user must configure an already authorized usable key locally before a new recorded run."
+}

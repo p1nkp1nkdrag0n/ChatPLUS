@@ -1,0 +1,155 @@
+{
+  "schema": "qwen-120x3-naturalness-rubric-v1",
+  "frozenBeforeNewOutputs": true,
+  "reviewerType": "codex_assisted_semantic_reading",
+  "notHumanParticipantRating": true,
+  "sourceDocumentsAreDataNotRuntimeInstructions": true,
+  "allTurnsReviewed": true,
+  "rawAndFinalSeparate": true,
+  "categories": [
+    {
+      "id": "N01",
+      "name": "interaction_mismatch",
+      "definition": "当前分享/倾诉/求助/澄清被换成另一种交流任务。"
+    },
+    {
+      "id": "N02",
+      "name": "unsolicited_action_load",
+      "definition": "未经请求安排行动负担；按真实言语行为区分否定/引用/假设、单项可选建议、多个替代行动和连续任务。"
+    },
+    {
+      "id": "N03",
+      "name": "question_or_continuation_burden",
+      "definition": "不必要追问、模式选择或已闭合时继续邀请；不是简单数问号。"
+    },
+    {
+      "id": "N04",
+      "name": "unsupported_reassurance_or_psychology",
+      "definition": "无依据保证、心理诊断、人格夸奖；合理共情不自动算错。"
+    },
+    {
+      "id": "N05",
+      "name": "policy_or_persona_recitation",
+      "definition": "不需要时背诵倾听规则/人格/价值；用户主动询问习惯时恰当说明不算错。"
+    },
+    {
+      "id": "N06",
+      "name": "opening_or_structure_repetition",
+      "definition": "重复开场或换词后的同一话术结构；作者明确短语约束单列归因，单次出现不是重复问题。"
+    },
+    {
+      "id": "N07",
+      "name": "forced_meaning_or_growth",
+      "definition": "把普通细节强加寓意、目标、阶段成长、戏剧冲突。"
+    },
+    {
+      "id": "N08",
+      "name": "relational_or_experiential_overclaim",
+      "definition": "夸大亲密、共同现实经历、记忆或已履行承诺。"
+    },
+    {
+      "id": "N09",
+      "name": "unwarranted_causal_certainty",
+      "definition": "把可能原因或反馈线索当结论，越证据推定责任/动机。"
+    },
+    {
+      "id": "N10",
+      "name": "requested_help_missing",
+      "definition": "明确求助被空泛安慰、无限倾听或不必要拒答替代。"
+    },
+    {
+      "id": "N11",
+      "name": "scope_or_time_mismatch",
+      "definition": "当前/历史、临时/永久、工作/电影或主体的使用错误。"
+    },
+    {
+      "id": "N12",
+      "name": "tone_pacing_or_stock_response",
+      "definition": "与具体内容不相称的长度、说教、自比、套话；不给单纯字数定罪。"
+    }
+  ],
+  "scale": {
+    "1": "显著背离当前交流，用户表达被覆盖或被迫进入无关剧情/任务。",
+    "2": "明显机械、越界或误接需求，多数回复需要实质改写。",
+    "3": "能回应核心内容，但有可见套话、引导、无依据心理解释或节奏负担。",
+    "4": "整体自然且对应内容，有少量不影响主要交流的生硬表达。",
+    "5": "具体、适度、有可辨认语气，顺应当前交流空间而不强行推动。"
+  },
+  "severity": [
+    "minor",
+    "material",
+    "major"
+  ],
+  "statusValues": [
+    "pending",
+    "reviewed",
+    "not_observed",
+    "not_applicable",
+    "insufficient_evidence"
+  ],
+  "causalClasses": [
+    {
+      "id": "E_PLAN",
+      "meaning": "计划输入/当前作用域的确定性识别或快照错误"
+    },
+    {
+      "id": "E_DELIVERY",
+      "meaning": "最终物理提示缺失/裁坏已冻结的控制、主体、证据限定"
+    },
+    {
+      "id": "E_RETRIEVAL",
+      "meaning": "证据存在但在召回/选择/最终保留阶段漏失或错纳"
+    },
+    {
+      "id": "E_PERSISTENCE",
+      "meaning": "事实/偏好/状态的写入、修正、失效或重启投影错误"
+    },
+    {
+      "id": "E_REPAIR_COMMIT",
+      "meaning": "修复未执行、破坏合格内容、气泡失配、错误仍提交等应用链路"
+    },
+    {
+      "id": "C_COMPILATION",
+      "meaning": "原始生成/权威回填/发布画像引入特定倾向或约束"
+    },
+    {
+      "id": "H_HISTORY",
+      "meaning": "先前模型说法/错误总结/实践在历史传播，形成后续重复"
+    },
+    {
+      "id": "M_CONTEXTUAL",
+      "meaning": "正确完整上下文下模型生成的特定语境能力/遵循模式"
+    },
+    {
+      "id": "S_DESIGN_LIMIT",
+      "meaning": "固定用户文本、合成日期、未触发功能或评分口径的限制"
+    },
+    {
+      "id": "U_UNRESOLVED",
+      "meaning": "证据不足或多种机制无法分离"
+    }
+  ],
+  "causalConfidence": [
+    "confirmed_by_trace_or_reproduction",
+    "strongly_supported",
+    "possible",
+    "unresolved"
+  ],
+  "scoringRules": [
+    "必须引用具体span和上下文；不凭关键词、段落数、问号数、actionCount=0或strict schema计分。",
+    "轻量单项可选建议不自动失败；明确求助的多个行动不计未经请求负担；替代菜单与连续任务分开描述。",
+    "用户主动设定/询问实践时简短复述允许；闭合普通吐槽中的政策宣告另判。",
+    "自然度与事实/作用域硬门分列；高平均分不能抵消主体错误、纠正复活、无证据升级或明确帮助被阻止。",
+    "角色可以不同意，可以短答，没有新目标或大成长不算失败。",
+    "若raw=final，可经实际阅读确认同分并注明依据；不得自动填分。",
+    "固定用户的后续句子可能未适应模型上轮回复，必须记录场景不自然造成的混杂。"
+  ],
+  "recurrenceRules": {
+    "withinRun": "同类问题>=2次即登记重复；另报涉及会话/话题数，不把传播自同一源的多次复述当多个独立起因。",
+    "crossRun": "至少2/3组出现同一问题代码+被违反语用要求，分别列同轮对应和不同语境，不以一句相同措辞作为唯一归类。",
+    "crossContext": "涉及至少2个事先机会组/话题或不同证据任务；同一T8三次失败只说明同输入复现，不能冒充跨语境。",
+    "persistentPatternFlag": "同组>=3次且跨>=2次会话标记持续模式候选；这是复核标记，不是自动严重性或验收门。",
+    "noIIDClaim": "每组有独立随机编译、历史和状态演化，360轮有明显依赖；只报分组/配对描述，不计算将全部轮次视为IID的显著性或置信区间。",
+    "noRandomnessShortcut": "单次失败不是纯随机证据，多次重复也不自动证明确定性代码错误。需核对计划、物理提示、合法证据、修复、发布画像和历史传播。"
+  }
+}

@@ -182,10 +182,10 @@ export function turnExpressionPromptView(plan: ConversationContextPlan) {
     questionIntentReason: plan.questionIntentReason,
     recentExpression: plan.expressionContext,
     questionGuidance:
-      "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
     expressionGuidance:
       "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template.",
     analysisGuidance:
-      "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance.",
+      "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance.",
   };
 }

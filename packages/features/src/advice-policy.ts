@@ -53,7 +53,11 @@ export interface UnsupportedAdviceCandidate {
   strength: AdviceAction["strength"];
   /** A possible frame is audit evidence, not enough to declare a violation. */
   certainty: "explicit" | "possible";
-  reason: "unparsed_action" | "unresolved_action_frame" | "ambiguous_frame";
+  reason:
+    | "unparsed_action"
+    | "unresolved_action_frame"
+    | "ambiguous_frame"
+    | "non_physical_direction";
 }
 
 export interface AdviceLoadInspection {
@@ -79,6 +83,10 @@ const ADDITIONAL_ACTION =
   /(?:翻(?:翻|阅|看|几页)?|读(?:读|几页)?|看(?:看|几页)?)(?:[^，。；,.;！？!?、或和及]{0,12}?的)?(?:杂志|书|小说)|把(?:手机|电脑|屏幕|工作|笔|材料)(?:先)?(?:收起来|关掉|关闭|放下)/giu;
 const OPTIONAL =
   /(?:你(?:也|还)?可以|不如|不妨|要不要|要不|可以(?:试试|考虑)|^(?:也许|或许|可能)?(?:也|还)?可以|试(?:一)?试|随手|愿意的话|(?:you (?:can|could)|maybe|perhaps|how about|why not)\b)/iu;
+// Only clause-initial trials are new implicit user instructions. A substring
+// such as “我试着…” or “她建议试着…” cannot authorize an inherited user frame.
+const TRIAL_IMPERATIVE =
+  /^(?:你(?:也|还)?)?(?:先|再|就)?(?:试着|尝试(?:一下)?)/u;
 const DIRECTIVE =
   /(?:你(?:应该|应当|需要|必须|最好|得|要(?!不要))|建议你|务必|一定要|立刻|马上|(?:you (?:must|should|need to|have to)|I recommend|make sure)\b)/iu;
 const DENIED_ADVICE =
@@ -89,7 +97,7 @@ const NEGATED_MANNER =
 const REPORTED =
   /^(?:(?:你|他|她|朋友|同事|别人|妈妈|爸爸)(?:(?:刚才|之前|以前|昨天|已经|曾经|还|也|跟我|对我|和我)){0,3}(?:说|提过|建议|觉得)|我(?:刚才|之前|以前|曾经|昨天).{0,8}(?:说|建议)|(?:you|she|he|they) (?:said|suggested|asked)\b)/iu;
 const OTHER_ACTOR =
-  /^(?:我(?:也|还)?(?:今天|今晚|今早|明天|刚才|昨天|以前|下班|回家|饭后|晚上|周末|平时|会|想|准备|打算|可以|先)|(?:他|她|朋友|同事|别人)(?:也|还)?(?:今天|今晚|明天|刚才|昨天|会|想|准备|可以|先)|(?:I|she|he|they) (?:will|can|could|went|am|was|want)\b)/iu;
+  /^(?:我(?:也|还)?(?:今天|今晚|今早|明天|刚才|昨天|以前|下班|回家|饭后|晚上|周末|平时|会|想|准备|打算|可以|先|试着|尝试)|(?:他|她|朋友|同事|别人)(?:也|还)?(?:今天|今晚|明天|刚才|昨天|会|想|准备|可以|先|试着|尝试)|(?:I|she|he|they) (?:will|can|could|went|am|was|want)\b)/iu;
 const OBSERVED_ACTION =
   /^(?:你(?:已经|刚才|昨天|昨晚|之前|以前)|you (?:already|yesterday|previously)\b)/iu;
 const HYPOTHETICAL = /^(?:假如|假设|如果|要是|倘若|if\b|suppose\b)/iu;
@@ -105,11 +113,15 @@ const COORDINATED =
 const DESCRIPTION =
   /(?:都没用|都没有用|都没什么用|有助于|能让人|会让人|不是万能|也未必|的(?:东西|时候|结果))/u;
 const GENERIC_FRAME =
-  /^(?:(?:做|找)(?:点|一点|些|一些)?[^，。]{0,16}(?:事|事情|活动|办法|方式)|给.{0,8}找个出口|[^，。]{1,18}的(?:活动|事|事情)|(?:试试)?这些)(?:吧|就好)?$/u;
+  /^(?:(?:做|找)(?:点|一点|些|一些)?[^，。]{0,16}(?:事|事情|活动|办法|方式)|换(?:个|一个|一种)?[^，。]{0,16}(?:动作|活动|方式)(?:(?:缓冲|放松|过渡|调整)(?:一下|一会儿)?)?|给.{0,8}找个出口|[^，。]{1,18}的(?:活动|事|事情)|(?:试试)?这些)(?:吧|就好)?$/u;
 const NON_ACTION_COMPLEMENT =
   /^(?:是|有|没有|不是|不喜欢|不开心|难过|生气|失望|觉得|知道|理解|相信|不认同|不同意|不高兴|很|挺|更|慢慢来|不急|be\b|feel\b|know\b|believe\b)/iu;
 const CONVERSATION_INVITATION =
   /^(?:慢慢|继续|接着|放心)?(?:说(?=说|下去|完|给我|出来|吧|$)|讲(?=讲|下去|完|给我|吧|$)|聊(?=聊|下去|吧|$)|吐槽|告诉我)/u;
+// These can be unwanted conversational steering, but do not establish a concrete
+// task. Retain them for human review instead of counting them as physical work.
+const NON_PHYSICAL_DIRECTION =
+  /^(?:你)?(?:(?:今天|今晚)?(?:先|暂时|就)?)?(?:停在(?:这|这里)|到此为止|(?:别|不要)(?:再|总)?(?:多想|想太多|纠结|难过|担心|焦虑|自责|内耗))(?:了|吧|就好)?$/u;
 
 interface AdviceFrame {
   strength: AdviceAction["strength"];
@@ -131,7 +143,7 @@ export function inspectAdviceLoad(input: {
   const actions: AdviceAction[] = [];
   const unsupportedCandidates: UnsupportedAdviceCandidate[] = [];
   let frame: AdviceFrame | undefined;
-  let excluded = false;
+  let excluded: "denied" | "other" | undefined;
   const closeFrame = () => {
     if (frame?.pending !== undefined) unsupportedCandidates.push(frame.pending);
     frame = undefined;
@@ -139,7 +151,7 @@ export function inspectAdviceLoad(input: {
   for (const segment of adviceSegments(visible)) {
     if (/[。.;；！!？?]|\n\s*\n/u.test(segment.separator)) {
       closeFrame();
-      excluded = false;
+      excluded = undefined;
     }
     const rawClause = segment.text.trim();
     const clause = rawClause.replace(DISCOURSE_PREFIX, "");
@@ -148,39 +160,42 @@ export function inspectAdviceLoad(input: {
     if (!clause) {
       if (quoted) {
         closeFrame();
-        excluded = true;
+        excluded = "other";
       }
       continue;
     }
-    const optional = OPTIONAL.exec(clause);
+    const trial = TRIAL_IMPERATIVE.exec(clause);
+    const optional = OPTIONAL.exec(clause) ?? trial;
     const directive = DIRECTIVE.exec(clause);
     const cue = directive ?? optional;
     const uncertain = /^(?:也许|或许|可能)(?:可以|换|做|找|试)/u.test(clause);
     if (quoted) {
       closeFrame();
       if (cue === null) {
-        excluded = true;
+        excluded = "other";
         continue;
       }
     }
     const body =
       cue === null ? clause : clause.slice(cue.index + cue[0].length).trim();
     const candidateBody = body.replace(
-      /^(?:先|再|然后|接着|去|试试|考虑|随便|漫无目的地)\s*/u,
+      /^(?:先|再|然后|接着|去|试试|试着|尝试(?:一下)?|考虑|随便|漫无目的地)\s*/u,
       "",
     );
     // Check denial on the predicate or direct modality complement, not anywhere
     // inside its object. Reports and changed actors also bind later examples.
-    if (
-      isDenied(clause) ||
-      (cue !== null && isDenied(body)) ||
+    const changedSubjectOrScope =
       REPORTED.test(clause) ||
       OTHER_ACTOR.test(clause) ||
       OBSERVED_ACTION.test(clause) ||
-      (HYPOTHETICAL.test(clause) && !WILLINGNESS.test(clause))
+      (HYPOTHETICAL.test(clause) && !WILLINGNESS.test(clause));
+    if (
+      isDenied(clause) ||
+      (cue !== null && isDenied(body)) ||
+      changedSubjectOrScope
     ) {
       closeFrame();
-      excluded = true;
+      excluded = changedSubjectOrScope || excluded === "other" ? "other" : "denied";
       continue;
     }
     if (CONVERSATION_INVITATION.test(candidateBody)) {
@@ -188,21 +203,38 @@ export function inspectAdviceLoad(input: {
       // The invitation itself also resolves a preceding generic list parent.
       if (frame !== undefined) delete frame.pending;
       closeFrame();
-      excluded = true;
+      excluded = "other";
       continue;
     }
-    const explicitUser =
+    const explicitUser = (trial !== null && /^你/u.test(clause)) ||
       /(?:你(?:也|还)?(?:可以|应该|应当|需要|必须|最好|得)|建议你|\byou (?:can|could|must|should|need to)\b)/iu.test(
         clause,
       );
+    // A denied task still excludes bare list children. A new finite imperative
+    // after the comma starts a different proposal; reported actors do not.
+    const newTrialAfterDenial = excluded === "denied" && trial !== null;
     if (
       excluded &&
       !explicitUser &&
+      !newTrialAfterDenial &&
       !(CONTRAST.test(rawClause) && cue !== null)
     )
       continue;
-    if (explicitUser || (CONTRAST.test(rawClause) && cue !== null))
-      excluded = false;
+    if (explicitUser || newTrialAfterDenial || (CONTRAST.test(rawClause) && cue !== null))
+      excluded = undefined;
+    if (NON_PHYSICAL_DIRECTION.test(candidateBody)) {
+      closeFrame();
+      const start = segment.start + segment.text.indexOf(candidateBody);
+      unsupportedCandidates.push({
+        text: input.text.slice(start, start + candidateBody.length),
+        start,
+        end: start + candidateBody.length,
+        strength: "directive",
+        certainty: "possible",
+        reason: "non_physical_direction",
+      });
+      continue;
+    }
     const candidates = [
       ...segment.text.matchAll(ACTION),
       ...segment.text.matchAll(ADDITIONAL_ACTION),

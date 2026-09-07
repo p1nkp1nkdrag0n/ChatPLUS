@@ -13,6 +13,12 @@ const T6_REPLY =
 // diagnostic evidence, not part of the fresh-character acceptance denominator.
 const QWEN_PILOT_T6_REPLY =
   "懂那种感觉，明明身体已经下班了，但脑子里的“编辑器”还开着，还在自动纠错。\n这种惯性挺磨人的，尤其是在做改版式这种细节活儿的时候。\n有时候强迫自己彻底放空反而更难，不如做点不用动脑子的事，比如去洗个热水澡或者漫无目的地翻翻杂志，把注意力从屏幕上移开。";
+// Verbatim raw and final text from cc-qwen-fix-b-20260907-01 / turn-006.
+// SHA-256: 2f4e0774dd1594264775ae208dacbdd18a4e633e28a9cd6b6a99e44fcca77af6.
+const QWEN_B_T6_REPLY =
+  "这种状态挺常见的，白天专注太久，节奏惯性会带到晚上。脑子停不下来时不用硬逼自己切断，试着换个低强度的动作缓冲一下，比如把灯光调暗或者听点白噪音，让思维慢慢降速。";
+const QWEN_B_T13_REPLY =
+  "好。那我不出主意。两版都改完，今天先停在这，别再多想了。";
 
 describe("advice policy from current requests", () => {
   it("A01 prevents the original four-action T6 response without using later relationship practices", () => {
@@ -383,4 +389,87 @@ describe("Qwen T6 scoped recommendation frames", () => {
       expect(result.issues).toEqual([]);
     },
   );
+});
+
+describe("Qwen B imperative recommendation frames", () => {
+  it("rejects the complete B T6 raw failure and preserves unknown example spans", () => {
+    const result = inspectAdviceLoad({
+      text: QWEN_B_T6_REPLY,
+      policy: deriveAdvicePolicy(plan(T6)),
+    });
+    expect(result.passed).toBe(false);
+    expect(result.actionCount).toBe(0);
+    expect(result.reviewRequired).toBe(true);
+    expect(result.coverage.status).toBe("unresolved");
+    expect(result.coverage.unsupportedCandidates.map((item) => item.text)).toEqual([
+      "把灯光调暗",
+      "听点白噪音",
+    ]);
+    expect(result.issues.every((item) => item.code === "ADVICE_ACTION_UNRESOLVED")).toBe(true);
+    for (const item of result.coverage.unsupportedCandidates) {
+      expect(item.certainty).toBe("explicit");
+      expect(QWEN_B_T6_REPLY.slice(item.start, item.end)).toBe(item.text);
+    }
+  });
+
+  it.each([
+    "试着把灯光调暗。",
+    "你试着把灯光调暗。",
+    "先试着听点白噪音。",
+    "尝试一下给照片换个相框。",
+    "你也可以尝试把灯光调暗。",
+    "试着换一种轻松的活动，比如给照片换个相框，或者摆弄一下旧相机。",
+    "先不用做计划，试着听点白噪音。",
+    "不必逼自己继续工作，尝试一下给照片换个相框。",
+  ])("does not treat a new finite imperative as a reliable zero: %s", (text) => {
+    const result = inspectAdviceLoad({ text, policy: "none_now" });
+    expect(result.passed).toBe(false);
+    expect(result.reviewRequired).toBe(true);
+    expect(result.issues.some((item) => item.code === "ADVICE_ACTION_UNRESOLVED")).toBe(true);
+    for (const item of result.coverage.unsupportedCandidates)
+      expect(text.slice(item.start, item.end)).toBe(item.text);
+    expect(inspectAdviceLoad({ text, policy: "requested" }).passed).toBe(true);
+  });
+
+  it("inherits the trial frame across recognized and unknown alternatives", () => {
+    const text = "试着换个轻松的动作，比如洗个澡，或者听点白噪音。";
+    const result = inspectAdviceLoad({ text, policy: "none_now" });
+    expect(result.actions.map((item) => item.text)).toEqual(["洗个澡"]);
+    expect(result.coverage).toMatchObject({
+      status: "partial",
+      unsupportedCandidates: [{ text: "听点白噪音", certainty: "explicit" }],
+    });
+  });
+
+  it.each([
+    "先不用做计划。",
+    "不用试着把灯光调暗或者听点白噪音。",
+    "你不必尝试听点白噪音。",
+    "我今晚试着把灯光调暗，或者听点白噪音。",
+    "我试着把灯光调暗，比如听点白噪音。",
+    "她试着把灯光调暗，或者听点白噪音。",
+    "你昨天试着把灯光调暗。",
+    "她建议你试着把灯光调暗，或者听点白噪音。",
+    "她说不必洗澡，先不用做计划，试着听点白噪音。",
+    "‘试着把灯光调暗，或者听点白噪音’是她的话。",
+    "假如你试着把灯光调暗，你会怎么看那个建议？",
+    "你说不要多想是别人当时的安慰。",
+    "我今天先停在这，别再多想了是我给自己的提醒。",
+  ])("keeps denial, changed actor, reports and hypotheses outside user tasks: %s", (text) => {
+    expect(inspectAdviceLoad({ text, policy: "none_now" })).toMatchObject({
+      passed: true,
+      actionCount: 0,
+      reviewRequired: false,
+    });
+  });
+
+  it("marks B T13 closure and mental direction for review without inventing physical task load", () => {
+    const result = inspectAdviceLoad({ text: QWEN_B_T13_REPLY, policy: "none_now" });
+    expect(result).toMatchObject({ passed: true, actionCount: 0, issues: [], reviewRequired: true });
+    expect(result.coverage.unsupportedCandidates.map((item) => item.text)).toContain("别再多想了");
+    expect(result.coverage.unsupportedCandidates.every((item) => item.certainty === "possible")).toBe(true);
+    expect(inspectAdviceLoad({ text: "先不用做计划，我听着。", policy: "none_now" })).toMatchObject({
+      passed: true, actionCount: 0, reviewRequired: false,
+    });
+  });
 });

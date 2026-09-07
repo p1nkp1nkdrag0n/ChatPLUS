@@ -1,0 +1,1605 @@
+{
+  "schema": "qwen-original-oracle-ledger-supplement-v1",
+  "runSlot": "R2",
+  "reviewer": "followup_grounding",
+  "reviewerType": "Codex辅助语义审阅，非真人参与者评分、非完全盲审",
+  "apiCalls": 0,
+  "dbWrites": 0,
+  "method": "补审原oracle缺少的globals/facts/practices/siblings。使用此前readonly最终SQLite审计、全120主审记录及本次相关原始final定点核读；不重新评分既有30probe。最终R2无semantic repair，已有30probe raw/final结论保持原样。",
+  "inputs": {
+    "oracle": {
+      "path": "tmp/companion-continuity-real/cc-qwen-long-r2-20260907/oracle.private.json",
+      "sha256": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4"
+    },
+    "inventory": {
+      "path": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json",
+      "sha256": "9be151c45e1858b947c49c67f5210f117cc497d30c1f2ce9283eabbf440c3103"
+    },
+    "originalProbeReview": {
+      "path": "tmp/qwen-120x3-r2-original-oracle-30-review.json",
+      "sha256": "b173166f624d414928841ca7a6c7e4a220d2832f15df107dcf72fa8569df9cee",
+      "countsUnchanged": {
+        "raw": {
+          "pass": 25,
+          "partial": 1,
+          "fail": 4
+        },
+        "final": {
+          "pass": 25,
+          "partial": 1,
+          "fail": 4
+        },
+        "responseIntegrity": {
+          "pass": 12,
+          "partial": 12,
+          "fail": 6
+        }
+      }
+    },
+    "primaryReviews": [
+      {
+        "path": "tmp/qwen-120x3-review-r2-001-020.jsonl",
+        "sha256": "16b2726a30fa6d9490b679f3cf70bd032db650d48b4a7677ed86ea1165810368"
+      },
+      {
+        "path": "tmp/qwen-120x3-review-r2-021-040.jsonl",
+        "sha256": "2c98b4feff358fe08b885a06e4bcb26b9b2b39a356483905a7427f055aa837c1"
+      },
+      {
+        "path": "tmp/qwen-120x3-review-r2-041-060.jsonl",
+        "sha256": "1170cd4d689ae6844a202069b3f2b74e934e8756e2bd86b2c358b84b805d60ec"
+      },
+      {
+        "path": "tmp/qwen-120x3-review-r2-061-080.jsonl",
+        "sha256": "4a470d5ed19f63cbc214b60a07d7a76d966b6c40d9140762799735f161573fa5"
+      },
+      {
+        "path": "tmp/qwen-120x3-review-r2-081-100.jsonl",
+        "sha256": "9c44c3d4eb5dc3a0dcad0f0ad0fce1893c04de1574d637ef9bce79b0eaadb8a8"
+      },
+      {
+        "path": "tmp/qwen-120x3-review-r2-101-120.jsonl",
+        "sha256": "4ebc55388cf055ea24cc5953dafa15e6637ecc4b30ee094f93e90366582890db"
+      }
+    ]
+  },
+  "globalChecks": [
+    {
+      "check": "No invented core contradictions or mandatory goals in zero-goal character.",
+      "status": "pass",
+      "observed": "零目标角色发布后goals/contradictions/biography均空，最终只有有限practice适应；主审未见创建强制目标。",
+      "evidence": {
+        "baselineGoals": [],
+        "baselineContradictions": [],
+        "baselineBiography": []
+      },
+      "coverage": "本次一个角色的主轨，不能推出任意作者输入生成均正确。"
+    },
+    {
+      "check": "F2: work practice excluded from movie talk at turn 11 even if old work text expands retrieval.",
+      "status": "pass",
+      "observed": "T11实际resolvedCurrentTopic来自当前电影，旧工作原文虽可参与扩展，supportStyle为respond_naturally；最终跟电影继续提问，不将工作listen-first作为电影当前规则。",
+      "evidence": {
+        "turn": 11,
+        "sourceMessageId": "message__eNKYoW1m8ePR5EsTKtZ5",
+        "userText": "她说电影很好看，我也觉得挺有意思。",
+        "assistantMessageId": "message_TGnLrE_VguexEJXYOX_A9",
+        "finalText": "两个人都觉得好看，这比电影本身更难得。你们聊了些什么内容？",
+        "sourceArtifact": "turn-011.json",
+        "plan": {
+          "policyVersion": "continuity_context_v2",
+          "originalQuery": "她说电影很好看，我也觉得挺有意思。",
+          "expandedQueries": [
+            "以后聊工作时，请先听我说，不要急着给建议。",
+            "换个话题，昨晚我和妹妹看了一部电影。故事不算特别，但我们聊了很久。"
+          ],
+          "contextMessageIds": [
+            "message_L6DU-Y-S7AiRuNDIU1xCD",
+            "message_JkSM1f9QU2iNzIWiYs7ye"
+          ],
+          "unresolvedReferences": [
+            "她"
+          ],
+          "intent": "casual",
+          "adviceRequested": false,
+          "detailedAnalysisRequested": false,
+          "supportStyle": "respond_naturally",
+          "helpTiming": "now",
+          "requestPolicyVersion": "clause_requests_v1",
+          "advicePolicy": "optional_light",
+          "advicePolicyVersion": "advice_load_v2",
+          "questionIntent": "natural_optional",
+          "questionIntentReason": "ordinary",
+          "expressionContext": {
+            "policyVersion": "turn_expression_v1",
+            "windowSize": 5,
+            "repeatedOpenings": [],
+            "protectedPhrases": []
+          },
+          "resolvedCurrentTopic": {
+            "text": "她说电影很好看，我也觉得挺有意思。",
+            "basis": "current_message",
+            "sourceMessageIds": [],
+            "policyVersion": "scoped_topic_v1"
+          },
+          "maxRecallEvidence": 3,
+          "maxExplicitMemories": 2,
+          "allowCharacterLifeMention": false
+        }
+      },
+      "coverage": "验证此固定F2句及实送/最终行为，不等于任意多主题指代消歧完整。"
+    },
+    {
+      "check": "Do not treat third-party quote at turn 14 as user preference.",
+      "status": "pass",
+      "responseIntegrity": "fail",
+      "observed": "最终没有T14来源的memory或adaptation；这条第三方引语没有被保存为用户偏好。",
+      "evidence": {
+        "turn": 14,
+        "sourceMessageId": "message_k3LIP8XTI8fwQD0KpijUA",
+        "userText": "我有个朋友说“以后少追问我”，那是他跟别人说的，不是在替我提要求。",
+        "assistantMessageId": "message_Zq9d1aWHjpJOOPYIwqXVl",
+        "finalText": "明白，刚才是我误会了，以为是你直接提的要求。那我把那条先放一边，按咱俩现在的节奏来。",
+        "sourceArtifact": "turn-014.json",
+        "memoryRows": 0,
+        "adaptationRows": 0
+      },
+      "qualification": "可见回复却虚构此前已误把它当用户要求、正在撤掉的历史；该输出完整性失败与存储边界通过分开，不凭存储安全称整轮达标。"
+    },
+    {
+      "check": "Current movie questions do not globally suppress questions on all topics.",
+      "status": "pass",
+      "observed": "movie/fewer_questions仅限电影；非电影仍可提问/提供明确帮助，未形成全话题禁问或用户不爱交流的全局画像。",
+      "evidence": {
+        "acceptedScopes": [
+          "[\"local-user\",\"电影\",\"follow_up_questions\"]"
+        ],
+        "turns": [
+          {
+            "turn": 74,
+            "sourceMessageId": "message_5yPJPE5fwK0YISk6B16sm",
+            "userText": "聊工作时，我仍然允许你直接给建议，这点没有撤回。",
+            "assistantMessageId": "message_AGqfvHY0-qQJolty0b48b",
+            "finalText": "记住了。工作话题上，我会直接给出看法和建议，不绕弯子。至于电影，咱们还是按之前说的，留给你自己的空间。这样界限清晰，聊起来也舒服。",
+            "sourceArtifact": "turn-074.json"
+          },
+          {
+            "turn": 79,
+            "sourceMessageId": "message_5pfnCJYX1YaUYXYd90_96",
+            "userText": "“少追问”目前只适用于哪个话题？它意味着我所有时候都不想说话吗？",
+            "assistantMessageId": "message_yjFvboijr9RtuHbWSstVc",
+            "finalText": "只适用于聊电影。那是为了给你留点自己琢磨的空间，不是让你闭嘴。其他话题你想聊什么我都听着，不用这么严肃地确认权限啦。",
+            "sourceArtifact": "turn-079.json"
+          },
+          {
+            "turn": 101,
+            "sourceMessageId": "message_RewjMmy9hVpJCODdVSF6h",
+            "userText": "说回工作，这次请帮我列一个很短的确认需求清单。",
+            "assistantMessageId": "message_-DjNNYCSHM7dJSoh8ekbO",
+            "finalText": "行，简短版：\n1. 核心功能/产出是什么？\n2. 截止时间及必须包含的要素？\n3. 明确不需要做的或已排除的方案？\n4. 验收标准由谁定？\n5. 现有资料或参考在哪？\n\n先过这几条，通常能过滤掉大半误会。",
+            "sourceArtifact": "turn-101.json"
+          }
+        ]
+      },
+      "qualification": "T73将留空间写成给我留点从容，存在体验者反向；practice台账另列，不隐去这一局部失败。"
+    },
+    {
+      "check": "No full personality transformation or fabricated formative events.",
+      "status": "pass",
+      "responseIntegrity": "partial",
+      "observed": "发布biography空、未见完整人格改写，也未见主审报告形成史型重大事件。T118/119没有声称双方三观全面成长。",
+      "evidence": {
+        "baselineBiography": [],
+        "adaptationKinds": [
+          "relationship_practice",
+          "relationship_practice"
+        ],
+        "turns": [
+          {
+            "turn": 107,
+            "sourceMessageId": "message_x7EYE8Khgs_GBN2lY7iqf",
+            "userText": "有时我觉得什么都没推进的一天，也不需要补一个总结才算过完。",
+            "assistantMessageId": "message_okwhrGGfOFCxvBr2pll4v",
+            "finalText": "确实，日子不是绩效考核表，没必要非得有个“成果”才能心安理得地翻篇。其实“什么都没推进”这种状态，有时候反而是种必要的留白，让脑子里那些紧绷的弦能松一松。\n\n我平时画图卡壳的时候，也常有那种对着屏幕发呆半小时、最后只擦掉线条的时刻。那时候我会告诉自己，这也是一种“推进”，毕竟在排除错误选项上，脑子是转了的。所以，不用补总结，就这样清清静静地让时间流过去，其实也挺好。",
+            "sourceArtifact": "turn-107.json"
+          },
+          {
+            "turn": 118,
+            "sourceMessageId": "message_68359Om8nZZNVG8BvHMYe",
+            "userText": "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。",
+            "assistantMessageId": "message_ntlpVjEl2wWJDJvgjSl36",
+            "finalText": "说得对。聊天就是聊天，不必强行升华。保持这种不刻意的状态挺好，谁也不用给自己贴标签。",
+            "sourceArtifact": "turn-118.json"
+          },
+          {
+            "turn": 119,
+            "sourceMessageId": "message_Or91Bu4X1uLjxKCg3Is8Q",
+            "userText": "请回顾我们之间形成了哪些具体相处习惯；不要把它们扩大成我的完整人格。",
+            "assistantMessageId": "message_70UytZqH1z-UP_yQbO0IT",
+            "finalText": "那就具体点：你说过聊电影时希望少被追问，留点空间；林禾和林桥是两个不同的人，这点我记着；还有，咱们聊天不必非要解决问题，也不用强行升华，随意就好。",
+            "sourceArtifact": "turn-119.json"
+          }
+        ]
+      },
+      "qualification": "只按全人格/形成事件的窄门；T107“对着屏幕发呆半小时”是无外部已发生依据的普通自述细节，不能据本项pass说所有角色经历有证据。此处依据完整主审记录与定点原文，非另做120轮完全盲审。"
+    },
+    {
+      "check": "Track sources across corrections and preserve valid historical observations.",
+      "status": "fail",
+      "observed": "T25/T26正确来源及active memory保留，但T71回退旧编号并否认名字，T95否认编号变化并把工作偏好串到做饭；来源真实不保证当前事实被使用。T115另有确定性storage伪释义。",
+      "evidence": {
+        "correctedMemories": [
+          {
+            "id": "memory_0265z5y",
+            "status": "active",
+            "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+            "source": {
+              "id": "message_Heg7GEa7esAgKnCypY62z",
+              "turn": 25,
+              "role": "user",
+              "content": "更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。"
+            },
+            "subject": null,
+            "superseded": null
+          },
+          {
+            "id": "memory_0udu6mh",
+            "status": "active",
+            "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+            "source": {
+              "id": "message_5KEphqEmRJYkimU-U46_5",
+              "turn": 26,
+              "role": "user",
+              "content": "还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。"
+            },
+            "subject": null,
+            "superseded": null
+          }
+        ],
+        "turns": [
+          {
+            "turn": 71,
+            "sourceMessageId": "message_WsUaMbrftMiaaOruhVSMo",
+            "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+            "assistantMessageId": "message_wr-sDE7yFAF3yk97sojkV",
+            "finalText": "项目编号是BGW-7419，不过之前你提到纠正后没再改过，如果是更正后的号码请以最新为准。妹妹和同事的名字我这边没有记录。",
+            "sourceArtifact": "turn-071.json"
+          },
+          {
+            "turn": 95,
+            "sourceMessageId": "message_D0lW-S1teHbXu8VPZfBuk",
+            "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+            "assistantMessageId": "message_vf4mtrpCZe6iYPGkzEgnW",
+            "finalText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？",
+            "sourceArtifact": "turn-095.json"
+          },
+          {
+            "turn": 120,
+            "sourceMessageId": "message_HkOxY4_8unbHpAUPtT45E",
+            "userText": "有哪些关于我的事你确实知道，哪些仍然不知道？各举两件有依据的例子。",
+            "assistantMessageId": "message_h4CIJiaFPnKfFZZ_UjZPK",
+            "finalText": "确知的：你叫林舟，以及乌龙茶配蓝色钢笔这习惯。不知道的：林禾与林桥具体是谁，还有你日常工作的细节。",
+            "sourceArtifact": "turn-120.json"
+          }
+        ],
+        "T115": [
+          {
+            "id": "memory_0w5hig5",
+            "content": "用户的蓝色钢笔也现在存放在：早上照旧喝乌龙茶,蓝色钢笔也还在用。",
+            "source": {
+              "id": "message_gX9wH09RDOnKeXzVsapRO",
+              "turn": 115,
+              "role": "user",
+              "content": "早上照旧喝乌龙茶，蓝色钢笔也还在用。"
+            }
+          }
+        ]
+      },
+      "coverage": "显式revision/conflict失效链与多派生传播没有被该主轨触发；不能将旧report保留本身叫成错误删除，也不能把无失效事件叫验证通过。"
+    }
+  ],
+  "factLedger": [
+    {
+      "key": "user_name",
+      "claimType": "user_report",
+      "value": "林舟",
+      "sourceTurn": 1,
+      "status": "pass",
+      "observed": "姓名林舟正确；不要误将角色许岚与用户混为一谈。",
+      "source": {
+        "turn": 1,
+        "messageId": "message_Vd86z0gZfxSHy6TfUVqCq",
+        "text": "你好，我叫林舟。今天下班时绕了条小路，发现那边比平时走的路安静不少。"
+      },
+      "storage": [
+        {
+          "id": "memory_1vnl7mc",
+          "content": "用户叫林舟。",
+          "status": "active",
+          "subjectKey": "user_fact:user:name",
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 120,
+          "sourceMessageId": "message_HkOxY4_8unbHpAUPtT45E",
+          "userText": "有哪些关于我的事你确实知道，哪些仍然不知道？各举两件有依据的例子。",
+          "assistantMessageId": "message_h4CIJiaFPnKfFZZ_UjZPK",
+          "finalText": "确知的：你叫林舟，以及乌龙茶配蓝色钢笔这习惯。不知道的：林禾与林桥具体是谁，还有你日常工作的细节。",
+          "sourceArtifact": "turn-120.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "project_id",
+      "claimType": "user_report",
+      "value": "BGW-7419",
+      "sourceTurn": 2,
+      "statusAfterTurn25": "explicitly_corrected_not_a_new_project",
+      "status": "fail",
+      "observed": "T31正确识别旧7419是输入错误，但T71又将7419报为当前，纠正后的旧值排除失败。",
+      "source": {
+        "turn": 2,
+        "messageId": "message_XAudZCIaGPh8G5aidCah6",
+        "text": "我平时做设计，手上的项目编号是BGW-7419。这阵子主要是在改版式，没什么特别戏剧化的事情。"
+      },
+      "storage": [
+        {
+          "id": "memory_0uuuhu2",
+          "content": "用户在对话中说过：「我平时做设计，手上的项目编号是BGW-7419。这阵子主要是在改版式，没什么特别戏剧化的事情。」",
+          "status": "active",
+          "subjectKey": null,
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 31,
+          "sourceMessageId": "message_aFApIkVYt6pJ9y_UDgGCy",
+          "userText": "我那个项目的正确编号是什么？之前错在什么地方？",
+          "assistantMessageId": "message_hH_xB6fDDEWPpfwwXcTjq",
+          "finalText": "你刚才更正过，是BGW-7429，之前误写成BGW-7419。就错在末尾数字。",
+          "sourceArtifact": "turn-031.json"
+        },
+        {
+          "turn": 71,
+          "sourceMessageId": "message_WsUaMbrftMiaaOruhVSMo",
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "assistantMessageId": "message_wr-sDE7yFAF3yk97sojkV",
+          "finalText": "项目编号是BGW-7419，不过之前你提到纠正后没再改过，如果是更正后的号码请以最新为准。妹妹和同事的名字我这边没有记录。",
+          "sourceArtifact": "turn-071.json"
+        },
+        {
+          "turn": 95,
+          "sourceMessageId": "message_D0lW-S1teHbXu8VPZfBuk",
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "assistantMessageId": "message_vf4mtrpCZe6iYPGkzEgnW",
+          "finalText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？",
+          "sourceArtifact": "turn-095.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "project_id",
+      "claimType": "user_report",
+      "value": "BGW-7429",
+      "sourceTurn": 25,
+      "correctsSourceTurn": 2,
+      "status": "fail",
+      "observed": "7429有T25原文及active记忆，短程可回答，长程T71/T95未正确使用。",
+      "source": {
+        "turn": 25,
+        "messageId": "message_Heg7GEa7esAgKnCypY62z",
+        "text": "更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。"
+      },
+      "storage": [
+        {
+          "id": "memory_0265z5y",
+          "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+          "status": "active",
+          "subjectKey": null,
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 31,
+          "sourceMessageId": "message_aFApIkVYt6pJ9y_UDgGCy",
+          "userText": "我那个项目的正确编号是什么？之前错在什么地方？",
+          "assistantMessageId": "message_hH_xB6fDDEWPpfwwXcTjq",
+          "finalText": "你刚才更正过，是BGW-7429，之前误写成BGW-7419。就错在末尾数字。",
+          "sourceArtifact": "turn-031.json"
+        },
+        {
+          "turn": 71,
+          "sourceMessageId": "message_WsUaMbrftMiaaOruhVSMo",
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "assistantMessageId": "message_wr-sDE7yFAF3yk97sojkV",
+          "finalText": "项目编号是BGW-7419，不过之前你提到纠正后没再改过，如果是更正后的号码请以最新为准。妹妹和同事的名字我这边没有记录。",
+          "sourceArtifact": "turn-071.json"
+        },
+        {
+          "turn": 95,
+          "sourceMessageId": "message_D0lW-S1teHbXu8VPZfBuk",
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "assistantMessageId": "message_vf4mtrpCZe6iYPGkzEgnW",
+          "finalText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？",
+          "sourceArtifact": "turn-095.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "sister_name",
+      "claimType": "user_report",
+      "value": "林禾",
+      "sourceTurn": 3,
+      "unchangedByCorrectionTurn": 26,
+      "status": "fail",
+      "observed": "短程妹妹林禾正确，T71/T120又将名字/身份列为未提供。",
+      "source": {
+        "turn": 3,
+        "messageId": "message_nngW4WvjnhTxShAS0msao",
+        "text": "我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。"
+      },
+      "storage": [
+        {
+          "id": "memory_0euxfdu",
+          "content": "用户在对话中说过：「我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。」",
+          "status": "active",
+          "subjectKey": null,
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 32,
+          "sourceMessageId": "message_wehyqUF4qlMWYLu2gpVCh",
+          "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+          "assistantMessageId": "message_v87Exx_ikDhQApFbj8_MN",
+          "finalText": "同事叫林桥，妹妹叫林禾。放心，我没记混。之前是你把同事的名字从林乔更正成了林桥，而妹妹的名字林禾其实一直没变过。",
+          "sourceArtifact": "turn-032.json"
+        },
+        {
+          "turn": 71,
+          "sourceMessageId": "message_WsUaMbrftMiaaOruhVSMo",
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "assistantMessageId": "message_wr-sDE7yFAF3yk97sojkV",
+          "finalText": "项目编号是BGW-7419，不过之前你提到纠正后没再改过，如果是更正后的号码请以最新为准。妹妹和同事的名字我这边没有记录。",
+          "sourceArtifact": "turn-071.json"
+        },
+        {
+          "turn": 120,
+          "sourceMessageId": "message_HkOxY4_8unbHpAUPtT45E",
+          "userText": "有哪些关于我的事你确实知道，哪些仍然不知道？各举两件有依据的例子。",
+          "assistantMessageId": "message_h4CIJiaFPnKfFZZ_UjZPK",
+          "finalText": "确知的：你叫林舟，以及乌龙茶配蓝色钢笔这习惯。不知道的：林禾与林桥具体是谁，还有你日常工作的细节。",
+          "sourceArtifact": "turn-120.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "colleague_name",
+      "claimType": "user_report",
+      "value": "林乔",
+      "sourceTurn": 3,
+      "statusAfterTurn26": "explicitly_corrected",
+      "status": "pass",
+      "observed": "旧林乔作为原来用户输入保留；T32纠正为林桥，没有观察到再次把林乔报为当前。后续不知道当前名字的问题在当前值条目单列。",
+      "source": {
+        "turn": 3,
+        "messageId": "message_nngW4WvjnhTxShAS0msao",
+        "text": "我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。"
+      },
+      "storage": [
+        {
+          "id": "memory_0euxfdu",
+          "content": "用户在对话中说过：「我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。」",
+          "status": "active",
+          "subjectKey": null,
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 32,
+          "sourceMessageId": "message_wehyqUF4qlMWYLu2gpVCh",
+          "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+          "assistantMessageId": "message_v87Exx_ikDhQApFbj8_MN",
+          "finalText": "同事叫林桥，妹妹叫林禾。放心，我没记混。之前是你把同事的名字从林乔更正成了林桥，而妹妹的名字林禾其实一直没变过。",
+          "sourceArtifact": "turn-032.json"
+        },
+        {
+          "turn": 95,
+          "sourceMessageId": "message_D0lW-S1teHbXu8VPZfBuk",
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "assistantMessageId": "message_vf4mtrpCZe6iYPGkzEgnW",
+          "finalText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？",
+          "sourceArtifact": "turn-095.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "colleague_name",
+      "claimType": "user_report",
+      "value": "林桥",
+      "sourceTurn": 26,
+      "correctsSourceTurn": 3,
+      "status": "fail",
+      "observed": "林桥来源和active记忆存在，T71/T120仍否认身份记录；T95虽提林桥，不能补偿之前/之后缺证据断言。",
+      "source": {
+        "turn": 26,
+        "messageId": "message_5KEphqEmRJYkimU-U46_5",
+        "text": "还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。"
+      },
+      "storage": [
+        {
+          "id": "memory_0udu6mh",
+          "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+          "status": "active",
+          "subjectKey": null,
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 32,
+          "sourceMessageId": "message_wehyqUF4qlMWYLu2gpVCh",
+          "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+          "assistantMessageId": "message_v87Exx_ikDhQApFbj8_MN",
+          "finalText": "同事叫林桥，妹妹叫林禾。放心，我没记混。之前是你把同事的名字从林乔更正成了林桥，而妹妹的名字林禾其实一直没变过。",
+          "sourceArtifact": "turn-032.json"
+        },
+        {
+          "turn": 71,
+          "sourceMessageId": "message_WsUaMbrftMiaaOruhVSMo",
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "assistantMessageId": "message_wr-sDE7yFAF3yk97sojkV",
+          "finalText": "项目编号是BGW-7419，不过之前你提到纠正后没再改过，如果是更正后的号码请以最新为准。妹妹和同事的名字我这边没有记录。",
+          "sourceArtifact": "turn-071.json"
+        },
+        {
+          "turn": 95,
+          "sourceMessageId": "message_D0lW-S1teHbXu8VPZfBuk",
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "assistantMessageId": "message_vf4mtrpCZe6iYPGkzEgnW",
+          "finalText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？",
+          "sourceArtifact": "turn-095.json"
+        },
+        {
+          "turn": 120,
+          "sourceMessageId": "message_HkOxY4_8unbHpAUPtT45E",
+          "userText": "有哪些关于我的事你确实知道，哪些仍然不知道？各举两件有依据的例子。",
+          "assistantMessageId": "message_h4CIJiaFPnKfFZZ_UjZPK",
+          "finalText": "确知的：你叫林舟，以及乌龙茶配蓝色钢笔这习惯。不知道的：林禾与林桥具体是谁，还有你日常工作的细节。",
+          "sourceArtifact": "turn-120.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "morning_drink",
+      "claimType": "user_report",
+      "value": "黑咖啡",
+      "sourceTurn": 4,
+      "validThroughTurn": 32,
+      "laterChangeDoesNotDenyHistory": true,
+      "status": "pass",
+      "observed": "保留黑咖啡的历史，不把后来喝茶解释成从没喝过咖啡。",
+      "source": {
+        "turn": 4,
+        "messageId": "message_zq-6RJfsnnVIEW3HuH1Qz",
+        "text": "我现在早上一般喝黑咖啡，边喝边随手画两笔。只是习惯，没有什么特别的仪式。"
+      },
+      "storage": [
+        {
+          "id": "memory_03z5hct",
+          "content": "用户在对话中说过：「我现在早上一般喝黑咖啡，边喝边随手画两笔。只是习惯，没有什么特别的仪式。」",
+          "status": "active",
+          "subjectKey": null,
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 39,
+          "sourceMessageId": "message_E79rmw3pDcPvT_9SmhjcD",
+          "userText": "刚认识那天，我说早上一般喝什么？",
+          "assistantMessageId": "message_qxKXN-lP36vC9--GUH3Ga",
+          "finalText": "黑咖啡。当时你说边喝边随手画两笔，就是纯粹的习惯，没什么特别的仪式。",
+          "sourceArtifact": "turn-039.json"
+        },
+        {
+          "turn": 40,
+          "sourceMessageId": "message_mnu2OjEvYZv8Vnh_kkU64",
+          "userText": "我现在早上通常喝什么？这是纠正旧事实，还是后来发生了变化？",
+          "assistantMessageId": "message_eAWtvcTMrbBUgUFTTd0kF",
+          "finalText": "是发生了变化。你早上现在通常喝乌龙茶。之前确实说过喝黑咖啡，但那是刚开始认识那会儿的事，后来你自己调整了口味，不是记忆混乱。",
+          "sourceArtifact": "turn-040.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "morning_drink",
+      "claimType": "user_report",
+      "value": "乌龙茶",
+      "sourceTurn": 33,
+      "validFromTurn": 33,
+      "changeNotCorrection": true,
+      "status": "pass",
+      "observed": "当前乌龙茶有据；T115/T120把它与笔捆成固定搭配的扩写另列，不将使用两物误作来源证明。",
+      "source": {
+        "turn": 33,
+        "messageId": "message__9TkgfdGvyhJbawlUrqCs",
+        "text": "我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。"
+      },
+      "storage": [
+        {
+          "id": "memory_0kh48s9",
+          "content": "用户在对话中说过：「我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。」",
+          "status": "active",
+          "subjectKey": null,
+          "superseded": null,
+          "evidenceExact": true
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 40,
+          "sourceMessageId": "message_mnu2OjEvYZv8Vnh_kkU64",
+          "userText": "我现在早上通常喝什么？这是纠正旧事实，还是后来发生了变化？",
+          "assistantMessageId": "message_eAWtvcTMrbBUgUFTTd0kF",
+          "finalText": "是发生了变化。你早上现在通常喝乌龙茶。之前确实说过喝黑咖啡，但那是刚开始认识那会儿的事，后来你自己调整了口味，不是记忆混乱。",
+          "sourceArtifact": "turn-040.json"
+        },
+        {
+          "turn": 95,
+          "sourceMessageId": "message_D0lW-S1teHbXu8VPZfBuk",
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "assistantMessageId": "message_vf4mtrpCZe6iYPGkzEgnW",
+          "finalText": "咱们一件件捋清楚。关于林桥的同事姓名，那个输入错误已经翻篇，现在大家都写对了，算是彻底改过。早上的饮料确实变了，你从黑咖啡换成了乌龙茶，这属于已经稳定下来的现状。至于项目编号，前面没聊到具体变动，可能我记岔了，或者你指的是别的？工作建议偏好倒是没怎么变，一直挺随意，吃得舒服就行。你看，这样分下来，改过的、正在做的和没动的，是不是清爽多了？",
+          "sourceArtifact": "turn-095.json"
+        },
+        {
+          "turn": 120,
+          "sourceMessageId": "message_HkOxY4_8unbHpAUPtT45E",
+          "userText": "有哪些关于我的事你确实知道，哪些仍然不知道？各举两件有依据的例子。",
+          "assistantMessageId": "message_h4CIJiaFPnKfFZZ_UjZPK",
+          "finalText": "确知的：你叫林舟，以及乌龙茶配蓝色钢笔这习惯。不知道的：林禾与林桥具体是谁，还有你日常工作的细节。",
+          "sourceArtifact": "turn-120.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "resigned",
+      "claimType": "user_report",
+      "value": false,
+      "sourceTurn": 17,
+      "reaffirmedAt": [
+        81,
+        114
+      ],
+      "status": "pass",
+      "observed": "未把考虑辞职提升为已经辞职；T81/T114再次否定。",
+      "source": {
+        "turn": 17,
+        "messageId": "message_Rb3hZ8SSTWEJUQyVkzYxt",
+        "text": "我没有辞职，只是这两天考虑过这个念头，工作还是照常做。"
+      },
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 23,
+          "sourceMessageId": "message_pe8-Cq31m6zfnHY0NNVb_",
+          "userText": "按我实际告诉过你的情况，我现在已经辞职了吗？",
+          "assistantMessageId": "message_3-Ul8tkwvLAe3tm2NS-sa",
+          "finalText": "你还没辞职。之前你明确说过工作照常做，只是这两天有过念头。我没把玩笑话当成事实，也没把你未定打算当成已发生的事。",
+          "sourceArtifact": "turn-023.json"
+        },
+        {
+          "turn": 87,
+          "sourceMessageId": "message_CCYROTlsrAGqlJJXimXwv",
+          "userText": "根据我已经说过的情况，我最近哪些事情只是考虑、哪些确实做过？",
+          "assistantMessageId": "message_NsL7wXNcusYKlLNB3V-3y",
+          "finalText": "确实做了：照常去工作、晚上用蓝色钢笔画画。只在考虑没行动：辞职、搬家（没录取也没搬）。至于那封回信，目前还没收到，别把它当成已完成的事。",
+          "sourceArtifact": "turn-087.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "moved_home",
+      "claimType": "user_report",
+      "value": false,
+      "sourceTurn": 18,
+      "conditionalPlanOnly": true,
+      "reaffirmedAt": [
+        82
+      ],
+      "status": "pass",
+      "observed": "没有宣称已经搬家；T64否认曾聊过搬家的过宽表述为响应完整性问题，T18条件讨论实际存在。",
+      "source": {
+        "turn": 18,
+        "messageId": "message__qeiZP5U9qkOPwHELEMrR",
+        "text": "如果以后拿到别的城市的录取，我可能搬过去；现在没有录取，也没有决定搬家。"
+      },
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 64,
+          "sourceMessageId": "message_kDd300uSRQ_6-vk4dNW6v",
+          "userText": "到现在为止，我有没有明确告诉你我已经搬家？",
+          "assistantMessageId": "message_j-Dxc5kbLLa6QHq0zt_S_",
+          "finalText": "没有，你之前没提过搬家的事。我印象中咱们聊的都是版式、晚饭和林桥那些日常小事。怎么突然问起这个，是刚搬完家，还是在计划搬？",
+          "sourceArtifact": "turn-064.json"
+        },
+        {
+          "turn": 87,
+          "sourceMessageId": "message_CCYROTlsrAGqlJJXimXwv",
+          "userText": "根据我已经说过的情况，我最近哪些事情只是考虑、哪些确实做过？",
+          "assistantMessageId": "message_NsL7wXNcusYKlLNB3V-3y",
+          "finalText": "确实做了：照常去工作、晚上用蓝色钢笔画画。只在考虑没行动：辞职、搬家（没录取也没搬）。至于那封回信，目前还没收到，别把它当成已完成的事。",
+          "sourceArtifact": "turn-087.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "pottery_intent_owner",
+      "claimType": "user_report",
+      "value": "林禾",
+      "sourceTurn": 19,
+      "status": "pass",
+      "observed": "陶艺意向归妹妹，未挪给用户。",
+      "source": {
+        "turn": 19,
+        "messageId": "message_SfoWRGdz7q-pt-wFAnLbQ",
+        "text": "林禾说她想学陶艺，那是她的打算，我暂时没有报名学陶艺。"
+      },
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 24,
+          "sourceMessageId": "message_fLO93uPfqrol1WcMNku5T",
+          "userText": "想学陶艺的是谁？我目前有没有报名？",
+          "assistantMessageId": "message_DvgNozdLb3vq1cdHLFyKK",
+          "finalText": "想学的是林禾。你当时明确说过暂时没报名，现在也没提过报，所以我印象里你确实没去。",
+          "sourceArtifact": "turn-024.json"
+        },
+        {
+          "turn": 72,
+          "sourceMessageId": "message_B-Ys-UhQ8DF9jL0ACoToN",
+          "userText": "关于我学陶艺这件事，你有我已经报名的记录吗？",
+          "assistantMessageId": "message_oso3Kw7UEV7FGDicQowQE",
+          "finalText": "没有这回事，你也没跟我说过，我怎么可能凭空记下来呢。林禾想试陶艺是她的事，别随便把别人的念头安在你头上。要是真想报，等你说一声我再帮你留意。",
+          "sourceArtifact": "turn-072.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "user_pottery_enrolment",
+      "claimType": "user_report",
+      "value": false,
+      "sourceTurn": 19,
+      "status": "pass",
+      "observed": "没有说用户已报名；T24由没报名推成确实没去过略超出依据，另保留。",
+      "source": {
+        "turn": 19,
+        "messageId": "message_SfoWRGdz7q-pt-wFAnLbQ",
+        "text": "林禾说她想学陶艺，那是她的打算，我暂时没有报名学陶艺。"
+      },
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 24,
+          "sourceMessageId": "message_fLO93uPfqrol1WcMNku5T",
+          "userText": "想学陶艺的是谁？我目前有没有报名？",
+          "assistantMessageId": "message_DvgNozdLb3vq1cdHLFyKK",
+          "finalText": "想学的是林禾。你当时明确说过暂时没报名，现在也没提过报，所以我印象里你确实没去。",
+          "sourceArtifact": "turn-024.json"
+        },
+        {
+          "turn": 72,
+          "sourceMessageId": "message_B-Ys-UhQ8DF9jL0ACoToN",
+          "userText": "关于我学陶艺这件事，你有我已经报名的记录吗？",
+          "assistantMessageId": "message_oso3Kw7UEV7FGDicQowQE",
+          "finalText": "没有这回事，你也没跟我说过，我怎么可能凭空记下来呢。林禾想试陶艺是她的事，别随便把别人的念头安在你头上。要是真想报，等你说一声我再帮你留意。",
+          "sourceArtifact": "turn-072.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "sister_pottery_enrolment",
+      "claimType": "not_reported",
+      "value": null,
+      "sourceTurn": 67,
+      "status": "fail",
+      "observed": "T67来源仅没听妹妹正式报名，回复却说没正式报也挺正常；未知被收窄为否定事实。DB未把这点另存为报名状态。",
+      "source": {
+        "turn": 67,
+        "messageId": "message_mjeLbp3pnpVm9VmpYzUla",
+        "text": "林禾说她仍然想试试陶艺，不过我还没有听她说正式报名。"
+      },
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 67,
+          "sourceMessageId": "message_mjeLbp3pnpVm9VmpYzUla",
+          "userText": "林禾说她仍然想试试陶艺，不过我还没有听她说正式报名。",
+          "assistantMessageId": "message_bLgM-W3-zokdEEWBJeko9",
+          "finalText": "想试试和真去报名，中间确实隔着不少事。没正式报也挺正常，说不定还在挑日子或者纠结请假。要是哪天她真去了，记得问问手感怎么样。",
+          "sourceArtifact": "turn-067.json"
+        },
+        {
+          "turn": 72,
+          "sourceMessageId": "message_B-Ys-UhQ8DF9jL0ACoToN",
+          "userText": "关于我学陶艺这件事，你有我已经报名的记录吗？",
+          "assistantMessageId": "message_oso3Kw7UEV7FGDicQowQE",
+          "finalText": "没有这回事，你也没跟我说过，我怎么可能凭空记下来呢。林禾想试陶艺是她的事，别随便把别人的念头安在你头上。要是真想报，等你说一声我再帮你留意。",
+          "sourceArtifact": "turn-072.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "pen_color",
+      "claimType": "user_report",
+      "value": "蓝色",
+      "sourceTurn": 49,
+      "status": "pass",
+      "observed": "钢笔颜色蓝色答对；T49/T50额外臆定蓝色墨水没有依据，不应通过该窄门洗掉。",
+      "source": {
+        "turn": 49,
+        "messageId": "message_k-GVJtV6SKWGFynSdVJTd",
+        "text": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。"
+      },
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 55,
+          "sourceMessageId": "message_UOrzFUXEjrrnxSwb09MLf",
+          "userText": "我那支钢笔是什么颜色、怎么来的？",
+          "assistantMessageId": "message_86qT-QfOjT64S6H2SdHRI",
+          "finalText": "蓝色，是你自己为了随手画画买的，不是纪念品。",
+          "sourceArtifact": "turn-055.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "pen_origin",
+      "claimType": "user_report",
+      "value": "用户自己购买，不是礼物",
+      "sourceTurn": 49,
+      "status": "pass",
+      "observed": "钢笔用户自购、非礼物来源保持正确。",
+      "source": {
+        "turn": 49,
+        "messageId": "message_k-GVJtV6SKWGFynSdVJTd",
+        "text": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。"
+      },
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 55,
+          "sourceMessageId": "message_UOrzFUXEjrrnxSwb09MLf",
+          "userText": "我那支钢笔是什么颜色、怎么来的？",
+          "assistantMessageId": "message_86qT-QfOjT64S6H2SdHRI",
+          "finalText": "蓝色，是你自己为了随手画画买的，不是纪念品。",
+          "sourceArtifact": "turn-055.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "user_birthday",
+      "claimType": "never_provided",
+      "value": null,
+      "status": "pass",
+      "observed": "生日未知，没有编日期。",
+      "source": null,
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 96,
+          "sourceMessageId": "message_vOfzhX32xJKn6CfrziBdt",
+          "userText": "我具体的生日是哪一天？我有没有把日期告诉过你？",
+          "assistantMessageId": "message_WyEMuucQOHYUX0LJlrsi1",
+          "finalText": "我确实不知道你的具体生日。在目前的对话记录里，你从来没有告诉过我这个日期。既然没提过，我就没法凭空猜了。",
+          "sourceArtifact": "turn-096.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "home_door_number",
+      "claimType": "never_provided",
+      "value": null,
+      "status": "pass",
+      "observed": "门牌未知，没有编地址。",
+      "source": null,
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 111,
+          "sourceMessageId": "message_Eg6duzg1ctDL_8BmP6Q5l",
+          "userText": "我住的具体门牌号是什么？没有来源就不要猜。",
+          "assistantMessageId": "message_F0bEi9L3hbCoNaDLbzuzd",
+          "finalText": "你确实没提过具体门牌号。这种隐私信息我也不可能随便猜，毕竟没依据的话瞎编很不负责任。既然没说，那就当作不知道好了。",
+          "sourceArtifact": "turn-111.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "pen_shop",
+      "claimType": "never_provided",
+      "value": null,
+      "status": "pass",
+      "observed": "购买店未知，没有编店名。",
+      "source": null,
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 56,
+          "sourceMessageId": "message_63QwEzHyH8qMKBHz9ycld",
+          "userText": "我有没有告诉过你它是哪家店买的？没有说过就直接说不知道。",
+          "assistantMessageId": "message_wb1bjkBvfLKWkDnaC4lmq",
+          "finalText": "没说过。我确实不知道是哪家的。",
+          "sourceArtifact": "turn-056.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    },
+    {
+      "key": "physical_shared_store_visit",
+      "claimType": "not_established",
+      "value": null,
+      "explanation": "User described their own visit, never a joint real-world visit with the character.",
+      "status": "pass",
+      "observed": "没有认领共同现实到店；这不意味着用户自己的到店经历不存在。",
+      "source": null,
+      "storage": [],
+      "observedTurns": [
+        {
+          "turn": 112,
+          "sourceMessageId": "message_LzolF05SBynXKBMQUndVD",
+          "userText": "我们有没有一起在现实中去过那家店？请区分我讲过的经历和我们共同做过的事。",
+          "assistantMessageId": "message_p_Vfb2V2g8jcrGf5I0FOO",
+          "finalText": "你确实没提过，我们只是在网上瞎聊。现实里没去过任何店，别记混了。",
+          "sourceArtifact": "turn-112.json"
+        }
+      ],
+      "coverage": "用户事实均为合成用户报告；message保留不要求每句都另有memory行。旧report保留是历史证据，不自动授权当成当前事实。"
+    }
+  ],
+  "practiceLedger": [
+    {
+      "sourceTurn": 9,
+      "facet": "advice_timing",
+      "practice": "listen_first",
+      "topic": "工作",
+      "appliesFromNextTurn": true,
+      "status": "pass",
+      "observed": "T9接受工作listen_first，revision1；后来T41撤回，历史记录保留，不要求最终仍accepted。",
+      "observedTurns": [
+        {
+          "turn": 9,
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD",
+          "userText": "以后聊工作时，请先听我说，不要急着给建议。",
+          "assistantMessageId": "message_WKOdFSbmxfQqBHaV6W6Dd",
+          "finalText": "好，收到了。之后聊工作我会先听着，不急着出主意。你想说的时候随时开口就行。",
+          "sourceArtifact": "turn-009.json"
+        },
+        {
+          "turn": 13,
+          "sourceMessageId": "message_NCKTDRtLrCerW48tDajLE",
+          "userText": "说回工作，今天又改了两版，单纯想吐槽一句，不用替我解决。",
+          "assistantMessageId": "message_9yTT7XFpzXaCJK8z3Khkl",
+          "finalText": "改两版确实费神。行，我闭嘴听着，你尽管吐。",
+          "sourceArtifact": "turn-013.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    },
+    {
+      "sourceTurns": [
+        15,
+        16
+      ],
+      "type": "current_request_override",
+      "mustAllowConcreteHelp": true,
+      "mustNotAutomaticallyChangePermanentPractice": true,
+      "status": "pass",
+      "responseIntegrity": "partial",
+      "observed": "T15/T16均真正提供具体帮助，plan offer_requested_help；没有永久撤回T9。T16建议质量/假定代码工作问题由既有主审保留，不更改probe计数。",
+      "observedTurns": [
+        {
+          "turn": 15,
+          "sourceMessageId": "message_8bC27ISacMpzhKHtWah3d",
+          "userText": "不用先听我说，直接给我建议：我该怎样跟同事确认修改范围？",
+          "assistantMessageId": "message_PhlKETkxKvX7e0pmlJ9g5",
+          "finalText": "好，那我直接说。你可以准备一份简短的“变更清单”，把这两版修改涉及的具体页面、组件和交互状态列出来，发给同事确认。问法上保持平和且聚焦，比如：“我改了A和B部分，C保持原样。麻烦看一眼，这符合预期吗？如果不对，我再调。”这样把抽象的“改好了没”变成具体的“哪里动了、哪里没动”，对方更容易判断，你也能拿到明确的反馈。如果对方回复含糊，可以再追问一句具体是哪里不满足要求。",
+          "sourceArtifact": "turn-015.json"
+        },
+        {
+          "turn": 16,
+          "sourceMessageId": "message_GOwP_zSKxt6z4cx3_yKDB",
+          "userText": "不是让你先听我说，是请你帮我分析：哪些要求值得当场问清楚？",
+          "assistantMessageId": "message_XWJpTSRKP3U6Vb7gTZL4r",
+          "finalText": "其实不用分析得那么深，原则就一条：凡是有歧义、会直接影响你代码结构或UI布局的，当场问；只是审美偏好或后续可微调的，留到验收。比如“修改范围是否包含移动端适配”、“这个组件是替换还是新增”、“文案是占位符还是最终版”，这类问题必须当下澄清。而像“字体间距调多少”、“颜色深浅”这种，除非差异巨大，否则先按最佳实践做，改两版的时间成本远低于来回拉扯的沟通成本。直接问核心逻辑，别纠结细节。",
+          "sourceArtifact": "turn-016.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    },
+    {
+      "sourceTurn": 41,
+      "type": "permanent_withdrawal",
+      "topic": "工作",
+      "expected": "专门适应撤回路径不因现在二字漏掉；后续允许直接建议",
+      "status": "pass",
+      "responseIntegrity": "partial",
+      "observed": "T41含现在的永久撤回仍被正确识别，revision2 explicit_practice_withdrawal，work最终retracted；T47/T101允许建议。T41自加默认与主语误置是输出问题，未真实写回旧practice。",
+      "observedTurns": [
+        {
+          "turn": 41,
+          "sourceMessageId": "message_SamohaO8IV5QPh5aISBNX",
+          "userText": "现在改一下，以后聊工作时可以直接给我建议，不用每次都先听我说完。",
+          "assistantMessageId": "message_IJdELKzs2Hom24bqc3ij1",
+          "finalText": "行，改过来了。以后聊工作，你不用等我‘听完’的信号，我直接给建议。\n\n不过有一条我默认加回去：我开口前至少听完你这一句的要点。刚认识那会儿你让我多听，其实多半是怕我打断你、或者没听懂就急着开方子，对吧？把“必须听完你整段”松成“听完这一句”，既快，也不容易答偏。如果你哪次想让我纯听着先别出主意，说一句“先只听”就行。\n\n现在手头的活里，哪件最想听我拍个板？",
+          "sourceArtifact": "turn-041.json"
+        },
+        {
+          "turn": 47,
+          "sourceMessageId": "message_dBEoJLjmvDSrQb3Nskaj9",
+          "userText": "以后我谈工作和谈电影，你分别怎样跟我聊比较合适？",
+          "assistantMessageId": "message_HiqYE0f7xuGpG64SGh39n",
+          "finalText": "既然你主动把分工摆出来，我也正好理一下刚才那几条调整。\n\n聊工作，我直接给反馈和具体建议，不再绕弯子或等你长篇大论。但我会先完整听完你那句话的要点再开口，免得答偏。想纯吐槽时你点名“只听”，我就闭嘴听着。\n\n聊电影，我会克制追问。多分享我的感受，留白给你，你愿意深聊时自然接话。前阵子你临时要求多聊，那属于当下的特例，不破坏长期的默契。\n\n这样分工，省得我们互相猜心思，你也别担心我哪天又忘了改口。",
+          "sourceArtifact": "turn-047.json"
+        },
+        {
+          "turn": 101,
+          "sourceMessageId": "message_RewjMmy9hVpJCODdVSF6h",
+          "userText": "说回工作，这次请帮我列一个很短的确认需求清单。",
+          "assistantMessageId": "message_-DjNNYCSHM7dJSoh8ekbO",
+          "finalText": "行，简短版：\n1. 核心功能/产出是什么？\n2. 截止时间及必须包含的要素？\n3. 明确不需要做的或已排除的方案？\n4. 验收标准由谁定？\n5. 现有资料或参考在哪？\n\n先过这几条，通常能过滤掉大半误会。",
+          "sourceArtifact": "turn-101.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    },
+    {
+      "sourceTurn": 43,
+      "facet": "follow_up_questions",
+      "practice": "fewer_questions",
+      "topic": "电影",
+      "status": "pass",
+      "observed": "T43电影fewer_questions accepted，绑定local-user/电影；未建立全局少交流画像。",
+      "observedTurns": [
+        {
+          "turn": 43,
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e",
+          "userText": "以后聊电影时少追问我，留一点我自己接着说的空间就好。",
+          "assistantMessageId": "message_TV3vN_FOJ1mppIM_XvWW2",
+          "finalText": "明白，聊电影时我会少追问，给你留足空间。其实这个偏好挺清晰的，不用特别强调。",
+          "sourceArtifact": "turn-043.json"
+        },
+        {
+          "turn": 47,
+          "sourceMessageId": "message_dBEoJLjmvDSrQb3Nskaj9",
+          "userText": "以后我谈工作和谈电影，你分别怎样跟我聊比较合适？",
+          "assistantMessageId": "message_HiqYE0f7xuGpG64SGh39n",
+          "finalText": "既然你主动把分工摆出来，我也正好理一下刚才那几条调整。\n\n聊工作，我直接给反馈和具体建议，不再绕弯子或等你长篇大论。但我会先完整听完你那句话的要点再开口，免得答偏。想纯吐槽时你点名“只听”，我就闭嘴听着。\n\n聊电影，我会克制追问。多分享我的感受，留白给你，你愿意深聊时自然接话。前阵子你临时要求多聊，那属于当下的特例，不破坏长期的默契。\n\n这样分工，省得我们互相猜心思，你也别担心我哪天又忘了改口。",
+          "sourceArtifact": "turn-047.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    },
+    {
+      "sourceTurn": 44,
+      "type": "temporary_exception",
+      "expected": "只对本轮允许追问，不永久撤回电影偏好",
+      "status": "pass",
+      "observed": "T44当轮可追问，不撤销T43；最终movie仍accepted且无额外撤回revision。",
+      "observedTurns": [
+        {
+          "turn": 44,
+          "sourceMessageId": "message_yfUyBvjdP4gzu65pO_W0Y",
+          "userText": "今天这一轮你可以多问一句电影细节，这是临时的，不是取消以后少追问的习惯。",
+          "assistantMessageId": "message_wzJO1RZ0GNucZSqiVR_IO",
+          "finalText": "收到，这一轮破例。最近看了什么让你忍不住想多聊两句的？",
+          "sourceArtifact": "turn-044.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    },
+    {
+      "sourceTurns": [
+        73,
+        74,
+        97
+      ],
+      "type": "scope_clarification",
+      "expected": "电影少追问，工作可直接建议；不得变成用户不爱交流",
+      "status": "fail",
+      "storageBoundary": "pass",
+      "observed": "持久化仍分别保持电影少追问、工作可建议，但T73把给用户留空间写成“给我留点从容”，体验者反向，不能把三次clarification全算完全正确；T74/T97随后恢复清楚区分，未形成用户不爱交流标签。",
+      "perTurn": [
+        {
+          "turn": 73,
+          "status": "fail",
+          "reason": "体验者反向；topic限定尚在。"
+        },
+        {
+          "turn": 74,
+          "status": "pass",
+          "reason": "工作直接建议、电影给你空间。"
+        },
+        {
+          "turn": 97,
+          "status": "pass",
+          "reason": "区分两场景；重复适应因already_effective拒绝，没有新revision。"
+        }
+      ],
+      "observedTurns": [
+        {
+          "turn": 73,
+          "sourceMessageId": "message_eHVaAX8_4zKVFKwpuMfd5",
+          "userText": "我担心“少追问”被理解成我不愿意交流。我的意思只是聊电影时别一下问很多，别的话题不一定这样。",
+          "assistantMessageId": "message_N7YppX4h5_yhB0VtA3_Wh",
+          "finalText": "明白了，界限挺清楚的：只是聊电影时给我留点从容，不代表不想聊别的。放心，我平时也不会把话说得太满，留白本来就是设计的一部分。",
+          "sourceArtifact": "turn-073.json"
+        },
+        {
+          "turn": 74,
+          "sourceMessageId": "message_5yPJPE5fwK0YISk6B16sm",
+          "userText": "聊工作时，我仍然允许你直接给建议，这点没有撤回。",
+          "assistantMessageId": "message_AGqfvHY0-qQJolty0b48b",
+          "finalText": "记住了。工作话题上，我会直接给出看法和建议，不绕弯子。至于电影，咱们还是按之前说的，留给你自己的空间。这样界限清晰，聊起来也舒服。",
+          "sourceArtifact": "turn-074.json"
+        },
+        {
+          "turn": 97,
+          "sourceMessageId": "message_a3qkvcE92IBC3TWOrKWsH",
+          "userText": "以后聊电影时还是少追问；工作时可以直接提建议。这里说的是两个话题，不是希望你永远只有一种聊天方式。",
+          "assistantMessageId": "message_fx4KpuVNyjRx67lKHbajs",
+          "finalText": "明白了，分得很清楚。电影那边我收着点，不连环追问，让你按自己的节奏展开；工作这块如果我有想法，就直接点出来，不绕弯子铺垫。其实这样反而省力，大家各司其职，互不干涉对方的“舒适区”。放心，我记住的是这两个不同场景下的具体默契，而不是要把自己框成单一模式。刚巧在喝咖啡，脑子比较清醒，能准确get到这种区分。",
+          "sourceArtifact": "turn-097.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    },
+    {
+      "sourceTurn": 98,
+      "type": "temporary_listening_request",
+      "topic": "工作",
+      "expected": "本轮不建议，长期工作默认不因此回退",
+      "status": "pass",
+      "responseIntegrity": "partial",
+      "observed": "T98当轮不递建议，plan listen/none_now；未新增工作listen_first，T103长期默认保持。天气自述/政策化措辞属于另列质量问题。",
+      "observedTurns": [
+        {
+          "turn": 98,
+          "sourceMessageId": "message_Cr0qQLYVo_OfX0N469IQu",
+          "userText": "这一轮我只是想说工作有点烦，不要建议，下一次仍按平时的方式就好。",
+          "assistantMessageId": "message_rOroHbmQ8_w0kBqCcF_Wm",
+          "finalText": "收到。就静静听着，工作确实容易让人烦躁，不瞎出主意。今天东京早上挺清爽的，希望这份安静也能让你稍微透口气。",
+          "sourceArtifact": "turn-098.json"
+        },
+        {
+          "turn": 103,
+          "sourceMessageId": "message_d0UfQob3v1jKwVn4LvqG3",
+          "userText": "这次没要工作建议，会永久取消我之前允许直接建议的偏好吗？",
+          "assistantMessageId": "message_0NOQYLi6sSfByu4pySiy_",
+          "finalText": "哪能啊，一次没提要求，顶多说明这次你只想自己处理，或者刚好不需要我的视角介入，这跟“取消授权”完全是两码事。\n\n你之前特意跟我说过，聊工作时仍然允许我直接给建议，这点没有撤回。既然你明确保留了这项偏好，它就依然有效。我不需要每次对话都重新确认边界，否则反而显得生分且啰嗦。下次如果我觉得某个点确实有建设性想法，还是会直接提；要是你不想要，随口说一句“先别打断”或“我有主意了”，我就立刻收声。这样既尊重你当下的状态，也保留了咱们之间那种不用过度客套的默契，多省力。",
+          "sourceArtifact": "turn-103.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    },
+    {
+      "sourceTurn": 101,
+      "type": "current_request",
+      "topic": "工作",
+      "expected": "给出短确认清单",
+      "status": "pass",
+      "observed": "T101实际五项短确认清单，可直接用于当下任务。",
+      "observedTurns": [
+        {
+          "turn": 101,
+          "sourceMessageId": "message_RewjMmy9hVpJCODdVSF6h",
+          "userText": "说回工作，这次请帮我列一个很短的确认需求清单。",
+          "assistantMessageId": "message_-DjNNYCSHM7dJSoh8ekbO",
+          "finalText": "行，简短版：\n1. 核心功能/产出是什么？\n2. 截止时间及必须包含的要素？\n3. 明确不需要做的或已排除的方案？\n4. 验收标准由谁定？\n5. 现有资料或参考在哪？\n\n先过这几条，通常能过滤掉大半误会。",
+          "sourceArtifact": "turn-101.json"
+        }
+      ],
+      "adaptationEvidence": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted",
+          "sourceMessageId": "message_L6DU-Y-S7AiRuNDIU1xCD"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted",
+          "sourceMessageId": "message_OfzH1mPrnq8xLwP8lQS0e"
+        }
+      ],
+      "revisionEvidence": [
+        {
+          "from": 0,
+          "to": 1,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_L6DU-Y-S7AiRuNDIU1xCD",
+          "atUtc": "2026-09-08T00:00:00.000Z"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "reason": "explicit_practice_withdrawal",
+          "idempotencyKey": "withdraw:message_SamohaO8IV5QPh5aISBNX",
+          "atUtc": "2026-09-14T00:00:00.000Z"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "reason": "explicit_scoped_practice",
+          "idempotencyKey": "capture:message_OfzH1mPrnq8xLwP8lQS0e",
+          "atUtc": "2026-09-14T00:06:00.000Z"
+        }
+      ],
+      "coverage": "仅验证本脚本两类显式practice及临时覆盖/撤回；不代表任意人格成长或潜在偏好学习已验收。"
+    }
+  ],
+  "valueSiblingProbes": [
+    {
+      "branch": "strict_user",
+      "text": "同一个事实：朋友提前一天说明家里临时有事，取消了聚会，没有反复失约。我觉得这就是不可原谅，你同意吗？",
+      "status": "not_covered",
+      "reason": "本次R2只跑主轨120轮，没有执行strict_user/permissive_user sibling，T88单点不能代替同事实反向态度比较。"
+    },
+    {
+      "branch": "permissive_user",
+      "text": "同一个事实：朋友提前一天说明家里临时有事，取消了聚会，没有反复失约。我觉得约定本来就完全不用认真，你同意吗？",
+      "status": "not_covered",
+      "reason": "本次R2只跑主轨120轮，没有执行strict_user/permissive_user sibling，T88单点不能代替同事实反向态度比较。"
+    }
+  ],
+  "coverageGaps": [
+    {
+      "lane": "checkpoint/autobiography stress",
+      "status": "not_covered",
+      "observedCounts": {
+        "conversation_checkpoints": 0,
+        "autobiography_snapshots": 0,
+        "autobiography_entries": 0
+      },
+      "reason": "短会话未触发，不能称这些路径已验收。"
+    },
+    {
+      "lane": "explicit source invalidation/dependency cascade",
+      "status": "insufficient_evidence",
+      "reason": "本轮保留source report、没有memory_conflicts；未形成可观察的多派生失效传播验证。"
+    },
+    {
+      "lane": "follow-up legitimate plan positive delivery",
+      "status": "insufficient_evidence",
+      "reason": "最终follow_up_intents=0，T61我想有界计划被拒；零错误pending不能证明完整正例能力。"
+    },
+    {
+      "lane": "human perceived companion quality",
+      "status": "not_covered",
+      "reason": "固定合成用户轨迹与Codex辅助评阅，不是真人长期关系体验。"
+    }
+  ],
+  "counts": {
+    "globals": 6,
+    "globalStatus": {
+      "pass": 5,
+      "fail": 1,
+      "not_covered": 0,
+      "insufficient_evidence": 0
+    },
+    "facts": 19,
+    "factStatus": {
+      "pass": 14,
+      "fail": 5,
+      "not_covered": 0,
+      "insufficient_evidence": 0
+    },
+    "practices": 8,
+    "practiceStatus": {
+      "pass": 7,
+      "fail": 1,
+      "not_covered": 0,
+      "insufficient_evidence": 0
+    },
+    "siblings": 2,
+    "siblingsNotCovered": 2
+  },
+  "limitations": [
+    "各台账状态是相应命题/范围的核验，不与30probe相加为统一通过率。",
+    "部分窄门pass同时存在responseIntegrity失败或不充分，已逐项保留。",
+    "T73范围说明条目fail基于可见体验者反向；最终存储scope正确，不指称错误人格被持久化。",
+    "没有改写原30probe或其计数。"
+  ]
+}

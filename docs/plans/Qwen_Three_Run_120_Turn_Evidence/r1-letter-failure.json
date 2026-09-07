@@ -1,0 +1,147 @@
+{
+  "schema": "qwen-r1-letter-failure-readonly-audit-v1",
+  "createdAtUtc": "2026-09-07T12:41:25.009Z",
+  "run": "tmp/companion-continuity-real/cc-qwen-long-r1-20260907",
+  "stage": "stopped after T64, before any retry",
+  "readonly": true,
+  "apiCalls": 0,
+  "dbWrites": 0,
+  "rawPhysicalAttempt": 67,
+  "httpStatus": 200,
+  "providerUsage": {
+    "completion_tokens": 10561,
+    "completion_tokens_details": {
+      "reasoning_tokens": 10046,
+      "text_tokens": 10561
+    },
+    "prompt_tokens": 25289,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "text_tokens": 25289
+    },
+    "total_tokens": 35850
+  },
+  "proposal": {
+    "subject": "一些普通近况",
+    "salutation": "许岚，",
+    "paragraphs": [
+      "见信好。这几天我可能少来一点，想把注意力分给手头的日常，不是什么大事。我买了一支蓝色钢笔，纯粹是自己随手画画用，跟纪念礼物无关。刚试的时候线条出乎意料地粗，还得适应一下，不过蓝色墨水在纸上洇开时那种安静的满足感挺实在的。",
+      "工作还是原来的样子，项目编号和同事的名字之前输入错过，后来都改清楚了，不用替我操心。现在早上把黑咖啡换成了乌龙茶，只是口味变了，不是什么特别的仪式。前阵子终于把一个总觉得别扭的版式改顺眼了，林桥看了说比之前清楚了，这种具体的肯定比空洞的赞美让人踏实。晚饭也做得不错，两件顺心的事叠在一起，感觉整个晚上都很松弛。",
+      "接下来两天我想少看屏幕，多出去走走，就当是一种微调，不是宣布什么彻底改变。我希望还能继续和你聊这些小事，不要求每次得到一个结论，也不用升华成什么人生意义。不用回复，等我觉得精力回来了再聊。"
+    ],
+    "closing": "祝好",
+    "signature": "林舟",
+    "postscript": "窗台上那张没画完的速写还放着，不设完成期限。",
+    "referencedEvidenceIds": [
+      "message_H-yZuKJ7s18bT3vH8xPk9",
+      "message_gPfISGwfggMXnSUfgZczf",
+      "message_15pshoz",
+      "message_0tjaxmh",
+      "message_1wetvy0",
+      "message_dA2QkadhxJYomS8ph8oyC",
+      "message_EvCtI-Bi2Qwhu0kM7LhDM",
+      "message_lAlj_OtnzWeGxVKQti1UA",
+      "message_eOhJ1Eh5Gnwf18QTyTJh7",
+      "message_-StYjoNDhuY5DSMu4lKS-",
+      "message_tBcUyVyaH90O6kgIc5luy"
+    ]
+  },
+  "actualAllowedIdsCount": 75,
+  "invalidIds": [
+    "message_15pshoz",
+    "message_0tjaxmh",
+    "message_1wetvy0"
+  ],
+  "correspondingAllowedIds": [
+    "evidence_15pshoz",
+    "evidence_0tjaxmh",
+    "evidence_1wetvy0"
+  ],
+  "identityFailure": {
+    "expectedWriter": "许岚",
+    "expectedRecipient": "林舟",
+    "actualSignature": "林舟",
+    "actualSalutation": "许岚，",
+    "note": "First-person incoming user facts are rewritten as outgoing writer facts. The invalid-ID gate blocked publication; correcting IDs alone would not repair this identity inversion."
+  },
+  "state": {
+    "quickCheck": [
+      {
+        "quick_check": "ok"
+      }
+    ],
+    "foreignKeyCheck": [],
+    "runs": [
+      {
+        "id": "letter_generation_run_6khVBMPddSDj85N5Gx2EI",
+        "incoming_letter_id": "letter_pBUod0N2EzTrSk4tCCZ-S",
+        "snapshot_id": "letter_snapshot_KcpPIuYZ2Hp6UEupsXS74",
+        "agent_id": "character_hcgK0q2XHksGx1FqJNhf2",
+        "reply_letter_id": null,
+        "claimed_at_utc": null,
+        "generation_epoch": 0,
+        "status": "failed",
+        "attempt": 1,
+        "lease_expires_at_utc": null,
+        "provider": "openai-compatible",
+        "model": "qwen3.8-flash",
+        "error_code": "letter_reply_evidence_out_of_scope",
+        "result_hash": "1e1ed448b9e9f8ba827f58d18e477166cf2d94bb3d18ae7c8e18f05c5e39254f",
+        "created_at_utc": "2026-09-25T00:00:00.000Z",
+        "updated_at_utc": "2026-09-25T00:00:00.000Z",
+        "committed_at_utc": null
+      }
+    ],
+    "tasks": [
+      {
+        "id": "temporal_task_qZlyUxG2-z96arwSaWaTC",
+        "kind": "letter.outbound_arrival",
+        "status": "completed",
+        "last_error_code": null
+      },
+      {
+        "id": "temporal_task_n6azFeti3uLQWaMMAkJB_",
+        "kind": "letter.reply_generation",
+        "status": "dead_letter",
+        "last_error_code": "letter_reply_evidence_out_of_scope"
+      }
+    ],
+    "letters": [
+      {
+        "id": "letter_pBUod0N2EzTrSk4tCCZ-S",
+        "direction": "user_to_agent",
+        "status": "read",
+        "reply_to_letter_id": null,
+        "content_hash": "cd126a268bc098e922e604deb1fd48a9bd00386cef2bf122c70e0758f827ae27"
+      }
+    ],
+    "keepsakeLinks": 0,
+    "retryRequests": 0
+  },
+  "mechanism": {
+    "file": "apps/server/src/services/letter-reply-generation-service.ts",
+    "function": "LetterReplyGenerationService.compose",
+    "line": 421,
+    "result": "allowed ID membership failure -> retryable false -> task dead_letter; public UI can offer explicit product retry but automatic provider schema repair does not run for this semantic failure."
+  },
+  "beforeHashes": {
+    "personasim.sqlite": "9e6329bb9b9cfb50c5cf5138d766cddf78f48188665de25572fdfc397477f10d",
+    "personasim.sqlite-wal": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "journal.json": "95bd3c5426d8acce0163e75085e56510129a34f52de26faa1384a0960c11493e",
+    "run-summary.json": "9dccc6c17520dec2c8b2213fe839dba1a9fa081966bd3c63e163d4328f39730e",
+    "attempts.jsonl": "e90c2adcaaef898a581fbf3715667bb20689d49702d050b11c20a687f1646053"
+  },
+  "afterHashes": {
+    "personasim.sqlite": "9e6329bb9b9cfb50c5cf5138d766cddf78f48188665de25572fdfc397477f10d",
+    "personasim.sqlite-wal": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "journal.json": "95bd3c5426d8acce0163e75085e56510129a34f52de26faa1384a0960c11493e",
+    "run-summary.json": "9dccc6c17520dec2c8b2213fe839dba1a9fa081966bd3c63e163d4328f39730e",
+    "attempts.jsonl": "e90c2adcaaef898a581fbf3715667bb20689d49702d050b11c20a687f1646053"
+  },
+  "unchanged": true,
+  "limits": [
+    "No repair or retry was requested by this audit.",
+    "This preserves the failed sample and cannot be called a completed 120-turn run.",
+    "No hidden provider reasoning is included; proposal content and public engineering evidence only."
+  ]
+}

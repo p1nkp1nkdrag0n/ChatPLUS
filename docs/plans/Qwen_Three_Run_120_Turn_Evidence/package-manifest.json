@@ -1,0 +1,164 @@
+{
+  "files": [
+    {
+      "name": "README.md",
+      "sha256": "a08860251020d19a2a8328d25eaa9aeb281ca16c46a49d92a6a010025e2b919b",
+      "bytes": 5476
+    },
+    {
+      "name": "advice-replay.json",
+      "sha256": "fd2ff365e33f92b313f1ed7de328672987ad7283697240e8e0f85340c52f3a87",
+      "bytes": 23720
+    },
+    {
+      "name": "conversation-comparison.md",
+      "sha256": "f5c4ce9dafd561f9d462b1b75f9795e3e776ec13cc2ab77b130e461f43e34f59",
+      "bytes": 148321
+    },
+    {
+      "name": "cross-run-clusters.json",
+      "sha256": "d600a3df357e645c143f2eade3c8cd92d2ef693112859d2974c153886fce86ef",
+      "bytes": 471400
+    },
+    {
+      "name": "denominators.json",
+      "sha256": "d547e70e1c5249eb83c8a172c3fe495f3a0c9bf772a2893c2cee4b0c7e70656c",
+      "bytes": 8473
+    },
+    {
+      "name": "execution-deviations.json",
+      "sha256": "97e5593de2a73f173a438e05a268a4e49affa63dea84a923bc8659157d618a22",
+      "bytes": 5902
+    },
+    {
+      "name": "final-state-proof.json",
+      "sha256": "aed931c6918090130e67b8be8138fb1323039920aa29d8cd4ddd0aa9ad90f42c",
+      "bytes": 16375
+    },
+    {
+      "name": "opportunities.json",
+      "sha256": "eb12f6c0d8c275cfba85d284241f1fefcd4b81860d8a56f038b80c846f90dbaa",
+      "bytes": 60214
+    },
+    {
+      "name": "pressure-care-followup-review.json",
+      "sha256": "4f9464f3f9dbab6db8f960b1e52afb230804f8fbe4fbcdbd657da6de094d7d41",
+      "bytes": 17789
+    },
+    {
+      "name": "primary-reviews.jsonl",
+      "sha256": "71c0312fe8ee654f85039300f09f24c6205037350dd92954e4c0192113c91f42",
+      "bytes": 2463700
+    },
+    {
+      "name": "prompt-delivery-summary.json",
+      "sha256": "b2d017d62f6f672e8bb9c21ab217d427844243ec33e44e40dfafd486f4a11b50",
+      "bytes": 54376
+    },
+    {
+      "name": "r1-letter-failure.json",
+      "sha256": "32aba22930cc3a407ca80b0c5b18ef441aa609a7e97967aa14ff4bd71da61751",
+      "bytes": 6305
+    },
+    {
+      "name": "r1-oracle-ledger.json",
+      "sha256": "13a50e9ab4da09d7d90de8e5574f5f2397ce8fac4b898bfdc71de4059690e336",
+      "bytes": 168434
+    },
+    {
+      "name": "r1-oracle-review.json",
+      "sha256": "2b4714c779b8d8df4e9bd0e776adecccad468cde6a06eca18f68840237c584d5",
+      "bytes": 82059
+    },
+    {
+      "name": "r1-t049-structural-retry.json",
+      "sha256": "71ce796248d80a09475db5ede10508be8f078a763c29f4eaefbf88cb9094a74e",
+      "bytes": 1906
+    },
+    {
+      "name": "r2-oracle-ledger.json",
+      "sha256": "8a96925b53dc66e94ebc4a17fcf154bbe46eb404795fe6e0d9cd3eb6ac9f73cb",
+      "bytes": 80662
+    },
+    {
+      "name": "r2-oracle-review.json",
+      "sha256": "b173166f624d414928841ca7a6c7e4a220d2832f15df107dcf72fa8569df9cee",
+      "bytes": 46538
+    },
+    {
+      "name": "r2-r3-letter-audit.json",
+      "sha256": "4b8abb941d44476599bdcb67b596b65fc3e57bd3ec4fd858926f3107afc0851f",
+      "bytes": 24808
+    },
+    {
+      "name": "r3-oracle-review.json",
+      "sha256": "5fa9153c5ba785269962148125a31250b270ff2e129a9e5c33d64ea884634031",
+      "bytes": 83922
+    },
+    {
+      "name": "r3-t071-retrieval-chain.json",
+      "sha256": "130ff5cc6511f10be95c02805befbe82a11a53b06a4f6ced302a4bbac763c0b9",
+      "bytes": 6286
+    },
+    {
+      "name": "review-adjudications.json",
+      "sha256": "73b8db0642ba9857ece4ee50fdc73b5900cb7436142e2408a97a64bdcd058510",
+      "bytes": 6894
+    },
+    {
+      "name": "review-summary.json",
+      "sha256": "cb0c9c124d6b09a8398f37b719731222d3ff2b215fccd438cc396a7c6f40a60e",
+      "bytes": 101948
+    },
+    {
+      "name": "rubric.json",
+      "sha256": "b85802d84844c1b353a8008ab2fb22fd086ad69402255ed37b343cdd2b58c04f",
+      "bytes": 6551
+    },
+    {
+      "name": "run-summary.json",
+      "sha256": "042361a06de3e3f07d1c0237d3ad72a910f3a42029489e6e6edb9f8e62a677f5",
+      "bytes": 142156
+    },
+    {
+      "name": "secondary-reviews.json",
+      "sha256": "6efa77bfeaa4431e0e7f8002b5107f6681065b58a83c6eb1388fcdb7639b3404",
+      "bytes": 430902
+    },
+    {
+      "name": "source-index.json",
+      "sha256": "2ca791f0440a51b5ca1ced5f412ec05cb376837ae45070212ac086fc727629ff",
+      "bytes": 110593
+    },
+    {
+      "name": "storage-and-followup-replay.json",
+      "sha256": "78984d537c3da1834553162370fb72631d2267a1a76e9c8a60100e4a143eaa00",
+      "bytes": 7658
+    },
+    {
+      "name": "t048-request-replay.json",
+      "sha256": "ad5d94dbb337160b73fc8f3695d6de4d2bdc0e334161aaa52020f7a93b4cbd5a",
+      "bytes": 7275
+    },
+    {
+      "name": "t106-request-replay.json",
+      "sha256": "13ccd82fa01d6e48ea84af81fe16dc750dd71cd70596af1f972fe96a829352b4",
+      "bytes": 7999
+    },
+    {
+      "name": "t107-advice-replay.json",
+      "sha256": "fcd2c55a1046daaa7dbcf5b70db648952732d7325ec2417bd4f9b57b69e3bdc4",
+      "bytes": 8255
+    },
+    {
+      "name": "trait-id-reproduction.json",
+      "sha256": "1a8e111bc69cc4487a914a7f5f92da501a773b6fbb5dcbd6376fc903eb78aa78",
+      "bytes": 7148
+    },
+    {
+      "name": "verify-package.mjs",
+      "sha256": "4a74dfe276b6b4c944341b0c94342f9f53dbd9a74cea0ccb065d9ce5cf5fe65a",
+      "bytes": 3404
+    }
+  ]
+}

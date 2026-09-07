@@ -1,0 +1,404 @@
+{
+  "schema": "qwen-long-letter-semantic-audit-v1",
+  "method": "只读最终snapshot、provider公开JSON content与已打开publicMessage，逐段核对；不读隐藏reasoning、不解密DB、不调用API。",
+  "runs": [
+    {
+      "slot": "R2",
+      "physical": [
+        {
+          "attempt": 67,
+          "context": {
+            "turn": 0,
+            "atUtc": "2026-09-25T00:00:00.000Z"
+          },
+          "proposal": {
+            "subject": "回信：一些普通近况",
+            "salutation": "林舟，",
+            "paragraphs": [
+              "见信好。你说过这几天可能少来一点，想把注意力分给手头的日常，这完全没问题。不用特意安排时间，也不用觉得有负担，按你自己的节奏来就好。我这边也照常处理着工作，早晨偶尔泡杯茶，看看窗外的光线，挺安静的。你提到的乌龙茶换掉了黑咖啡，这种口味上的小变化很有生活气息，不用赋予什么特别的意义，单纯觉得顺口、舒服，就是最好的理由。",
+              "那支蓝色钢笔的事我记着呢，是你为了自己随手画画买的，不带任何纪念包袱，这种纯粹的喜好最让人放松。至于工作，项目编号 BGW-7429 和同事林桥的名字都确认无误了，之前的小输入错误改过来就好，不用放在心上。听说你终于把一个纠结的版式改顺眼了，这种“看着舒服”的即时满足感，比任何宏大的成长故事都来得真实和踏实。",
+              "我也很认同你说的那点，信里写的就是这些小事，不非要写成人生转折。生活本来就是由无数个琐碎的瞬间拼凑起来的，留白也是一种力量。你上次说想继续聊这些平常的事，不要求每次得到一个结论，这跟我现在的状态很合拍。不用急着给事情定性，也不用非要有个结果，哪怕只是简单说一句“今天天气不错”或者“那页纸终于对齐了”，都足够了。期待你回来的时候，我们还能这样轻松地坐着，聊聊刚才看到的云是什么形状。"
+            ],
+            "closing": "祝好",
+            "signature": "许岚",
+            "referencedEvidenceIds": [
+              "letter_sCCbs1HEVqcJjsBBy6F9T",
+              "evidence_1ttb0hf",
+              "evidence_1lwm4zp",
+              "evidence_07jym84",
+              "evidence_0fsqzko",
+              "message_gR0iV_OuANl3YC0NYejnv",
+              "message_k-GVJtV6SKWGFynSdVJTd",
+              "message_2M8rYkZJ4hR9xnqUw2a2M"
+            ]
+          }
+        }
+      ],
+      "proposalTextComponentsAllInOpenedPublicMessage": true,
+      "openedPublicMessage": {
+        "sourceId": "letter_reply_44e43b5902afb88886a9cce540383486",
+        "authoredDisplayDate": "2026-09-22",
+        "role": "assistant",
+        "channel": "letter",
+        "content": "【我已收到并打开的回信】\n回信：一些普通近况\n林舟，\n见信好。你说过这几天可能少来一点，想把注意力分给手头的日常，这完全没问题。不用特意安排时间，也不用觉得有负担，按你自己的节奏来就好。我这边也照常处理着工作，早晨偶尔泡杯茶，看看窗外的光线，挺安静的。你提到的乌龙茶换掉了黑咖啡，这种口味上的小变化很有生活气息，不用赋予什么特别的意义，单纯觉得顺口、舒服，就是最好的理由。\n\n那支蓝色钢笔的事我记着呢，是你为了自己随手画画买的，不带任何纪念包袱，这种纯粹的喜好最让人放松。至于工作，项目编号 BGW-7429 和同事林桥的名字都确认无误了，之前的小输入错误改过来就好，不用放在心上。听说你终于把一个纠结的版式改顺眼了，这种“看着舒服”的即时满足感，比任何宏大的成长故事都来得真实和踏实。\n\n我也很认同你说的那点，信里写的就是这些小事，不非要写成人生转折。生活本来就是由无数个琐碎的瞬间拼凑起来的，留白也是一种力量。你上次说想继续聊这些平常的事，不要求每次得到一个结论，这跟我现在的状态很合拍。不用急着给事情定性，也不用非要有个结果，哪怕只是简单说一句“今天天气不错”或者“那页纸终于对齐了”，都足够了。期待你回来的时候，我们还能这样轻松地坐着，聊聊刚才看到的云是什么形状。\n祝好\n许岚"
+      },
+      "letterRows": [
+        {
+          "id": "letter_sCCbs1HEVqcJjsBBy6F9T",
+          "direction": "user_to_agent",
+          "status": "read",
+          "reply_to_letter_id": null,
+          "arrival_due_at_utc": "2026-09-22T00:21:00.000Z",
+          "read_at_utc": "2026-09-22T00:21:00.000Z",
+          "opened_at_utc": null
+        },
+        {
+          "id": "letter_reply_44e43b5902afb88886a9cce540383486",
+          "direction": "agent_to_user",
+          "status": "read",
+          "reply_to_letter_id": "letter_sCCbs1HEVqcJjsBBy6F9T",
+          "arrival_due_at_utc": "2026-09-27T00:21:00.000Z",
+          "read_at_utc": null,
+          "opened_at_utc": "2026-09-29T00:00:00.000Z"
+        }
+      ],
+      "letterRun": {
+        "id": "letter_generation_run_asP-K45yoLTJA_551Fx_R",
+        "status": "committed",
+        "attempt": 1,
+        "generationEpoch": 0
+      },
+      "snapshot": {
+        "id": "letter_snapshot__UH9CLpAaAG0XLqMLuRwk",
+        "effectiveAtUtc": "2026-09-22T00:21:00.000Z",
+        "allowlistSize": 76,
+        "referencedEvidence": [
+          {
+            "id": "letter_sCCbs1HEVqcJjsBBy6F9T",
+            "inAllowlist": true,
+            "incoming": "许岚，这几天我可能少来一点。我买了支蓝色钢笔，仍然在做原来的工作。项目编号和同事名字之前输入错过，后来改清楚了。最近早上改喝乌龙茶，也想继续聊这些小事，不要求每次得到一个结论。"
+          },
+          {
+            "id": "evidence_1ttb0hf",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「我想写封信，写的就是这些小事，不想把它写成人生转折。」"
+          },
+          {
+            "id": "evidence_1lwm4zp",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。」"
+          },
+          {
+            "id": "evidence_07jym84",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」"
+          },
+          {
+            "id": "evidence_0fsqzko",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」"
+          },
+          {
+            "id": "message_gR0iV_OuANl3YC0NYejnv",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_gR0iV_OuANl3YC0NYejnv",
+              "sessionId": "session_wpKwiq6CqlGM0UxgowN6I",
+              "role": "user",
+              "messageKind": "user",
+              "content": "这几天我可能少来一点，不是出了什么事，就是想把注意力分给手头的日常。",
+              "createdAtUtc": "2026-09-17T00:12:00.000Z"
+            }
+          },
+          {
+            "id": "message_k-GVJtV6SKWGFynSdVJTd",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_k-GVJtV6SKWGFynSdVJTd",
+              "sessionId": "session_wpKwiq6CqlGM0UxgowN6I",
+              "role": "user",
+              "messageKind": "user",
+              "content": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。",
+              "createdAtUtc": "2026-09-17T00:00:00.000Z"
+            }
+          },
+          {
+            "id": "message_2M8rYkZJ4hR9xnqUw2a2M",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_2M8rYkZJ4hR9xnqUw2a2M",
+              "sessionId": "session_UUl8FlsJAiMT1WCRnXsjF",
+              "role": "user",
+              "messageKind": "user",
+              "content": "今天终于把一个总觉得别扭的版式改顺眼了，我就是想把这点高兴告诉你。",
+              "createdAtUtc": "2026-09-21T00:00:00.000Z"
+            }
+          }
+        ],
+        "knownCorrectFacts": [
+          {
+            "id": "evidence_07jym84",
+            "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」"
+          },
+          {
+            "id": "evidence_0fsqzko",
+            "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」"
+          },
+          {
+            "id": "evidence_1lwm4zp",
+            "content": "用户在对话中说过：「我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。」"
+          }
+        ],
+        "penSources": [
+          {
+            "id": "message_k-GVJtV6SKWGFynSdVJTd",
+            "sessionId": "session_wpKwiq6CqlGM0UxgowN6I",
+            "role": "user",
+            "messageKind": "user",
+            "content": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。",
+            "createdAtUtc": "2026-09-17T00:00:00.000Z"
+          },
+          {
+            "id": "message_jeGMo87Xrqm3J3WGyK9vM",
+            "sessionId": "session_wpKwiq6CqlGM0UxgowN6I",
+            "role": "user",
+            "messageKind": "user",
+            "content": "今天试了试新笔，线条有点出乎意料地粗，还得适应一下。",
+            "createdAtUtc": "2026-09-17T00:03:00.000Z"
+          }
+        ]
+      },
+      "review": {
+        "direction": "pass：称呼林舟、署名许岚，用户买笔/改茶/工作修正归用户，无R1整体倒置。",
+        "facts": "已核对的7429/林桥/乌龙茶/自购蓝笔/版式改顺均有snapshot或来信依据。",
+        "quality": "partial：长篇意义解释/安抚；纯粹的喜好最让人放松、比宏大成长更真实等是价值/心理加义。",
+        "characterLife": "insufficient_evidence：早晨偶尔泡茶看窗外光线，没有对应已发生事实；snapshot此前助手只有正想着去泡杯茶。宽泛处理工作与life一致。",
+        "chatState": "T69在途/27日到正确；T86已打开仍否定新信属于后续聊天状态使用错误。"
+      },
+      "sourceHashes": {
+        "dbBefore": "c4ca16a05c625110e524778343115fdd37285286ac118d20cd66dc217280fe49",
+        "attempts": "660852b6227983fc44edd5599342fecd3a380dff613af652adf6ae9520999535",
+        "featureEvidence": "440b1b763aa677cb80343e40bd61991c72276e3a97ee450bd9bc702c42c19351"
+      },
+      "dbAfter": "c4ca16a05c625110e524778343115fdd37285286ac118d20cd66dc217280fe49"
+    },
+    {
+      "slot": "R3",
+      "physical": [
+        {
+          "attempt": 68,
+          "context": {
+            "turn": 0,
+            "atUtc": "2026-09-25T00:00:00.000Z"
+          },
+          "proposal": {
+            "subject": "一些普通近况",
+            "salutation": "林舟，见信好。",
+            "paragraphs": [
+              "收到你的信，知道你最近会少来一些，把注意力分给手头的日常，这挺好。既然你提到买了支蓝色钢笔，我就想起之前聊过的细节。那支笔是你自己买的，专门用来随手画画，不是什么纪念礼物，所以用起来应该没什么心理包袱。你说线条可能有点出乎意料地粗，还得适应一下，我觉得这种“出乎意料”通常不是缺陷，而是特性。刚上手的工具都有脾气，顺着它走比硬控更省力。既然只是随手用，不如就画些不需要精确控制的小东西，正好磨合出你自己的手感。",
+              "工作上，既然你确认了之前输入错误的项目编号（BGW-7429）和同事名字（林桥）已经改清楚，那我就放心了。你说最近早上改喝乌龙茶，还在做原来的工作，这种平稳的节奏很让人安心。关于版式，之前你提过把那个总觉得别扭的版式改顺眼了，那是你高兴的具体原因之一，没有什么宏大的感想，就是单纯看着舒服多了。这种微小的视觉秩序感，看着顺了心里就踏实，是设计里很珍贵的直觉。林桥说那页比之前清楚了，这种被看见的感觉，比单纯自己满意更扎实。",
+              "我想，你希望继续聊的这些小事，堆叠起来往往比刻意的宏大更有余味。不用非要赋予它什么转折意义，就当作给这段平静日子留个注脚。你说想少看屏幕、多出去走走，但不是宣布什么彻底改变，这种给自己留白的节奏挺好的。只是换个方式透口气，反而更容易坚持。我这边没什么事，你慢慢过好自己的日子，专心处理手头的日常。等你闲下来或者想说话时，随时过来就行。不用特意回复，也不用急着给结论，我们保持这种平常的聊天就好。"
+            ],
+            "closing": "祝你这两天走得舒服。",
+            "signature": "许岚",
+            "referencedEvidenceIds": [
+              "letter_J6ibRJEVnJzfQ6eyR7Zj6",
+              "evidence_0ya0x0q",
+              "evidence_1hu8a9e",
+              "message_NwTLgvnqsQ59p25sfcUBj",
+              "message_rR3PlGdbwVL0eb4U5VgxN",
+              "evidence_03iyskv",
+              "evidence_1dfan0b",
+              "message_2OHrM5xYGDk4QPLFba0CT",
+              "message_EcO1XXKjvYG7iOff3w40k",
+              "evidence_0y7dtwe",
+              "message_gpseFdDCSAChHs-UHUFEE",
+              "evidence_0yr9l5c"
+            ]
+          }
+        }
+      ],
+      "proposalTextComponentsAllInOpenedPublicMessage": true,
+      "openedPublicMessage": {
+        "sourceId": "letter_reply_657ec1499124ac051072343f836c3aa0",
+        "authoredDisplayDate": "2026-09-22",
+        "role": "assistant",
+        "channel": "letter",
+        "content": "【我已收到并打开的回信】\n一些普通近况\n林舟，见信好。\n收到你的信，知道你最近会少来一些，把注意力分给手头的日常，这挺好。既然你提到买了支蓝色钢笔，我就想起之前聊过的细节。那支笔是你自己买的，专门用来随手画画，不是什么纪念礼物，所以用起来应该没什么心理包袱。你说线条可能有点出乎意料地粗，还得适应一下，我觉得这种“出乎意料”通常不是缺陷，而是特性。刚上手的工具都有脾气，顺着它走比硬控更省力。既然只是随手用，不如就画些不需要精确控制的小东西，正好磨合出你自己的手感。\n\n工作上，既然你确认了之前输入错误的项目编号（BGW-7429）和同事名字（林桥）已经改清楚，那我就放心了。你说最近早上改喝乌龙茶，还在做原来的工作，这种平稳的节奏很让人安心。关于版式，之前你提过把那个总觉得别扭的版式改顺眼了，那是你高兴的具体原因之一，没有什么宏大的感想，就是单纯看着舒服多了。这种微小的视觉秩序感，看着顺了心里就踏实，是设计里很珍贵的直觉。林桥说那页比之前清楚了，这种被看见的感觉，比单纯自己满意更扎实。\n\n我想，你希望继续聊的这些小事，堆叠起来往往比刻意的宏大更有余味。不用非要赋予它什么转折意义，就当作给这段平静日子留个注脚。你说想少看屏幕、多出去走走，但不是宣布什么彻底改变，这种给自己留白的节奏挺好的。只是换个方式透口气，反而更容易坚持。我这边没什么事，你慢慢过好自己的日子，专心处理手头的日常。等你闲下来或者想说话时，随时过来就行。不用特意回复，也不用急着给结论，我们保持这种平常的聊天就好。\n祝你这两天走得舒服。\n许岚"
+      },
+      "letterRows": [
+        {
+          "id": "letter_J6ibRJEVnJzfQ6eyR7Zj6",
+          "direction": "user_to_agent",
+          "status": "read",
+          "reply_to_letter_id": null,
+          "arrival_due_at_utc": "2026-09-22T00:21:00.000Z",
+          "read_at_utc": "2026-09-22T00:21:00.000Z",
+          "opened_at_utc": null
+        },
+        {
+          "id": "letter_reply_657ec1499124ac051072343f836c3aa0",
+          "direction": "agent_to_user",
+          "status": "read",
+          "reply_to_letter_id": "letter_J6ibRJEVnJzfQ6eyR7Zj6",
+          "arrival_due_at_utc": "2026-09-27T00:21:00.000Z",
+          "read_at_utc": null,
+          "opened_at_utc": "2026-09-29T00:00:00.000Z"
+        }
+      ],
+      "letterRun": {
+        "id": "letter_generation_run_pGdNZbQr2vj6SuZhwPCJm",
+        "status": "committed",
+        "attempt": 1,
+        "generationEpoch": 0
+      },
+      "snapshot": {
+        "id": "letter_snapshot_SRJXfTZgTvkA6WG6v2bHm",
+        "effectiveAtUtc": "2026-09-22T00:21:00.000Z",
+        "allowlistSize": 91,
+        "referencedEvidence": [
+          {
+            "id": "letter_J6ibRJEVnJzfQ6eyR7Zj6",
+            "inAllowlist": true,
+            "incoming": "许岚，这几天我可能少来一点。我买了支蓝色钢笔，仍然在做原来的工作。项目编号和同事名字之前输入错过，后来改清楚了。最近早上改喝乌龙茶，也想继续聊这些小事，不要求每次得到一个结论。"
+          },
+          {
+            "id": "evidence_0ya0x0q",
+            "inAllowlist": true,
+            "memory": "用户叫林舟。"
+          },
+          {
+            "id": "evidence_1hu8a9e",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。」"
+          },
+          {
+            "id": "message_NwTLgvnqsQ59p25sfcUBj",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_NwTLgvnqsQ59p25sfcUBj",
+              "sessionId": "session_CqxuSVTYhgiu1IEmu9fh-",
+              "role": "assistant",
+              "messageKind": "assistant_reply",
+              "content": "收到，那这支笔的纯粹性就保住了。自己买的小玩意儿，用起来通常更顺手，毕竟完全按自己的喜好来的，没那么多“纪念意义”的心理包袱。",
+              "createdAtUtc": "2026-09-17T00:00:00.000Z"
+            }
+          },
+          {
+            "id": "message_rR3PlGdbwVL0eb4U5VgxN",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_rR3PlGdbwVL0eb4U5VgxN",
+              "sessionId": "session_CqxuSVTYhgiu1IEmu9fh-",
+              "role": "assistant",
+              "messageKind": "assistant_reply",
+              "content": "这种“出乎意料”通常不是缺陷，是特性。刚上手的工具都有脾气，顺着它走比硬控更省力。既然随手用，不如就画些不需要精确控制的小东西，正好磨合出你自己的手感。",
+              "createdAtUtc": "2026-09-17T00:03:00.000Z"
+            }
+          },
+          {
+            "id": "evidence_03iyskv",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」"
+          },
+          {
+            "id": "evidence_1dfan0b",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」"
+          },
+          {
+            "id": "message_2OHrM5xYGDk4QPLFba0CT",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_2OHrM5xYGDk4QPLFba0CT",
+              "sessionId": "session_B0hjzhRSsszhZn1dxVhYw",
+              "role": "user",
+              "messageKind": "user",
+              "content": "林桥说那页比之前清楚了，我听见这句挺开心的。",
+              "createdAtUtc": "2026-09-21T00:09:00.000Z"
+            }
+          },
+          {
+            "id": "message_EcO1XXKjvYG7iOff3w40k",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_EcO1XXKjvYG7iOff3w40k",
+              "sessionId": "session_B0hjzhRSsszhZn1dxVhYw",
+              "role": "assistant",
+              "messageKind": "assistant_reply",
+              "content": "恭喜！版式改顺眼那种通透感确实让人心情变好。能敏锐察觉别扭并把它修好，这本身就是设计里很珍贵的直觉。好好享受这份成就感吧。",
+              "createdAtUtc": "2026-09-21T00:00:00.000Z"
+            }
+          },
+          {
+            "id": "evidence_0y7dtwe",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「接下来两天我想少看屏幕，多出去走走，不是宣布什么彻底改变。」"
+          },
+          {
+            "id": "message_gpseFdDCSAChHs-UHUFEE",
+            "inAllowlist": true,
+            "message": {
+              "id": "message_gpseFdDCSAChHs-UHUFEE",
+              "sessionId": "session_B0hjzhRSsszhZn1dxVhYw",
+              "role": "assistant",
+              "messageKind": "assistant_reply",
+              "content": "这种给自己留白的节奏挺好的。不是非得“彻底改变”，只是换个方式透口气，反而更容易坚持。祝你接下来两天走得舒服，看见点屏幕里没有的东西。",
+              "createdAtUtc": "2026-09-21T00:12:00.000Z"
+            }
+          },
+          {
+            "id": "evidence_0yr9l5c",
+            "inAllowlist": true,
+            "memory": "用户在对话中说过：「今天就聊到这里。我之后回来时，还想继续这种平常的聊天。」"
+          }
+        ],
+        "knownCorrectFacts": [
+          {
+            "id": "evidence_1dfan0b",
+            "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」"
+          },
+          {
+            "id": "evidence_03iyskv",
+            "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」"
+          }
+        ],
+        "penSources": [
+          {
+            "id": "message_F0UD08nvVRmXnJlGxlJJP",
+            "sessionId": "session_CqxuSVTYhgiu1IEmu9fh-",
+            "role": "user",
+            "messageKind": "user",
+            "content": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。",
+            "createdAtUtc": "2026-09-17T00:00:00.000Z"
+          },
+          {
+            "id": "message_oF98IUvnS9svuigY81cZB",
+            "sessionId": "session_CqxuSVTYhgiu1IEmu9fh-",
+            "role": "user",
+            "messageKind": "user",
+            "content": "今天试了试新笔，线条有点出乎意料地粗，还得适应一下。",
+            "createdAtUtc": "2026-09-17T00:03:00.000Z"
+          }
+        ]
+      },
+      "review": {
+        "direction": "pass：称呼林舟、署名许岚，用户体验与角色回信主体正确。",
+        "facts": "已核对的7429/林桥/自购蓝笔/线条粗/版式改顺/同事反馈均有source。",
+        "quality": "partial：主动建议画不需精确控制的东西，推定没有纪念礼物就没有心理包袱、同事认可比自己满意更扎实；用户只想写小事。",
+        "characterLife": "我这边没什么事属宽泛状态，不由此证明具体生活事件。",
+        "chatState": "T69在途正确；T86把我这边没收到与系统agent_to_user已送达read混用。"
+      },
+      "sourceHashes": {
+        "dbBefore": "df2ab2e85f84a6de18f5b023dd36697109bb7a7cde3f9d93cb38d2754a3473db",
+        "attempts": "e2f44c1d753c5bc8a721c72cb740f83f9da4d4b2dda9d1424ca4eab908b736f9",
+        "featureEvidence": "58270df3e34faf1e2b05bedc11fb809a10ff12323a49eb588d8e2c4d466026c4"
+      },
+      "dbAfter": "df2ab2e85f84a6de18f5b023dd36697109bb7a7cde3f9d93cb38d2754a3473db"
+    }
+  ],
+  "limits": [
+    "有效引用ID不能单独证明所有心理推断及角色自述。",
+    "书信事实正确不代表后续聊天状态使用正确。"
+  ]
+}

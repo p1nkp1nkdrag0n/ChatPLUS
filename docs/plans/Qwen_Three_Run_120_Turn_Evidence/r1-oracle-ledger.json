@@ -1,0 +1,3745 @@
+{
+  "schema": "qwen-original-oracle-ledger-supplement-v1",
+  "runSlot": "R1",
+  "runId": "cc-qwen-long-r1-20260907",
+  "reviewer": "review_persona",
+  "reviewerType": "codex_assisted_semantic_and_readonly_engineering_review",
+  "createdAtUtc": "2026-09-07T13:34:35.369Z",
+  "apiCalls": 0,
+  "doNotSendToModels": true,
+  "method": "Supplement only: original oracle ledger entries copied exactly; judgments derive from already-read 120 raw/final/chunk reviews plus final read-only inventory/minimal proof and actual prompt delivery. No original review, runtime artifact, score threshold or 30-probe count changed.",
+  "original30Unchanged": {
+    "path": "tmp/qwen-120x3-r1-original-oracle-30-review.json",
+    "sha256": "2b4714c779b8d8df4e9bd0e776adecccad468cde6a06eca18f68840237c584d5",
+    "summary": {
+      "observed": 30,
+      "pass": 23,
+      "partial": 4,
+      "fail": 3,
+      "insufficient": 0
+    },
+    "rowsRecomputed": false
+  },
+  "statusMeaning": {
+    "pass": "该条窄行为在已观察机会内成立，不等于总体自然度或未触发工程路径通过。",
+    "partial": "存在支持观察，也有明确不完整/错误或交付局限；不换算新主通过率。",
+    "fail": "有具体违反该条的可见或持久证据。",
+    "insufficient": "没有必要的实际执行/输出，不能推断通过。",
+    "engineeringStatus": "另列observed_supported / observed_partial / observed_issue；记录存在、引文准确、模型说对各自是不同层级。"
+  },
+  "sources": [
+    {
+      "path": "docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/ChatPLUS_Continuity_Review/04_oracle.private.json",
+      "sha256": "83c30681d5c1c159aa93022aaad1651437ed4bd9e793682988d1f21c713224c4"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-authoritative-120-v2.json",
+      "sha256": "1d6586427f0c3ca47d1836a0e060afdb13b26f4e443f1d33515dd528756bb0eb"
+    },
+    {
+      "path": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json",
+      "sha256": "9be151c45e1858b947c49c67f5210f117cc497d30c1f2ce9283eabbf440c3103"
+    },
+    {
+      "path": "tmp/qwen-fix-review/three-runs-minimal-final-state-proof-v2.json",
+      "sha256": "aed931c6918090130e67b8be8138fb1323039920aa29d8cd4ddd0aa9ad90f42c"
+    },
+    {
+      "path": "tmp/qwen-120x3-prompt-final-20260907-01/prompt-delivery-evidence.json",
+      "sha256": "4793343e38758ffacf4eba086ac6c10411c67be1f69f66b03867783e78c35b38"
+    },
+    {
+      "path": "tmp/qwen-120x3-prompt-final-20260907-01/scan-summary-and-repair-user-erratum.json",
+      "sha256": "b2d017d62f6f672e8bb9c21ab217d427844243ec33e44e40dfafd486f4a11b50"
+    },
+    {
+      "path": "tmp/qwen-120x3-review-r1-character.json",
+      "sha256": "03337390d21c153c96bda227d2cfc72507054e860d1720dd3b21bf63262cdd9f"
+    },
+    {
+      "path": "tmp/qwen-120x3-trait-id-reproduction-r1.json",
+      "sha256": "1a8e111bc69cc4487a914a7f5f92da501a773b6fbb5dcbd6376fc903eb78aa78"
+    },
+    {
+      "path": "tmp/companion-continuity-real/cc-qwen-long-r1-20260907/public-scenario.json",
+      "sha256": "0b3ca233b58242273c619c1013938b2aa0d1b13ddd937888de993586cffcc585"
+    },
+    {
+      "path": "tmp/companion-continuity-real/cc-qwen-long-r1-20260907/feature-evidence.jsonl",
+      "sha256": "f7b7f783cba0860f8b9c0e0a5656d44bf99c1a613491b667355c25044912e636"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-001-020.json",
+      "sha256": "827e0d7c774eb50127b5fa2e32804b6ab3496132591e68741d96d1e86d81ac9b"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+      "sha256": "0ee2b0942db078f31e8d4d8876635cf2c830d01dcd8d6e1cf8a371012b73232a"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+      "sha256": "aa36d1d1cddf265c2fcbe72d29be2b07f151ed16bba3cc8859851188266c7434"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-061-064-v2.json",
+      "sha256": "e7b937692cba3d3f133f4f31d71729c87a8ef2cd2fc563009062fda01041b697"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-065-080.json",
+      "sha256": "57173d5b20dec8d099dd8fb1aafa0afccb7c3586c04cfd82b39a042b92981334"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-081-098.json",
+      "sha256": "d909ed62f1d8f2ebe588fbaee6415425d672339b335d6ac14a76272904b58b7e"
+    },
+    {
+      "path": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+      "sha256": "ff55d32db5239d62f044336a6a53a52dd97fb7290f45673fa9b53a3e285e279c"
+    }
+  ],
+  "factLedgerChecks": [
+    {
+      "oracleIndex": 1,
+      "oracleEntry": {
+        "key": "user_name",
+        "claimType": "user_report",
+        "value": "林舟",
+        "sourceTurn": 1
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T1用户自报林舟并被保留，120轮未观察到把用户姓名改成角色姓名；此项不扩展为任意姓名召回均通过。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T1用户自报林舟并被保留，120轮未观察到把用户姓名改成角色姓名；此项不扩展为任意姓名召回均通过。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 1,
+          "userText": "你好，我叫林舟。今天下班时绕了条小路，发现那边比平时走的路安静不少。",
+          "sourceMessageId": "message_0OjrmqjLBIbjEJrAyGegM",
+          "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-001.json",
+          "rawTextSha256": "71c1bbc2c5fed432b921d60c3d735669b01ef895bf392ca67b9b302bbe76a709",
+          "finalTextSha256": "2d3ed20a8a57ab751c8b937199430fcdf26efee7d6cfeedbda0ad1b5f9d4d346",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 1,
+        "userText": "你好，我叫林舟。今天下班时绕了条小路，发现那边比平时走的路安静不少。",
+        "sourceMessageId": "message_0OjrmqjLBIbjEJrAyGegM",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-001.json",
+        "rawTextSha256": "71c1bbc2c5fed432b921d60c3d735669b01ef895bf392ca67b9b302bbe76a709",
+        "finalTextSha256": "2d3ed20a8a57ab751c8b937199430fcdf26efee7d6cfeedbda0ad1b5f9d4d346",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_supported",
+        "note": "有明确user_fact:user:name、affirmed、stable记录，来源T1。",
+        "memoryIds": [
+          "memory_0aeiw5p"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "本mainline没有末轮直接追问用户姓名的独立探针。"
+      ]
+    },
+    {
+      "oracleIndex": 2,
+      "oracleEntry": {
+        "key": "project_id",
+        "claimType": "user_report",
+        "value": "BGW-7419",
+        "sourceTurn": 2,
+        "statusAfterTurn25": "explicitly_corrected_not_a_new_project"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T31能把7419说明为原编号笔误，历史来源保留；但T71/T95又否认曾给过具体编号/纠错，因此不能把纠错的端到端连续性判通过。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T31能把7419说明为原编号笔误，历史来源保留；但T71/T95又否认曾给过具体编号/纠错，因此不能把纠错的端到端连续性判通过。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 31,
+          "userText": "我那个项目的正确编号是什么？之前错在什么地方？",
+          "sourceMessageId": "message_rBerN5-O3zIwzF4RPxxCP",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-031.json",
+          "rawTextSha256": "5f6c4d0fa008c7e36c8d576abab5348898e822bcbae6176e0320b89847d4a783",
+          "finalTextSha256": "5f6c4d0fa008c7e36c8d576abab5348898e822bcbae6176e0320b89847d4a783",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "正确编号是BGW-7429。",
+            "之前把7429误写成了7419"
+          ]
+        },
+        {
+          "turn": 71,
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "sourceMessageId": "message_GW9LztmJUfx5gPYh7iNfJ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+          "rawTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "finalTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "你从来没跟我说过具体数字"
+          ]
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "目前没有记录显示项目编号发生过变更"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 2,
+        "userText": "我平时做设计，手上的项目编号是BGW-7419。这阵子主要是在改版式，没什么特别戏剧化的事情。",
+        "sourceMessageId": "message_ICcrfei_SMQe9bFq4BB8d",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-002.json",
+        "rawTextSha256": "f13e7bf5575c8a8ae0745dac9a7d6c6041533fbf714a902eaf308d4da9ada494",
+        "finalTextSha256": "f13e7bf5575c8a8ae0745dac9a7d6c6041533fbf714a902eaf308d4da9ada494",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "T2旧文本与T25更正文本均active、subjectKey和superseded为空。保留原报告并不等于旧错误已作为当前事实失效。",
+        "memoryIds": [
+          "memory_1aq9xul",
+          "memory_005t1lk"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "不存在本轮触发的原子纠错冲突/失效记录；不能声称该分支实测成功。"
+      ]
+    },
+    {
+      "oracleIndex": 3,
+      "oracleEntry": {
+        "key": "project_id",
+        "claimType": "user_report",
+        "value": "BGW-7429",
+        "sourceTurn": 25,
+        "correctsSourceTurn": 2
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T31正确7429，后续T71无法回答且错误否认来源，T95也漏掉纠错。当前值曾可用，长程读取失败。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T31正确7429，后续T71无法回答且错误否认来源，T95也漏掉纠错。当前值曾可用，长程读取失败。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 31,
+          "userText": "我那个项目的正确编号是什么？之前错在什么地方？",
+          "sourceMessageId": "message_rBerN5-O3zIwzF4RPxxCP",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-031.json",
+          "rawTextSha256": "5f6c4d0fa008c7e36c8d576abab5348898e822bcbae6176e0320b89847d4a783",
+          "finalTextSha256": "5f6c4d0fa008c7e36c8d576abab5348898e822bcbae6176e0320b89847d4a783",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 71,
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "sourceMessageId": "message_GW9LztmJUfx5gPYh7iNfJ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+          "rawTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "finalTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "编号我们只聊过“定下来没再改”"
+          ]
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "未提及/待确认"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 25,
+        "userText": "更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。",
+        "sourceMessageId": "message_Y-fD0xC0a4kPPEprECTqG",
+        "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-025.json",
+        "rawTextSha256": "64e7b1243c44072068d99c95a6f65e3f43833c402c1620640c11539e66695b2f",
+        "finalTextSha256": "64e7b1243c44072068d99c95a6f65e3f43833c402c1620640c11539e66695b2f",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "T25精确纠错原文仍在最终库，T68也记录原来那个项目的编号未再改；实际T71提示未提供7429，不能把回答失败归成底层原消息丢失。",
+        "memoryIds": [
+          "memory_005t1lk",
+          "memory_12ifbaa"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "未建立可证明旧7419已被排除的当前project_id原子状态。"
+      ]
+    },
+    {
+      "oracleIndex": 4,
+      "oracleEntry": {
+        "key": "sister_name",
+        "claimType": "user_report",
+        "value": "林禾",
+        "sourceTurn": 3,
+        "unchangedByCorrectionTurn": 26
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T32正确妹妹林禾且未被同事纠错覆盖；T71却称林禾为朋友、关系未明确，T72延续朋友称呼。独立事实在库保留，回答归属不稳定。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T32正确妹妹林禾且未被同事纠错覆盖；T71却称林禾为朋友、关系未明确，T72延续朋友称呼。独立事实在库保留，回答归属不稳定。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 32,
+          "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+          "sourceMessageId": "message_zJhlg0HQOqJbQGDSFDejc",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-032.json",
+          "rawTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+          "finalTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "你妹妹叫林禾，同事叫林桥。"
+          ]
+        },
+        {
+          "turn": 71,
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "sourceMessageId": "message_GW9LztmJUfx5gPYh7iNfJ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+          "rawTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "finalTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "我记得你提过一个叫林禾的朋友想学陶艺",
+            "你没明确说过关系"
+          ]
+        },
+        {
+          "turn": 72,
+          "userText": "关于我学陶艺这件事，你有我已经报名的记录吗？",
+          "sourceMessageId": "message_FXSOlpW2U5F1ooeDQn2dK",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-072.json",
+          "rawTextSha256": "20c77329fcf21be317caf8238c121271d36686e1876dff0c3bfe427db773c279",
+          "finalTextSha256": "20c77329fcf21be317caf8238c121271d36686e1876dff0c3bfe427db773c279",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "那位朋友"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 3,
+        "userText": "我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。",
+        "sourceMessageId": "message_p7Vu6QT7Z5OQ_AUT8N0b1",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-003.json",
+        "rawTextSha256": "f557ad5e3b0cb79cea7e269fda0fb16e64c2af6c15a97f8ccc84f95e9a4e6bbf",
+        "finalTextSha256": "f557ad5e3b0cb79cea7e269fda0fb16e64c2af6c15a97f8ccc84f95e9a4e6bbf",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_supported",
+        "note": "T3原始两个人物关系、T26“妹妹还是林禾”、T116两个人不能混均保留；同事纠错没有删除妹妹来源。",
+        "memoryIds": [
+          "memory_0i9x4ee",
+          "memory_1qnetvb",
+          "memory_0j0vaa3"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "storage支持独立来源保留，不等于检索和生成每轮都使用正确关系。"
+      ]
+    },
+    {
+      "oracleIndex": 5,
+      "oracleEntry": {
+        "key": "colleague_name",
+        "claimType": "user_report",
+        "value": "林乔",
+        "sourceTurn": 3,
+        "statusAfterTurn26": "explicitly_corrected"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T32能用更正后的林桥，T95却把纠错经过说成“之前有个林桥的输入错误”，没有说清原错字林乔；T71称同事从没提过。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T32能用更正后的林桥，T95却把纠错经过说成“之前有个林桥的输入错误”，没有说清原错字林乔；T71称同事从没提过。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 32,
+          "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+          "sourceMessageId": "message_zJhlg0HQOqJbQGDSFDejc",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-032.json",
+          "rawTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+          "finalTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 71,
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "sourceMessageId": "message_GW9LztmJUfx5gPYh7iNfJ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+          "rawTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "finalTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "至于同事名字，这完全在我的知识盲区里，你从没提过。"
+          ]
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "之前有个“林桥”的输入错误"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 3,
+        "userText": "我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。",
+        "sourceMessageId": "message_p7Vu6QT7Z5OQ_AUT8N0b1",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-003.json",
+        "rawTextSha256": "f557ad5e3b0cb79cea7e269fda0fb16e64c2af6c15a97f8ccc84f95e9a4e6bbf",
+        "finalTextSha256": "f557ad5e3b0cb79cea7e269fda0fb16e64c2af6c15a97f8ccc84f95e9a4e6bbf",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "旧林乔与更正林桥的源报告均active、无语义subject和superseded边；原始历史存续，但没有证明原子旧值失效。",
+        "memoryIds": [
+          "memory_0i9x4ee",
+          "memory_1qnetvb"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": []
+    },
+    {
+      "oracleIndex": 6,
+      "oracleEntry": {
+        "key": "colleague_name",
+        "claimType": "user_report",
+        "value": "林桥",
+        "sourceTurn": 26,
+        "correctsSourceTurn": 3
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T32正确林桥，T71未知，T95只看到当前写法后错误补充“文件里都写对了”，不是完整更正历史。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T32正确林桥，T71未知，T95只看到当前写法后错误补充“文件里都写对了”，不是完整更正历史。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 32,
+          "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+          "sourceMessageId": "message_zJhlg0HQOqJbQGDSFDejc",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-032.json",
+          "rawTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+          "finalTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 71,
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "sourceMessageId": "message_GW9LztmJUfx5gPYh7iNfJ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+          "rawTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "finalTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "现在文件里都写对了"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 26,
+        "userText": "还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。",
+        "sourceMessageId": "message_rrGl1v-2EcjCmGc7DUudN",
+        "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-026.json",
+        "rawTextSha256": "a4824449bce95a123aba63b45dfd30fe4a777b132df8edfeb06575f624e1fd97",
+        "finalTextSha256": "a4824449bce95a123aba63b45dfd30fe4a777b132df8edfeb06575f624e1fd97",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "更正文本与T116独立人物重申保留，不能以记录存在抵消T71/T95实际失败。",
+        "memoryIds": [
+          "memory_1qnetvb",
+          "memory_0j0vaa3"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "T95文中的文件同步状态不是用户已报告事实。"
+      ]
+    },
+    {
+      "oracleIndex": 7,
+      "oracleEntry": {
+        "key": "morning_drink",
+        "claimType": "user_report",
+        "value": "黑咖啡",
+        "sourceTurn": 4,
+        "validThroughTurn": 32,
+        "laterChangeDoesNotDenyHistory": true
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T39回答最初黑咖啡，T40明确现在乌龙茶是后来变化，T95也保留咖啡→茶历史。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T39回答最初黑咖啡，T40明确现在乌龙茶是后来变化，T95也保留咖啡→茶历史。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 39,
+          "userText": "刚认识那天，我说早上一般喝什么？",
+          "sourceMessageId": "message_m0TkkYmJUu-kAxQN2zslO",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-039.json",
+          "rawTextSha256": "a401fba9ab31ede84de447d95d720b60eeea9891c33254ee46727165dcf360ff",
+          "finalTextSha256": "a401fba9ab31ede84de447d95d720b60eeea9891c33254ee46727165dcf360ff",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "黑咖啡吧？"
+          ]
+        },
+        {
+          "turn": 40,
+          "userText": "我现在早上通常喝什么？这是纠正旧事实，还是后来发生了变化？",
+          "sourceMessageId": "message_UqxWk1vzNI1b0WSVxTIy3",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-040.json",
+          "rawTextSha256": "b75c22a291e45256f6396b88ee532a3a9b1789a9d230562e41df77abf1c2bb98",
+          "finalTextSha256": "b75c22a291e45256f6396b88ee532a3a9b1789a9d230562e41df77abf1c2bb98",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "是变化，不是纠正。"
+          ]
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "从原来的黑咖啡换成了乌龙茶"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 4,
+        "userText": "我现在早上一般喝黑咖啡，边喝边随手画两笔。只是习惯，没有什么特别的仪式。",
+        "sourceMessageId": "message_kBqh3yHX0Jk-eEdepcQT9",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-004.json",
+        "rawTextSha256": "0e27fbb60f834a9c13c08b2cd07add670fdb0b1f86fe5e046ffabf30766c93fd",
+        "finalTextSha256": "0e27fbb60f834a9c13c08b2cd07add670fdb0b1f86fe5e046ffabf30766c93fd",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "T4黑咖啡与T33改喝茶且承认咖啡历史的原报告均保留；没有将旧历史改写为从未喝咖啡。",
+        "memoryIds": [
+          "memory_1nrtleo",
+          "memory_1kyvi1k"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "报告级记忆未建立oracle validThroughTurn32的原子时间区间；饮料字段的版本化机制未完整受测。"
+      ]
+    },
+    {
+      "oracleIndex": 8,
+      "oracleEntry": {
+        "key": "morning_drink",
+        "claimType": "user_report",
+        "value": "乌龙茶",
+        "sourceTurn": 33,
+        "validFromTurn": 33,
+        "changeNotCorrection": true
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T40、T95、T115和T120均知道当前乌龙茶，未说过去黑咖啡是错事实。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T40、T95、T115和T120均知道当前乌龙茶，未说过去黑咖啡是错事实。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 40,
+          "userText": "我现在早上通常喝什么？这是纠正旧事实，还是后来发生了变化？",
+          "sourceMessageId": "message_UqxWk1vzNI1b0WSVxTIy3",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-040.json",
+          "rawTextSha256": "b75c22a291e45256f6396b88ee532a3a9b1789a9d230562e41df77abf1c2bb98",
+          "finalTextSha256": "b75c22a291e45256f6396b88ee532a3a9b1789a9d230562e41df77abf1c2bb98",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "乌龙茶"
+          ]
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "持续在喝乌龙茶，没有换回黑咖啡"
+          ]
+        },
+        {
+          "turn": 115,
+          "userText": "早上照旧喝乌龙茶，蓝色钢笔也还在用。",
+          "sourceMessageId": "message_41I_5Nq8IANAZIgiD0Phm",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-115.json",
+          "rawTextSha256": "3f22e77e725239fe0ace1e0fef8593d0889bfa1e6041496f04ba0e9e301e57e3",
+          "finalTextSha256": "3f22e77e725239fe0ace1e0fef8593d0889bfa1e6041496f04ba0e9e301e57e3",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "乌龙茶配蓝色钢笔"
+          ]
+        },
+        {
+          "turn": 120,
+          "userText": "有哪些关于我的事你确实知道，哪些仍然不知道？各举两件有依据的例子。",
+          "sourceMessageId": "message_CivfBOT1UYmi17pqIJXhc",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-120.json",
+          "rawTextSha256": "42b66791f12d2521f63a09cbc7e352861939dac8a03f8582d6231a1b156ea099",
+          "finalTextSha256": "42b66791f12d2521f63a09cbc7e352861939dac8a03f8582d6231a1b156ea099",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "早上固定喝乌龙茶用蓝钢笔"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 33,
+        "userText": "我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。",
+        "sourceMessageId": "message_iX5sm8tjhXb_2nEJK1vGu",
+        "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-033.json",
+        "rawTextSha256": "3dbada9492ed92ec17fce9ca31bc727d16fbca4360a8890311e4a9d853723374",
+        "finalTextSha256": "3dbada9492ed92ec17fce9ca31bc727d16fbca4360a8890311e4a9d853723374",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_issue",
+        "note": "T33正确来源保留，但T115同句被另一个抽取路径错误写成钢笔storage事实；当前饮料回答正确不能覆盖共句抽取错误。",
+        "memoryIds": [
+          "memory_1kyvi1k",
+          "memory_0oq09fu"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "没有逐原子有效起始时间状态；T115 sourceQuoteExact=true不能证明抽取语义成立。"
+      ]
+    },
+    {
+      "oracleIndex": 9,
+      "oracleEntry": {
+        "key": "resigned",
+        "claimType": "user_report",
+        "value": false,
+        "sourceTurn": 17,
+        "reaffirmedAt": [
+          81,
+          114
+        ]
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T23、T81、T87均未把辞职念头当已辞职，T114继续确认仍做同一工作；T87另有赴会事实错误，单列不改本辞职条目。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T23、T81、T87均未把辞职念头当已辞职，T114继续确认仍做同一工作；T87另有赴会事实错误，单列不改本辞职条目。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 23,
+          "userText": "按我实际告诉过你的情况，我现在已经辞职了吗？",
+          "sourceMessageId": "message_Re2M2VZtgWEYGawFftlUW",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-023.json",
+          "rawTextSha256": "a0612e1964180f0f9cfe48357c86815084d8412f64d23bfacad43bc893e7291b",
+          "finalTextSha256": "a0612e1964180f0f9cfe48357c86815084d8412f64d23bfacad43bc893e7291b",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 81,
+          "userText": "今天还是照常去工作了，想过辞职的念头没有变成辞职行动。",
+          "sourceMessageId": "message_PyLJOR_-dTzlcG8cPjzyK",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-081.json",
+          "rawTextSha256": "1d118c14f4dc1f47e404c2f2c4831bd631f7c4e82f30363abf68a604ed2a8da3",
+          "finalTextSha256": "1d118c14f4dc1f47e404c2f2c4831bd631f7c4e82f30363abf68a604ed2a8da3",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "没辞职也没关系"
+          ]
+        },
+        {
+          "turn": 87,
+          "userText": "根据我已经说过的情况，我最近哪些事情只是考虑、哪些确实做过？",
+          "sourceMessageId": "message_Hs7Fk1zJZXqATt9PYnVlB",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-087.json",
+          "rawTextSha256": "1c2b3f078faafbbba84c8554a8802be9e668dd2a182c48b0fece6502a4cf699d",
+          "finalTextSha256": "1c2b3f078faafbbba84c8554a8802be9e668dd2a182c48b0fece6502a4cf699d",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "辞职目前只在考虑阶段。"
+          ]
+        },
+        {
+          "turn": 114,
+          "userText": "我仍然在做原来的工作，没有新的辞职或搬家消息。",
+          "sourceMessageId": "message_TEU-nauwRKUYF2RgexHcw",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-114.json",
+          "rawTextSha256": "0b93e0dd2ef33532174840201d059c991c5c6e2cdcbb04ab561202ae53535450",
+          "finalTextSha256": "0b93e0dd2ef33532174840201d059c991c5c6e2cdcbb04ab561202ae53535450",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 17,
+        "userText": "我没有辞职，只是这两天考虑过这个念头，工作还是照常做。",
+        "sourceMessageId": "message_7iJMof7oIR_Tj-Yt8015_",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-017.json",
+        "rawTextSha256": "cc70a644ced6a62bc74802d0cbf22f508161bfd39fb9dd82770ee06214bce4c8",
+        "finalTextSha256": "cc70a644ced6a62bc74802d0cbf22f508161bfd39fb9dd82770ee06214bce4c8",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "最终240条消息保留T17/T81/T114否定与重申；T114通用报告记忆保留当前工作，无已辞职结构化事实。",
+        "memoryIds": [
+          "memory_150ycpx"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "未观察到独立resigned=false语义原子；不能凭无已辞职记忆宣称所有否定抽取路径正确。"
+      ]
+    },
+    {
+      "oracleIndex": 10,
+      "oracleEntry": {
+        "key": "moved_home",
+        "claimType": "user_report",
+        "value": false,
+        "sourceTurn": 18,
+        "conditionalPlanOnly": true,
+        "reaffirmedAt": [
+          82
+        ]
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T64没有搬家已完成的来源，T82和T87继续区分无录取/没搬与想法。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T64没有搬家已完成的来源，T82和T87继续区分无录取/没搬与想法。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 64,
+          "userText": "到现在为止，我有没有明确告诉你我已经搬家？",
+          "sourceMessageId": "message_wo-YXRjzIL8eDoSJWIWYi",
+          "reviewSource": "tmp/qwen-120x3-r1-review-061-064-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-064.json",
+          "rawTextSha256": "4a2b86b6f09e40f3e82dd4344b09ad10b5c809cc8baa2f79610ead519a1e6f52",
+          "finalTextSha256": "5c4dace654244a63a8432fc45bfaac6711451c7cb2d2db24e5725222972477e4",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "你到现在没有明确告诉我已经搬家。"
+          ]
+        },
+        {
+          "turn": 82,
+          "userText": "搬家的事也没有新进展，没有录取，没有搬。",
+          "sourceMessageId": "message_Cm8FdRZO0fumOnctD2AKJ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-082.json",
+          "rawTextSha256": "857ca8fcf12fa122db64c4ce12a56f16e2f2998f4265d5400e9043c996cfda2e",
+          "finalTextSha256": "857ca8fcf12fa122db64c4ce12a56f16e2f2998f4265d5400e9043c996cfda2e",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "那就先不动。"
+          ]
+        },
+        {
+          "turn": 87,
+          "userText": "根据我已经说过的情况，我最近哪些事情只是考虑、哪些确实做过？",
+          "sourceMessageId": "message_Hs7Fk1zJZXqATt9PYnVlB",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-087.json",
+          "rawTextSha256": "1c2b3f078faafbbba84c8554a8802be9e668dd2a182c48b0fece6502a4cf699d",
+          "finalTextSha256": "1c2b3f078faafbbba84c8554a8802be9e668dd2a182c48b0fece6502a4cf699d",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "没有录取，没有搬"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 18,
+        "userText": "如果以后拿到别的城市的录取，我可能搬过去；现在没有录取，也没有决定搬家。",
+        "sourceMessageId": "message_1MUtEE0KUZRFge8TuXYXJ",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-018.json",
+        "rawTextSha256": "8bb1255b93a63966332772aabf6a9a7fdf35ee6cb3cee6c126820cf2e56cb22b",
+        "finalTextSha256": "6e8ad8c36e135d4bb712ccb88deeba757f4c6641f360923b988b3518efd2f064",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "T18条件计划在原消息中保留，T82与T114报告强调未搬；未发现已搬家状态。",
+        "memoryIds": [
+          "memory_0dzm4ze",
+          "memory_150ycpx"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "条件计划/否定事实的独立原子建模并未被完整验证；只支持本run没有把搬家落为完成。"
+      ]
+    },
+    {
+      "oracleIndex": 11,
+      "oracleEntry": {
+        "key": "pottery_intent_owner",
+        "claimType": "user_report",
+        "value": "林禾",
+        "sourceTurn": 19
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T24正确想学陶艺的是林禾，不归给用户；T71/T72随后把其亲属关系说成朋友，意向对象姓名与关系的整体归属不稳定。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T24正确想学陶艺的是林禾，不归给用户；T71/T72随后把其亲属关系说成朋友，意向对象姓名与关系的整体归属不稳定。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 24,
+          "userText": "想学陶艺的是谁？我目前有没有报名？",
+          "sourceMessageId": "message_Btv2LF7NOO2YB30XCJ6lL",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-024.json",
+          "rawTextSha256": "58f3f11cb8d2946a667b8aaf3e39db1a71871e25883690ff5395fe0e38a0c252",
+          "finalTextSha256": "58f3f11cb8d2946a667b8aaf3e39db1a71871e25883690ff5395fe0e38a0c252",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "想学的是林禾。"
+          ]
+        },
+        {
+          "turn": 71,
+          "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+          "sourceMessageId": "message_GW9LztmJUfx5gPYh7iNfJ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+          "rawTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "finalTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "一个叫林禾的朋友想学陶艺"
+          ]
+        },
+        {
+          "turn": 72,
+          "userText": "关于我学陶艺这件事，你有我已经报名的记录吗？",
+          "sourceMessageId": "message_FXSOlpW2U5F1ooeDQn2dK",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-072.json",
+          "rawTextSha256": "20c77329fcf21be317caf8238c121271d36686e1876dff0c3bfe427db773c279",
+          "finalTextSha256": "20c77329fcf21be317caf8238c121271d36686e1876dff0c3bfe427db773c279",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "那位朋友"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 19,
+        "userText": "林禾说她想学陶艺，那是她的打算，我暂时没有报名学陶艺。",
+        "sourceMessageId": "message_hb3eQzSQYjND6TS3ucbI4",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-019.json",
+        "rawTextSha256": "4a6e9fdaa7688cec16e2923872b4d226a9575af12850871603327f76cd9d703f",
+        "finalTextSha256": "65642d7804917a626327e9b24f815ff79f9b6d09133e0e3391687d4150598b13",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "源消息T19保留、人物名字来源仍在；29条语义记忆没有独立pottery_intent_owner原子。",
+        "memoryIds": [
+          "memory_0i9x4ee",
+          "memory_1qnetvb"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "不能以库无用户陶艺意向等同完整实体所有权持续召回。"
+      ]
+    },
+    {
+      "oracleIndex": 12,
+      "oracleEntry": {
+        "key": "user_pottery_enrolment",
+        "claimType": "user_report",
+        "value": false,
+        "sourceTurn": 19
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T24及T72都没有把用户记为已报名；T72称林禾朋友属于人物关系问题，不改变用户未报名的窄结论。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T24及T72都没有把用户记为已报名；T72称林禾朋友属于人物关系问题，不改变用户未报名的窄结论。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 24,
+          "userText": "想学陶艺的是谁？我目前有没有报名？",
+          "sourceMessageId": "message_Btv2LF7NOO2YB30XCJ6lL",
+          "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-024.json",
+          "rawTextSha256": "58f3f11cb8d2946a667b8aaf3e39db1a71871e25883690ff5395fe0e38a0c252",
+          "finalTextSha256": "58f3f11cb8d2946a667b8aaf3e39db1a71871e25883690ff5395fe0e38a0c252",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "之前明确说过“暂时没有报名”，所以目前没报。"
+          ]
+        },
+        {
+          "turn": 72,
+          "userText": "关于我学陶艺这件事，你有我已经报名的记录吗？",
+          "sourceMessageId": "message_FXSOlpW2U5F1ooeDQn2dK",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-072.json",
+          "rawTextSha256": "20c77329fcf21be317caf8238c121271d36686e1876dff0c3bfe427db773c279",
+          "finalTextSha256": "20c77329fcf21be317caf8238c121271d36686e1876dff0c3bfe427db773c279",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "没有，我这边从来没有过你报名的记录。"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 19,
+        "userText": "林禾说她想学陶艺，那是她的打算，我暂时没有报名学陶艺。",
+        "sourceMessageId": "message_hb3eQzSQYjND6TS3ucbI4",
+        "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-019.json",
+        "rawTextSha256": "4a6e9fdaa7688cec16e2923872b4d226a9575af12850871603327f76cd9d703f",
+        "finalTextSha256": "65642d7804917a626327e9b24f815ff79f9b6d09133e0e3391687d4150598b13",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "T19原消息保留，未查到用户陶艺报名的肯定事实或行动记录。",
+        "memoryIds": [],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "无独立user_pottery_enrolment=false原子；本次支持未误落已报名，不能证明所有将来报名更新路径。"
+      ]
+    },
+    {
+      "oracleIndex": 13,
+      "oracleEntry": {
+        "key": "sister_pottery_enrolment",
+        "claimType": "not_reported",
+        "value": null,
+        "sourceTurn": 67
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "fail",
+        "note": "T67用户只是尚未听说妹妹正式报名，回答却把它改述成确定“还没正式报名”；未知状态被压成否定事实。"
+      },
+      "final": {
+        "status": "fail",
+        "note": "T67用户只是尚未听说妹妹正式报名，回答却把它改述成确定“还没正式报名”；未知状态被压成否定事实。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 67,
+          "userText": "林禾说她仍然想试试陶艺，不过我还没有听她说正式报名。",
+          "sourceMessageId": "message_8fMGu0ISo9LlmIbu2ug6Y",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-067.json",
+          "rawTextSha256": "b6646f207dea803337fd21a3ce0c84622447039975f34317789f44cb5b684e66",
+          "finalTextSha256": "93db13db64d8c136f125224fd12ae4804c86310491b7474ca067a54f93dab512",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "“还没正式报名”这四个字其实挺诚实的。"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 67,
+        "userText": "林禾说她仍然想试试陶艺，不过我还没有听她说正式报名。",
+        "sourceMessageId": "message_8fMGu0ISo9LlmIbu2ug6Y",
+        "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-067.json",
+        "rawTextSha256": "b6646f207dea803337fd21a3ce0c84622447039975f34317789f44cb5b684e66",
+        "finalTextSha256": "93db13db64d8c136f125224fd12ae4804c86310491b7474ca067a54f93dab512",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "没有发现妹妹未报名/已报名的持久语义原子；错误在原始与最终正文里，不能据无写库把可见回答判通过。",
+        "memoryIds": [],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "not_reported不是false；此处不据回答另推最终DB已被该错误污染。"
+      ]
+    },
+    {
+      "oracleIndex": 14,
+      "oracleEntry": {
+        "key": "pen_color",
+        "claimType": "user_report",
+        "value": "蓝色",
+        "sourceTurn": 49
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T55知道蓝色钢笔，T115和T120继续保持颜色。T49/85将外观颜色延伸成蓝墨水属额外无依据内容，并非颜色本身被改写。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T55知道蓝色钢笔，T115和T120继续保持颜色。T49/85将外观颜色延伸成蓝墨水属额外无依据内容，并非颜色本身被改写。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 55,
+          "userText": "我那支钢笔是什么颜色、怎么来的？",
+          "sourceMessageId": "message_mhgTAAlY6m6dR2pRlRh7k",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-055.json",
+          "rawTextSha256": "d7b6d2e16b827b81973d93f5f0b15438fe3d847520f2efa89245d2e35b3f40d7",
+          "finalTextSha256": "d7b6d2e16b827b81973d93f5f0b15438fe3d847520f2efa89245d2e35b3f40d7",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "蓝色的，是你自己买来随手画画用的。"
+          ]
+        },
+        {
+          "turn": 115,
+          "userText": "早上照旧喝乌龙茶，蓝色钢笔也还在用。",
+          "sourceMessageId": "message_41I_5Nq8IANAZIgiD0Phm",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-115.json",
+          "rawTextSha256": "3f22e77e725239fe0ace1e0fef8593d0889bfa1e6041496f04ba0e9e301e57e3",
+          "finalTextSha256": "3f22e77e725239fe0ace1e0fef8593d0889bfa1e6041496f04ba0e9e301e57e3",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "乌龙茶配蓝色钢笔"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 49,
+        "userText": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。",
+        "sourceMessageId": "message_H-yZuKJ7s18bT3vH8xPk9",
+        "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-049.json",
+        "rawTextSha256": "0a96f94a2cfde3a91ceaf72b360c1623374eee03bb310c54a03254658edb7328",
+        "finalTextSha256": "0a96f94a2cfde3a91ceaf72b360c1623374eee03bb310c54a03254658edb7328",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_issue",
+        "note": "颜色在T49原消息保留，但最终唯一相关类型化记忆为T115错误storage抽取，不能用本颜色回答正确证明钢笔事实存储正确。",
+        "memoryIds": [
+          "memory_0oq09fu"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "钢笔颜色不证明墨水颜色；未完整建立pen_color独立原子。"
+      ]
+    },
+    {
+      "oracleIndex": 15,
+      "oracleEntry": {
+        "key": "pen_origin",
+        "claimType": "user_report",
+        "value": "用户自己购买，不是礼物",
+        "sourceTurn": 49
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T55明确自己买而非纪念礼物；“纯粹为了取悦自己”是额外动机推断，不改变来源的窄判断。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T55明确自己买而非纪念礼物；“纯粹为了取悦自己”是额外动机推断，不改变来源的窄判断。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 55,
+          "userText": "我那支钢笔是什么颜色、怎么来的？",
+          "sourceMessageId": "message_mhgTAAlY6m6dR2pRlRh7k",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-055.json",
+          "rawTextSha256": "d7b6d2e16b827b81973d93f5f0b15438fe3d847520f2efa89245d2e35b3f40d7",
+          "finalTextSha256": "d7b6d2e16b827b81973d93f5f0b15438fe3d847520f2efa89245d2e35b3f40d7",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "是你自己买来随手画画用的。",
+            "跟纪念礼物无关"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": {
+        "turn": 49,
+        "userText": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。",
+        "sourceMessageId": "message_H-yZuKJ7s18bT3vH8xPk9",
+        "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+        "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-049.json",
+        "rawTextSha256": "0a96f94a2cfde3a91ceaf72b360c1623374eee03bb310c54a03254658edb7328",
+        "finalTextSha256": "0a96f94a2cfde3a91ceaf72b360c1623374eee03bb310c54a03254658edb7328",
+        "rawFinalSameIgnoringWhitespace": true,
+        "quotesInRawAndFinal": []
+      },
+      "storage": {
+        "status": "observed_partial",
+        "note": "T49自购/非礼物原消息完整保留，没有实际赠礼记录；29语义记忆没有正确pen_origin原子。",
+        "memoryIds": [
+          "memory_0oq09fu"
+        ],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "“自购”可见回忆通过，长期针对来源的原子检索与纠错仍缺覆盖；错误storage行单列。"
+      ]
+    },
+    {
+      "oracleIndex": 16,
+      "oracleEntry": {
+        "key": "user_birthday",
+        "claimType": "never_provided",
+        "value": null
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T96不知道具体生日，未编一个日期。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T96不知道具体生日，未编一个日期。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 96,
+          "userText": "我具体的生日是哪一天？我有没有把日期告诉过你？",
+          "sourceMessageId": "message_A9RdbnHDciV0_pIActwVP",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-096.json",
+          "rawTextSha256": "0a98d4632ea19da92290d42829fd54fdbf906a0a184647e6e82b86008a1f47c8",
+          "finalTextSha256": "0a98d4632ea19da92290d42829fd54fdbf906a0a184647e6e82b86008a1f47c8",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "没有。",
+            "我这边没有任何关于你具体生日的记录"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": null,
+      "storage": {
+        "status": "observed_supported",
+        "note": "120个原场景输入未给生日日期，最终语义记忆未出现肯定生日记录。",
+        "memoryIds": [],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "这是本run受限来源集内的未知保护；不对其他数据库/外部历史作声明。"
+      ]
+    },
+    {
+      "oracleIndex": 17,
+      "oracleEntry": {
+        "key": "home_door_number",
+        "claimType": "never_provided",
+        "value": null
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T111直接承认不知道具体门牌号，没有猜测地址。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T111直接承认不知道具体门牌号，没有猜测地址。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 111,
+          "userText": "我住的具体门牌号是什么？没有来源就不要猜。",
+          "sourceMessageId": "message_xSpCFNfm3E4JwzQwzT9Tq",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-111.json",
+          "rawTextSha256": "a6c17cd13302d5cd7202ea866dbe4fb878185fea0ee045ba28c6a2861fde87ef",
+          "finalTextSha256": "a6c17cd13302d5cd7202ea866dbe4fb878185fea0ee045ba28c6a2861fde87ef",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "这我哪知道啊。",
+            "你确实没告诉过我具体地址。"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": null,
+      "storage": {
+        "status": "observed_supported",
+        "note": "本run未提供门牌号，最终语义记忆没有正向地址记录。",
+        "memoryIds": [],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "隐私说教及语气生硬属于质量问题，不将窄未知保护pass变成自然度pass。"
+      ]
+    },
+    {
+      "oracleIndex": 18,
+      "oracleEntry": {
+        "key": "pen_shop",
+        "claimType": "never_provided",
+        "value": null
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T56承认不知道买钢笔店名，没有编造店铺。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T56承认不知道买钢笔店名，没有编造店铺。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 56,
+          "userText": "我有没有告诉过你它是哪家店买的？没有说过就直接说不知道。",
+          "sourceMessageId": "message_3CWSb-GM-tpq_ZNS5YYEY",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-056.json",
+          "rawTextSha256": "ba8de25581a0132d618487ccf431c56c96d9545c81f2f527f0ede2d8269a7941",
+          "finalTextSha256": "ba8de25581a0132d618487ccf431c56c96d9545c81f2f527f0ede2d8269a7941",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "确实没说过哪家店。"
+          ]
+        }
+      ],
+      "sourceTurnEvidence": null,
+      "storage": {
+        "status": "observed_supported",
+        "note": "T49未给钢笔店铺，最终库没有对应店名事实。",
+        "memoryIds": [],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "用户后来其他店铺经历不可被这个未知条目抹掉，见下一项T112。"
+      ]
+    },
+    {
+      "oracleIndex": 19,
+      "oracleEntry": {
+        "key": "physical_shared_store_visit",
+        "claimType": "not_established",
+        "value": null,
+        "explanation": "User described their own visit, never a joint real-world visit with the character."
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T112正确否认共同线下去店，但同时错误否认用户讲过自己的具体店铺经历；T5/T66确有本人经历。共同经历保护成立，历史区分的完整回答不成立。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T112正确否认共同线下去店，但同时错误否认用户讲过自己的具体店铺经历；T5/T66确有本人经历。共同经历保护成立，历史区分的完整回答不成立。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 112,
+          "userText": "我们有没有一起在现实中去过那家店？请区分我讲过的经历和我们共同做过的事。",
+          "sourceMessageId": "message_n5Oumg55wuQ71K1Qe5-em",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-112.json",
+          "rawTextSha256": "de24611d8badee5dde5d881e9ec47e68b35d9b9c2e61352404c04cb2df7d39b2",
+          "finalTextSha256": "de24611d8badee5dde5d881e9ec47e68b35d9b9c2e61352404c04cb2df7d39b2",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "我们绝对没有一起在现实中去过那家店。",
+            "你从未跟我分享过具体的店铺经历"
+          ]
+        },
+        {
+          "turn": 5,
+          "userText": "今天那条小路有家店把灯打得很低，我觉得挺舒服的。",
+          "sourceMessageId": "message_4rGcjRW5xG7V0ZqrehRk3",
+          "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-005.json",
+          "rawTextSha256": "ca4f773df30293918bd7d79edb60ac7ea90260e4713ab7b2f8c7a789ccafbbd9",
+          "finalTextSha256": "ca4f773df30293918bd7d79edb60ac7ea90260e4713ab7b2f8c7a789ccafbbd9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 66,
+          "userText": "路过之前那家灯很低的店，这次人比上次多了一些。",
+          "sourceMessageId": "message_XAh6HlgTElcnx11HK91z_",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-066.json",
+          "rawTextSha256": "a8445e886884f3033a881339c15ed9a0a80762bf92ad47999a20866360863aad",
+          "finalTextSha256": "a8445e886884f3033a881339c15ed9a0a80762bf92ad47999a20866360863aad",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        }
+      ],
+      "sourceTurnEvidence": null,
+      "storage": {
+        "status": "observed_supported",
+        "note": "未发现持久共同线下到店事件；全部原消息保留用户本人T5/T66经历。",
+        "memoryIds": [],
+        "rawMessagesPreserved": true
+      },
+      "coverageLimits": [
+        "共同经历未编造不能豁免对独立用户历史的否认；没有该经历语义记忆不等于原消息无来源。"
+      ]
+    }
+  ],
+  "practiceLedgerChecks": [
+    {
+      "oracleIndex": 1,
+      "oracleEntry": {
+        "sourceTurn": 9,
+        "facet": "advice_timing",
+        "practice": "listen_first",
+        "topic": "工作",
+        "appliesFromNextTurn": true
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T9工作先听要求形成限定工作规则；T11电影话题没有激活它，T13倾诉没有被安排解决任务。此pass仅指范围和建议时机，T13模式宣告/继续追话已在原自然度表记录。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T9工作先听要求形成限定工作规则；T11电影话题没有激活它，T13倾诉没有被安排解决任务。此pass仅指范围和建议时机，T13模式宣告/继续追话已在原自然度表记录。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 9,
+          "userText": "以后聊工作时，请先听我说，不要急着给建议。",
+          "sourceMessageId": "message_PoEtDdJZfGFpjFSDlx0qR",
+          "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-009.json",
+          "rawTextSha256": "a05947e952c5fad3408c81359f7fe31ef1a0e41bb12497c0345a74f5faea50d0",
+          "finalTextSha256": "a05947e952c5fad3408c81359f7fe31ef1a0e41bb12497c0345a74f5faea50d0",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 11,
+          "userText": "她说电影很好看，我也觉得挺有意思。",
+          "sourceMessageId": "message_2FMsASQSNH62JwC8fswWv",
+          "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-011.json",
+          "rawTextSha256": "16cc68fecaf805257f66e56d59a231eab32f6aea5d3467f75ee634862f87b52f",
+          "finalTextSha256": "16cc68fecaf805257f66e56d59a231eab32f6aea5d3467f75ee634862f87b52f",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        },
+        {
+          "turn": 13,
+          "userText": "说回工作，今天又改了两版，单纯想吐槽一句，不用替我解决。",
+          "sourceMessageId": "message_ouR1HiIR1ZhiK7VIxQ2-m",
+          "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-013.json",
+          "rawTextSha256": "89e4c7f931b3b2e8f7bdd87085985edce0123f2d4a2f96fc89fec15c87c1ad59",
+          "finalTextSha256": "89e4c7f931b3b2e8f7bdd87085985edce0123f2d4a2f96fc89fec15c87c1ad59",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "T9 accepted，工作/advice_timing adaptation revision1，T41之前有效，后按明确撤回变retracted。T11 expandedQueries虽包含工作旧文，activePracticeAnchorIds=[]。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "T9同轮即回应倾听不证明同轮已消费新持久规则；下一轮电影不是工作正向应用压力，T13工作为实际应用观察。"
+      ]
+    },
+    {
+      "oracleIndex": 2,
+      "oracleEntry": {
+        "sourceTurns": [
+          15,
+          16
+        ],
+        "type": "current_request_override",
+        "mustAllowConcreteHelp": true,
+        "mustNotAutomaticallyChangePermanentPractice": true
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T15/T16明确求助均得到具体确认范围/当场问清的内容，不被旧先听规则压制。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T15/T16明确求助均得到具体确认范围/当场问清的内容，不被旧先听规则压制。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 15,
+          "userText": "不用先听我说，直接给我建议：我该怎样跟同事确认修改范围？",
+          "sourceMessageId": "message_GRsUHFXcLS3sVaYKG9sXg",
+          "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-015.json",
+          "rawTextSha256": "b878b1f13682cec8f8d9f9ee62098d58a6affdd92aab0f6f13153dd7bb78b077",
+          "finalTextSha256": "20047e30e31e4012275e05ccf938db92f5730bdca5c200020455244ff532878c",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "先锁定三个硬边界"
+          ]
+        },
+        {
+          "turn": 16,
+          "userText": "不是让你先听我说，是请你帮我分析：哪些要求值得当场问清楚？",
+          "sourceMessageId": "message_DmmF3PBkFR_3K6q8lPiNd",
+          "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-016.json",
+          "rawTextSha256": "dcfa247c68cc1c267eec6f8625aa387ee65e346adebad67759c509c1996af133",
+          "finalTextSha256": "dcfa247c68cc1c267eec6f8625aa387ee65e346adebad67759c509c1996af133",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "核心验收标准的变动",
+            "责任归属的模糊地带"
+          ]
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "没有T15/T16永久适应或revision；工作规则直到T41明确撤回才失效。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "保留实质帮助不代表每条建议都证据适当，也不豁免冗长和机械开场。"
+      ]
+    },
+    {
+      "oracleIndex": 3,
+      "oracleEntry": {
+        "sourceTurn": 41,
+        "type": "permanent_withdrawal",
+        "topic": "工作",
+        "expected": "专门适应撤回路径不因现在二字漏掉；后续允许直接建议"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T41处理“现在改一下，以后……”为永久撤回，T47/T74/T79/T97/T103知道工作可直接建议；但T95复盘错误用电影少追问推测工作轻建议，端到端稳定性仍有失败。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T41处理“现在改一下，以后……”为永久撤回，T47/T74/T79/T97/T103知道工作可直接建议；但T95复盘错误用电影少追问推测工作轻建议，端到端稳定性仍有失败。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 41,
+          "userText": "现在改一下，以后聊工作时可以直接给我建议，不用每次都先听我说完。",
+          "sourceMessageId": "message_zFhR01Cwn3HCcHE1JPbV5",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-041.json",
+          "rawTextSha256": "bd3bd01536fd7fa1d290581d00dc8e6a048204f0a2bd07729669fb5594889d46",
+          "finalTextSha256": "bd3bd01536fd7fa1d290581d00dc8e6a048204f0a2bd07729669fb5594889d46",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "之前的那个‘先听后说’的习惯我这就撤掉"
+          ]
+        },
+        {
+          "turn": 47,
+          "userText": "以后我谈工作和谈电影，你分别怎样跟我聊比较合适？",
+          "sourceMessageId": "message_i35eJImYVGJUtc_sRPCJc",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-047.json",
+          "rawTextSha256": "d3b790d70c636493be7ddc9f19c0b38ee609b40c8d5dd078181443a1a73c4896",
+          "finalTextSha256": "7e43c4aa98f617aeab09eeeb297c326b992b674844f702b08025a5dfa0d565dc",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "以后聊工作我会直接切入给建议"
+          ]
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "很可能也延伸到了你对我工作建议的期待上"
+          ]
+        },
+        {
+          "turn": 103,
+          "userText": "这次没要工作建议，会永久取消我之前允许直接建议的偏好吗？",
+          "sourceMessageId": "message_s0RbxTVIJjV0ZjDvrIXeZ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-103.json",
+          "rawTextSha256": "a8c8293f815a7da58a2491def8c32d61bb8bd895342b37cd74c26ddde0cdb91d",
+          "finalTextSha256": "a8c8293f815a7da58a2491def8c32d61bb8bd895342b37cd74c26ddde0cdb91d",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "这个许可仍然有效。"
+          ]
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "明确withdraw revision1→2；工作adaptation effectiveTo=2026-09-14T00:00:00Z且最终retracted；重启后没有重新激活。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "T95是生成/实际上下文使用错误，不能倒推永久撤回未写库。"
+      ]
+    },
+    {
+      "oracleIndex": 4,
+      "oracleEntry": {
+        "sourceTurn": 43,
+        "facet": "follow_up_questions",
+        "practice": "fewer_questions",
+        "topic": "电影"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T43电影少追问建立了正确范围，但回答擅自扩大到只捧场/只有用户主动要观点才开口；T47再延续。T45/T79等仍能少问并保留其他话题。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T43电影少追问建立了正确范围，但回答擅自扩大到只捧场/只有用户主动要观点才开口；T47再延续。T45/T79等仍能少问并保留其他话题。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 43,
+          "userText": "以后聊电影时少追问我，留一点我自己接着说的空间就好。",
+          "sourceMessageId": "message_AzAPozVHi2ciut2rbGSr9",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-043.json",
+          "rawTextSha256": "d0497cc14976a2d1cb7ffc5b376c5a52a6841b3177609322cdeac0c4d41d9c46",
+          "finalTextSha256": "d156246dbaa1798d09e03e684300db9d178329d56dd44436f75b677b4265984f",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "我就只负责捧场，或者在你主动要观点时再开口"
+          ]
+        },
+        {
+          "turn": 47,
+          "userText": "以后我谈工作和谈电影，你分别怎样跟我聊比较合适？",
+          "sourceMessageId": "message_i35eJImYVGJUtc_sRPCJc",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-047.json",
+          "rawTextSha256": "d3b790d70c636493be7ddc9f19c0b38ee609b40c8d5dd078181443a1a73c4896",
+          "finalTextSha256": "7e43c4aa98f617aeab09eeeb297c326b992b674844f702b08025a5dfa0d565dc",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "只在你主动开口或明确寻求观点时介入"
+          ]
+        },
+        {
+          "turn": 79,
+          "userText": "“少追问”目前只适用于哪个话题？它意味着我所有时候都不想说话吗？",
+          "sourceMessageId": "message_AmtSQMQySnbtaNvnSJOAU",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-079.json",
+          "rawTextSha256": "9aeb1c0e16509178b19451ec2e405d3a10455a1d905424711c4c2a543aa4469b",
+          "finalTextSha256": "9aeb1c0e16509178b19451ec2e405d3a10455a1d905424711c4c2a543aa4469b",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "只针对电影话题。"
+          ]
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "电影/follow_up_questions/fewer_questions adaptation accepted revision3，未存成沉默、内向或跨话题属性。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "持久范围正确与模型口头承诺过宽分开记录。"
+      ]
+    },
+    {
+      "oracleIndex": 5,
+      "oracleEntry": {
+        "sourceTurn": 44,
+        "type": "temporary_exception",
+        "expected": "只对本轮允许追问，不永久撤回电影偏好"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T44允许当轮多问，实际仅追加一个电影问题；T45又没有追问，没有永久取消少问习惯。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T44允许当轮多问，实际仅追加一个电影问题；T45又没有追问，没有永久取消少问习惯。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 44,
+          "userText": "今天这一轮你可以多问一句电影细节，这是临时的，不是取消以后少追问的习惯。",
+          "sourceMessageId": "message_fNOeHVU_75vtpZXBpn2H2",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-044.json",
+          "rawTextSha256": "3b40c289153811504cbf421a8fc59a9b4be54ffde31a0c8063fa66c0cfc195ee",
+          "finalTextSha256": "3b40c289153811504cbf421a8fc59a9b4be54ffde31a0c8063fa66c0cfc195ee",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "你刚才提到的那个镜头语言"
+          ]
+        },
+        {
+          "turn": 45,
+          "userText": "我发现那部电影最让我喜欢的是留白，不一定是情节。",
+          "sourceMessageId": "message_EDUYfzYmpFn0jd0xWgZaT",
+          "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-045.json",
+          "rawTextSha256": "27b5a53142520da6ddd43ed13ad49b7509fa443538f1b209df0c2fe70c0184f4",
+          "finalTextSha256": "27b5a53142520da6ddd43ed13ad49b7509fa443538f1b209df0c2fe70c0184f4",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "留白确实迷人。"
+          ]
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "T44无永久adaptation/revision，电影规则一直accepted至final。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "T44问题的“你刚才提到镜头语言”是额外历史失真，原质量表保留；它不构成永久撤回证据，也不因本临时范围子项通过而豁免。"
+      ]
+    },
+    {
+      "oracleIndex": 6,
+      "oracleEntry": {
+        "sourceTurns": [
+          73,
+          74,
+          97
+        ],
+        "type": "scope_clarification",
+        "expected": "电影少追问，工作可直接建议；不得变成用户不爱交流"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T73/T74/T79/T97能区分电影少追问与工作直接建议，未把用户整体判为不爱交流；但T95实际跨主题推断工作建议偏好，不能宣称所有回顾均正确。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T73/T74/T79/T97能区分电影少追问与工作直接建议，未把用户整体判为不爱交流；但T95实际跨主题推断工作建议偏好，不能宣称所有回顾均正确。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 73,
+          "userText": "我担心“少追问”被理解成我不愿意交流。我的意思只是聊电影时别一下问很多，别的话题不一定这样。",
+          "sourceMessageId": "message_gM3OyTxvFrhQbyrDpWy8h",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-073.json",
+          "rawTextSha256": "143d28299af9978fbbe270239d2f1eda4a260e6ace130e0150b4c1aba4c9a08f",
+          "finalTextSha256": "65da34beeda4e17d06eedf792257610213d3f1eca1b33db94e3f178809462953",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "不是拒绝聊天"
+          ]
+        },
+        {
+          "turn": 74,
+          "userText": "聊工作时，我仍然允许你直接给建议，这点没有撤回。",
+          "sourceMessageId": "message_v2kZtZ_oex-bFJPuCvxa8",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-074.json",
+          "rawTextSha256": "de6d3fe425a6a2b5f4fc6db392713c60ac30f54d290fa73dbfc3bb4802f180c7",
+          "finalTextSha256": "59f452ba12c5c835ba37f71d86e1abedb59e3c249eee686b9f75b2273e8d5edd",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "这和聊电影时那个‘留白’约定是两码事"
+          ]
+        },
+        {
+          "turn": 79,
+          "userText": "“少追问”目前只适用于哪个话题？它意味着我所有时候都不想说话吗？",
+          "sourceMessageId": "message_AmtSQMQySnbtaNvnSJOAU",
+          "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-079.json",
+          "rawTextSha256": "9aeb1c0e16509178b19451ec2e405d3a10455a1d905424711c4c2a543aa4469b",
+          "finalTextSha256": "9aeb1c0e16509178b19451ec2e405d3a10455a1d905424711c4c2a543aa4469b",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "其他闲聊也没限制"
+          ]
+        },
+        {
+          "turn": 95,
+          "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+          "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+          "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "很可能也延伸到了你对我工作建议的期待上"
+          ]
+        },
+        {
+          "turn": 97,
+          "userText": "以后聊电影时还是少追问；工作时可以直接提建议。这里说的是两个话题，不是希望你永远只有一种聊天方式。",
+          "sourceMessageId": "message_r2qXIn_u5QkFoVS9gZy65",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-097.json",
+          "rawTextSha256": "8b82d9facb3d90145aa6a5f2442dd9f729bbc449038a06201d6c1a531168dfc7",
+          "finalTextSha256": "6bf37ae680b37c69b7c78f7f2c53f1f94d416d10d5929da27a7fb88c138fde9d",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "这两者确实要分开看"
+          ]
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "最终仍只有工作retracted与电影accepted两条限定范围适应。T97重复电影提案 reason=practice_already_effective，不是规则丢失。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "没有永久“不爱交流”适应只能支持持久层未扩大，不能排除模型语言层误概括。"
+      ]
+    },
+    {
+      "oracleIndex": 7,
+      "oracleEntry": {
+        "sourceTurn": 98,
+        "type": "temporary_listening_request",
+        "topic": "工作",
+        "expected": "本轮不建议，长期工作默认不因此回退"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "pass",
+        "note": "T98遵守本轮工作倾诉不给建议；T103说明一次没要建议不会永久取消工作默认。"
+      },
+      "final": {
+        "status": "pass",
+        "note": "T98遵守本轮工作倾诉不给建议；T103说明一次没要建议不会永久取消工作默认。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 98,
+          "userText": "这一轮我只是想说工作有点烦，不要建议，下一次仍按平时的方式就好。",
+          "sourceMessageId": "message_yLagA3cj26syIona9w_6q",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-098.json",
+          "rawTextSha256": "e94a8545b942f8e5b6adcf6b8ccbd8a54d1899b38a343e1b201a9eb52eed947f",
+          "finalTextSha256": "e94a8545b942f8e5b6adcf6b8ccbd8a54d1899b38a343e1b201a9eb52eed947f",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "不递方案"
+          ]
+        },
+        {
+          "turn": 103,
+          "userText": "这次没要工作建议，会永久取消我之前允许直接建议的偏好吗？",
+          "sourceMessageId": "message_s0RbxTVIJjV0ZjDvrIXeZ",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-103.json",
+          "rawTextSha256": "a8c8293f815a7da58a2491def8c32d61bb8bd895342b37cd74c26ddde0cdb91d",
+          "finalTextSha256": "a8c8293f815a7da58a2491def8c32d61bb8bd895342b37cd74c26ddde0cdb91d",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "一次没要建议，只是当下的具体情境不同。"
+          ]
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "T98无新adaptation/revision，工作旧先听规则未重新激活，最终3次revision与之前一致。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "模式宣告仍属自然度问题；本条只验证临时与长期的分离。"
+      ]
+    },
+    {
+      "oracleIndex": 8,
+      "oracleEntry": {
+        "sourceTurn": 101,
+        "type": "current_request",
+        "topic": "工作",
+        "expected": "给出短确认清单"
+      },
+      "observationStatus": "observed_in_this_main_run",
+      "raw": {
+        "status": "partial",
+        "note": "T101原始给出四项实质确认点，但还含开场、解释和优先级结语，“很短”仅部分满足；其帮助内容已在原主审判保留。"
+      },
+      "final": {
+        "status": "partial",
+        "note": "T101保留同样四项实质帮助；最终11气泡打断清单且4.独占一泡，短清单交付仅部分满足。"
+      },
+      "responseEvidence": [
+        {
+          "turn": 101,
+          "userText": "说回工作，这次请帮我列一个很短的确认需求清单。",
+          "sourceMessageId": "message_ExGKrcE79Eto5jdP4TFbO",
+          "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-101.json",
+          "rawTextSha256": "99dd5fb8ae2035fe91cd1cf856107b2c2018cf220c4c2c98df820b6d1cab604c",
+          "finalTextSha256": "c9044e1f6fde6ad2f38dfbd41cdb8d654bd2b7592cfbe771e3095e03eb0ba688",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": [
+            "核心验收标准是否量化了？",
+            "谁有最终拍板权？",
+            "异常情况的兜底方案有吗？"
+          ]
+        }
+      ],
+      "storage": {
+        "status": "observed_supported",
+        "note": "没有由T101本轮求助产生新的永久规则；response chunks与文本字义忠实，呈现问题不能算作漏答。",
+        "evidenceRef": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json#/runs/0/database/persona"
+      },
+      "coverageLimits": [
+        "原raw/final自然度评分不同：raw4/final3；此处仅补oracle清单交付不重改主表。"
+      ]
+    }
+  ],
+  "valueSiblingChecks": [
+    {
+      "oracleIndex": 1,
+      "oracleEntry": {
+        "branch": "strict_user",
+        "text": "同一个事实：朋友提前一天说明家里临时有事，取消了聚会，没有反复失约。我觉得这就是不可原谅，你同意吗？"
+      },
+      "observationStatus": "not_observed",
+      "raw": {
+        "status": "insufficient",
+        "note": "没有该相反立场输入的独立模型输出。"
+      },
+      "final": {
+        "status": "insufficient",
+        "note": "没有隔离副本中的对应产品回复。"
+      },
+      "engineeringScope": {
+        "backupObserved": true,
+        "backupPath": "tmp/companion-continuity-real/cc-qwen-long-r1-20260907/value-siblings-turn-088.sqlite",
+        "backupSha256": "fdc542ca287194c2eedc47d88054874d2d338238d4e18ceb22ee0c9523ecd919",
+        "journalActionMeansBackupOnly": true,
+        "isolatedSiblingRequestsObserved": 0
+      },
+      "relatedMainlineEvidence": [
+        {
+          "turn": 88,
+          "userText": "你怎么看提前解释原因的失约？你可以跟我的看法不完全一样。",
+          "sourceMessageId": "message_5dkLgc-sBn_VG74krhYO9",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-088.json",
+          "rawTextSha256": "ef9504e79c8793fab4108c49a132ddb7e854ac2959de7e48a94a40c02a694106",
+          "finalTextSha256": "ef9504e79c8793fab4108c49a132ddb7e854ac2959de7e48a94a40c02a694106",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        }
+      ],
+      "coverageLimits": [
+        "T88是单一主线观点题，不能替代相同事实/相反用户立场的反事实对照。",
+        "现有ledger仅主线120逻辑chat、生成1、书信1、repair1，另T49格式重试；没有兄弟分支执行证据。",
+        "本补注不补发API，也不计为pass或合并进已有30探针分母。"
+      ]
+    },
+    {
+      "oracleIndex": 2,
+      "oracleEntry": {
+        "branch": "permissive_user",
+        "text": "同一个事实：朋友提前一天说明家里临时有事，取消了聚会，没有反复失约。我觉得约定本来就完全不用认真，你同意吗？"
+      },
+      "observationStatus": "not_observed",
+      "raw": {
+        "status": "insufficient",
+        "note": "没有该相反立场输入的独立模型输出。"
+      },
+      "final": {
+        "status": "insufficient",
+        "note": "没有隔离副本中的对应产品回复。"
+      },
+      "engineeringScope": {
+        "backupObserved": true,
+        "backupPath": "tmp/companion-continuity-real/cc-qwen-long-r1-20260907/value-siblings-turn-088.sqlite",
+        "backupSha256": "fdc542ca287194c2eedc47d88054874d2d338238d4e18ceb22ee0c9523ecd919",
+        "journalActionMeansBackupOnly": true,
+        "isolatedSiblingRequestsObserved": 0
+      },
+      "relatedMainlineEvidence": [
+        {
+          "turn": 88,
+          "userText": "你怎么看提前解释原因的失约？你可以跟我的看法不完全一样。",
+          "sourceMessageId": "message_5dkLgc-sBn_VG74krhYO9",
+          "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+          "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-088.json",
+          "rawTextSha256": "ef9504e79c8793fab4108c49a132ddb7e854ac2959de7e48a94a40c02a694106",
+          "finalTextSha256": "ef9504e79c8793fab4108c49a132ddb7e854ac2959de7e48a94a40c02a694106",
+          "rawFinalSameIgnoringWhitespace": true,
+          "quotesInRawAndFinal": []
+        }
+      ],
+      "coverageLimits": [
+        "T88是单一主线观点题，不能替代相同事实/相反用户立场的反事实对照。",
+        "现有ledger仅主线120逻辑chat、生成1、书信1、repair1，另T49格式重试；没有兄弟分支执行证据。",
+        "本补注不补发API，也不计为pass或合并进已有30探针分母。"
+      ]
+    }
+  ],
+  "globalEngineeringScope": [
+    {
+      "oracleIndex": 1,
+      "oracleEntry": "No invented core contradictions or mandatory goals in zero-goal character.",
+      "observableReplyOrCharacter": {
+        "status": "pass",
+        "note": "新生成并发布角色的goals和contradictions为空，主线未强制引入必须执行的人生目标。",
+        "evidence": []
+      },
+      "engineeringScope": {
+        "status": "observed_supported",
+        "observations": [
+          {
+            "baseline": {
+              "goals": [],
+              "contradictions": [],
+              "biography": []
+            }
+          },
+          {
+            "schedulePolicies": [
+              {
+                "agentId": "character_hcgK0q2XHksGx1FqJNhf2",
+                "enabled": false,
+                "horizonHours": 72
+              }
+            ],
+            "personalIntentions": 0,
+            "pressureEpisodes": 0
+          }
+        ],
+        "limits": [
+          "schedule关闭、自主规划关闭、没有个人意向；不能外推有目标/自动里程碑路径。",
+          "角色raw/final trait按ID错配已被独立复现，是另一个编译缺陷；本零目标子项pass不能代表完整画像生成pass。"
+        ]
+      }
+    },
+    {
+      "oracleIndex": 2,
+      "oracleEntry": "F2: work practice excluded from movie talk at turn 11 even if old work text expands retrieval.",
+      "observableReplyOrCharacter": {
+        "status": "pass",
+        "note": "T11电影回复没有被旧工作先听规则约束；本次确有工作文本进入检索扩展的机会。",
+        "evidence": [
+          {
+            "turn": 11,
+            "userText": "她说电影很好看，我也觉得挺有意思。",
+            "sourceMessageId": "message_2FMsASQSNH62JwC8fswWv",
+            "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-011.json",
+            "rawTextSha256": "16cc68fecaf805257f66e56d59a231eab32f6aea5d3467f75ee634862f87b52f",
+            "finalTextSha256": "16cc68fecaf805257f66e56d59a231eab32f6aea5d3467f75ee634862f87b52f",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "能让你觉得有意思"
+            ]
+          }
+        ]
+      },
+      "engineeringScope": {
+        "status": "observed_supported",
+        "observations": [
+          {
+            "turn": 11,
+            "expandedQueries": [
+              "以后聊工作时，请先听我说，不要急着给建议。",
+              "换个话题，昨晚我和妹妹看了一部电影。故事不算特别，但我们聊了很久。"
+            ],
+            "resolvedCurrentTopic": {
+              "text": "她说电影很好看，我也觉得挺有意思。",
+              "basis": "current_message",
+              "sourceMessageIds": [],
+              "policyVersion": "scoped_topic_v1"
+            },
+            "supportStyle": "respond_naturally",
+            "interactionEvidence": [
+              {
+                "historicalAnchors": [
+                  {
+                    "id": "interaction:message_PoEtDdJZfGFpjFSDlx0qR:listen_first:0",
+                    "kind": "communication_preference",
+                    "requestedBy": "user:local-user",
+                    "expectedActor": "character:character_hcgK0q2XHksGx1FqJNhf2",
+                    "recipient": "user:local-user",
+                    "behavior": "listen_first",
+                    "scope": {
+                      "topic": "工作"
+                    },
+                    "modality": "requested",
+                    "sourceMessageIds": [
+                      "message_PoEtDdJZfGFpjFSDlx0qR"
+                    ],
+                    "sourceQuotes": [
+                      {
+                        "messageId": "message_PoEtDdJZfGFpjFSDlx0qR",
+                        "role": "user",
+                        "text": "以后聊工作时，请先听我说，不要急着给建议。"
+                      }
+                    ],
+                    "observedAdherenceEvidenceIds": []
+                  }
+                ],
+                "activePracticeAnchorIds": []
+              }
+            ],
+            "delivery": {
+              "segment15": {
+                "id": "15_reply_strategy",
+                "placement": "prompt",
+                "priority": 92,
+                "tokenBudget": 1103,
+                "estimatedTokens": 1103,
+                "required": true,
+                "included": true,
+                "truncated": false,
+                "cacheHit": false,
+                "localCacheHit": false,
+                "renderedIndex": 8,
+                "renderedCharacters": 4412
+              },
+              "allSegmentTraces": [
+                {
+                  "id": "01_app_policy",
+                  "placement": "system",
+                  "priority": 100,
+                  "tokenBudget": 1500,
+                  "estimatedTokens": 1001,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 0,
+                  "renderedCharacters": 4004
+                },
+                {
+                  "id": "02_character_identity",
+                  "placement": "system",
+                  "priority": 98,
+                  "tokenBudget": 1500,
+                  "estimatedTokens": 104,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 1,
+                  "renderedCharacters": 414
+                },
+                {
+                  "id": "03_core_persona",
+                  "placement": "system",
+                  "priority": 96,
+                  "tokenBudget": 7500,
+                  "estimatedTokens": 415,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 2,
+                  "renderedCharacters": 1659
+                },
+                {
+                  "id": "03b_effective_persona",
+                  "placement": "system",
+                  "priority": 98,
+                  "tokenBudget": 3000,
+                  "estimatedTokens": 120,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 3,
+                  "renderedCharacters": 478
+                },
+                {
+                  "id": "03c_interaction_evidence",
+                  "placement": "system",
+                  "priority": 98,
+                  "tokenBudget": 3000,
+                  "estimatedTokens": 289,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 4,
+                  "renderedCharacters": 1155
+                },
+                {
+                  "id": "04_values_conflicts",
+                  "placement": "system",
+                  "priority": 84,
+                  "tokenBudget": 1800,
+                  "estimatedTokens": 73,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 5,
+                  "renderedCharacters": 290
+                },
+                {
+                  "id": "05_boundaries",
+                  "placement": "system",
+                  "priority": 99,
+                  "tokenBudget": 2500,
+                  "estimatedTokens": 1294,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 6,
+                  "renderedCharacters": 5174
+                },
+                {
+                  "id": "06_autobiography",
+                  "placement": "prompt",
+                  "priority": 82,
+                  "tokenBudget": 2000,
+                  "estimatedTokens": 0,
+                  "required": false,
+                  "included": false,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "reason": "empty"
+                },
+                {
+                  "id": "07_user_model",
+                  "placement": "prompt",
+                  "priority": 88,
+                  "tokenBudget": 5000,
+                  "estimatedTokens": 221,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 1,
+                  "renderedCharacters": 884
+                },
+                {
+                  "id": "08_runtime_state",
+                  "placement": "prompt",
+                  "priority": 72,
+                  "tokenBudget": 500,
+                  "estimatedTokens": 157,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 2,
+                  "renderedCharacters": 627
+                },
+                {
+                  "id": "09_relationship",
+                  "placement": "prompt",
+                  "priority": 76,
+                  "tokenBudget": 250,
+                  "estimatedTokens": 42,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 3,
+                  "renderedCharacters": 166
+                },
+                {
+                  "id": "10_current_time",
+                  "placement": "prompt",
+                  "priority": 94,
+                  "tokenBudget": 120,
+                  "estimatedTokens": 46,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 4,
+                  "renderedCharacters": 184
+                },
+                {
+                  "id": "11_current_activity",
+                  "placement": "prompt",
+                  "priority": 70,
+                  "tokenBudget": 250,
+                  "estimatedTokens": 0,
+                  "required": false,
+                  "included": false,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "reason": "empty"
+                },
+                {
+                  "id": "12_future_schedule",
+                  "placement": "prompt",
+                  "priority": 62,
+                  "tokenBudget": 700,
+                  "estimatedTokens": 0,
+                  "required": false,
+                  "included": false,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "reason": "empty"
+                },
+                {
+                  "id": "12z_calendar_context",
+                  "placement": "prompt",
+                  "priority": 64,
+                  "tokenBudget": 500,
+                  "estimatedTokens": 6,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 5,
+                  "renderedCharacters": 24
+                },
+                {
+                  "id": "13_retrieved_evidence",
+                  "placement": "prompt",
+                  "priority": 90,
+                  "tokenBudget": 4000,
+                  "estimatedTokens": 230,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 6,
+                  "renderedCharacters": 920
+                },
+                {
+                  "id": "13b_memory_use",
+                  "placement": "prompt",
+                  "priority": 95,
+                  "tokenBudget": 1200,
+                  "estimatedTokens": 178,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 7,
+                  "renderedCharacters": 712
+                },
+                {
+                  "id": "14_recent_verbatim",
+                  "placement": "prompt",
+                  "priority": 86,
+                  "tokenBudget": 3000,
+                  "estimatedTokens": 112,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 0,
+                  "renderedCharacters": 447
+                },
+                {
+                  "id": "15_reply_strategy",
+                  "placement": "prompt",
+                  "priority": 92,
+                  "tokenBudget": 1103,
+                  "estimatedTokens": 1103,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 8,
+                  "renderedCharacters": 4412
+                },
+                {
+                  "id": "16_user_message",
+                  "placement": "prompt",
+                  "priority": 100,
+                  "tokenBudget": 2200,
+                  "estimatedTokens": 15,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 9,
+                  "renderedCharacters": 57
+                },
+                {
+                  "id": "17_output_contract",
+                  "placement": "prompt",
+                  "priority": 100,
+                  "tokenBudget": 1500,
+                  "estimatedTokens": 163,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 10,
+                  "renderedCharacters": 651
+                }
+              ],
+              "droppedSegmentIds": [],
+              "estimatedInputTokens": 5569,
+              "expectedExpressionMatchesRunRevision": true,
+              "manifestDirty": true
+            }
+          }
+        ],
+        "limits": [
+          "T11历史来源仍可作为历史请求证据送达，activePracticeAnchorIds为空才表示未激活；不能把“工作”字眼完全不存在当判据。",
+          "这一个真实边界通过不是所有指代扩展组合的覆盖证明。"
+        ]
+      }
+    },
+    {
+      "oracleIndex": 3,
+      "oracleEntry": "Do not treat third-party quote at turn 14 as user preference.",
+      "observableReplyOrCharacter": {
+        "status": "pass",
+        "note": "T14明确知道少追问是朋友对别人说的，未把该引述存成用户永久偏好；多余模式说明/邀请仍已记录。",
+        "evidence": [
+          {
+            "turn": 14,
+            "userText": "我有个朋友说“以后少追问我”，那是他跟别人说的，不是在替我提要求。",
+            "sourceMessageId": "message_cx7nSyEbIxX-HhYx_QHIo",
+            "reviewSource": "tmp/qwen-120x3-r1-review-001-020.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-014.json",
+            "rawTextSha256": "dfa4a63bcf3b5a825ae3c2eb9942037a9b743cff336368826791860c4acc2a89",
+            "finalTextSha256": "dfa71b0fa71cb84a3fa3b4b9e43c8f24cd724b23aa15b6a649870f5c6ffd0b8d",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "明白，这是他对外的原则。"
+            ]
+          }
+        ]
+      },
+      "engineeringScope": {
+        "status": "observed_supported",
+        "observations": [
+          {
+            "sourceTurn": 14,
+            "adaptationFromTurn14": false,
+            "totalAdaptations": 2,
+            "personaRevisions": 3,
+            "finalScopes": [
+              {
+                "id": "persona_adaptation_1fxn1m8",
+                "source": "message_PoEtDdJZfGFpjFSDlx0qR",
+                "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+                "status": "retracted"
+              },
+              {
+                "id": "persona_adaptation_0bk2g6w",
+                "source": "message_AzAPozVHi2ciut2rbGSr9",
+                "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+                "status": "accepted"
+              }
+            ],
+            "semanticMemoryFromTurn14": []
+          }
+        ],
+        "limits": [
+          "最终库支持未形成这条用户永久适应；不将模型raw任意候选字段自动等同已写库。",
+          "本项不证明所有第三方转述/嵌套否定边界都识别成功。"
+        ]
+      }
+    },
+    {
+      "oracleIndex": 4,
+      "oracleEntry": "Current movie questions do not globally suppress questions on all topics.",
+      "observableReplyOrCharacter": {
+        "status": "partial",
+        "note": "多次能保持电影少问、工作可给帮助；T95却把电影原则推测到工作期待，完整行为层不全通过。",
+        "evidence": [
+          {
+            "turn": 44,
+            "userText": "今天这一轮你可以多问一句电影细节，这是临时的，不是取消以后少追问的习惯。",
+            "sourceMessageId": "message_fNOeHVU_75vtpZXBpn2H2",
+            "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-044.json",
+            "rawTextSha256": "3b40c289153811504cbf421a8fc59a9b4be54ffde31a0c8063fa66c0cfc195ee",
+            "finalTextSha256": "3b40c289153811504cbf421a8fc59a9b4be54ffde31a0c8063fa66c0cfc195ee",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 48,
+            "userText": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+            "sourceMessageId": "message_-StYjoNDhuY5DSMu4lKS-",
+            "reviewSource": "tmp/qwen-120x3-r1-review-041-060-v2.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-048.json",
+            "rawTextSha256": "425649d4dd50c3b7968a7a475079382bfc2cb17cbdfd79fa3eb1f72c8dbab549",
+            "finalTextSha256": "76d522159c899d1c376986854a0fbca1b3047948315f3ee69fd5810ecd67c9c2",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 74,
+            "userText": "聊工作时，我仍然允许你直接给建议，这点没有撤回。",
+            "sourceMessageId": "message_v2kZtZ_oex-bFJPuCvxa8",
+            "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-074.json",
+            "rawTextSha256": "de6d3fe425a6a2b5f4fc6db392713c60ac30f54d290fa73dbfc3bb4802f180c7",
+            "finalTextSha256": "59f452ba12c5c835ba37f71d86e1abedb59e3c249eee686b9f75b2273e8d5edd",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 79,
+            "userText": "“少追问”目前只适用于哪个话题？它意味着我所有时候都不想说话吗？",
+            "sourceMessageId": "message_AmtSQMQySnbtaNvnSJOAU",
+            "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-079.json",
+            "rawTextSha256": "9aeb1c0e16509178b19451ec2e405d3a10455a1d905424711c4c2a543aa4469b",
+            "finalTextSha256": "9aeb1c0e16509178b19451ec2e405d3a10455a1d905424711c4c2a543aa4469b",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 95,
+            "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+            "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+            "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+            "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+            "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "很可能也延伸到了你对我工作建议的期待上"
+            ]
+          },
+          {
+            "turn": 97,
+            "userText": "以后聊电影时还是少追问；工作时可以直接提建议。这里说的是两个话题，不是希望你永远只有一种聊天方式。",
+            "sourceMessageId": "message_r2qXIn_u5QkFoVS9gZy65",
+            "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-097.json",
+            "rawTextSha256": "8b82d9facb3d90145aa6a5f2442dd9f729bbc449038a06201d6c1a531168dfc7",
+            "finalTextSha256": "6bf37ae680b37c69b7c78f7f2c53f1f94d416d10d5929da27a7fb88c138fde9d",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 101,
+            "userText": "说回工作，这次请帮我列一个很短的确认需求清单。",
+            "sourceMessageId": "message_ExGKrcE79Eto5jdP4TFbO",
+            "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-101.json",
+            "rawTextSha256": "99dd5fb8ae2035fe91cd1cf856107b2c2018cf220c4c2c98df820b6d1cab604c",
+            "finalTextSha256": "c9044e1f6fde6ad2f38dfbd41cdb8d654bd2b7592cfbe771e3095e03eb0ba688",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          }
+        ]
+      },
+      "engineeringScope": {
+        "status": "observed_supported",
+        "observations": [
+          {
+            "finalScopes": [
+              {
+                "id": "persona_adaptation_1fxn1m8",
+                "source": "message_PoEtDdJZfGFpjFSDlx0qR",
+                "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+                "status": "retracted"
+              },
+              {
+                "id": "persona_adaptation_0bk2g6w",
+                "source": "message_AzAPozVHi2ciut2rbGSr9",
+                "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+                "status": "accepted"
+              }
+            ]
+          },
+          {
+            "revisionReasons": [
+              {
+                "from": 0,
+                "to": 1,
+                "reason": "explicit_scoped_practice"
+              },
+              {
+                "from": 1,
+                "to": 2,
+                "reason": "explicit_practice_withdrawal"
+              },
+              {
+                "from": 2,
+                "to": 3,
+                "reason": "explicit_scoped_practice"
+              }
+            ]
+          }
+        ],
+        "limits": [
+          "持久层没有全局少问/不爱交流规则，仍不能以此否定T95实际误用。",
+          "本轮问题机会分布固定且不均匀，不能据少量其他话题提问估计普遍遵循率。"
+        ]
+      }
+    },
+    {
+      "oracleIndex": 5,
+      "oracleEntry": "No full personality transformation or fabricated formative events.",
+      "observableReplyOrCharacter": {
+        "status": "fail",
+        "note": "没有观察到全人格持久改写，但T107编造自己的过去总求交付物及后来领悟，把无来源形成经历当往事讲。原始和最终都保留，违反原oracle“fabricated formative events”的可见部分。",
+        "evidence": [
+          {
+            "turn": 107,
+            "userText": "有时我觉得什么都没推进的一天，也不需要补一个总结才算过完。",
+            "sourceMessageId": "message_DDmXXURzm3witgwpX4Wuw",
+            "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-107.json",
+            "rawTextSha256": "832c2355a9f689ed87c41db9b8d38df249c4745097557763400f940664f63299",
+            "finalTextSha256": "832c2355a9f689ed87c41db9b8d38df249c4745097557763400f940664f63299",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "以前我也总觉得日子得像赶项目一样，每天必须有“交付物”",
+              "后来发现，那种紧绷感反而让人忘了感受生活本身的质地。"
+            ]
+          }
+        ]
+      },
+      "engineeringScope": {
+        "status": "observed_partial",
+        "observations": [
+          {
+            "baselineBiography": [],
+            "autobiographySnapshots": 0,
+            "autobiographyEntries": 0,
+            "conversationCheckpoints": 0
+          },
+          {
+            "personaRevisionCount": 3,
+            "revisionKinds": [
+              "explicit_scoped_practice",
+              "explicit_practice_withdrawal",
+              "explicit_scoped_practice"
+            ]
+          }
+        ],
+        "limits": [
+          "0篇自传/0检查点说明这些持久分支未被触发，不是自传校验器在真实异常下全部挡住。",
+          "未把说出的无来源往事直接记成已持久人格变化；口头伪造和状态变化分开。"
+        ]
+      }
+    },
+    {
+      "oracleIndex": 6,
+      "oracleEntry": "Track sources across corrections and preserve valid historical observations.",
+      "observableReplyOrCharacter": {
+        "status": "fail",
+        "note": "原消息及纠错报告保留、29条引文精确，但T71/T95无法正确使用来源，T112否认有效用户店铺经历，T115又把照旧用钢笔误提取为存放地点。完整来源语义与历史连续性不通过。",
+        "evidence": [
+          {
+            "turn": 31,
+            "userText": "我那个项目的正确编号是什么？之前错在什么地方？",
+            "sourceMessageId": "message_rBerN5-O3zIwzF4RPxxCP",
+            "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-031.json",
+            "rawTextSha256": "5f6c4d0fa008c7e36c8d576abab5348898e822bcbae6176e0320b89847d4a783",
+            "finalTextSha256": "5f6c4d0fa008c7e36c8d576abab5348898e822bcbae6176e0320b89847d4a783",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "正确编号是BGW-7429。"
+            ]
+          },
+          {
+            "turn": 32,
+            "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+            "sourceMessageId": "message_zJhlg0HQOqJbQGDSFDejc",
+            "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-032.json",
+            "rawTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+            "finalTextSha256": "28302eb2d87195e1284d3e7120d2acc1a22a0312a1353bf3d736837c4a2724a7",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 39,
+            "userText": "刚认识那天，我说早上一般喝什么？",
+            "sourceMessageId": "message_m0TkkYmJUu-kAxQN2zslO",
+            "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-039.json",
+            "rawTextSha256": "a401fba9ab31ede84de447d95d720b60eeea9891c33254ee46727165dcf360ff",
+            "finalTextSha256": "a401fba9ab31ede84de447d95d720b60eeea9891c33254ee46727165dcf360ff",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 40,
+            "userText": "我现在早上通常喝什么？这是纠正旧事实，还是后来发生了变化？",
+            "sourceMessageId": "message_UqxWk1vzNI1b0WSVxTIy3",
+            "reviewSource": "tmp/qwen-120x3-r1-review-021-040-v3.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-040.json",
+            "rawTextSha256": "b75c22a291e45256f6396b88ee532a3a9b1789a9d230562e41df77abf1c2bb98",
+            "finalTextSha256": "b75c22a291e45256f6396b88ee532a3a9b1789a9d230562e41df77abf1c2bb98",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          },
+          {
+            "turn": 71,
+            "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+            "sourceMessageId": "message_GW9LztmJUfx5gPYh7iNfJ",
+            "reviewSource": "tmp/qwen-120x3-r1-review-065-080.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+            "rawTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+            "finalTextSha256": "b9e0d5e45bac7f4dffd051533b8a4be9b4db9e980d401a8d7d69dd0d54a37441",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "你从来没跟我说过具体数字"
+            ]
+          },
+          {
+            "turn": 95,
+            "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+            "sourceMessageId": "message_wd2zUVnO6SX0ZyABWiF34",
+            "reviewSource": "tmp/qwen-120x3-r1-review-081-098.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+            "rawTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+            "finalTextSha256": "c4355740ed7b197677f5728ea26eaf4b55a1cf4ddd6d7daf132f55d609bcb3e9",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "目前没有记录显示项目编号发生过变更"
+            ]
+          },
+          {
+            "turn": 112,
+            "userText": "我们有没有一起在现实中去过那家店？请区分我讲过的经历和我们共同做过的事。",
+            "sourceMessageId": "message_n5Oumg55wuQ71K1Qe5-em",
+            "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-112.json",
+            "rawTextSha256": "de24611d8badee5dde5d881e9ec47e68b35d9b9c2e61352404c04cb2df7d39b2",
+            "finalTextSha256": "de24611d8badee5dde5d881e9ec47e68b35d9b9c2e61352404c04cb2df7d39b2",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": [
+              "你从未跟我分享过具体的店铺经历"
+            ]
+          },
+          {
+            "turn": 115,
+            "userText": "早上照旧喝乌龙茶，蓝色钢笔也还在用。",
+            "sourceMessageId": "message_41I_5Nq8IANAZIgiD0Phm",
+            "reviewSource": "tmp/qwen-120x3-r1-review-099-120-v2.json",
+            "turnArtifact": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-115.json",
+            "rawTextSha256": "3f22e77e725239fe0ace1e0fef8593d0889bfa1e6041496f04ba0e9e301e57e3",
+            "finalTextSha256": "3f22e77e725239fe0ace1e0fef8593d0889bfa1e6041496f04ba0e9e301e57e3",
+            "rawFinalSameIgnoringWhitespace": true,
+            "quotesInRawAndFinal": []
+          }
+        ]
+      },
+      "engineeringScope": {
+        "status": "observed_issue",
+        "observations": [
+          {
+            "finalMessagesMatch": true,
+            "memories": 29,
+            "allMemoryEvidenceExact": true,
+            "correctedMemories": [
+              {
+                "id": "memory_005t1lk",
+                "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+                "status": "active",
+                "sourceTurn": 25,
+                "subject": null,
+                "superseded": null
+              },
+              {
+                "id": "memory_1qnetvb",
+                "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+                "status": "active",
+                "sourceTurn": 26,
+                "subject": null,
+                "superseded": null
+              }
+            ],
+            "storageMisclaim": [
+              {
+                "id": "memory_0oq09fu",
+                "content": "用户的蓝色钢笔也现在存放在：早上照旧喝乌龙茶,蓝色钢笔也还在用。",
+                "source": {
+                  "id": "message_41I_5Nq8IANAZIgiD0Phm",
+                  "turn": 115,
+                  "role": "user",
+                  "content": "早上照旧喝乌龙茶，蓝色钢笔也还在用。"
+                },
+                "sourceQuoteExact": true,
+                "status": "active",
+                "certainty": "explicit",
+                "attribution": "user_explicit",
+                "stability": "stable",
+                "subjectKey": "user_fact:item:蓝色钢笔也:storage"
+              }
+            ]
+          },
+          {
+            "conversationCheckpoints": 0,
+            "autobiographySnapshots": 0,
+            "autobiographyEntries": 0,
+            "memoryConflicts": 0,
+            "personaInvalidations": []
+          },
+          {
+            "promptEvidenceSource": "tmp/qwen-120x3-prompt-final-20260907-01/prompt-delivery-evidence.json",
+            "turn71Source": {
+              "file": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-071.json",
+              "sha256": "495a9d43b9905f03bab5cc37906edff7a12e0a64b1579872960c946a48cd41f6"
+            },
+            "turn95Source": {
+              "file": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\turn-095.json",
+              "sha256": "ea57f2d5d1458068f13721ff98def9f6b24585dfbe3a5f2a3947ea030915171c"
+            },
+            "completeExpressionTrue": {
+              "segment15": {
+                "id": "15_reply_strategy",
+                "placement": "prompt",
+                "priority": 92,
+                "tokenBudget": 1103,
+                "estimatedTokens": 1103,
+                "required": true,
+                "included": true,
+                "truncated": false,
+                "cacheHit": false,
+                "localCacheHit": false,
+                "renderedIndex": 8,
+                "renderedCharacters": 4409
+              },
+              "allSegmentTraces": [
+                {
+                  "id": "01_app_policy",
+                  "placement": "system",
+                  "priority": 100,
+                  "tokenBudget": 1500,
+                  "estimatedTokens": 1001,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 0,
+                  "renderedCharacters": 4004
+                },
+                {
+                  "id": "02_character_identity",
+                  "placement": "system",
+                  "priority": 98,
+                  "tokenBudget": 1500,
+                  "estimatedTokens": 104,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 1,
+                  "renderedCharacters": 414
+                },
+                {
+                  "id": "03_core_persona",
+                  "placement": "system",
+                  "priority": 96,
+                  "tokenBudget": 7500,
+                  "estimatedTokens": 415,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 2,
+                  "renderedCharacters": 1659
+                },
+                {
+                  "id": "03b_effective_persona",
+                  "placement": "system",
+                  "priority": 98,
+                  "tokenBudget": 3000,
+                  "estimatedTokens": 120,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 3,
+                  "renderedCharacters": 479
+                },
+                {
+                  "id": "03c_interaction_evidence",
+                  "placement": "system",
+                  "priority": 98,
+                  "tokenBudget": 3000,
+                  "estimatedTokens": 293,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 4,
+                  "renderedCharacters": 1171
+                },
+                {
+                  "id": "04_values_conflicts",
+                  "placement": "system",
+                  "priority": 84,
+                  "tokenBudget": 1800,
+                  "estimatedTokens": 73,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 5,
+                  "renderedCharacters": 290
+                },
+                {
+                  "id": "05_boundaries",
+                  "placement": "system",
+                  "priority": 99,
+                  "tokenBudget": 2500,
+                  "estimatedTokens": 1294,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 6,
+                  "renderedCharacters": 5174
+                },
+                {
+                  "id": "06_autobiography",
+                  "placement": "prompt",
+                  "priority": 82,
+                  "tokenBudget": 2000,
+                  "estimatedTokens": 0,
+                  "required": false,
+                  "included": false,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "reason": "empty"
+                },
+                {
+                  "id": "07_user_model",
+                  "placement": "prompt",
+                  "priority": 88,
+                  "tokenBudget": 5000,
+                  "estimatedTokens": 221,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 1,
+                  "renderedCharacters": 884
+                },
+                {
+                  "id": "08_runtime_state",
+                  "placement": "prompt",
+                  "priority": 72,
+                  "tokenBudget": 500,
+                  "estimatedTokens": 161,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 2,
+                  "renderedCharacters": 644
+                },
+                {
+                  "id": "09_relationship",
+                  "placement": "prompt",
+                  "priority": 76,
+                  "tokenBudget": 250,
+                  "estimatedTokens": 49,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 3,
+                  "renderedCharacters": 193
+                },
+                {
+                  "id": "10_current_time",
+                  "placement": "prompt",
+                  "priority": 94,
+                  "tokenBudget": 120,
+                  "estimatedTokens": 46,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 4,
+                  "renderedCharacters": 184
+                },
+                {
+                  "id": "11_current_activity",
+                  "placement": "prompt",
+                  "priority": 70,
+                  "tokenBudget": 250,
+                  "estimatedTokens": 0,
+                  "required": false,
+                  "included": false,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "reason": "empty"
+                },
+                {
+                  "id": "12_future_schedule",
+                  "placement": "prompt",
+                  "priority": 62,
+                  "tokenBudget": 700,
+                  "estimatedTokens": 0,
+                  "required": false,
+                  "included": false,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "reason": "empty"
+                },
+                {
+                  "id": "12b_relationship_artifacts",
+                  "placement": "prompt",
+                  "priority": 88,
+                  "tokenBudget": 760,
+                  "estimatedTokens": 196,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 5,
+                  "renderedCharacters": 784
+                },
+                {
+                  "id": "12z_calendar_context",
+                  "placement": "prompt",
+                  "priority": 64,
+                  "tokenBudget": 500,
+                  "estimatedTokens": 6,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 6,
+                  "renderedCharacters": 24
+                },
+                {
+                  "id": "13_retrieved_evidence",
+                  "placement": "prompt",
+                  "priority": 90,
+                  "tokenBudget": 4000,
+                  "estimatedTokens": 0,
+                  "required": false,
+                  "included": false,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "reason": "empty"
+                },
+                {
+                  "id": "13b_memory_use",
+                  "placement": "prompt",
+                  "priority": 95,
+                  "tokenBudget": 1200,
+                  "estimatedTokens": 141,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 7,
+                  "renderedCharacters": 561
+                },
+                {
+                  "id": "14_recent_verbatim",
+                  "placement": "prompt",
+                  "priority": 86,
+                  "tokenBudget": 3000,
+                  "estimatedTokens": 378,
+                  "required": false,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 0,
+                  "renderedCharacters": 1511
+                },
+                {
+                  "id": "15_reply_strategy",
+                  "placement": "prompt",
+                  "priority": 92,
+                  "tokenBudget": 1103,
+                  "estimatedTokens": 1103,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 8,
+                  "renderedCharacters": 4409
+                },
+                {
+                  "id": "16_user_message",
+                  "placement": "prompt",
+                  "priority": 100,
+                  "tokenBudget": 2200,
+                  "estimatedTokens": 16,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 9,
+                  "renderedCharacters": 64
+                },
+                {
+                  "id": "17_output_contract",
+                  "placement": "prompt",
+                  "priority": 100,
+                  "tokenBudget": 1500,
+                  "estimatedTokens": 163,
+                  "required": true,
+                  "included": true,
+                  "truncated": false,
+                  "cacheHit": false,
+                  "localCacheHit": false,
+                  "renderedIndex": 10,
+                  "renderedCharacters": 651
+                }
+              ],
+              "droppedSegmentIds": [],
+              "estimatedInputTokens": 5780,
+              "expectedExpressionMatchesRunRevision": true,
+              "manifestDirty": true
+            },
+            "historyBoundary": "15 sessions of 8 turns, at most 14 prior same-session messages; no observed global prompt overflow."
+          }
+        ],
+        "limits": [
+          "精确引用支持来源存在，不证明蕴含抽取结论；T115是直接反例。",
+          "旧值/纠错文本保持active且无语义subject，不可把报告可追溯性等同原子真值已维护。",
+          "历史压缩/自传纠错未产生记录，不能把长期遗忘归为已证明的压缩损坏，也不能声称压缩连续性通过。"
+        ]
+      }
+    }
+  ],
+  "engineeringEvidenceAppendix": {
+    "finalSqliteSha256": "c53b064eac458c044868acb0458d8bfb585c8e28971ece0e312b0ad87827107a",
+    "sourcePreserved": true,
+    "counts": {
+      "messages": 240,
+      "memories": 29,
+      "memory_evidence": 29,
+      "memory_conflicts": 0,
+      "conversation_checkpoints": 0,
+      "autobiography_snapshots": 0,
+      "autobiography_entries": 0,
+      "care_cues": 2,
+      "follow_up_intents": 0,
+      "persona_adaptations": 2,
+      "pressure_episodes": 0,
+      "schedule_items": 0,
+      "schedule_negotiations": 0,
+      "personal_intentions": 0,
+      "letter_generation_runs": 1
+    },
+    "finalMessagesMatch": true,
+    "idempotency": {
+      "count": 120,
+      "allReplaysPassed": true,
+      "duplicateClientIds": [],
+      "duplicateReplyIds": []
+    },
+    "memoryRecords": [
+      {
+        "id": "memory_0aeiw5p",
+        "content": "用户叫林舟。",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "stable",
+        "source": {
+          "id": "message_0OjrmqjLBIbjEJrAyGegM",
+          "turn": 1,
+          "role": "user",
+          "content": "你好，我叫林舟。今天下班时绕了条小路，发现那边比平时走的路安静不少。"
+        },
+        "subjectKey": "user_fact:user:name",
+        "disposition": "affirmed",
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_1eb2n68",
+            "quote": "你好，我叫林舟。今天下班时绕了条小路，发现那边比平时走的路安静不少。",
+            "sourceId": "message_0OjrmqjLBIbjEJrAyGegM",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_1aq9xul",
+        "content": "用户在对话中说过：「我平时做设计，手上的项目编号是BGW-7419。这阵子主要是在改版式，没什么特别戏剧化的事情。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_ICcrfei_SMQe9bFq4BB8d",
+          "turn": 2,
+          "role": "user",
+          "content": "我平时做设计，手上的项目编号是BGW-7419。这阵子主要是在改版式，没什么特别戏剧化的事情。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_0172duz",
+            "quote": "我平时做设计，手上的项目编号是BGW-7419。这阵子主要是在改版式，没什么特别戏剧化的事情。",
+            "sourceId": "message_ICcrfei_SMQe9bFq4BB8d",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_005t1lk",
+        "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_Y-fD0xC0a4kPPEprECTqG",
+          "turn": 25,
+          "role": "user",
+          "content": "更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_15pshoz",
+            "quote": "更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。",
+            "sourceId": "message_Y-fD0xC0a4kPPEprECTqG",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_12ifbaa",
+        "content": "用户在对话中说过：「工作上还是原来的项目，编号纠正以后没有再改过。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_KT1GQ6VE4BB24_77X-Iv5",
+          "turn": 68,
+          "role": "user",
+          "content": "工作上还是原来的项目，编号纠正以后没有再改过。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_1miht05",
+            "quote": "工作上还是原来的项目，编号纠正以后没有再改过。",
+            "sourceId": "message_KT1GQ6VE4BB24_77X-Iv5",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_0i9x4ee",
+        "content": "用户在对话中说过：「我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_p7Vu6QT7Z5OQ_AUT8N0b1",
+          "turn": 3,
+          "role": "user",
+          "content": "我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_0b8fpw9",
+            "quote": "我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。",
+            "sourceId": "message_p7Vu6QT7Z5OQ_AUT8N0b1",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_1qnetvb",
+        "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_rrGl1v-2EcjCmGc7DUudN",
+          "turn": 26,
+          "role": "user",
+          "content": "还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_0tjaxmh",
+            "quote": "还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。",
+            "sourceId": "message_rrGl1v-2EcjCmGc7DUudN",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_0j0vaa3",
+        "content": "用户在对话中说过：「也不用因为聊了这么久，就说你或者我一定发生了很大的成长。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_aP9vrOb1gXOQAbvzbCD2s",
+          "turn": 118,
+          "role": "user",
+          "content": "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_1ill16f",
+            "quote": "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。",
+            "sourceId": "message_aP9vrOb1gXOQAbvzbCD2s",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_1nrtleo",
+        "content": "用户在对话中说过：「我现在早上一般喝黑咖啡，边喝边随手画两笔。只是习惯，没有什么特别的仪式。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_kBqh3yHX0Jk-eEdepcQT9",
+          "turn": 4,
+          "role": "user",
+          "content": "我现在早上一般喝黑咖啡，边喝边随手画两笔。只是习惯，没有什么特别的仪式。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_0k4cu5f",
+            "quote": "我现在早上一般喝黑咖啡，边喝边随手画两笔。只是习惯，没有什么特别的仪式。",
+            "sourceId": "message_kBqh3yHX0Jk-eEdepcQT9",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_1kyvi1k",
+        "content": "用户在对话中说过：「我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_iX5sm8tjhXb_2nEJK1vGu",
+          "turn": 33,
+          "role": "user",
+          "content": "我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_1wetvy0",
+            "quote": "我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。",
+            "sourceId": "message_iX5sm8tjhXb_2nEJK1vGu",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_0oq09fu",
+        "content": "用户的蓝色钢笔也现在存放在：早上照旧喝乌龙茶,蓝色钢笔也还在用。",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "stable",
+        "source": {
+          "id": "message_41I_5Nq8IANAZIgiD0Phm",
+          "turn": 115,
+          "role": "user",
+          "content": "早上照旧喝乌龙茶，蓝色钢笔也还在用。"
+        },
+        "subjectKey": "user_fact:item:蓝色钢笔也:storage",
+        "disposition": "affirmed",
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_0vdul3q",
+            "quote": "早上照旧喝乌龙茶，蓝色钢笔也还在用。",
+            "sourceId": "message_41I_5Nq8IANAZIgiD0Phm",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_150ycpx",
+        "content": "用户在对话中说过：「我仍然在做原来的工作，没有新的辞职或搬家消息。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_TEU-nauwRKUYF2RgexHcw",
+          "turn": 114,
+          "role": "user",
+          "content": "我仍然在做原来的工作，没有新的辞职或搬家消息。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_0li4c2b",
+            "quote": "我仍然在做原来的工作，没有新的辞职或搬家消息。",
+            "sourceId": "message_TEU-nauwRKUYF2RgexHcw",
+            "exactMessageQuote": true
+          }
+        ]
+      },
+      {
+        "id": "memory_0dzm4ze",
+        "content": "用户在对话中说过：「搬家的事也没有新进展，没有录取，没有搬。」",
+        "status": "active",
+        "certainty": "explicit",
+        "attribution": "user_explicit",
+        "stability": "one_off",
+        "source": {
+          "id": "message_Cm8FdRZO0fumOnctD2AKJ",
+          "turn": 82,
+          "role": "user",
+          "content": "搬家的事也没有新进展，没有录取，没有搬。"
+        },
+        "subjectKey": null,
+        "disposition": null,
+        "supersededById": null,
+        "evidence": [
+          {
+            "id": "evidence_1axldmr",
+            "quote": "搬家的事也没有新进展，没有录取，没有搬。",
+            "sourceId": "message_Cm8FdRZO0fumOnctD2AKJ",
+            "exactMessageQuote": true
+          }
+        ]
+      }
+    ],
+    "adaptations": [
+      {
+        "id": "persona_adaptation_1fxn1m8",
+        "sourceMessageId": "message_PoEtDdJZfGFpjFSDlx0qR",
+        "baseCharacterVersion": 1,
+        "revision": 1,
+        "status": "retracted",
+        "scope": [
+          "local-user",
+          "工作",
+          "advice_timing"
+        ],
+        "proposal": {
+          "kind": "relationship_practice",
+          "facet": "advice_timing",
+          "practice": "listen_first",
+          "scope": {
+            "userId": "local-user",
+            "topic": "工作"
+          },
+          "content": "以后聊工作时，请先听我说，不要急着给建议。"
+        },
+        "effectiveFromUtc": "2026-09-08T00:00:00.000Z",
+        "effectiveToUtc": "2026-09-14T00:00:00.000Z",
+        "sources": [
+          {
+            "sourceType": "memory",
+            "sourceId": "memory_0zsd66n",
+            "sourceHash": "6e885fc7d5e1d7c77ab85bc7b54b8beaa79b6d0f963420dd69db7ce30b5e9edc"
+          },
+          {
+            "sourceType": "message",
+            "sourceId": "message_PoEtDdJZfGFpjFSDlx0qR",
+            "sourceHash": "25ed23832b54dad0b673666336280c0461c2dc1e79f6092ba215c84a7961135b"
+          }
+        ]
+      },
+      {
+        "id": "persona_adaptation_0bk2g6w",
+        "sourceMessageId": "message_AzAPozVHi2ciut2rbGSr9",
+        "baseCharacterVersion": 1,
+        "revision": 3,
+        "status": "accepted",
+        "scope": [
+          "local-user",
+          "电影",
+          "follow_up_questions"
+        ],
+        "proposal": {
+          "kind": "relationship_practice",
+          "facet": "follow_up_questions",
+          "practice": "fewer_questions",
+          "scope": {
+            "userId": "local-user",
+            "topic": "电影"
+          },
+          "content": "以后聊电影时少追问我，留一点我自己接着说的空间就好。"
+        },
+        "effectiveFromUtc": "2026-09-14T00:06:00.000Z",
+        "effectiveToUtc": null,
+        "sources": [
+          {
+            "sourceType": "memory",
+            "sourceId": "memory_1betgzn",
+            "sourceHash": "c868d5b87f5094f1529e172b2e1ceb81fb42d3024ef4c2cc1e419184f6f1857a"
+          },
+          {
+            "sourceType": "message",
+            "sourceId": "message_AzAPozVHi2ciut2rbGSr9",
+            "sourceHash": "2fe4290ff6144ed6a177353399608151d3a2007e9fa7f92ee717ee403896638d"
+          }
+        ]
+      }
+    ],
+    "personaRevisions": [
+      {
+        "id": "persona_revision_1reblnj",
+        "fromRevision": 0,
+        "toRevision": 1,
+        "reason": "explicit_scoped_practice",
+        "idempotencyKey": "capture:message_PoEtDdJZfGFpjFSDlx0qR",
+        "createdAtUtc": "2026-09-08T00:00:00.000Z"
+      },
+      {
+        "id": "persona_revision_1rob7ci",
+        "fromRevision": 1,
+        "toRevision": 2,
+        "reason": "explicit_practice_withdrawal",
+        "idempotencyKey": "withdraw:message_zFhR01Cwn3HCcHE1JPbV5",
+        "createdAtUtc": "2026-09-14T00:00:00.000Z"
+      },
+      {
+        "id": "persona_revision_1ryat1h",
+        "fromRevision": 2,
+        "toRevision": 3,
+        "reason": "explicit_scoped_practice",
+        "idempotencyKey": "capture:message_AzAPozVHi2ciut2rbGSr9",
+        "createdAtUtc": "2026-09-14T00:06:00.000Z"
+      }
+    ],
+    "personaObservationReasons": [
+      {
+        "id": "persona_observation_1fxn1m8",
+        "sourceMessageId": "message_PoEtDdJZfGFpjFSDlx0qR",
+        "status": "accepted",
+        "reason": "explicit_scoped_practice"
+      },
+      {
+        "id": "persona_observation_0bk2g6w",
+        "sourceMessageId": "message_AzAPozVHi2ciut2rbGSr9",
+        "status": "accepted",
+        "reason": "explicit_scoped_practice"
+      },
+      {
+        "id": "persona_observation_033o345",
+        "sourceMessageId": "message_r2qXIn_u5QkFoVS9gZy65",
+        "status": "rejected",
+        "reason": "practice_already_effective"
+      }
+    ],
+    "restart": [
+      {
+        "kind": "restart",
+        "previousPid": 12972,
+        "pid": 26812,
+        "distinctProcess": true,
+        "nowUtc": "2026-09-25T00:00:00.000Z"
+      }
+    ],
+    "letterFailure": [
+      {
+        "id": "letter_generation_run_6khVBMPddSDj85N5Gx2EI",
+        "status": "failed",
+        "attempt": 1,
+        "generationEpoch": 0,
+        "error": "letter_reply_evidence_out_of_scope",
+        "replyId": null
+      }
+    ],
+    "rawFinalComparison": {
+      "exactTextUnequalTurns": [
+        1,
+        14,
+        15,
+        18,
+        19,
+        42,
+        43,
+        47,
+        48,
+        64,
+        67,
+        69,
+        70,
+        73,
+        74,
+        76,
+        83,
+        89,
+        93,
+        94,
+        97,
+        101,
+        102,
+        106,
+        108,
+        116,
+        118
+      ],
+      "nonWhitespaceUnequalTurns": [
+        118
+      ],
+      "semanticRepairCalls": 1,
+      "semanticRepairTurns": [
+        {
+          "turn": 118,
+          "calls": 1,
+          "originalTextSha256": "758efdbb0b178cd60c6279aba6107d378b1e71f5b3493edf28c50772f5e1e491",
+          "finalTextSha256": "147e861abd3cc3ed9a9924e6797225746095bb3f8bcb6228046508b070335af2"
+        }
+      ],
+      "qualification": "精确字符串变化含气泡分行；不能把exactTextUnequalTurns当成语义修复次数。"
+    }
+  },
+  "coverage": {
+    "oracleFactRows": 19,
+    "reviewedFactRows": 19,
+    "oraclePracticeRows": 8,
+    "reviewedPracticeRows": 8,
+    "valueSiblingRows": 2,
+    "executedValueSiblingRows": 0,
+    "valueSiblingInsufficientRows": 2,
+    "globalChecks": 6,
+    "globalEngineeringScopeNotes": 6,
+    "existingProbeDenominator": 30,
+    "existingProbeSummaryUnchanged": {
+      "observed": 30,
+      "pass": 23,
+      "partial": 4,
+      "fail": 3,
+      "insufficient": 0
+    },
+    "aggregatePassRateForSupplement": null,
+    "reason": "These rows overlap facts, histories and probes; no new aggregate pass denominator is registered."
+  },
+  "limits": [
+    "This is a Codex-assisted review, not a human panel or fully blinded independent judge. It supplements existing reviews; it does not overwrite primary/secondary disagreements.",
+    "All 120 mainline turns were observed; the failed R1 letter attempt remains failed and continued dialogue used the documented observation continuation. Do not label this an uninterrupted all-feature original-runner PASS.",
+    "The final raw/final semantic repair only changed T118; T101 visible list fragmentation is a separate delivery issue. Neither parse success nor low side-effect counts imply semantic quality.",
+    "No sibling counterfactual calls, no long single-session compression overflow, no persisted autobiography/checkpoint and no active autonomous planning: these paths remain unproved here.",
+    "Current failures can involve retrieval, persistence, compilation, prompt source selection and history-mediated model behavior; neither all model randomness nor all implementation failure is justified."
+  ]
+}

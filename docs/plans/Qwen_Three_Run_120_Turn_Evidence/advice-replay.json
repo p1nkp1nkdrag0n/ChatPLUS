@@ -1,0 +1,686 @@
+{
+  "schema": "qwen-long-advice-offline-replay-v1",
+  "mode": "offline_exact_reply_rule_replay",
+  "apiCalls": 0,
+  "createdAtUtc": "2026-09-07T12:35:42.996Z",
+  "source": {
+    "file": "E:\\2026\\ChatPLUS\\packages\\features\\src\\advice-policy.ts",
+    "sha256": "a9190449cb4914300bd08adf608346718c807765e758dc3c058984f3b2898a37",
+    "driver": "E:\\2026\\ChatPLUS\\tmp\\diagnostic-drivers\\probe-long-advice-boundaries.ts"
+  },
+  "cases": [
+    {
+      "runSlot": "R2",
+      "turn": 6,
+      "userText": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+      "source": {
+        "file": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\turn-006.json",
+        "sha256": "f24d050fe4237b25a3024f4d3c897a66d6a16e9397cfdfa73edc25451b145b35",
+        "manifest": {
+          "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+          "dirty": true,
+          "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+        },
+        "physicalAttempt": 8,
+        "requestSha256": "b099a401b73cb9bf24b3f9176afe5c01a3c5c897054fa8272511ab066d7f8958",
+        "rawResponseSha256": "2624bb512237e38c72d62bac49129d7a3d1c4b680ab4afdc20ed262ccbd979e8"
+      },
+      "plan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "venting",
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "listen",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "none_now",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 0,
+        "allowCharacterLifeMention": false
+      },
+      "rawText": "改了一整天，惯性还在是很正常的。回家先别逼自己立刻停，做点不动脑子的琐事，或者继续聊聊那条安静小路。让节奏慢慢降下来。",
+      "finalText": "改了一整天，惯性还在是很正常的。回家先别逼自己立刻停，做点不动脑子的琐事，或者继续聊聊那条安静小路。让节奏慢慢降下来。",
+      "rawOfflineRule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "storedSemanticAudit": {
+        "policyVersion": "conversation_semantic_boundaries_v1",
+        "originalTextSha256": "ae3b17d4253d3d0320c55fd0026ba62e4a768d18815ce5376c6f381d8773d49d",
+        "finalTextSha256": "ae3b17d4253d3d0320c55fd0026ba62e4a768d18815ce5376c6f381d8773d49d",
+        "initialIssues": [],
+        "finalIssues": [],
+        "sourceMessageIds": [],
+        "repairCalls": 0,
+        "finalAdvice": {
+          "policyVersion": "advice_load_v2",
+          "policy": "none_now",
+          "passed": true,
+          "actionCount": 0,
+          "actions": [],
+          "issues": [],
+          "reviewRequired": false,
+          "coverage": {
+            "status": "no_action_frame",
+            "unsupportedCandidates": []
+          }
+        }
+      },
+      "finalOfflineRule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "interpretation": "False negative: actual unrequested action/invitation framework is absent from finite cue matching, yet no_action_frame is reported without review. This is not proof that no recommendation was made."
+    },
+    {
+      "runSlot": "R3",
+      "turn": 6,
+      "userText": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+      "source": {
+        "file": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\turn-006.json",
+        "sha256": "9903acea6dcd5d0c30046a4e5fe215545cdd84ab0969b172ba3e63626f3279fc",
+        "manifest": {
+          "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+          "dirty": true,
+          "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+        },
+        "physicalAttempt": 8,
+        "requestSha256": "f63b2733224186f06c1a20f92c74aba47a1b9dd89ef22bc934df729498c281a1",
+        "rawResponseSha256": "9655d6bec11a8916337feb08b7617b718436ab1999502cd9dbba097b0752677e"
+      },
+      "plan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "venting",
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "listen",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "none_now",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 0,
+        "allowCharacterLifeMention": false
+      },
+      "rawText": "改了一天东西，脑子还在转太正常了，说明你在意质量。这种惯性停不下来不是毛病，给自己一个明确的下班仪式吧。比如合上电脑后离开工作区，做点别的小事，给大脑一个切换信号。",
+      "finalText": "改了一天东西，脑子还在转太正常了，说明你在意质量。这种惯性停不下来不是毛病，给自己一个明确的下班仪式吧。比如合上电脑后离开工作区，做点别的小事，给大脑一个切换信号。",
+      "rawOfflineRule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "storedSemanticAudit": {
+        "policyVersion": "conversation_semantic_boundaries_v1",
+        "originalTextSha256": "14ba30a06db3193ff9d3e3c0a6230419ad4232b6a7f3697edc0e308711ef800a",
+        "finalTextSha256": "14ba30a06db3193ff9d3e3c0a6230419ad4232b6a7f3697edc0e308711ef800a",
+        "initialIssues": [],
+        "finalIssues": [],
+        "sourceMessageIds": [],
+        "repairCalls": 0,
+        "finalAdvice": {
+          "policyVersion": "advice_load_v2",
+          "policy": "none_now",
+          "passed": true,
+          "actionCount": 0,
+          "actions": [],
+          "issues": [],
+          "reviewRequired": false,
+          "coverage": {
+            "status": "no_action_frame",
+            "unsupportedCandidates": []
+          }
+        }
+      },
+      "finalOfflineRule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "interpretation": "False negative: actual unrequested action/invitation framework is absent from finite cue matching, yet no_action_frame is reported without review. This is not proof that no recommendation was made."
+    },
+    {
+      "runSlot": "R3",
+      "turn": 36,
+      "userText": "林桥说他更喜欢浓咖啡，那是他的口味，不是我又改回去了。",
+      "source": {
+        "file": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\turn-036.json",
+        "sha256": "155d089c0625cb98f829c8661ef99f617d435f191da744a1cfe6a34b4a138e2d",
+        "manifest": {
+          "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+          "dirty": true,
+          "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+        },
+        "physicalAttempt": 38,
+        "requestSha256": "db32810f8106afb9f7e0a5145860668ea8f3921c84296ddaf62816da006f5de4",
+        "rawResponseSha256": "21bf52b98764808224014f6f9e5d698d12b0676128b4f772ca88d66d8f8902d0"
+      },
+      "plan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "林桥说他更喜欢浓咖啡，那是他的口味，不是我又改回去了。",
+        "expandedQueries": [
+          "我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。",
+          "今天把茶泡淡了一点，感觉正合适。",
+          "工作还是做原来的项目，换饮料跟工作决定没有关系。"
+        ],
+        "contextMessageIds": [
+          "message_sQXQ_r1ETB8T8HO5YZZ1W",
+          "message_6LBGDFNZ_wgVGQUEy-uNe",
+          "message_jkrEzh9pVL_afl9t0RrzK"
+        ],
+        "unresolvedReferences": [
+          "他"
+        ],
+        "intent": "casual",
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "optional_light",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "林桥说他更喜欢浓咖啡，那是他的口味，不是我又改回去了。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 2,
+        "allowCharacterLifeMention": false
+      },
+      "rawText": "哈哈，懂了。口味这东西本来就是各花入各眼，你喝淡茶他喝浓咖啡，完全没问题。",
+      "finalText": "当然，那是他的偏好，不代表你变了。口味本来就没有对错，各人喝各人的，不用非得对齐。他喜欢浓的，你保持自己的节奏就好。",
+      "rawOfflineRule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      },
+      "storedSemanticAudit": {
+        "policyVersion": "conversation_semantic_boundaries_v1",
+        "originalTextSha256": "c8453bbe005a89d647bbc2c7319ab649dcdd5a431d35fe1293cf1e598daa096e",
+        "finalTextSha256": "3d61ea99a8c518ed5c7727d53937144d922b095ba0416e85471fd1029cf1e142",
+        "initialIssues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25,
+            "surface": "chunk",
+            "chunkIndex": 0
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25,
+            "surface": "chunks"
+          }
+        ],
+        "finalIssues": [],
+        "sourceMessageIds": [
+          "message_brRU1fZVMXgzd58GpWP8n"
+        ],
+        "repairCalls": 1,
+        "finalAdvice": {
+          "policyVersion": "advice_load_v2",
+          "policy": "optional_light",
+          "passed": true,
+          "actionCount": 0,
+          "actions": [],
+          "issues": [],
+          "reviewRequired": false,
+          "coverage": {
+            "status": "no_action_frame",
+            "unsupportedCandidates": []
+          }
+        }
+      },
+      "finalOfflineRule": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "interpretation": "False positive: current user contrasts their current tea with colleague coffee; the raw reply reports those preferences and does not prescribe drinking. A real repair follows and adds generic reassurance. Engineering trigger is confirmed; tone degradation is a separate manual judgment."
+    }
+  ],
+  "controls": [
+    {
+      "text": "给自己一个明确的下班仪式吧。比如合上电脑后离开工作区，做点别的小事。",
+      "noneNow": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "optionalLight": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "你可以合上电脑后离开工作区。",
+      "noneNow": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": false,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [
+          {
+            "code": "ADVICE_ACTION_UNRESOLVED",
+            "text": "合上电脑后离开工作区",
+            "start": 3,
+            "end": 13
+          }
+        ],
+        "reviewRequired": true,
+        "coverage": {
+          "status": "unresolved",
+          "unsupportedCandidates": [
+            {
+              "text": "合上电脑后离开工作区",
+              "start": 3,
+              "end": 13,
+              "strength": "optional",
+              "certainty": "explicit",
+              "reason": "unparsed_action"
+            }
+          ]
+        }
+      },
+      "optionalLight": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": true,
+        "coverage": {
+          "status": "unresolved",
+          "unsupportedCandidates": [
+            {
+              "text": "合上电脑后离开工作区",
+              "start": 3,
+              "end": 13,
+              "strength": "optional",
+              "certainty": "explicit",
+              "reason": "unparsed_action"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "试着合上电脑后离开工作区。",
+      "noneNow": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": false,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [
+          {
+            "code": "ADVICE_ACTION_UNRESOLVED",
+            "text": "合上电脑后离开工作区",
+            "start": 2,
+            "end": 12
+          }
+        ],
+        "reviewRequired": true,
+        "coverage": {
+          "status": "unresolved",
+          "unsupportedCandidates": [
+            {
+              "text": "合上电脑后离开工作区",
+              "start": 2,
+              "end": 12,
+              "strength": "optional",
+              "certainty": "explicit",
+              "reason": "unparsed_action"
+            }
+          ]
+        }
+      },
+      "optionalLight": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": true,
+        "coverage": {
+          "status": "unresolved",
+          "unsupportedCandidates": [
+            {
+              "text": "合上电脑后离开工作区",
+              "start": 2,
+              "end": 12,
+              "strength": "optional",
+              "certainty": "explicit",
+              "reason": "unparsed_action"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "不用做计划。",
+      "noneNow": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "optionalLight": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "你喝淡茶他喝浓咖啡。",
+      "noneNow": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "喝淡茶",
+            "start": 1,
+            "end": 4,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "ADVICE_NOT_REQUESTED_NOW",
+            "text": "喝淡茶",
+            "start": 1,
+            "end": 4
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      },
+      "optionalLight": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "喝淡茶",
+            "start": 1,
+            "end": 4,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 1,
+            "end": 4
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "你平时喝淡茶，他平时喝浓咖啡。",
+      "noneNow": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      },
+      "optionalLight": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 0,
+        "actions": [],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "no_action_frame",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "你应该喝淡茶。",
+      "noneNow": {
+        "policyVersion": "advice_load_v2",
+        "policy": "none_now",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "喝淡茶",
+            "start": 3,
+            "end": 6,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "ADVICE_NOT_REQUESTED_NOW",
+            "text": "喝淡茶",
+            "start": 3,
+            "end": 6
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      },
+      "optionalLight": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "喝淡茶",
+            "start": 3,
+            "end": 6,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 3,
+            "end": 6
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    }
+  ],
+  "mechanism": {
+    "missedImperative": "The suffix 吧 can create explicitStrength/frame, but unknown-action fallback requires a recognized cue or coordinated clause. The parent 给自己…下班仪式吧 has no cue, and the following period closes its empty frame. 比如 then has no frame to inherit. Bare 做点…琐事 likewise has no cue/vocabulary action, so generic-frame recognition is never reached.",
+    "falseDirective": "The finite action matches 喝淡茶; before=你 satisfies bareImperative. Its following contrast 他喝浓咖啡 is not a known descriptive suffix. The pure checker has text+policy but no current user factual context, so it labels a preference statement directive."
+  },
+  "limits": [
+    "No new provider requests. These probes replay exact frozen raw text plus minimal controls; they do not constitute new model performance samples.",
+    "The pure rule reproduction confirms the admission diagnostic, not every possible cause of the generated text.",
+    "No actual database insertion is inferred from raw output or accepted/rejected candidate counts."
+  ]
+}

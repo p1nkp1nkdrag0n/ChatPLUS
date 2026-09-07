@@ -1,0 +1,481 @@
+{
+  "schema": "qwen-three-runs-minimal-final-state-proof-v1",
+  "source": "tmp/qwen-fix-review/three-runs-final-engineering-inventory.json",
+  "sourceSha256": "9be151c45e1858b947c49c67f5210f117cc497d30c1f2ce9283eabbf440c3103",
+  "method": "仅提炼已完成run最终readonly SQLite审计；原始产物哈希前后不变；0新增API。",
+  "runs": [
+    {
+      "slot": "R1",
+      "runId": "cc-qwen-long-r1-20260907",
+      "revision": {
+        "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+        "dirty": true,
+        "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+      },
+      "manifestSha": "63fa3fac1f900b6c0a6a8c7a97aef002e0760afeae92577fd08391aaed41cc6c",
+      "finalSqliteSha": "c53b064eac458c044868acb0458d8bfb585c8e28971ece0e312b0ad87827107a",
+      "preserved": true,
+      "physical": 124,
+      "reserved": 6463134,
+      "actualUsage": {
+        "prompt_tokens": 736676,
+        "completion_tokens": 148406,
+        "total_tokens": 885082,
+        "unknownUsageResponses": 0
+      },
+      "purposeCounts": {
+        "compile_character": 1,
+        "chat_turn": 120,
+        "letter_reply": 1,
+        "repair_chat_turn": 1
+      },
+      "allHttp200": true,
+      "unrespondedReservations": 0,
+      "turns": 120,
+      "counts": {
+        "messages": 240,
+        "memories": 29,
+        "memory_evidence": 29,
+        "memory_conflicts": 0,
+        "conversation_checkpoints": 0,
+        "autobiography_snapshots": 0,
+        "autobiography_entries": 0,
+        "care_cues": 2,
+        "follow_up_intents": 0,
+        "persona_adaptations": 2,
+        "pressure_episodes": 0,
+        "schedule_items": 0,
+        "schedule_negotiations": 0,
+        "personal_intentions": 0,
+        "letter_generation_runs": 1
+      },
+      "finalMessagesMatch": true,
+      "duplicateClientIds": [],
+      "duplicateReplyIds": [],
+      "idempotencyCount": 120,
+      "allReplaysPassed": true,
+      "storageMisclaim": [
+        {
+          "id": "memory_0oq09fu",
+          "content": "用户的蓝色钢笔也现在存放在：早上照旧喝乌龙茶,蓝色钢笔也还在用。",
+          "source": {
+            "id": "message_41I_5Nq8IANAZIgiD0Phm",
+            "turn": 115,
+            "role": "user",
+            "content": "早上照旧喝乌龙茶，蓝色钢笔也还在用。"
+          },
+          "sourceQuoteExact": true,
+          "status": "active",
+          "certainty": "explicit",
+          "attribution": "user_explicit",
+          "stability": "stable",
+          "subjectKey": "user_fact:item:蓝色钢笔也:storage"
+        }
+      ],
+      "allMemoryEvidenceExact": true,
+      "correctedMemories": [
+        {
+          "id": "memory_005t1lk",
+          "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+          "status": "active",
+          "sourceTurn": 25,
+          "subject": null,
+          "superseded": null
+        },
+        {
+          "id": "memory_1qnetvb",
+          "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+          "status": "active",
+          "sourceTurn": 26,
+          "subject": null,
+          "superseded": null
+        }
+      ],
+      "persona": [
+        {
+          "id": "persona_adaptation_1fxn1m8",
+          "source": "message_PoEtDdJZfGFpjFSDlx0qR",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted"
+        },
+        {
+          "id": "persona_adaptation_0bk2g6w",
+          "source": "message_AzAPozVHi2ciut2rbGSr9",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted"
+        }
+      ],
+      "personaRevisionCount": 3,
+      "letterRuns": [
+        {
+          "id": "letter_generation_run_6khVBMPddSDj85N5Gx2EI",
+          "status": "failed",
+          "attempt": 1,
+          "generationEpoch": 0,
+          "error": "letter_reply_evidence_out_of_scope",
+          "replyId": null
+        }
+      ],
+      "schedulePolicies": [
+        {
+          "agentId": "character_hcgK0q2XHksGx1FqJNhf2",
+          "enabled": false,
+          "horizonHours": 72
+        }
+      ],
+      "zeroGoalBaseline": {
+        "goals": [],
+        "contradictions": [],
+        "biography": []
+      },
+      "rawFinalComparison": {
+        "exactTextUnequalTurns": [
+          1,
+          14,
+          15,
+          18,
+          19,
+          42,
+          43,
+          47,
+          48,
+          64,
+          67,
+          69,
+          70,
+          73,
+          74,
+          76,
+          83,
+          89,
+          93,
+          94,
+          97,
+          101,
+          102,
+          106,
+          108,
+          116,
+          118
+        ],
+        "nonWhitespaceUnequalTurns": [
+          118
+        ],
+        "semanticRepairCalls": 1,
+        "semanticRepairTurns": [
+          {
+            "turn": 118,
+            "calls": 1,
+            "originalTextSha256": "758efdbb0b178cd60c6279aba6107d378b1e71f5b3493edf28c50772f5e1e491",
+            "finalTextSha256": "147e861abd3cc3ed9a9924e6797225746095bb3f8bcb6228046508b070335af2"
+          }
+        ],
+        "qualification": "精确字符串变化含气泡分行；不能把exactTextUnequalTurns当成语义修复次数。"
+      }
+    },
+    {
+      "slot": "R2",
+      "runId": "cc-qwen-long-r2-20260907",
+      "revision": {
+        "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+        "dirty": true,
+        "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+      },
+      "manifestSha": "d14876697ef052906d6992d6d0da14213202b250edd39e9060986cbe15be7fb7",
+      "finalSqliteSha": "c4ca16a05c625110e524778343115fdd37285286ac118d20cd66dc217280fe49",
+      "preserved": true,
+      "physical": 123,
+      "reserved": 6457547,
+      "actualUsage": {
+        "prompt_tokens": 751256,
+        "completion_tokens": 118689,
+        "total_tokens": 869945,
+        "unknownUsageResponses": 0
+      },
+      "purposeCounts": {
+        "compile_character": 1,
+        "chat_turn": 120,
+        "letter_reply": 1
+      },
+      "allHttp200": true,
+      "unrespondedReservations": 0,
+      "turns": 120,
+      "counts": {
+        "messages": 240,
+        "memories": 31,
+        "memory_evidence": 31,
+        "memory_conflicts": 0,
+        "conversation_checkpoints": 0,
+        "autobiography_snapshots": 0,
+        "autobiography_entries": 0,
+        "care_cues": 1,
+        "follow_up_intents": 0,
+        "persona_adaptations": 2,
+        "pressure_episodes": 0,
+        "schedule_items": 0,
+        "schedule_negotiations": 0,
+        "personal_intentions": 0,
+        "letter_generation_runs": 1
+      },
+      "finalMessagesMatch": true,
+      "duplicateClientIds": [],
+      "duplicateReplyIds": [],
+      "idempotencyCount": 120,
+      "allReplaysPassed": true,
+      "storageMisclaim": [
+        {
+          "id": "memory_0w5hig5",
+          "content": "用户的蓝色钢笔也现在存放在：早上照旧喝乌龙茶,蓝色钢笔也还在用。",
+          "source": {
+            "id": "message_gX9wH09RDOnKeXzVsapRO",
+            "turn": 115,
+            "role": "user",
+            "content": "早上照旧喝乌龙茶，蓝色钢笔也还在用。"
+          },
+          "sourceQuoteExact": true,
+          "status": "active",
+          "certainty": "explicit",
+          "attribution": "user_explicit",
+          "stability": "stable",
+          "subjectKey": "user_fact:item:蓝色钢笔也:storage"
+        }
+      ],
+      "allMemoryEvidenceExact": true,
+      "correctedMemories": [
+        {
+          "id": "memory_0265z5y",
+          "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+          "status": "active",
+          "sourceTurn": 25,
+          "subject": null,
+          "superseded": null
+        },
+        {
+          "id": "memory_0udu6mh",
+          "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+          "status": "active",
+          "sourceTurn": 26,
+          "subject": null,
+          "superseded": null
+        }
+      ],
+      "persona": [
+        {
+          "id": "persona_adaptation_0lga8xj",
+          "source": "message_L6DU-Y-S7AiRuNDIU1xCD",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted"
+        },
+        {
+          "id": "persona_adaptation_0wknx9l",
+          "source": "message_OfzH1mPrnq8xLwP8lQS0e",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted"
+        }
+      ],
+      "personaRevisionCount": 3,
+      "letterRuns": [
+        {
+          "id": "letter_generation_run_asP-K45yoLTJA_551Fx_R",
+          "status": "committed",
+          "attempt": 1,
+          "generationEpoch": 0,
+          "error": null,
+          "replyId": "letter_reply_44e43b5902afb88886a9cce540383486"
+        }
+      ],
+      "schedulePolicies": [
+        {
+          "agentId": "character_upAZMW9GMnJOQsd2Bzr6f",
+          "enabled": false,
+          "horizonHours": 72
+        }
+      ],
+      "zeroGoalBaseline": {
+        "goals": [],
+        "contradictions": [],
+        "biography": []
+      },
+      "rawFinalComparison": {
+        "exactTextUnequalTurns": [],
+        "nonWhitespaceUnequalTurns": [],
+        "semanticRepairCalls": 0,
+        "semanticRepairTurns": [],
+        "qualification": "精确字符串变化含气泡分行；不能把exactTextUnequalTurns当成语义修复次数。"
+      }
+    },
+    {
+      "slot": "R3",
+      "runId": "cc-qwen-long-r3-20260907",
+      "revision": {
+        "revision": "2a5b5457350b4f6c82cb5064a5dae4c747d2c8c3",
+        "dirty": true,
+        "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+      },
+      "manifestSha": "ee88979f2ea1e899f00a4e0152d2164fb72c48a4ca4f28d375125af888ae23fb",
+      "finalSqliteSha": "df2ab2e85f84a6de18f5b023dd36697109bb7a7cde3f9d93cb38d2754a3473db",
+      "preserved": true,
+      "physical": 125,
+      "reserved": 6517114,
+      "actualUsage": {
+        "prompt_tokens": 757060,
+        "completion_tokens": 121547,
+        "total_tokens": 878607,
+        "unknownUsageResponses": 0
+      },
+      "purposeCounts": {
+        "compile_character": 1,
+        "chat_turn": 120,
+        "repair_chat_turn": 2,
+        "letter_reply": 1
+      },
+      "allHttp200": true,
+      "unrespondedReservations": 0,
+      "turns": 120,
+      "counts": {
+        "messages": 240,
+        "memories": 33,
+        "memory_evidence": 33,
+        "memory_conflicts": 0,
+        "conversation_checkpoints": 0,
+        "autobiography_snapshots": 0,
+        "autobiography_entries": 0,
+        "care_cues": 4,
+        "follow_up_intents": 0,
+        "persona_adaptations": 2,
+        "pressure_episodes": 0,
+        "schedule_items": 0,
+        "schedule_negotiations": 0,
+        "personal_intentions": 0,
+        "letter_generation_runs": 1
+      },
+      "finalMessagesMatch": true,
+      "duplicateClientIds": [],
+      "duplicateReplyIds": [],
+      "idempotencyCount": 120,
+      "allReplaysPassed": true,
+      "storageMisclaim": [
+        {
+          "id": "memory_0m4j4bh",
+          "content": "用户的蓝色钢笔也现在存放在：早上照旧喝乌龙茶,蓝色钢笔也还在用。",
+          "source": {
+            "id": "message_a72EyPWaVB8fuqs_o2zDW",
+            "turn": 115,
+            "role": "user",
+            "content": "早上照旧喝乌龙茶，蓝色钢笔也还在用。"
+          },
+          "sourceQuoteExact": true,
+          "status": "active",
+          "certainty": "explicit",
+          "attribution": "user_explicit",
+          "stability": "stable",
+          "subjectKey": "user_fact:item:蓝色钢笔也:storage"
+        }
+      ],
+      "allMemoryEvidenceExact": true,
+      "correctedMemories": [
+        {
+          "id": "memory_1w25qot",
+          "content": "用户在对话中说过：「更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。」",
+          "status": "active",
+          "sourceTurn": 25,
+          "subject": null,
+          "superseded": null
+        },
+        {
+          "id": "memory_12mftm8",
+          "content": "用户在对话中说过：「还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。」",
+          "status": "active",
+          "sourceTurn": 26,
+          "subject": null,
+          "superseded": null
+        }
+      ],
+      "persona": [
+        {
+          "id": "persona_adaptation_0ug60or",
+          "source": "message_brRU1fZVMXgzd58GpWP8n",
+          "scope": "[\"local-user\",\"工作\",\"advice_timing\"]",
+          "status": "retracted"
+        },
+        {
+          "id": "persona_adaptation_1512j1g",
+          "source": "message_rrKyeJagxMgJtGxlgqb2E",
+          "scope": "[\"local-user\",\"电影\",\"follow_up_questions\"]",
+          "status": "accepted"
+        }
+      ],
+      "personaRevisionCount": 3,
+      "letterRuns": [
+        {
+          "id": "letter_generation_run_pGdNZbQr2vj6SuZhwPCJm",
+          "status": "committed",
+          "attempt": 1,
+          "generationEpoch": 0,
+          "error": null,
+          "replyId": "letter_reply_657ec1499124ac051072343f836c3aa0"
+        }
+      ],
+      "schedulePolicies": [
+        {
+          "agentId": "character_Z-2cnancFKxTk5fAv1ont",
+          "enabled": false,
+          "horizonHours": 72
+        }
+      ],
+      "zeroGoalBaseline": {
+        "goals": [],
+        "contradictions": [],
+        "biography": []
+      },
+      "rawFinalComparison": {
+        "exactTextUnequalTurns": [
+          36,
+          107
+        ],
+        "nonWhitespaceUnequalTurns": [
+          36,
+          107
+        ],
+        "semanticRepairCalls": 2,
+        "semanticRepairTurns": [
+          {
+            "turn": 36,
+            "calls": 1,
+            "originalTextSha256": "c8453bbe005a89d647bbc2c7319ab649dcdd5a431d35fe1293cf1e598daa096e",
+            "finalTextSha256": "3d61ea99a8c518ed5c7727d53937144d922b095ba0416e85471fd1029cf1e142"
+          },
+          {
+            "turn": 107,
+            "calls": 1,
+            "originalTextSha256": "ed1d6fcdb01f032ab0b19943eb20e2e17ee24a6d7b98323671630de3f0fa0a8d",
+            "finalTextSha256": "d7c9e4591dc278aded521179c431b645fbbc14922adf0bbbec909737a42b12f4"
+          }
+        ],
+        "qualification": "精确字符串变化含气泡分行；不能把exactTextUnequalTurns当成语义修复次数。"
+      }
+    }
+  ],
+  "aggregate": {
+    "physical": 372,
+    "reserved": 19437795,
+    "actualTokens": 2633634,
+    "idempotentReplays": 360,
+    "storageFalseClaimRuns": 3,
+    "storageOpportunities": 3
+  },
+  "semanticFindings": [
+    "3/3固定T115输入还在用被误存为storage；exact原文quote并不蕴含此伪命题。",
+    "旧7419/林乔source-report保留是真实历史报告，但纠错后当前回答仍须使用7429/林桥；三组T25/T26正确记忆均存在且active。",
+    "两项practice各经历T9accept、T41work撤回、T43movieaccept，仅3revision；没有全局人格扩写。"
+  ],
+  "qualifications": [
+    "R1在64轮书信真实失败后，经只跳过该观测stop的harness副本继续，无书信retry/DB修改。120完成不是原runner无故障全过。",
+    "R3在87轮Windows journal重命名IO失败后原runID/预算resume；无重复消息或重放计数差异。",
+    "0 followup不能证明正例能力充分；T61有界我想计划被拒，不能据此放宽所有计划。",
+    "checkpoint/autobiography表均0，该压力测试路径not_covered。",
+    "重放证据仅覆盖runner计数器和消息；不是任意数据库表的全量副作用证明。",
+    "三次同脚本相关样本；3/3实现路径缺陷不能推成整体自然度概率。"
+  ],
+  "supersedes": "tmp/qwen-fix-review/three-runs-minimal-final-state-proof.json"
+}

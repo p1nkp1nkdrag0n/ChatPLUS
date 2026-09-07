@@ -1,0 +1,186 @@
+{
+  "schema": "qwen-long-request-recognition-offline-v1",
+  "source": {
+    "file": "packages/features/src/conversation-requests.ts",
+    "sha256": "56a6396a442f7d27c8ebace8b9d04ffc427d923d3be10b38fd801b9db9acca3b"
+  },
+  "apiCalls": 0,
+  "observed": [
+    {
+      "runSlot": "R1",
+      "turn": 48,
+      "user": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+      "frozenPlan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "casual",
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "optional_light",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 2,
+        "allowCharacterLifeMention": false
+      },
+      "offline": {
+        "listen": false,
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now"
+      },
+      "final": "方法一：用一句话反述\n让对方确认\n方法二：给场景示例\n要求对方纠正\n反述：\n“你意思是X对吧”\n示例：\n“这个按钮按下去应该出Y，对吗”\n两种都别用开放式问题。",
+      "turnSha256": "891a5a54fb2be179575d0cf65ccb28b6efb8d059f3c075552f071053f094b164"
+    },
+    {
+      "runSlot": "R2",
+      "turn": 48,
+      "user": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+      "frozenPlan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "casual",
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "optional_light",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 2,
+        "allowCharacterLifeMention": false
+      },
+      "offline": {
+        "listen": false,
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now"
+      },
+      "final": "一、用“复述+边界”法：把你理解的要点复述给对方，明确列出“包含什么”和“不包含什么”，请对方确认无误。\n二、用“原型验证”法：针对最核心的需求做一个极简草图或样本，拿着实物问“这是否解决了你的痛点”，用视觉或实体反馈锁定歧义。",
+      "turnSha256": "1db918a11f04fa3b04b598ace42f11c0c050354b6d538b6b583233fbb74b2c4b"
+    },
+    {
+      "runSlot": "R3",
+      "turn": 48,
+      "user": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+      "frozenPlan": {
+        "policyVersion": "continuity_context_v2",
+        "originalQuery": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "casual",
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now",
+        "requestPolicyVersion": "clause_requests_v1",
+        "advicePolicy": "optional_light",
+        "advicePolicyVersion": "advice_load_v2",
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "expressionContext": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "resolvedCurrentTopic": {
+          "text": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+          "basis": "current_message",
+          "sourceMessageIds": [],
+          "policyVersion": "scoped_topic_v1"
+        },
+        "maxRecallEvidence": 3,
+        "maxExplicitMemories": 2,
+        "allowCharacterLifeMention": false
+      },
+      "offline": {
+        "listen": false,
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now"
+      },
+      "final": "方法一：书面回述。把你理解的关键要求列成要点发给对方，请对方确认“对/不对”，避免口头误解。方法二：反向场景测试。用两个极端案例提问对方“这种情况算符合还是超标”，能迅速锁定模糊地带和底线。",
+      "turnSha256": "cf8f9162753b3f21729d32c8ab78fb2552bdca6167d522e5677d87c64e0208cb"
+    }
+  ],
+  "controls": [
+    {
+      "text": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+      "result": {
+        "listen": false,
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now"
+      }
+    },
+    {
+      "text": "请给我两个建议，确认工作需求。",
+      "result": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      }
+    },
+    {
+      "text": "请帮我分析确认工作需求的方法。",
+      "result": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now"
+      }
+    }
+  ]
+}

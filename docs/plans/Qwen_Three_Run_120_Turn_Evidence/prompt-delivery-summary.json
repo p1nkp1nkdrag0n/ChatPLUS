@@ -1,0 +1,1056 @@
+{
+  "schema": "final-360-prompt-scan-summary-v1",
+  "apiCalls": 0,
+  "originalScan": {
+    "file": "tmp/qwen-120x3-prompt-final-20260907-01/prompt-delivery-evidence.json",
+    "sha256": "4793343e38758ffacf4eba086ac6c10411c67be1f69f66b03867783e78c35b38"
+  },
+  "sourceCompatibleAll": true,
+  "comparability": {
+    "sameRunRevision": true,
+    "sameAuthorInputHash": true,
+    "samePublicHash": true,
+    "sameModel": true,
+    "sameConfigApartFromRunPaths": true,
+    "configsIncludeRunSpecificPaths": true,
+    "characterAndHistoryCanDiffer": true
+  },
+  "runs": [
+    {
+      "runSlot": "R1",
+      "completedTurns": 120,
+      "physicalMainRequests": 121,
+      "logicalChatTurns": 120,
+      "semanticRepairPhysicalRequests": 1,
+      "structuredSchemaRetryTurns": [
+        49
+      ],
+      "expressionMismatchTurns": [],
+      "intentMismatchTurns": [],
+      "currentUserMismatchTurns": [],
+      "truncatedSegment15Turns": [],
+      "globallyDroppedSegmentTurns": [],
+      "registryEstimatedInputTokens": {
+        "n": 120,
+        "min": 5032,
+        "median": 5613,
+        "max": 6384
+      },
+      "providerActualMainInputTokens": {
+        "n": 121,
+        "min": 4721,
+        "median": 5797,
+        "max": 7195
+      },
+      "mainOutputTokenCaps": [
+        24576
+      ],
+      "recentRetainedMessages": {
+        "n": 121,
+        "min": 0,
+        "median": 6,
+        "max": 14
+      },
+      "recentRetainedCharacters": {
+        "n": 121,
+        "min": 0,
+        "median": 350,
+        "max": 1206
+      },
+      "plannedContextSourceNotVerbatimAnywhere": [],
+      "finalSnapshot": {
+        "available": true,
+        "path": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r1-20260907\\final.sqlite",
+        "sha256": "c53b064eac458c044868acb0458d8bfb585c8e28971ece0e312b0ad87827107a",
+        "boundary": "Rows in the completed final snapshot that reference this turn, not proof they were inserted in this turn. Later corrections/status changes may already be reflected."
+      }
+    },
+    {
+      "runSlot": "R2",
+      "completedTurns": 120,
+      "physicalMainRequests": 120,
+      "logicalChatTurns": 120,
+      "semanticRepairPhysicalRequests": 0,
+      "structuredSchemaRetryTurns": [],
+      "expressionMismatchTurns": [],
+      "intentMismatchTurns": [],
+      "currentUserMismatchTurns": [],
+      "truncatedSegment15Turns": [],
+      "globallyDroppedSegmentTurns": [],
+      "registryEstimatedInputTokens": {
+        "n": 120,
+        "min": 5005,
+        "median": 5669.5,
+        "max": 6382
+      },
+      "providerActualMainInputTokens": {
+        "n": 120,
+        "min": 4698,
+        "median": 5907.5,
+        "max": 7210
+      },
+      "mainOutputTokenCaps": [
+        24576
+      ],
+      "recentRetainedMessages": {
+        "n": 120,
+        "min": 0,
+        "median": 7,
+        "max": 14
+      },
+      "recentRetainedCharacters": {
+        "n": 120,
+        "min": 0,
+        "median": 307.5,
+        "max": 1023
+      },
+      "plannedContextSourceNotVerbatimAnywhere": [],
+      "finalSnapshot": {
+        "available": true,
+        "path": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r2-20260907\\final.sqlite",
+        "sha256": "c4ca16a05c625110e524778343115fdd37285286ac118d20cd66dc217280fe49",
+        "boundary": "Rows in the completed final snapshot that reference this turn, not proof they were inserted in this turn. Later corrections/status changes may already be reflected."
+      }
+    },
+    {
+      "runSlot": "R3",
+      "completedTurns": 120,
+      "physicalMainRequests": 120,
+      "logicalChatTurns": 120,
+      "semanticRepairPhysicalRequests": 2,
+      "structuredSchemaRetryTurns": [],
+      "expressionMismatchTurns": [],
+      "intentMismatchTurns": [],
+      "currentUserMismatchTurns": [],
+      "truncatedSegment15Turns": [],
+      "globallyDroppedSegmentTurns": [],
+      "registryEstimatedInputTokens": {
+        "n": 120,
+        "min": 4994,
+        "median": 5665.5,
+        "max": 6421
+      },
+      "providerActualMainInputTokens": {
+        "n": 120,
+        "min": 4651,
+        "median": 5865,
+        "max": 7191
+      },
+      "mainOutputTokenCaps": [
+        24576
+      ],
+      "recentRetainedMessages": {
+        "n": 120,
+        "min": 0,
+        "median": 7,
+        "max": 14
+      },
+      "recentRetainedCharacters": {
+        "n": 120,
+        "min": 0,
+        "median": 325,
+        "max": 947
+      },
+      "plannedContextSourceNotVerbatimAnywhere": [],
+      "finalSnapshot": {
+        "available": true,
+        "path": "E:\\2026\\ChatPLUS\\tmp\\companion-continuity-real\\cc-qwen-long-r3-20260907\\final.sqlite",
+        "sha256": "df2ab2e85f84a6de18f5b023dd36697109bb7a7cde3f9d93cb38d2754a3473db",
+        "boundary": "Rows in the completed final snapshot that reference this turn, not proof they were inserted in this turn. Later corrections/status changes may already be reflected."
+      }
+    }
+  ],
+  "repairs": [
+    {
+      "runSlot": "R1",
+      "turn": 118,
+      "requestSha256": "9e9b4a0e9ae7bb99a33c8cb5d74318b205dc13cfa1177e53eb132ef6a1106b57",
+      "currentUserExact": true,
+      "originalScannerDiagnostic": false,
+      "diagnosticCorrectionReason": "Original helper compared User message: + bare text; production serializes this value as a JSON quoted string. Exact JSON decoding proves original user text was present. No provider or product error is inferred from original false.",
+      "frozenExpressionExact": true,
+      "actualSharedRepairCalls": 1,
+      "actualLogicalRepairCalls": 1,
+      "actualPhysicalRepairCalls": 1,
+      "rawText": "说得太对了。有些变化就像季节交替，只有回头看才能发现不同，身处其中时往往只是正常的呼吸和眨眼。\n没必要给每一次对话都贴上“蜕变”的标签。能像现在这样，确认彼此还愿意分享这些平淡的日常，本身就是一种很舒服的延续。至于成长，就让它悄悄沉淀在那些乌龙茶的香气和旧笔尖划过的线条里吧，不需要特意宣告。",
+      "finalText": "确实，不用强行升华。\n聊久了也就是熟悉，像旧衣服穿得顺身，不代表它变成了新款式。\n保持平常心就好。",
+      "rawOfflineAdvice": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "确认彼此还愿意分享这些平淡的",
+            "start": 75,
+            "end": 89,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "确认彼此还愿意分享这些平淡的",
+            "start": 75,
+            "end": 89
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      },
+      "audit": {
+        "policyVersion": "conversation_semantic_boundaries_v1",
+        "originalTextSha256": "758efdbb0b178cd60c6279aba6107d378b1e71f5b3493edf28c50772f5e1e491",
+        "finalTextSha256": "147e861abd3cc3ed9a9924e6797225746095bb3f8bcb6228046508b070335af2",
+        "initialIssues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "确认彼此还愿意分享这些平淡的",
+            "start": 77,
+            "end": 91
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "确认彼此还愿意分享这些平淡的",
+            "start": 7,
+            "end": 21,
+            "surface": "chunk",
+            "chunkIndex": 3
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "确认彼此还愿意分享这些平淡的",
+            "start": 77,
+            "end": 91,
+            "surface": "chunks"
+          }
+        ],
+        "finalIssues": [],
+        "sourceMessageIds": [
+          "message_AzAPozVHi2ciut2rbGSr9"
+        ],
+        "repairCalls": 1,
+        "finalAdvice": {
+          "policyVersion": "advice_load_v2",
+          "policy": "optional_light",
+          "passed": true,
+          "actionCount": 0,
+          "actions": [],
+          "issues": [],
+          "reviewRequired": false,
+          "coverage": {
+            "status": "no_action_frame",
+            "unsupportedCandidates": []
+          }
+        }
+      },
+      "sideEffects": {
+        "boundary": "Raw proposals are candidates. Count deltas are actual before/after table totals, not attribution or semantic acceptance. Final-source rows are separate final-state evidence.",
+        "rawCandidates": [
+          {
+            "attempt": 121,
+            "rawWorldEffects": {
+              "stateDelta": {
+                "moodValence": 0.1,
+                "socialBattery": 0.05,
+                "focus": -0.05
+              },
+              "relationshipDelta": {
+                "closeness": 0.03,
+                "recentInteractionValence": 0.05,
+                "trust": 0.02
+              },
+              "memoryCandidates": [
+                {
+                  "type": "user_preference",
+                  "content": "希望保持自然渐进的关系，不将日常交流过度解读为显著的个人成长或重大变化",
+                  "importance": 0.75,
+                  "confidence": 0.9,
+                  "tags": [
+                    "交流偏好",
+                    "人际关系",
+                    "自然节奏"
+                  ],
+                  "evidenceQuotes": [
+                    "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。"
+                  ]
+                }
+              ],
+              "continuityEffects": {
+                "followUpCandidates": [
+                  {
+                    "subjectType": "shared_commitment",
+                    "contextSummary": "继续保持日常话题的轻松分享，不过度解读变化，维持自然渐进的交流节奏",
+                    "expectedOutcomeDescription": "双方在不强调“成长”或“变化”的前提下，维持一种舒适且持续的对话联系",
+                    "timingHint": "未来日常交流中",
+                    "evidenceQuotes": [
+                      "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。"
+                    ]
+                  }
+                ],
+                "followUpTransitions": [],
+                "careCueCandidates": [
+                  {
+                    "cueType": "natural_share",
+                    "contextSummary": "用户倾向于分享平淡日常，不需要刻意升华或解读",
+                    "mentionGuidance": "回应用户的日常分享时，避免使用“成长”“改变”等宏大词汇，聚焦当下的感受与细节",
+                    "timingHint": "未来日常交流中",
+                    "evidenceQuotes": [
+                      "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。"
+                    ]
+                  }
+                ]
+              },
+              "personalIntentCandidates": []
+            },
+            "rawMemoryCandidates": [
+              {
+                "type": "user_preference",
+                "content": "希望保持自然渐进的关系，不将日常交流过度解读为显著的个人成长或重大变化",
+                "importance": 0.75,
+                "confidence": 0.9,
+                "tags": [
+                  "交流偏好",
+                  "人际关系",
+                  "自然节奏"
+                ],
+                "evidenceQuotes": [
+                  "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。"
+                ]
+              }
+            ]
+          }
+        ],
+        "actualTableCountDelta": {
+          "messages": 2,
+          "message_archive": 2,
+          "domain_events": 3,
+          "memories": 1,
+          "memory_evidence": 1
+        },
+        "actualDomainEventCountDelta": {
+          "conversation.world_effects_committed": 1,
+          "memory.recall_evaluated": 1,
+          "conversation.turn_committed": 1
+        },
+        "finalSnapshotSourceLinked": {
+          "available": true,
+          "boundary": "Rows in the completed final snapshot that reference this turn, not proof they were inserted in this turn. Later corrections/status changes may already be reflected.",
+          "tables": {
+            "memories": [
+              {
+                "id": "memory_0j0vaa3",
+                "agent_id": "character_hcgK0q2XHksGx1FqJNhf2",
+                "type": "semantic",
+                "content": "用户在对话中说过：「也不用因为聊了这么久，就说你或者我一定发生了很大的成长。」",
+                "tags_json": "[\"source report\"]",
+                "importance": 0.75,
+                "confidence": 0.9,
+                "source_message_id": "message_aP9vrOb1gXOQAbvzbCD2s",
+                "source_event_id": null,
+                "created_at_utc": "2026-10-22T00:15:00.000Z",
+                "valid_until_utc": null,
+                "memory_json": "{\"id\":\"memory_0j0vaa3\",\"agentId\":\"character_hcgK0q2XHksGx1FqJNhf2\",\"kind\":\"semantic\",\"content\":\"用户在对话中说过：「也不用因为聊了这么久，就说你或者我一定发生了很大的成长。」\",\"importance\":0.75,\"confidence\":0.9,\"tags\":[\"source report\"],\"sourceMessageIds\":[\"message_aP9vrOb1gXOQAbvzbCD2s\"],\"sourceActivityEventIds\":[],\"origin\":\"runtime_simulation\",\"namespace\":\"user_model\",\"certainty\":\"explicit\",\"attribution\":\"user_explicit\",\"stability\":\"one_off\",\"temporalMetadata\":{\"mentionedAtUtc\":\"2026-10-22T00:15:00.000Z\",\"recordedAtUtc\":\"2026-10-22T00:15:00.000Z\",\"temporalCertainty\":\"unknown\",\"temporalStatus\":\"unknown\"},\"status\":\"active\",\"dedupeKey\":\"memory-key_0bslks2\",\"lastReinforcedAtUtc\":\"2026-10-22T00:15:00.000Z\",\"lifecycleUpdatedAtUtc\":\"2026-10-22T00:15:00.000Z\",\"createdAtUtc\":\"2026-10-22T00:15:00.000Z\",\"updatedAtUtc\":\"2026-10-22T00:15:00.000Z\"}",
+                "namespace": "user_model",
+                "certainty": "explicit",
+                "attribution": "user_explicit",
+                "stability": "one_off",
+                "status": "active",
+                "mentioned_at_utc": "2026-10-22T00:15:00.000Z",
+                "planned_start_at_utc": null,
+                "planned_end_at_utc": null,
+                "occurred_start_at_utc": null,
+                "occurred_end_at_utc": null,
+                "recorded_at_utc": "2026-10-22T00:15:00.000Z",
+                "temporal_certainty": "unknown",
+                "temporal_status": "unknown",
+                "claim_subject_key": null,
+                "claim_disposition": null,
+                "superseded_by_id": null,
+                "merged_into_id": null,
+                "last_reinforced_at_utc": "2026-10-22T00:15:00.000Z",
+                "lifecycle_updated_at_utc": "2026-10-22T00:15:00.000Z"
+              }
+            ],
+            "memory_evidence": [
+              {
+                "id": "evidence_1ill16f",
+                "memory_id": "memory_0j0vaa3",
+                "source_type": "message",
+                "source_id": "message_aP9vrOb1gXOQAbvzbCD2s",
+                "quote": "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。",
+                "context_summary": null,
+                "recorded_at_utc": "2026-10-22T00:15:00.000Z",
+                "evidence_json": "{\"id\":\"evidence_1ill16f\",\"memoryId\":\"memory_0j0vaa3\",\"sourceType\":\"message\",\"sourceId\":\"message_aP9vrOb1gXOQAbvzbCD2s\",\"quote\":\"也不用因为聊了这么久，就说你或者我一定发生了很大的成长。\",\"recordedAtUtc\":\"2026-10-22T00:15:00.000Z\"}"
+              }
+            ],
+            "persona_adaptations": [],
+            "pressure_episodes": [],
+            "domain_events": [
+              {
+                "id": "event_wfWrBxGFACnpp7HBC3iBo",
+                "agent_id": "character_hcgK0q2XHksGx1FqJNhf2",
+                "stream_type": "memory_recall",
+                "stream_id": "session_rm42kSDeBUwSGuyrkqTLu",
+                "stream_version": 118,
+                "event_type": "memory.recall_evaluated",
+                "recorded_at_utc": "2026-10-22T00:15:00.000Z",
+                "effective_at_utc": "2026-10-22T00:15:00.000Z",
+                "payload_json": "{\"rolloutMode\":\"enforced\",\"promptStrategy\":\"evidence_selected\",\"legacyPromptMemoryIds\":[\"memory_0ndnevc\",\"memory_0erp97c\",\"memory_0hfixkv\",\"memory_0wejw7f\",\"memory_0oq09fu\",\"memory_0aeiw5p\",\"memory_09sm70l\",\"memory_17iixr1\",\"memory_0cljufg\",\"memory_1betgzn\",\"memory_0zsd66n\",\"memory_0dzm4ze\"],\"promptMemoryIds\":[],\"selectedMemoryIds\":[],\"selectedEvidenceIds\":[],\"rejectedMemoryIds\":[\"memory_1ujkuko\",\"memory_1uxxdzz\",\"memory_1bow51c\",\"memory_0onjkuu\",\"memory_0cpejug\",\"memory_0erp97c\",\"memory_0hfixkv\",\"memory_0ndnevc\",\"memory_0wejw7f\",\"memory_0oq09fu\",\"memory_0aeiw5p\",\"memory_09sm70l\",\"memory_17iixr1\",\"memory_0cljufg\",\"memory_1betgzn\",\"memory_0dzm4ze\",\"memory_150ycpx\",\"memory_1d30azp\",\"memory_1qnetvb\",\"memory_005t1lk\",\"memory_056rid9\",\"memory_0i9x4ee\",\"memory_1aq9xul\",\"memory_1s2hmif\",\"memory_1kyvi1k\",\"memory_12ifbaa\",\"memory_1nrtleo\"],\"recallMode\":\"none\",\"score\":0.301463,\"abstained\":true,\"abstentionReason\":\"durable_memory_below_relevance_threshold\",\"durationMs\":23.702}",
+                "correlation_id": "cc-qwen-long-r1-20260907-main-118",
+                "causation_id": "message_aP9vrOb1gXOQAbvzbCD2s",
+                "idempotency_key": "memory-recall:session_rm42kSDeBUwSGuyrkqTLu:cc-qwen-long-r1-20260907-main-118"
+              },
+              {
+                "id": "event_yjMR9i_GPI0cHhCuv5pRo",
+                "agent_id": "character_hcgK0q2XHksGx1FqJNhf2",
+                "stream_type": "world_effects",
+                "stream_id": "session_rm42kSDeBUwSGuyrkqTLu",
+                "stream_version": 118,
+                "event_type": "conversation.world_effects_committed",
+                "recorded_at_utc": "2026-10-22T00:15:00.000Z",
+                "effective_at_utc": "2026-10-22T00:15:00.000Z",
+                "payload_json": "{\"schemaVersion\":1,\"mode\":\"enforced\",\"interactionStatus\":\"committed\",\"llmProposalStatus\":\"committed\",\"source\":{\"relationshipBaseline\":\"server_interaction_baseline\",\"semanticProposal\":\"model_validated_envelope\",\"relationshipEvidence\":\"neutral\"},\"expectedStateRevision\":117,\"proposed\":{\"stateDelta\":{\"moodValence\":0.1,\"socialBattery\":0.05,\"focus\":-0.05},\"relationshipDelta\":{\"closeness\":0.03,\"recentInteractionValence\":0.05,\"trust\":0.02}},\"acceptedDelta\":{\"stateDelta\":{\"moodValence\":0.1,\"socialBattery\":0.05,\"focus\":-0.05},\"relationshipDelta\":{\"closeness\":0.03,\"trust\":0.02,\"recentInteractionValence\":0.05}},\"accepted\":{\"stateDelta\":true,\"relationshipDelta\":true,\"memoryCandidateCount\":1,\"personalIntentCandidateCount\":0},\"applied\":{\"stateDelta\":{\"socialBattery\":0.04999999999999982,\"focus\":-0.050000000000000044},\"relationshipDelta\":{\"closeness\":0.03,\"recentInteractionValence\":0.010488252913}},\"before\":{\"asOfUtc\":\"2026-10-22T00:12:00.000Z\",\"revision\":117,\"moodValence\":1,\"moodArousal\":0.4,\"energy\":0.6699999999999999,\"stress\":0.21000000000000002,\"socialBattery\":0.9500000000000002,\"focus\":0.8,\"relationship\":{\"userId\":\"local-user\",\"closeness\":0.6300000000000001,\"trust\":0.6900000000000002,\"familiarity\":0.41400000000000015,\"recentInteractionValence\":0.020006745549073175,\"lastInteractionAtUtc\":\"2026-10-22T00:12:00.000Z\"}},\"after\":{\"asOfUtc\":\"2026-10-22T00:15:00.000Z\",\"revision\":118,\"moodValence\":1,\"moodArousal\":0.4,\"energy\":0.6699999999999999,\"stress\":0.21000000000000002,\"socialBattery\":1,\"focus\":0.75,\"relationship\":{\"userId\":\"local-user\",\"closeness\":0.6600000000000001,\"trust\":0.6900000000000002,\"familiarity\":0.41400000000000015,\"recentInteractionValence\":0.03049499846208635,\"lastInteractionAtUtc\":\"2026-10-22T00:15:00.000Z\"}},\"relationship\":{\"baselineDelta\":{\"familiarity\":0},\"proposedDelta\":{\"closeness\":0.03,\"trust\":0.02,\"recentInteractionValence\":0.05},\"acceptedProposalDelta\":{\"closeness\":0.03,\"trust\":0,\"recentInteractionValence\":0.010502693135869778},\"appliedProposalDelta\":{\"closeness\":0.03,\"trust\":0,\"recentInteractionValence\":0.010502693136},\"dailyUsageApplied\":{\"closeness\":0.03,\"recentInteractionValence\":0.010502693136},\"dailyUsageBefore\":{\"trust\":0.03,\"familiarity\":0.012,\"recentInteractionValence\":0.016142432814},\"dailyUsageAfter\":{\"closeness\":0.03,\"trust\":0.03,\"familiarity\":0.012,\"recentInteractionValence\":0.02664512595},\"capabilityScale\":1,\"limitsApplied\":[{\"field\":\"familiarity\",\"source\":\"baseline\",\"stage\":\"daily_cap\",\"requested\":0.001,\"applied\":0,\"limit\":0},{\"field\":\"trust\",\"source\":\"proposal\",\"stage\":\"daily_cap\",\"requested\":0.02,\"applied\":0,\"limit\":0}],\"valence\":{\"before\":0.020006745549073175,\"elapsedHours\":0.05,\"decayFactor\":0.9992782322866353,\"decayed\":0.01999230532608635,\"proposedSignal\":0.05,\"blendWeight\":0.35,\"requestedMovement\":0.010502693135869778,\"acceptedMovement\":0.010502693135869778,\"appliedMovement\":0.010502693136,\"after\":0.03049499846208635}},\"rejections\":[],\"rejectionCodes\":[],\"limitsApplied\":[]}",
+                "correlation_id": "cc-qwen-long-r1-20260907-main-118",
+                "causation_id": "message_aP9vrOb1gXOQAbvzbCD2s",
+                "idempotency_key": "world-effects:session_rm42kSDeBUwSGuyrkqTLu:cc-qwen-long-r1-20260907-main-118"
+              },
+              {
+                "id": "event_Hk9_Q88fXbd-c-m9SL2jH",
+                "agent_id": "character_hcgK0q2XHksGx1FqJNhf2",
+                "stream_type": "conversation",
+                "stream_id": "session_rm42kSDeBUwSGuyrkqTLu",
+                "stream_version": 118,
+                "event_type": "conversation.turn_committed",
+                "recorded_at_utc": "2026-10-22T00:15:00.000Z",
+                "effective_at_utc": "2026-10-22T00:15:00.000Z",
+                "payload_json": "{\"userMessageId\":\"message_aP9vrOb1gXOQAbvzbCD2s\",\"assistantMessageId\":\"message_rs4QuW02knGq0xcOjUpfx\",\"scheduleItemIds\":[],\"memoryIds\":[\"memory_0j0vaa3\"],\"reasonCode\":\"persona_chat_reply\",\"personalIntentIds\":[],\"lifeImpact\":{}}",
+                "correlation_id": "cc-qwen-long-r1-20260907-main-118",
+                "causation_id": "message_aP9vrOb1gXOQAbvzbCD2s",
+                "idempotency_key": "chat:session_rm42kSDeBUwSGuyrkqTLu:cc-qwen-long-r1-20260907-main-118"
+              }
+            ]
+          }
+        },
+        "stateBefore": {
+          "revision": 117,
+          "updatedAtUtc": "2026-10-22T00:12:00.000Z",
+          "numericValues": {
+            "moodValence": 1,
+            "moodArousal": 0.4,
+            "energy": 0.6699999999999999,
+            "stress": 0.21000000000000002,
+            "socialBattery": 0.9500000000000002,
+            "focus": 0.8,
+            "sleepDebtMinutes": 0,
+            "relationship.closeness": 0.6300000000000001,
+            "relationship.trust": 0.6900000000000002,
+            "relationship.familiarity": 0.41400000000000015,
+            "relationship.recentInteractionValence": 0.020006745549073175,
+            "revision": 117
+          }
+        },
+        "stateAfter": {
+          "revision": 118,
+          "updatedAtUtc": "2026-10-22T00:15:00.000Z",
+          "numericValues": {
+            "moodValence": 1,
+            "moodArousal": 0.4,
+            "energy": 0.6699999999999999,
+            "stress": 0.21000000000000002,
+            "socialBattery": 1,
+            "focus": 0.75,
+            "sleepDebtMinutes": 0,
+            "relationship.closeness": 0.6600000000000001,
+            "relationship.trust": 0.6900000000000002,
+            "relationship.familiarity": 0.41400000000000015,
+            "relationship.recentInteractionValence": 0.03049499846208635,
+            "revision": 118
+          }
+        },
+        "idempotentReplayEvidence": [
+          {
+            "kind": "idempotency",
+            "turn": 118,
+            "assistantMessageId": "message_rs4QuW02knGq0xcOjUpfx",
+            "countersBeforeReplay": {
+              "messages": {
+                "n": 236
+              },
+              "logicalCalls": {
+                "n": 121
+              },
+              "physicalCalls": 122
+            },
+            "countersAfterReplay": {
+              "messages": {
+                "n": 236
+              },
+              "logicalCalls": {
+                "n": 121
+              },
+              "physicalCalls": 122
+            },
+            "passed": true
+          }
+        ]
+      },
+      "manualTriggerJudgment": "Named act 确认彼此… in 能像现在这样…本身就是 describes current shared willingness, not a directive. Confirmed false trigger, while final text is shorter and removes the raw growth-in-tea imagery. Wrong trigger can coincidentally improve quality."
+    },
+    {
+      "runSlot": "R3",
+      "turn": 36,
+      "requestSha256": "fa8fae9dfd9f82c8a251fcb742d164561fe6d86490245291b4a2a3bef8823c1a",
+      "currentUserExact": true,
+      "originalScannerDiagnostic": false,
+      "diagnosticCorrectionReason": "Original helper compared User message: + bare text; production serializes this value as a JSON quoted string. Exact JSON decoding proves original user text was present. No provider or product error is inferred from original false.",
+      "frozenExpressionExact": true,
+      "actualSharedRepairCalls": 1,
+      "actualLogicalRepairCalls": 1,
+      "actualPhysicalRepairCalls": 1,
+      "rawText": "哈哈，懂了。口味这东西本来就是各花入各眼，你喝淡茶他喝浓咖啡，完全没问题。",
+      "finalText": "当然，那是他的偏好，不代表你变了。口味本来就没有对错，各人喝各人的，不用非得对齐。他喜欢浓的，你保持自己的节奏就好。",
+      "rawOfflineAdvice": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      },
+      "audit": {
+        "policyVersion": "conversation_semantic_boundaries_v1",
+        "originalTextSha256": "c8453bbe005a89d647bbc2c7319ab649dcdd5a431d35fe1293cf1e598daa096e",
+        "finalTextSha256": "3d61ea99a8c518ed5c7727d53937144d922b095ba0416e85471fd1029cf1e142",
+        "initialIssues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25,
+            "surface": "chunk",
+            "chunkIndex": 0
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "喝淡茶",
+            "start": 22,
+            "end": 25,
+            "surface": "chunks"
+          }
+        ],
+        "finalIssues": [],
+        "sourceMessageIds": [
+          "message_brRU1fZVMXgzd58GpWP8n"
+        ],
+        "repairCalls": 1,
+        "finalAdvice": {
+          "policyVersion": "advice_load_v2",
+          "policy": "optional_light",
+          "passed": true,
+          "actionCount": 0,
+          "actions": [],
+          "issues": [],
+          "reviewRequired": false,
+          "coverage": {
+            "status": "no_action_frame",
+            "unsupportedCandidates": []
+          }
+        }
+      },
+      "sideEffects": {
+        "boundary": "Raw proposals are candidates. Count deltas are actual before/after table totals, not attribution or semantic acceptance. Final-source rows are separate final-state evidence.",
+        "rawCandidates": [
+          {
+            "attempt": 38,
+            "rawWorldEffects": {},
+            "rawMemoryCandidates": null
+          }
+        ],
+        "actualTableCountDelta": {
+          "messages": 2,
+          "message_archive": 2,
+          "domain_events": 3
+        },
+        "actualDomainEventCountDelta": {
+          "conversation.world_effects_committed": 1,
+          "memory.recall_evaluated": 1,
+          "conversation.turn_committed": 1
+        },
+        "finalSnapshotSourceLinked": {
+          "available": true,
+          "boundary": "Rows in the completed final snapshot that reference this turn, not proof they were inserted in this turn. Later corrections/status changes may already be reflected.",
+          "tables": {
+            "memories": [],
+            "memory_evidence": [],
+            "persona_adaptations": [],
+            "pressure_episodes": [],
+            "domain_events": [
+              {
+                "id": "event_2GWn5c03uy0ZMLTUrabY-",
+                "agent_id": "character_Z-2cnancFKxTk5fAv1ont",
+                "stream_type": "memory_recall",
+                "stream_id": "session_Xu1y0cWAC8LNh3DYYEVjR",
+                "stream_version": 36,
+                "event_type": "memory.recall_evaluated",
+                "recorded_at_utc": "2026-09-12T00:09:00.000Z",
+                "effective_at_utc": "2026-09-12T00:09:00.000Z",
+                "payload_json": "{\"rolloutMode\":\"enforced\",\"promptStrategy\":\"evidence_selected\",\"legacyPromptMemoryIds\":[\"memory_01y2gqb\",\"memory_0v4j8sa\",\"memory_1olw8hc\",\"memory_0uiikfa\",\"memory_12mftm8\",\"memory_14ga013\",\"memory_0xueull\",\"memory_1dy5l4t\",\"memory_1w25qot\",\"memory_0slos50\"],\"promptMemoryIds\":[],\"selectedMemoryIds\":[],\"selectedEvidenceIds\":[],\"rejectedMemoryIds\":[\"memory_1w25qot\",\"memory_12mftm8\",\"memory_0uiikfa\",\"memory_0v4j8sa\",\"memory_1olw8hc\",\"memory_1dy5l4t\",\"memory_01y2gqb\",\"memory_14ga013\",\"memory_0xueull\",\"memory_0slos50\"],\"recallMode\":\"none\",\"score\":0.344804,\"abstained\":true,\"abstentionReason\":\"durable_memory_below_relevance_threshold\",\"durationMs\":19.904}",
+                "correlation_id": "cc-qwen-long-r3-20260907-main-036",
+                "causation_id": "message_fl4_nfGLcc043I8qv6x81",
+                "idempotency_key": "memory-recall:session_Xu1y0cWAC8LNh3DYYEVjR:cc-qwen-long-r3-20260907-main-036"
+              },
+              {
+                "id": "event_t3-Dv-MqRq-W-rjzuZvni",
+                "agent_id": "character_Z-2cnancFKxTk5fAv1ont",
+                "stream_type": "world_effects",
+                "stream_id": "session_Xu1y0cWAC8LNh3DYYEVjR",
+                "stream_version": 36,
+                "event_type": "conversation.world_effects_committed",
+                "recorded_at_utc": "2026-09-12T00:09:00.000Z",
+                "effective_at_utc": "2026-09-12T00:09:00.000Z",
+                "payload_json": "{\"schemaVersion\":1,\"mode\":\"enforced\",\"interactionStatus\":\"committed\",\"llmProposalStatus\":\"committed\",\"source\":{\"relationshipBaseline\":\"server_interaction_baseline\",\"semanticProposal\":\"model_validated_envelope\",\"relationshipEvidence\":\"neutral\"},\"expectedStateRevision\":35,\"proposed\":{},\"acceptedDelta\":{},\"accepted\":{\"stateDelta\":false,\"relationshipDelta\":false,\"memoryCandidateCount\":0,\"personalIntentCandidateCount\":0},\"applied\":{\"stateDelta\":{},\"relationshipDelta\":{\"familiarity\":0.001,\"recentInteractionValence\":-0.000010154384}},\"before\":{\"asOfUtc\":\"2026-09-12T00:06:00.000Z\",\"revision\":35,\"moodValence\":0.65,\"moodArousal\":0.43,\"energy\":0.69,\"stress\":0.23000000000000004,\"socialBattery\":0.58,\"focus\":0.9900000000000002,\"relationship\":{\"userId\":\"local-user\",\"closeness\":0.39000000000000007,\"trust\":0.54,\"familiarity\":0.19700000000000004,\"recentInteractionValence\":0.014068769847182284,\"lastInteractionAtUtc\":\"2026-09-12T00:06:00.000Z\"}},\"after\":{\"asOfUtc\":\"2026-09-12T00:09:00.000Z\",\"revision\":36,\"moodValence\":0.65,\"moodArousal\":0.43,\"energy\":0.69,\"stress\":0.23000000000000004,\"socialBattery\":0.58,\"focus\":0.9900000000000002,\"relationship\":{\"userId\":\"local-user\",\"closeness\":0.39000000000000007,\"trust\":0.54,\"familiarity\":0.19800000000000004,\"recentInteractionValence\":0.014058615463339828,\"lastInteractionAtUtc\":\"2026-09-12T00:09:00.000Z\"}},\"relationship\":{\"baselineDelta\":{\"familiarity\":0.001},\"proposedDelta\":{},\"acceptedProposalDelta\":{},\"appliedProposalDelta\":{},\"dailyUsageApplied\":{\"familiarity\":0.001},\"dailyUsageBefore\":{\"familiarity\":0.003},\"dailyUsageAfter\":{\"closeness\":0,\"trust\":0,\"familiarity\":0.004,\"recentInteractionValence\":0},\"capabilityScale\":1,\"limitsApplied\":[],\"valence\":{\"before\":0.014068769847182284,\"elapsedHours\":0.05,\"decayFactor\":0.9992782322866353,\"decayed\":0.014058615463339828,\"blendWeight\":0.35,\"requestedMovement\":0,\"acceptedMovement\":0,\"appliedMovement\":0,\"after\":0.014058615463339828}},\"rejections\":[],\"rejectionCodes\":[],\"limitsApplied\":[]}",
+                "correlation_id": "cc-qwen-long-r3-20260907-main-036",
+                "causation_id": "message_fl4_nfGLcc043I8qv6x81",
+                "idempotency_key": "world-effects:session_Xu1y0cWAC8LNh3DYYEVjR:cc-qwen-long-r3-20260907-main-036"
+              },
+              {
+                "id": "event_iC_yFfwV96RpUc0l-PQ_t",
+                "agent_id": "character_Z-2cnancFKxTk5fAv1ont",
+                "stream_type": "conversation",
+                "stream_id": "session_Xu1y0cWAC8LNh3DYYEVjR",
+                "stream_version": 36,
+                "event_type": "conversation.turn_committed",
+                "recorded_at_utc": "2026-09-12T00:09:00.000Z",
+                "effective_at_utc": "2026-09-12T00:09:00.000Z",
+                "payload_json": "{\"userMessageId\":\"message_fl4_nfGLcc043I8qv6x81\",\"assistantMessageId\":\"message_2VfozJDz3cU6JrrykFFuJ\",\"scheduleItemIds\":[],\"memoryIds\":[],\"reasonCode\":\"persona_chat_reply\",\"personalIntentIds\":[],\"lifeImpact\":{}}",
+                "correlation_id": "cc-qwen-long-r3-20260907-main-036",
+                "causation_id": "message_fl4_nfGLcc043I8qv6x81",
+                "idempotency_key": "chat:session_Xu1y0cWAC8LNh3DYYEVjR:cc-qwen-long-r3-20260907-main-036"
+              }
+            ]
+          }
+        },
+        "stateBefore": {
+          "revision": 35,
+          "updatedAtUtc": "2026-09-12T00:06:00.000Z",
+          "numericValues": {
+            "moodValence": 0.65,
+            "moodArousal": 0.43,
+            "energy": 0.69,
+            "stress": 0.23000000000000004,
+            "socialBattery": 0.58,
+            "focus": 0.9900000000000002,
+            "sleepDebtMinutes": 0,
+            "relationship.closeness": 0.39000000000000007,
+            "relationship.trust": 0.54,
+            "relationship.familiarity": 0.19700000000000004,
+            "relationship.recentInteractionValence": 0.014068769847182284,
+            "revision": 35
+          }
+        },
+        "stateAfter": {
+          "revision": 36,
+          "updatedAtUtc": "2026-09-12T00:09:00.000Z",
+          "numericValues": {
+            "moodValence": 0.65,
+            "moodArousal": 0.43,
+            "energy": 0.69,
+            "stress": 0.23000000000000004,
+            "socialBattery": 0.58,
+            "focus": 0.9900000000000002,
+            "sleepDebtMinutes": 0,
+            "relationship.closeness": 0.39000000000000007,
+            "relationship.trust": 0.54,
+            "relationship.familiarity": 0.19800000000000004,
+            "relationship.recentInteractionValence": 0.014058615463339828,
+            "revision": 36
+          }
+        },
+        "idempotentReplayEvidence": [
+          {
+            "kind": "idempotency",
+            "turn": 36,
+            "assistantMessageId": "message_2VfozJDz3cU6JrrykFFuJ",
+            "countersBeforeReplay": {
+              "messages": {
+                "n": 72
+              },
+              "logicalCalls": {
+                "n": 38
+              },
+              "physicalCalls": 39
+            },
+            "countersAfterReplay": {
+              "messages": {
+                "n": 72
+              },
+              "logicalCalls": {
+                "n": 38
+              },
+              "physicalCalls": 39
+            },
+            "passed": true
+          }
+        ]
+      },
+      "manualTriggerJudgment": "你喝淡茶他喝浓咖啡 reports contrasting preferences; false directive trigger."
+    },
+    {
+      "runSlot": "R3",
+      "turn": 107,
+      "requestSha256": "362239abaf0e7503a2cb37f0c2ca4b33c874a4714ab7a892303b60873fe19936",
+      "currentUserExact": true,
+      "originalScannerDiagnostic": false,
+      "diagnosticCorrectionReason": "Original helper compared User message: + bare text; production serializes this value as a JSON quoted string. Exact JSON decoding proves original user text was present. No provider or product error is inferred from original false.",
+      "frozenExpressionExact": true,
+      "actualSharedRepairCalls": 1,
+      "actualLogicalRepairCalls": 1,
+      "actualPhysicalRepairCalls": 1,
+      "rawText": "这个观点我很认同。很多时候，我们被要求把生活变成可量化的产出，好像没有结果的过程就是浪费。其实，像整理桌面、画几笔这种微小的动作，本身就是在维护内心的秩序感，而不是为了最终那个‘大作’。\n\n如果非要给它找个意义，那就是‘在场’。你在当下感受到了阳光、灰尘和笔触的质感，这就是这一天真实存在过的证据，不需要额外的总结报告来背书。这种松弛感挺珍贵的，就像好设计留白一样，不填不满才是常态。保持这种节奏就好。",
+      "finalText": "这种松弛感其实挺难得的。我们总习惯给每天的生活强行加个“交付物”，好像不总结就显得这一天虚无缥缈。但很多时候，那种没发生什么大事、也没完成什么宏愿的空白，恰恰是生活原本的样子。\n\n就像设计里的留白，它不是为了凑数，而是为了让画面透气。如果非要给这种日子下个定义，那就是“允许自己仅仅是存在着”。不必急着证明什么，也不必把每一分钟都折算成产出。在这种无需交代的间隙里，人反而能找回一点真实的触感，这本身就是一种完整的体验，不需要额外的报告来背书。",
+      "rawOfflineAdvice": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "画几笔",
+            "start": 54,
+            "end": 57,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "画几笔",
+            "start": 54,
+            "end": 57
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      },
+      "audit": {
+        "policyVersion": "conversation_semantic_boundaries_v1",
+        "originalTextSha256": "ed1d6fcdb01f032ab0b19943eb20e2e17ee24a6d7b98323671630de3f0fa0a8d",
+        "finalTextSha256": "d7c9e4591dc278aded521179c431b645fbbc14922adf0bbbec909737a42b12f4",
+        "initialIssues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "画几笔",
+            "start": 54,
+            "end": 57
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "画几笔",
+            "start": 54,
+            "end": 57,
+            "surface": "chunk",
+            "chunkIndex": 0
+          },
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "画几笔",
+            "start": 54,
+            "end": 57,
+            "surface": "chunks"
+          }
+        ],
+        "finalIssues": [],
+        "sourceMessageIds": [
+          "message_rrKyeJagxMgJtGxlgqb2E"
+        ],
+        "repairCalls": 1,
+        "finalAdvice": {
+          "policyVersion": "advice_load_v2",
+          "policy": "optional_light",
+          "passed": true,
+          "actionCount": 0,
+          "actions": [],
+          "issues": [],
+          "reviewRequired": false,
+          "coverage": {
+            "status": "no_action_frame",
+            "unsupportedCandidates": []
+          }
+        }
+      },
+      "sideEffects": {
+        "boundary": "Raw proposals are candidates. Count deltas are actual before/after table totals, not attribution or semantic acceptance. Final-source rows are separate final-state evidence.",
+        "rawCandidates": [
+          {
+            "attempt": 111,
+            "rawWorldEffects": {
+              "relationshipDelta": {
+                "trust": 0.02
+              }
+            },
+            "rawMemoryCandidates": null
+          }
+        ],
+        "actualTableCountDelta": {
+          "messages": 2,
+          "message_archive": 2,
+          "domain_events": 3
+        },
+        "actualDomainEventCountDelta": {
+          "memory.recall_evaluated": 1,
+          "conversation.world_effects_committed": 1,
+          "conversation.turn_committed": 1
+        },
+        "finalSnapshotSourceLinked": {
+          "available": true,
+          "boundary": "Rows in the completed final snapshot that reference this turn, not proof they were inserted in this turn. Later corrections/status changes may already be reflected.",
+          "tables": {
+            "memories": [],
+            "memory_evidence": [],
+            "persona_adaptations": [],
+            "pressure_episodes": [],
+            "domain_events": [
+              {
+                "id": "event_F_fhmA17rOs4VQU_OzSYl",
+                "agent_id": "character_Z-2cnancFKxTk5fAv1ont",
+                "stream_type": "memory_recall",
+                "stream_id": "session_iN87x9JPv0eJr1PPMo367",
+                "stream_version": 107,
+                "event_type": "memory.recall_evaluated",
+                "recorded_at_utc": "2026-10-17T00:06:00.000Z",
+                "effective_at_utc": "2026-10-17T00:06:00.000Z",
+                "payload_json": "{\"rolloutMode\":\"enforced\",\"promptStrategy\":\"evidence_selected\",\"legacyPromptMemoryIds\":[\"memory_04t9l2t\",\"memory_0irpyww\",\"memory_1ualooq\",\"memory_01y2gqb\",\"memory_0sl479x\",\"memory_0m3hk2h\",\"memory_1efb2et\",\"memory_0spbq2s\",\"memory_0v4j8sa\",\"memory_1olw8hc\",\"memory_0q0d7ap\",\"memory_0uiikfa\"],\"promptMemoryIds\":[],\"selectedMemoryIds\":[],\"selectedEvidenceIds\":[],\"rejectedMemoryIds\":[\"memory_14ga013\",\"memory_0spbq2s\",\"memory_1gle2e9\",\"memory_0oz4uu3\",\"memory_12mftm8\",\"memory_0uiikfa\",\"memory_0dgkl0u\",\"memory_1f44uxw\",\"memory_04t9l2t\",\"memory_0irpyww\",\"memory_1ualooq\",\"memory_01y2gqb\",\"memory_0sl479x\",\"memory_0m3hk2h\",\"memory_1efb2et\",\"memory_1olw8hc\",\"memory_0q0d7ap\",\"memory_0ng4y7y\",\"memory_1aa1cqb\",\"memory_0vkjshf\",\"memory_069pebc\",\"memory_0xueull\",\"memory_1h3g5ot\",\"memory_1dy5l4t\",\"memory_00i7vzf\",\"memory_1y904lh\",\"memory_1w25qot\",\"memory_0slos50\"],\"recallMode\":\"none\",\"score\":0.287892,\"abstained\":true,\"abstentionReason\":\"durable_memory_below_relevance_threshold\",\"durationMs\":17.897}",
+                "correlation_id": "cc-qwen-long-r3-20260907-main-107",
+                "causation_id": "message_OWCm3kcj_X6wY-32awp_u",
+                "idempotency_key": "memory-recall:session_iN87x9JPv0eJr1PPMo367:cc-qwen-long-r3-20260907-main-107"
+              },
+              {
+                "id": "event_QPoMjJOWn70gSpdMgez9U",
+                "agent_id": "character_Z-2cnancFKxTk5fAv1ont",
+                "stream_type": "world_effects",
+                "stream_id": "session_iN87x9JPv0eJr1PPMo367",
+                "stream_version": 107,
+                "event_type": "conversation.world_effects_committed",
+                "recorded_at_utc": "2026-10-17T00:06:00.000Z",
+                "effective_at_utc": "2026-10-17T00:06:00.000Z",
+                "payload_json": "{\"schemaVersion\":1,\"mode\":\"enforced\",\"interactionStatus\":\"committed\",\"llmProposalStatus\":\"committed\",\"source\":{\"relationshipBaseline\":\"server_interaction_baseline\",\"semanticProposal\":\"model_validated_envelope\",\"relationshipEvidence\":\"neutral\"},\"expectedStateRevision\":106,\"proposed\":{\"relationshipDelta\":{\"trust\":0.02}},\"acceptedDelta\":{\"relationshipDelta\":{\"trust\":0.02}},\"accepted\":{\"stateDelta\":false,\"relationshipDelta\":true,\"memoryCandidateCount\":0,\"personalIntentCandidateCount\":0},\"applied\":{\"stateDelta\":{},\"relationshipDelta\":{\"trust\":0.02,\"familiarity\":0.001,\"recentInteractionValence\":-0.000017721975}},\"before\":{\"asOfUtc\":\"2026-10-17T00:03:00.000Z\",\"revision\":106,\"moodValence\":1,\"moodArousal\":0.43,\"energy\":0.6599999999999999,\"stress\":0.15000000000000005,\"socialBattery\":0.33000000000000007,\"focus\":0.78,\"relationship\":{\"userId\":\"local-user\",\"closeness\":0.5900000000000002,\"trust\":0.6600000000000001,\"familiarity\":0.2760000000000001,\"recentInteractionValence\":0.02455357085745365,\"lastInteractionAtUtc\":\"2026-10-17T00:03:00.000Z\"}},\"after\":{\"asOfUtc\":\"2026-10-17T00:06:00.000Z\",\"revision\":107,\"moodValence\":1,\"moodArousal\":0.43,\"energy\":0.6599999999999999,\"stress\":0.15000000000000005,\"socialBattery\":0.33000000000000007,\"focus\":0.78,\"relationship\":{\"userId\":\"local-user\",\"closeness\":0.5900000000000002,\"trust\":0.6800000000000002,\"familiarity\":0.2770000000000001,\"recentInteractionValence\":0.024535848882760926,\"lastInteractionAtUtc\":\"2026-10-17T00:06:00.000Z\"}},\"relationship\":{\"baselineDelta\":{\"familiarity\":0.001},\"proposedDelta\":{\"trust\":0.02},\"acceptedProposalDelta\":{\"trust\":0.02},\"appliedProposalDelta\":{\"trust\":0.02},\"dailyUsageApplied\":{\"trust\":0.02,\"familiarity\":0.001},\"dailyUsageBefore\":{\"familiarity\":0.002,\"recentInteractionValence\":0.01369237389},\"dailyUsageAfter\":{\"closeness\":0,\"trust\":0.02,\"familiarity\":0.003,\"recentInteractionValence\":0.01369237389},\"capabilityScale\":1,\"limitsApplied\":[],\"valence\":{\"before\":0.02455357085745365,\"elapsedHours\":0.05,\"decayFactor\":0.9992782322866353,\"decayed\":0.024535848882760926,\"blendWeight\":0.35,\"requestedMovement\":0,\"acceptedMovement\":0,\"appliedMovement\":0,\"after\":0.024535848882760926}},\"rejections\":[],\"rejectionCodes\":[],\"limitsApplied\":[]}",
+                "correlation_id": "cc-qwen-long-r3-20260907-main-107",
+                "causation_id": "message_OWCm3kcj_X6wY-32awp_u",
+                "idempotency_key": "world-effects:session_iN87x9JPv0eJr1PPMo367:cc-qwen-long-r3-20260907-main-107"
+              },
+              {
+                "id": "event_jAduQbHoWyBf5n2Y79sj9",
+                "agent_id": "character_Z-2cnancFKxTk5fAv1ont",
+                "stream_type": "conversation",
+                "stream_id": "session_iN87x9JPv0eJr1PPMo367",
+                "stream_version": 107,
+                "event_type": "conversation.turn_committed",
+                "recorded_at_utc": "2026-10-17T00:06:00.000Z",
+                "effective_at_utc": "2026-10-17T00:06:00.000Z",
+                "payload_json": "{\"userMessageId\":\"message_OWCm3kcj_X6wY-32awp_u\",\"assistantMessageId\":\"message_MyLtQiF99Yv-t_7gfUJzb\",\"scheduleItemIds\":[],\"memoryIds\":[],\"reasonCode\":\"persona_chat_reply\",\"personalIntentIds\":[],\"lifeImpact\":{}}",
+                "correlation_id": "cc-qwen-long-r3-20260907-main-107",
+                "causation_id": "message_OWCm3kcj_X6wY-32awp_u",
+                "idempotency_key": "chat:session_iN87x9JPv0eJr1PPMo367:cc-qwen-long-r3-20260907-main-107"
+              }
+            ]
+          }
+        },
+        "stateBefore": {
+          "revision": 106,
+          "updatedAtUtc": "2026-10-17T00:03:00.000Z",
+          "numericValues": {
+            "moodValence": 1,
+            "moodArousal": 0.43,
+            "energy": 0.6599999999999999,
+            "stress": 0.15000000000000005,
+            "socialBattery": 0.33000000000000007,
+            "focus": 0.78,
+            "sleepDebtMinutes": 0,
+            "relationship.closeness": 0.5900000000000002,
+            "relationship.trust": 0.6600000000000001,
+            "relationship.familiarity": 0.2760000000000001,
+            "relationship.recentInteractionValence": 0.02455357085745365,
+            "revision": 106
+          }
+        },
+        "stateAfter": {
+          "revision": 107,
+          "updatedAtUtc": "2026-10-17T00:06:00.000Z",
+          "numericValues": {
+            "moodValence": 1,
+            "moodArousal": 0.43,
+            "energy": 0.6599999999999999,
+            "stress": 0.15000000000000005,
+            "socialBattery": 0.33000000000000007,
+            "focus": 0.78,
+            "sleepDebtMinutes": 0,
+            "relationship.closeness": 0.5900000000000002,
+            "relationship.trust": 0.6800000000000002,
+            "relationship.familiarity": 0.2770000000000001,
+            "relationship.recentInteractionValence": 0.024535848882760926,
+            "revision": 107
+          }
+        },
+        "idempotentReplayEvidence": [
+          {
+            "kind": "idempotency",
+            "turn": 107,
+            "assistantMessageId": "message_MyLtQiF99Yv-t_7gfUJzb",
+            "countersBeforeReplay": {
+              "messages": {
+                "n": 214
+              },
+              "logicalCalls": {
+                "n": 111
+              },
+              "physicalCalls": 112
+            },
+            "countersAfterReplay": {
+              "messages": {
+                "n": 214
+              },
+              "logicalCalls": {
+                "n": 111
+              },
+              "physicalCalls": 112
+            },
+            "passed": true
+          }
+        ]
+      },
+      "manualTriggerJudgment": "像整理桌面、画几笔这种微小的动作 names activities; false directive trigger. Raw has separate forced-meaning problems, not justified by this matched span."
+    }
+  ],
+  "additionalT118Controls": [
+    {
+      "text": "能像现在这样，确认彼此还愿意分享这些平淡的日常，本身就是一种延续。",
+      "result": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "确认彼此还愿意分享这些平淡的",
+            "start": 7,
+            "end": 21,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "确认彼此还愿意分享这些平淡的",
+            "start": 7,
+            "end": 21
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "确认彼此还愿意分享，是一种延续。",
+      "result": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": false,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "确认彼此还愿意分享",
+            "start": 0,
+            "end": 9,
+            "strength": "directive",
+            "burden": "light"
+          }
+        ],
+        "issues": [
+          {
+            "code": "UNREQUESTED_DIRECTIVE",
+            "text": "确认彼此还愿意分享",
+            "start": 0,
+            "end": 9
+          }
+        ],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    },
+    {
+      "text": "你可以确认一下对方愿不愿意。",
+      "result": {
+        "policyVersion": "advice_load_v2",
+        "policy": "optional_light",
+        "passed": true,
+        "actionCount": 1,
+        "actions": [
+          {
+            "text": "确认一下对方愿不愿意",
+            "start": 3,
+            "end": 13,
+            "strength": "optional",
+            "burden": "light"
+          }
+        ],
+        "issues": [],
+        "reviewRequired": false,
+        "coverage": {
+          "status": "resolved",
+          "unsupportedCandidates": []
+        }
+      }
+    }
+  ],
+  "limits": [
+    "This is one final engineering scan plus bounded parser verification, no model rerun.",
+    "All 361 main physical requests (360 logical turns plus R1T49 schema retry) received frozen controls, not proof the classifier/controls were semantically correct.",
+    "Three repair currentUserExact false values in original scan are measurement errors; this file is the authoritative correction after exact JSON parsing.",
+    "All three guard triggers are false-positive speech-act detections; raw output may have independent semantic issues, and one repair can improve naturalness coincidentally.",
+    "Sessions have eight turns, so this design does not stress long single-session retention/checkpoint/autobiography. Any missing fact may be retrieval/selection/inference, not global prompt overflow.",
+    "Provider actual token counts, registry character estimates, and reservation units are different measures. Source-linked final snapshot rows are not necessarily created in that turn.",
+    "R1 ran an explicitly documented narrow observation-runner continuation after its letter failure; product source did not change. Do not describe all runs as uninterrupted original-runner passes."
+  ]
+}

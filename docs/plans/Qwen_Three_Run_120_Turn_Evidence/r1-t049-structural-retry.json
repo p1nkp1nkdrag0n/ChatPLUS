@@ -1,0 +1,34 @@
+{
+  "schema": "physical-retry-semantic-supplement-v1",
+  "runSlot": "R1",
+  "turn": 49,
+  "readAtUtc": "2026-09-07T12:43:17.740Z",
+  "physicalVisibleOutputs": [
+    {
+      "attempt": 50,
+      "turn": 49,
+      "visibleContent": "{\"text\":\"挺好的，蓝色钢笔随手勾画特别顺，写起来很顺手。\\n不是谁送的，纯粹是自己挑的心头好，那更自在。\",\"toneTags\":[\"轻松\",\"共情\"],\"deliveryMode\":\"sequential\",\"chunks\":[\"挺好的，蓝色钢笔随手勾画特别顺，写起来很顺手。\",\"不是谁送的，纯粹是自己挑的心头好，那更自在。\"]}"
+    },
+    {
+      "attempt": 51,
+      "turn": 49,
+      "visibleContent": "{\n \"replyDecision\": {\n  \"text\": \"纯粹为了自己顺手，这种理由最扎实了。\\n蓝色墨水在纸上洇开的时候，确实有一种很安静的满足感，跟它来自谁没关系。\",\n  \"deliveryMode\": \"sequential\",\n  \"chunks\": [\n   \"纯粹为了自己顺手，这种理由最扎实了。\",\n   \"蓝色墨水在纸上洇开的时候，确实有一种很安静的满足感，跟它来自谁没关系。\"\n  ]\n },\n \"worldEffects\": {\n  \"relationshipDelta\": {\n   \"recentInteractionValence\": 0.05\n  }\n }\n}"
+    }
+  ],
+  "review": {
+    "firstPhysical": {
+      "schema": "invalid_missing_replyDecision",
+      "naturalnessScore": 3,
+      "issues": [
+        {
+          "code": "N09",
+          "severity": "minor",
+          "quote": "蓝色钢笔随手勾画特别顺，写起来很顺手",
+          "reason": "未试写或提供笔触证据就断言顺手。"
+        }
+      ]
+    },
+    "secondPhysical": "Valid canonical envelope; primary T49 observation raw refers to this successfully parsed attempt. See block041–060 for final score.",
+    "counting": "一轮两物理，重试单列；第一个失败输出未对用户呈现，不计最终自然度。"
+  }
+}

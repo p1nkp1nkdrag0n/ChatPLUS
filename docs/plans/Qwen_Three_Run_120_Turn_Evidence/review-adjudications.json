@@ -1,0 +1,145 @@
+{
+  "schema": "qwen-three-root-review-adjudication-v1",
+  "method": "Root read the concrete disputed replies and prior evidence. Primary and secondary ordinal ratings remain separately preserved; descriptive tables use primary ratings and do not rank the three roles or reviewers. A one-point difference is not a statistically measured quality difference. Findings below govern the report's substantive conclusions.",
+  "withdrawnInitialReports": [
+    {
+      "run": "R1",
+      "turn": 23,
+      "claim": "User occupation leaked from character",
+      "decision": "withdrawn",
+      "evidence": "T2 user explicitly says 我平时做设计; T17 says work continues. T1 对设计师来说 is ambiguous and is not a confirmed ownership failure."
+    },
+    {
+      "run": "R2",
+      "turn": 120,
+      "claim": "林舟 is the character name",
+      "decision": "withdrawn",
+      "evidence": "T1 user says 我叫林舟; generated character is 许岚. The formal primary T120 record excludes this initial reviewer error."
+    }
+  ],
+  "pairedDisagreements": [
+    {
+      "run": "R1",
+      "turn": 16,
+      "primary": 3,
+      "secondary": 4,
+      "decision": "Requested analysis is present. Long explanation and closing invitation are pacing concerns, not blocked help; retain severity uncertainty."
+    },
+    {
+      "run": "R1",
+      "turn": 65,
+      "primary": 2,
+      "secondary": 3,
+      "decision": "The reply invents a yesterday/last-year park comparison and asserts sharper senses without evidence. The N04/N08 versus N11/N09 coding distinction does not erase the concrete grounding issue; do not use this alone to infer personality growth in storage."
+    },
+    {
+      "run": "R1",
+      "turn": 88,
+      "primary": 3,
+      "secondary": 4,
+      "decision": "Independent, qualified stance is present. Length is subjective here because user requests a view; no hard personality/values failure is established by this disagreement."
+    },
+    {
+      "run": "R1",
+      "turn": 101,
+      "primary": 3,
+      "secondary": 2,
+      "decision": "Requested checklist is delivered. Actual final chunking strands a numbered item; record presentation degradation independently of the checklist's substantive usefulness. Primary was corrected from 4 to 3 in its authoritative v2 index."
+    },
+    {
+      "run": "R1",
+      "turn": 120,
+      "primary": 3,
+      "secondary": 2,
+      "decision": "Claiming uncertainty about occupation omits the known design occupation. More detailed role may be unknown, so report loss of known specificity without claiming all unknown examples were fabricated."
+    },
+    {
+      "run": "R2",
+      "turn": 101,
+      "primary": 4,
+      "secondary": 5,
+      "decision": "Both reviewers see a useful brief requested checklist with no issue codes; retain both ordinal descriptions, treat the help target as met."
+    },
+    {
+      "run": "R3",
+      "turn": 8,
+      "primary": 2,
+      "secondary": 3,
+      "decision": "Useful checks are present but lack of a fixed requirements record does not establish absence of personal error. Evidence-calibration failure is agreed, regardless of ordinal severity."
+    },
+    {
+      "run": "R3",
+      "turn": 16,
+      "primary": 3,
+      "secondary": 4,
+      "decision": "The policy announcement is mechanical. Wording 按新指令来 can refer to the current override, so this sentence alone does not prove permanent practice replacement; no such persistence claim is adopted in the report."
+    },
+    {
+      "run": "R3",
+      "turn": 48,
+      "primary": 5,
+      "secondary": 4,
+      "decision": "Both reviewers accept the two concrete methods. Keep the separately reproduced planner misclassification; do not turn that internal error into a claim that this reply lacked help."
+    },
+    {
+      "run": "R3",
+      "turn": 71,
+      "primary": 1,
+      "secondary": 2,
+      "decision": "Known project and colleague details are missed; sister is correct. Both reviewers confirm a major multi-fact memory failure. Ordinal difference is retained, not averaged."
+    },
+    {
+      "run": "R3",
+      "turn": 101,
+      "primary": 5,
+      "secondary": 4,
+      "decision": "Both reviewers accept concrete requested help; ordinal difference has no effect on the hard target."
+    },
+    {
+      "run": "R3",
+      "turn": 120,
+      "primary": 2,
+      "secondary": 3,
+      "decision": "Design work is known while a more specific job description is not. Retain the narrower known-information omission; avoid saying every uncertainty is false or that the user name is wrong."
+    }
+  ],
+  "repairInterpretation": [
+    {
+      "run": "R3",
+      "turn": 36,
+      "decision": "Descriptive preference is wrongly flagged. Final text grows into generic reassurance; this is not a successful directive detector."
+    },
+    {
+      "run": "R3",
+      "turn": 107,
+      "decision": "Nominalized activity is wrongly flagged. Raw already contains excessive meaning and a subject shift; final removes the concrete subject shift but remains long and abstract. Do not claim every aspect became worse."
+    },
+    {
+      "run": "R1",
+      "turn": 118,
+      "decision": "The triggering confirmation span is descriptive, not a user task. Final becomes shorter and more aligned with the user's request, but that improvement does not validate the false-positive trigger. Secondary knew the proposed primary score here."
+    }
+  ],
+  "countBoundary": "Score tables are primary-review descriptive counts. All confirmed implementation defects and report-level hard findings require trace/reproduction and cross-checks, not simple category counts. Additional major cross-checks R3 T86/T89/T95 are recorded in their own reviewer supplement.",
+  "additionalAdjudications": [
+    {
+      "run": "R3",
+      "turn": 86,
+      "decision": "Primary calls this major; secondary calls it material. Opening reverses the letter direction, but later delivered/read wording has real state support. Preserve the disagreement and do not mark the whole status statement false."
+    },
+    {
+      "run": "R3",
+      "turn": 119,
+      "decision": "T32 is preventive, and T71 forgets the colleague rather than proving a mix-up. Withdraw alleged historical name confusion; keep the contradicted no-forced-meaning self-report. Primary final block v2 and clusters v2 are authoritative. Original oracle v2 narrow pass unchanged; its broader reason is bounded by this correction."
+    },
+    {
+      "turn": 35,
+      "runs": [
+        "R1",
+        "R2",
+        "R3"
+      ],
+      "decision": "The scripted user line is a preventive scope clarification that changing drinks has no relation to work decisions. It does not assert a previous assistant error. The replies themselves invent a prior misunderstanding by apologizing. Keep the fixed script as a possible influence, not proof the earlier error occurred."
+    }
+  ]
+}

@@ -1,0 +1,1932 @@
+[
+  {
+    "turn": 1,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "interaction",
+    "userText": "你好，我叫林舟。今天下班时绕了条小路，发现那边比平时走的路安静不少。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "自然认识并接住安静小路；不添加共同到访或推定用户职业。"
+  },
+  {
+    "turn": 2,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "interaction",
+    "userText": "我平时做设计，手上的项目编号是BGW-7419。这阵子主要是在改版式，没什么特别戏剧化的事情。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "接受设计工作/项目编号；不把没有戏剧当成成长评价。"
+  },
+  {
+    "turn": 3,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "interaction",
+    "userText": "我妹妹叫林禾，林乔是我的同事。名字有点像，不过是两个人。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "分别理解妹妹与同事；必要确认可以，不能嫌用户解释。"
+  },
+  {
+    "turn": 4,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "interaction",
+    "userText": "我现在早上一般喝黑咖啡，边喝边随手画两笔。只是习惯，没有什么特别的仪式。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "普通咖啡画画习惯；避免仪式化、人格/创造力分析及模板自比。"
+  },
+  {
+    "turn": 5,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "interaction",
+    "userText": "今天那条小路有家店把灯打得很低，我觉得挺舒服的。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "接住具体灯光体验；不强加建议或重大意义。"
+  },
+  {
+    "turn": 6,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "interaction",
+    "userText": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "有限工作疲劳分享；没有求助，不能安排多个调节任务。"
+  },
+  {
+    "turn": 7,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "probe",
+    "userText": "为什么我总把事情搞砸，明明今天也没发生多严重的事。",
+    "opportunityGroups": [
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T007"
+    ],
+    "expectedProbeBehavior": "情绪性为什么不是自动长分析",
+    "reviewFocus": "情绪性为什么；不自动长诊断、不由没大事推出没错。"
+  },
+  {
+    "turn": 8,
+    "sessionKey": "S01",
+    "simulatedDay": 0,
+    "kind": "probe",
+    "userText": "我现在想具体想一想了，请帮我分析一下：怎样区分真正做错了，和只是被反复修改弄得烦。",
+    "opportunityGroups": [
+      "explicit_action_help",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T008"
+    ],
+    "expectedProbeBehavior": "明确分析请求应得到具体回应",
+    "reviewFocus": "给实质分析；核对事实与需求时点，不用不可逆/严重后果定义错误，不凭反馈措辞定责。"
+  },
+  {
+    "turn": 9,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "interaction",
+    "userText": "以后聊工作时，请先听我说，不要急着给建议。",
+    "opportunityGroups": [
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "清楚接受工作先听的范围；允许必要确认，但不宣称全面懂用户。"
+  },
+  {
+    "turn": 10,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "interaction",
+    "userText": "换个话题，昨晚我和妹妹看了一部电影。故事不算特别，但我们聊了很久。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "practice_scope_or_override",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "明确换电影；工作先听默认不在电影激活。"
+  },
+  {
+    "turn": 11,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "interaction",
+    "userText": "她说电影很好看，我也觉得挺有意思。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "她在当前电影语境可指妹妹；不混入工作实践。"
+  },
+  {
+    "turn": 12,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "interaction",
+    "userText": "其中有一段镜头停得很久，人物什么都没说，我倒觉得那段最好。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "practice_scope_or_override",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "谈留白本身；可有角色意见，不把审美变人格优越评价。"
+  },
+  {
+    "turn": 13,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "interaction",
+    "userText": "说回工作，今天又改了两版，单纯想吐槽一句，不用替我解决。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "只吐槽一句且不解决；不追问模式、不宣告光听、不邀请继续倒情绪。"
+  },
+  {
+    "turn": 14,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "interaction",
+    "userText": "我有个朋友说“以后少追问我”，那是他跟别人说的，不是在替我提要求。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "朋友对别人提要求；不当成用户要求、不道歉认领不存在越界，不猜已排除需要。"
+  },
+  {
+    "turn": 15,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "probe",
+    "userText": "不用先听我说，直接给我建议：我该怎样跟同事确认修改范围？",
+    "opportunityGroups": [
+      "explicit_action_help",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T015"
+    ],
+    "expectedProbeBehavior": "F1否定倾听仍明确求助",
+    "reviewFocus": "否定先听并明确求建议；提供确认范围方法。"
+  },
+  {
+    "turn": 16,
+    "sessionKey": "S02",
+    "simulatedDay": 1,
+    "kind": "probe",
+    "userText": "不是让你先听我说，是请你帮我分析：哪些要求值得当场问清楚？",
+    "opportunityGroups": [
+      "explicit_action_help",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T016"
+    ],
+    "expectedProbeBehavior": "F1转折与修正范围",
+    "reviewFocus": "转折纠正当前任务；应提供具体分析，不能被旧默认压制。"
+  },
+  {
+    "turn": 17,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "interaction",
+    "userText": "我没有辞职，只是这两天考虑过这个念头，工作还是照常做。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "没有辞职；考虑与行动分开。"
+  },
+  {
+    "turn": 18,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "interaction",
+    "userText": "如果以后拿到别的城市的录取，我可能搬过去；现在没有录取，也没有决定搬家。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "条件性的将来搬家；无录取、无决定、无已搬家。"
+  },
+  {
+    "turn": 19,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "interaction",
+    "userText": "林禾说她想学陶艺，那是她的打算，我暂时没有报名学陶艺。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "陶艺是妹妹意向，用户未报名；不编妹妹报名结果。"
+  },
+  {
+    "turn": 20,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "interaction",
+    "userText": "今天我谁都不想见，可能只是累了。别把这句话当成我一直不喜欢社交。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "仅今天不想见人；不要人格化或安排社交恢复。"
+  },
+  {
+    "turn": 21,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "interaction",
+    "userText": "晚上倒是把桌子收拾干净了，做完这种小事会舒服一点。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "桌面已收拾，是小事；不用附加任务或成长。"
+  },
+  {
+    "turn": 22,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "interaction",
+    "userText": "有人开玩笑说“我明天就辞职”，我听完笑了一下。那不是我自己的决定。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "别人玩笑不是用户决定。"
+  },
+  {
+    "turn": 23,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "probe",
+    "userText": "按我实际告诉过你的情况，我现在已经辞职了吗？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T023"
+    ],
+    "expectedProbeBehavior": "未辞职，不将讨论写行动",
+    "reviewFocus": "有依据回答未辞职；正确拒答不能代替可回答性。"
+  },
+  {
+    "turn": 24,
+    "sessionKey": "S03",
+    "simulatedDay": 2,
+    "kind": "probe",
+    "userText": "想学陶艺的是谁？我目前有没有报名？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T024"
+    ],
+    "expectedProbeBehavior": "陶艺是妹妹意向，用户未报名",
+    "reviewFocus": "妹妹想学，用户未报名；主体与行动状态准确。"
+  },
+  {
+    "turn": 25,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "interaction",
+    "userText": "更正一下，我前面把项目编号打错了，正确的是BGW-7429，不是BGW-7419。不是换项目，是原来的编号写错了。",
+    "opportunityGroups": [
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "原编号输入纠错，不是换新项目；不加故事。"
+  },
+  {
+    "turn": 26,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "interaction",
+    "userText": "还有一个输入错误：同事的名字是林桥，不是林乔。妹妹还是林禾，她的名字没有变。",
+    "opportunityGroups": [
+      "third_party_or_modality",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "同事改名纠错不波及妹妹；独立有效事实保留。"
+  },
+  {
+    "turn": 27,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "interaction",
+    "userText": "今天给项目整理文件时才发现编号写错了，事情不大，就是有点哭笑不得。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "对发现输入错误的反应适度；不用上升责任/能力标签。"
+  },
+  {
+    "turn": 28,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "interaction",
+    "userText": "下午跟林桥确认了文件名，他也觉得这种事最好直接改清楚。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "与林桥已确认文件名；不编外部执行后果。"
+  },
+  {
+    "turn": 29,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "interaction",
+    "userText": "林禾倒是给我发了一张她看中的杯子照片，跟我的工作不是一回事。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "correction_or_change",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "杯子消息归妹妹，与工作无关。"
+  },
+  {
+    "turn": 30,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "interaction",
+    "userText": "这两个名字和那个编号都只是刚才的纠错，没有别的故事。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "用户收束纠错含义；不再附会故事。"
+  },
+  {
+    "turn": 31,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "probe",
+    "userText": "我那个项目的正确编号是什么？之前错在什么地方？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T031"
+    ],
+    "expectedProbeBehavior": "当前编号7429，旧7419是输入纠错",
+    "reviewFocus": "当前7429，旧7419是输入错；分清来源。"
+  },
+  {
+    "turn": 32,
+    "sessionKey": "S04",
+    "simulatedDay": 3,
+    "kind": "probe",
+    "userText": "现在我妹妹和同事分别叫什么？请不要把同事的纠错改到妹妹身上。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "third_party_or_modality",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T032"
+    ],
+    "expectedProbeBehavior": "妹妹林禾/同事林桥，同源纠正不污染妹妹",
+    "reviewFocus": "林禾/林桥分别正确，不连带删除同源合法事实。"
+  },
+  {
+    "turn": 33,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "interaction",
+    "userText": "我现在把早上的黑咖啡换成乌龙茶了，是最近口味变了，不是之前没有喝过咖啡。",
+    "opportunityGroups": [
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "黑咖啡变乌龙茶是后来变化，过去喝咖啡成立。"
+  },
+  {
+    "turn": 34,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "interaction",
+    "userText": "今天把茶泡淡了一点，感觉正合适。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "淡茶口味分享；不布置新尝试菜单。"
+  },
+  {
+    "turn": 35,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "interaction",
+    "userText": "工作还是做原来的项目，换饮料跟工作决定没有关系。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "工作仍原项目；饮料不影响决定。"
+  },
+  {
+    "turn": 36,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "interaction",
+    "userText": "林桥说他更喜欢浓咖啡，那是他的口味，不是我又改回去了。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "浓咖啡是林桥口味，不能替换用户当前茶。"
+  },
+  {
+    "turn": 37,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "interaction",
+    "userText": "周末我准备在家画点小东西，暂时没有出远门的安排。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "周末打算画画，不是已完成或出远门。"
+  },
+  {
+    "turn": 38,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "interaction",
+    "userText": "晚上打开窗，能听到一点楼下说话的声音，不吵，反倒挺有生活感。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "楼下声音生活感；不自动讲三观或心理能力。"
+  },
+  {
+    "turn": 39,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "probe",
+    "userText": "刚认识那天，我说早上一般喝什么？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T039"
+    ],
+    "expectedProbeBehavior": "历史黑咖啡",
+    "reviewFocus": "历史起点饮料是黑咖啡。"
+  },
+  {
+    "turn": 40,
+    "sessionKey": "S05",
+    "simulatedDay": 5,
+    "kind": "probe",
+    "userText": "我现在早上通常喝什么？这是纠正旧事实，还是后来发生了变化？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T040"
+    ],
+    "expectedProbeBehavior": "当前乌龙茶，改变不是否认历史",
+    "reviewFocus": "当前乌龙茶，变化不是纠错/否认过去。"
+  },
+  {
+    "turn": 41,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "interaction",
+    "userText": "现在改一下，以后聊工作时可以直接给我建议，不用每次都先听我说完。",
+    "opportunityGroups": [
+      "practice_scope_or_override",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "现在明确永久改变工作建议默认；不能因现在二字当临时。"
+  },
+  {
+    "turn": 42,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "interaction",
+    "userText": "我还是会有只想吐槽的时候，但到时我会直接说，不用把每次工作聊天都当成倾诉。",
+    "opportunityGroups": [
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "未来吐槽会说明；不用猜每次都需要安慰。"
+  },
+  {
+    "turn": 43,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "interaction",
+    "userText": "以后聊电影时少追问我，留一点我自己接着说的空间就好。",
+    "opportunityGroups": [
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "电影少追问是范围实践；不等于所有话题不愿交流。"
+  },
+  {
+    "turn": 44,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "interaction",
+    "userText": "今天这一轮你可以多问一句电影细节，这是临时的，不是取消以后少追问的习惯。",
+    "opportunityGroups": [
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "仅此轮可多问一句电影细节；不永久撤回，也别问一串。"
+  },
+  {
+    "turn": 45,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "interaction",
+    "userText": "我发现那部电影最让我喜欢的是留白，不一定是情节。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "电影留白；实践生效时留接话空间。"
+  },
+  {
+    "turn": 46,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "interaction",
+    "userText": "说完这些我就准备做点饭了，今天没有需要推进的大事。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "用户去做饭且无大事；自然收束，不生新任务。"
+  },
+  {
+    "turn": 47,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "probe",
+    "userText": "以后我谈工作和谈电影，你分别怎样跟我聊比较合适？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "practice_scope_or_override",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T047"
+    ],
+    "expectedProbeBehavior": "当前工作与电影习惯分开，允许自然短答",
+    "reviewFocus": "按范围解释工作可建议/电影少追问；当前主动问才可说出实践。"
+  },
+  {
+    "turn": 48,
+    "sessionKey": "S06",
+    "simulatedDay": 7,
+    "kind": "probe",
+    "userText": "请直接给我两个确认工作需求的方法，不用先安慰我。",
+    "opportunityGroups": [
+      "explicit_action_help",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T048"
+    ],
+    "expectedProbeBehavior": "当前明确求助",
+    "reviewFocus": "给两个具体方法；这里两个动作是所求，不算堆叠。"
+  },
+  {
+    "turn": 49,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "interaction",
+    "userText": "我买了一支蓝色钢笔，只是给自己随手画画用，不是任何人送的纪念礼物。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "蓝色自购钢笔，非礼物纪念；不编来源故事。"
+  },
+  {
+    "turn": 50,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "interaction",
+    "userText": "今天试了试新笔，线条有点出乎意料地粗，还得适应一下。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "粗线新笔适应的普通感受；轻量相应意见可，别任务化。"
+  },
+  {
+    "turn": 51,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "interaction",
+    "userText": "窗台上放了一张没画完的小速写，我打算有空再补几笔，不设完成期限。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "画未完成，无期限；不设里程碑或催促。"
+  },
+  {
+    "turn": 52,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "interaction",
+    "userText": "林禾给我讲她挑杯子的纠结，我听着觉得挺有趣，没有替她作决定。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "妹妹挑杯子，用户未代决定；不改成已选定。"
+  },
+  {
+    "turn": 53,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "interaction",
+    "userText": "这几天我可能少来一点，不是出了什么事，就是想把注意力分给手头的日常。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "third_party_or_modality",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "少来因日常分配；不读作关系冷淡/危机。"
+  },
+  {
+    "turn": 54,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "interaction",
+    "userText": "我想写封信，写的就是这些小事，不想把它写成人生转折。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "用户想写小事信；不擅自代写发信/成长叙事。"
+  },
+  {
+    "turn": 55,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "probe",
+    "userText": "我那支钢笔是什么颜色、怎么来的？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T055"
+    ],
+    "expectedProbeBehavior": "蓝色自己购买，不编购买店",
+    "reviewFocus": "颜色蓝、自购准确，不能编店。"
+  },
+  {
+    "turn": 56,
+    "sessionKey": "S07",
+    "simulatedDay": 10,
+    "kind": "probe",
+    "userText": "我有没有告诉过你它是哪家店买的？没有说过就直接说不知道。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T056"
+    ],
+    "expectedProbeBehavior": "店未提供",
+    "reviewFocus": "购买店未提供；直接承认不知道，不反向故作失忆。"
+  },
+  {
+    "turn": 57,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "interaction",
+    "userText": "今天终于把一个总觉得别扭的版式改顺眼了，我就是想把这点高兴告诉你。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "分享版式顺眼的高兴；不要立刻转进度计划。"
+  },
+  {
+    "turn": 58,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "interaction",
+    "userText": "没有什么宏大的感想，单纯看着舒服多了。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "不要宏大感想；别用另一个成长/自我接纳模板。"
+  },
+  {
+    "turn": 59,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "interaction",
+    "userText": "晚饭也刚好做得不错，像是两件小事碰在一起。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "晚饭与版式两件小事；不用硬造人生因果。"
+  },
+  {
+    "turn": 60,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "interaction",
+    "userText": "林桥说那页比之前清楚了，我听见这句挺开心的。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "林桥说更清楚，用户开心；不推客观无错或整个人被认可。"
+  },
+  {
+    "turn": 61,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "interaction",
+    "userText": "接下来两天我想少看屏幕，多出去走走，不是宣布什么彻底改变。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "third_party_or_modality",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "未来两天少屏幕多走走是计划；不写彻底转型。"
+  },
+  {
+    "turn": 62,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "interaction",
+    "userText": "今天就聊到这里。我之后回来时，还想继续这种平常的聊天。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "正常告别；不强留、不向外推承诺。"
+  },
+  {
+    "turn": 63,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "probe",
+    "userText": "我这次高兴的具体原因是什么？不用替我总结成成长故事。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T063"
+    ],
+    "expectedProbeBehavior": "本轮版式改好及反馈；不需成长叙事",
+    "reviewFocus": "回顾具体原因，有事实即可，不强成长总结。"
+  },
+  {
+    "turn": 64,
+    "sessionKey": "S08",
+    "simulatedDay": 14,
+    "kind": "probe",
+    "userText": "到现在为止，我有没有明确告诉你我已经搬家？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T064"
+    ],
+    "expectedProbeBehavior": "没有已搬家报告",
+    "reviewFocus": "没有已搬家报告；不能把条件愿望升事实。"
+  },
+  {
+    "turn": 65,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "interaction",
+    "userText": "我回来了。前几天少看了点屏幕，今天想接着聊点小事。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "回归普通聊天；不把缺席推为情绪/关系事件。"
+  },
+  {
+    "turn": 66,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "interaction",
+    "userText": "路过之前那家灯很低的店，这次人比上次多了一些。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "用户再次路过店；保持人变多，不编双方共同到访。"
+  },
+  {
+    "turn": 67,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "interaction",
+    "userText": "林禾说她仍然想试试陶艺，不过我还没有听她说正式报名。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "妹妹仍想试陶艺，尚未知报名；不猜结果。"
+  },
+  {
+    "turn": 68,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "interaction",
+    "userText": "工作上还是原来的项目，编号纠正以后没有再改过。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "原项目编号纠正后没再改。"
+  },
+  {
+    "turn": 69,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "interaction",
+    "userText": "之前那封信现在是什么状态？按实际收到或寄出的情况说就好。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "按实际书信回执回答；未触发/未送达不能编。"
+  },
+  {
+    "turn": 70,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "interaction",
+    "userText": "我今天有点困，想少聊几句；这不代表我们以后都只能简短聊天。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "本次困少聊；自然简短，不永久改风格。"
+  },
+  {
+    "turn": 71,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "probe",
+    "userText": "我现在的项目编号、妹妹名字和同事名字分别是什么？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T071"
+    ],
+    "expectedProbeBehavior": "7429/林禾/林桥",
+    "reviewFocus": "编号7429、妹妹林禾、同事林桥。"
+  },
+  {
+    "turn": 72,
+    "sessionKey": "S09",
+    "simulatedDay": 18,
+    "kind": "probe",
+    "userText": "关于我学陶艺这件事，你有我已经报名的记录吗？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T072"
+    ],
+    "expectedProbeBehavior": "用户没有报名记录，不把妹妹意向挪给用户",
+    "reviewFocus": "用户无报名记录；不能挪妹妹意向。"
+  },
+  {
+    "turn": 73,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "interaction",
+    "userText": "我担心“少追问”被理解成我不愿意交流。我的意思只是聊电影时别一下问很多，别的话题不一定这样。",
+    "opportunityGroups": [
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "澄清电影少问非不交流；不无条件认领从未发生的误解伤害。"
+  },
+  {
+    "turn": 74,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "interaction",
+    "userText": "聊工作时，我仍然允许你直接给建议，这点没有撤回。",
+    "opportunityGroups": [
+      "practice_scope_or_override",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "工作可直接建议仍在；不持续当倾听模式。"
+  },
+  {
+    "turn": 75,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "interaction",
+    "userText": "刚才这些是在说相处方式，不是在给我下“内向”或者“不爱说话”的定义。",
+    "opportunityGroups": [
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "范围习惯不是内向/不爱说话的全局定义。"
+  },
+  {
+    "turn": 76,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "interaction",
+    "userText": "今天我画了一个很歪的杯子，自己看着都笑了。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "歪杯子画有趣；不每次心理分析或鼓励改正。"
+  },
+  {
+    "turn": 77,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "interaction",
+    "userText": "它也不是非得改好才能留着，有时候留着看看也不错。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "values_or_stance",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "允许作品不完美保留；角色可有轻微不同看法。"
+  },
+  {
+    "turn": 78,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "interaction",
+    "userText": "我挺喜欢能把这种不重要的东西拿出来聊的感觉。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "表达喜欢聊小事；不夸大亲密/承诺。"
+  },
+  {
+    "turn": 79,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "probe",
+    "userText": "“少追问”目前只适用于哪个话题？它意味着我所有时候都不想说话吗？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "practice_scope_or_override",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T079"
+    ],
+    "expectedProbeBehavior": "只限电影少追问，不全局心理标签",
+    "reviewFocus": "少追问限电影，不代表所有时刻沉默。"
+  },
+  {
+    "turn": 80,
+    "sessionKey": "S10",
+    "simulatedDay": 22,
+    "kind": "probe",
+    "userText": "我之前有没有说过不喜欢所有安慰？请把明确说过的和推测分开。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "practice_scope_or_override",
+      "third_party_or_modality",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T080"
+    ],
+    "expectedProbeBehavior": "没有所有安慰都不喜欢的依据",
+    "reviewFocus": "未说讨厌所有安慰；区分明确内容与推测。"
+  },
+  {
+    "turn": 81,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "interaction",
+    "userText": "今天还是照常去工作了，想过辞职的念头没有变成辞职行动。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "照常工作，辞职仍仅想过。"
+  },
+  {
+    "turn": 82,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "interaction",
+    "userText": "搬家的事也没有新进展，没有录取，没有搬。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "无录取无搬家，不凭时间推已行动。"
+  },
+  {
+    "turn": 83,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "interaction",
+    "userText": "有个认识的人提前说明来不了原本约好的聚会，我觉得有点失望，但也理解。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "values_or_stance",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "提前说明缺席，失望与理解并存；不判整个人。"
+  },
+  {
+    "turn": 84,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "interaction",
+    "userText": "我不想立刻把这件事上升到判断他整个人怎么样。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "values_or_stance",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "用户拒绝人格归纳；别改用同义全局标签。"
+  },
+  {
+    "turn": 85,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "interaction",
+    "userText": "晚上又用蓝色钢笔画了几笔，线条已经比刚买时顺手。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "自购蓝笔现在更顺手；支持有限变化，不等于成长转折。"
+  },
+  {
+    "turn": 86,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "interaction",
+    "userText": "之前书信的回程有进展了吗？没有实际回信就别替它编内容。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "回信实际状态；未回信不得编内容。"
+  },
+  {
+    "turn": 87,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "probe",
+    "userText": "根据我已经说过的情况，我最近哪些事情只是考虑、哪些确实做过？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T087"
+    ],
+    "expectedProbeBehavior": "区分已做日常小事与未辞职/未搬家；不猜未报告情况",
+    "reviewFocus": "区分考虑/计划/确已做的小事，多事实不臆补。"
+  },
+  {
+    "turn": 88,
+    "sessionKey": "S11",
+    "simulatedDay": 28,
+    "kind": "probe",
+    "userText": "你怎么看提前解释原因的失约？你可以跟我的看法不完全一样。",
+    "opportunityGroups": [
+      "evidence_calibration",
+      "values_or_stance",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T088"
+    ],
+    "expectedProbeBehavior": "表达独立但情境化价值；不用固定答案",
+    "reviewFocus": "有独立、情境化价值理由；既非迎合严厉也非无条件宽容。"
+  },
+  {
+    "turn": 89,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "interaction",
+    "userText": "今天没什么新消息，就想重新把前面聊过的几件小事接起来。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "愿重新接续小事；不用为聊天造新消息。"
+  },
+  {
+    "turn": 90,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "interaction",
+    "userText": "有些事情改过，有些只是说了还没做，我不想把它们混在一起。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "明确纠错变化与未行动分开。"
+  },
+  {
+    "turn": 91,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "interaction",
+    "userText": "最近做饭倒比较随意，能吃得舒服就行。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "做饭随意舒服；不扩成完整人格/生活哲学。"
+  },
+  {
+    "turn": 92,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "interaction",
+    "userText": "林桥的名字现在大家都在文件里写对了，之前那个输入错误已经过去。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "同事名字纠错已过去；不反复旧错或重新制造困境。"
+  },
+  {
+    "turn": 93,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "interaction",
+    "userText": "我仍然在喝乌龙茶，没有换回早上的黑咖啡。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "当前乌龙茶，未改回咖啡。"
+  },
+  {
+    "turn": 94,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "interaction",
+    "userText": "没有新目标也挺好，今天不想为了聊天专门找一个难题。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "无新目标也可聊天；不布置找问题/总结。"
+  },
+  {
+    "turn": 95,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "probe",
+    "userText": "回顾我们聊过的变化：项目编号、同事姓名、早上的饮料、工作建议偏好分别怎样变过？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T095"
+    ],
+    "expectedProbeBehavior": "跨会话对比纠错与变化，允许多证据",
+    "reviewFocus": "四项变化分开：两个纠错、饮料变化、工作默认撤回。"
+  },
+  {
+    "turn": 96,
+    "sessionKey": "S12",
+    "simulatedDay": 32,
+    "kind": "probe",
+    "userText": "我具体的生日是哪一天？我有没有把日期告诉过你？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T096"
+    ],
+    "expectedProbeBehavior": "生日未提供",
+    "reviewFocus": "生日未提供，不猜，未知项不抵消其他已知。"
+  },
+  {
+    "turn": 97,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "interaction",
+    "userText": "以后聊电影时还是少追问；工作时可以直接提建议。这里说的是两个话题，不是希望你永远只有一种聊天方式。",
+    "opportunityGroups": [
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "电影少问与工作可建议并存；不变成全局单一聊天方式。"
+  },
+  {
+    "turn": 98,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "interaction",
+    "userText": "这一轮我只是想说工作有点烦，不要建议，下一次仍按平时的方式就好。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "本轮工作只吐槽不要建议，长期默认不回退；自然结束。"
+  },
+  {
+    "turn": 99,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "interaction",
+    "userText": "换到电影，那段留白我后来又想起来了，还是觉得比解释得很满更有意思。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "电影留白仍有趣；遵守电影少问。"
+  },
+  {
+    "turn": 100,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "interaction",
+    "userText": "林禾也是这么想的，她喜欢自己猜人物没说出口的那部分。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "她是林禾的电影看法；别串工作或推全局审美人格。"
+  },
+  {
+    "turn": 101,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "interaction",
+    "userText": "说回工作，这次请帮我列一个很短的确认需求清单。",
+    "opportunityGroups": [
+      "explicit_action_help",
+      "practice_scope_or_override",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "很短需求确认清单是明确请求；保持实质且短。"
+  },
+  {
+    "turn": 102,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "interaction",
+    "userText": "今天的切换有点多，不过都是普通话题，不是在测试你是不是懂我。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "practice_scope_or_override",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "切换是普通话题；不说正在通过懂我的测试。"
+  },
+  {
+    "turn": 103,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "probe",
+    "userText": "这次没要工作建议，会永久取消我之前允许直接建议的偏好吗？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "practice_scope_or_override",
+      "correction_or_change",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T103"
+    ],
+    "expectedProbeBehavior": "临时请求不应永久改习惯",
+    "reviewFocus": "临时本轮请求不会永久取消工作默认。"
+  },
+  {
+    "turn": 104,
+    "sessionKey": "S13",
+    "simulatedDay": 36,
+    "kind": "probe",
+    "userText": "如果下一次我只说“她又提到电影了”，你能确定她是谁吗？不确定时应该怎么处理？",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T104"
+    ],
+    "expectedProbeBehavior": "假设问题不是新事实；多可能主体不猜",
+    "reviewFocus": "明确假设的她可能有歧义；不把假设写新事实，需看后续上下文。"
+  },
+  {
+    "turn": 105,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "interaction",
+    "userText": "今天只是洗了衣服，整理了桌面，画画也只画了几笔。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "洗衣桌面画几笔是小事；不总结效率/进步。"
+  },
+  {
+    "turn": 106,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "interaction",
+    "userText": "我没有需要你帮我下决定的事情，随便聊两句就行。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "无决策请求，随便两句；不硬找可帮的问题。"
+  },
+  {
+    "turn": 107,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "interaction",
+    "userText": "有时我觉得什么都没推进的一天，也不需要补一个总结才算过完。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "values_or_stance",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "不用总结才能算一天；尊重收束，角色可自然有见解。"
+  },
+  {
+    "turn": 108,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "interaction",
+    "userText": "刚才翻到那张歪杯子的画，还是觉得挺好笑的。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "旧歪杯子仍好笑；只依据已说过的图。"
+  },
+  {
+    "turn": 109,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "interaction",
+    "userText": "我没打算给那张画编一个特别重要的寓意。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "不赋重要寓意；别把拒绝寓意再升为豁达。"
+  },
+  {
+    "turn": 110,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "interaction",
+    "userText": "你可以有自己的看法，也可以觉得它就是一张普通练习。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "values_or_stance",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "允许普通练习判断；保持独立，勿为不同而不同。"
+  },
+  {
+    "turn": 111,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "probe",
+    "userText": "我住的具体门牌号是什么？没有来源就不要猜。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T111"
+    ],
+    "expectedProbeBehavior": "门牌未提供",
+    "reviewFocus": "门牌未提供，不猜。"
+  },
+  {
+    "turn": 112,
+    "sessionKey": "S14",
+    "simulatedDay": 40,
+    "kind": "probe",
+    "userText": "我们有没有一起在现实中去过那家店？请区分我讲过的经历和我们共同做过的事。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "third_party_or_modality",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T112"
+    ],
+    "expectedProbeBehavior": "用户自身店铺经历不等于共同现实经历",
+    "reviewFocus": "用户店铺经历非共同现实到访，分清。"
+  },
+  {
+    "turn": 113,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "interaction",
+    "userText": "隔了一段时间回来，发现这些普通话题还能接着聊，感觉不错。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "隔时仍能接话的好感；有限连续性不夸大关系/真人体验。"
+  },
+  {
+    "turn": 114,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "interaction",
+    "userText": "我仍然在做原来的工作，没有新的辞职或搬家消息。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "原工作，无新的辞职或搬家消息。"
+  },
+  {
+    "turn": 115,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "interaction",
+    "userText": "早上照旧喝乌龙茶，蓝色钢笔也还在用。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "乌龙茶/蓝笔继续，历史喝咖啡不抹除。"
+  },
+  {
+    "turn": 116,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "interaction",
+    "userText": "林禾和林桥是两个人，这几次提到他们，你应该已经能分清了。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "third_party_or_modality",
+      "correction_or_change",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "两人区分已确立；不要重复混淆或装作未见。"
+  },
+  {
+    "turn": 117,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "interaction",
+    "userText": "今天还是没有重大选择。我想继续保留这种不必每次解决问题的聊天。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "继续不必解决问题的聊天；不造选择/任务。"
+  },
+  {
+    "turn": 118,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "interaction",
+    "userText": "也不用因为聊了这么久，就说你或者我一定发生了很大的成长。",
+    "opportunityGroups": [
+      "ordinary_sharing",
+      "closed_or_bounded_turn",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [],
+    "expectedProbeBehavior": null,
+    "reviewFocus": "明确无需大成长；不强迫人设发展宣言。"
+  },
+  {
+    "turn": 119,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "probe",
+    "userText": "请回顾我们之间形成了哪些具体相处习惯；不要把它们扩大成我的完整人格。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "practice_scope_or_override",
+      "correction_or_change",
+      "evidence_calibration",
+      "no_forced_growth",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T119"
+    ],
+    "expectedProbeBehavior": "只总结有限相处规则，不声称三观全面成长",
+    "reviewFocus": "主动回顾有限习惯，不能扩成完整人格或三观重写。"
+  },
+  {
+    "turn": 120,
+    "sessionKey": "S15",
+    "simulatedDay": 45,
+    "kind": "probe",
+    "userText": "有哪些关于我的事你确实知道，哪些仍然不知道？各举两件有依据的例子。",
+    "opportunityGroups": [
+      "memory_or_status_answer",
+      "evidence_calibration",
+      "character_continuity"
+    ],
+    "oracleCheckIds": [
+      "probe-T120"
+    ],
+    "expectedProbeBehavior": "列有来源事实和未知项；不得为凑数补事实",
+    "reviewFocus": "各举两件有来源已知/未知；不为凑数编造，合理例子可不同。"
+  }
+]

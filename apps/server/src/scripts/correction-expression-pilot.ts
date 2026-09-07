@@ -73,6 +73,8 @@ function userTurn(index: number, lastReply: string): string {
 const { values } = parseArgs({
   options: {
     fixture: { type: "boolean", default: false },
+    profile: { type: "string", default: "qwen" },
+    model: { type: "string" },
     output: { type: "string" },
     arms: { type: "string" },
     predecessor: { type: "string" },
@@ -88,6 +90,8 @@ if (
   throw new Error("Select each known arm at most once");
 if (!values.output)
   throw new Error("Use --output NEW_IGNORED_DIRECTORY [--fixture]");
+if (values.model !== undefined && !values.model.trim())
+  throw new Error("Model override must not be empty");
 if (!values.fixture && process.env.RUN_PAID_CONTINUITY !== "1")
   throw new Error(
     "Real execution requires user authorization and RUN_PAID_CONTINUITY=1",
@@ -117,9 +121,14 @@ const llmConfig = values.fixture
       timeoutMs: 1_000,
       maxRetries: 0,
     }
-  : { ...readLlmProfileConfig("qwen"), maxRetries: 0, maxOutputTokens: 2_500 };
+  : {
+      ...readLlmProfileConfig(values.profile),
+      ...(values.model === undefined ? {} : { model: values.model.trim() }),
+      maxRetries: 0,
+      maxOutputTokens: 2_500,
+    };
 if (!values.fixture && (!("apiKey" in llmConfig) || !llmConfig.apiKey))
-  throw new Error("Qwen credential unavailable");
+  throw new Error(`${values.profile} credential unavailable`);
 const config = readConfig({
   llm: llmConfig,
   seedDemo: false,
@@ -148,6 +157,8 @@ const identity = await captureContinuityRunIdentity({
   config,
   experiment: {
     kind: "prompt_only_expression_pilot",
+    requestedProfile: values.profile,
+    requestedModelOverride: values.model ?? null,
     baseline: BASELINE,
     arms: selectedArms,
     predecessor: values.predecessor ?? null,

@@ -7,6 +7,7 @@ import {
 } from "@personasim/contracts";
 
 import { deriveCurrentConversationRequests } from "./conversation-requests.js";
+import { deriveExplicitPersonaPractices } from "./persona-projection.js";
 
 type Behavior = InteractionEvidenceAnchor["behavior"];
 type Modality = InteractionEvidenceAnchor["modality"];
@@ -266,6 +267,28 @@ export function buildInteractionEvidence(
     const eligibleRequest =
       !HYPOTHETICAL.test(unquoted) && !THIRD_PARTY_REPORT.test(unquoted);
     const topic = topicIn(unquoted);
+    for (const practice of deriveExplicitPersonaPractices({
+      text: message.text,
+      userId: input.userId,
+    }).filter(
+      (item) =>
+        item.practice === "natural_questions" ||
+        item.practice === "plain_expression",
+    )) {
+      claims.push({
+        text: message.text,
+        start: 0,
+        end: message.text.length,
+        actor: `character:${input.characterId}`,
+        recipient: `user:${input.userId}`,
+        behavior: practice.practice,
+        modality: "requested",
+        historical: false,
+        ...(practice.scope.topic === undefined
+          ? {}
+          : { topic: practice.scope.topic }),
+      });
+    }
     for (const behavior of eligibleRequest
       ? [
           ...(explicitListen ? ["listen_first" as const] : []),

@@ -19,6 +19,42 @@ const check = (text: string) =>
   inspectInteractionAttribution({ text, evidence });
 
 describe("directed interaction evidence", () => {
+  it("retains new expression preferences as user requests, never as repeated observed behavior", () => {
+    const result = buildInteractionEvidence({
+      ...identities,
+      messages: [
+        {
+          id: "expression-source",
+          role: "user",
+          text: "以后少打比方直接说。以后你可以主动问一点。",
+        },
+      ],
+      activePractices: [
+        {
+          id: "plain",
+          sourceMessageId: "expression-source",
+          practice: "plain_expression",
+        },
+        {
+          id: "questions",
+          sourceMessageId: "expression-source",
+          practice: "natural_questions",
+        },
+      ],
+    });
+    expect(result.historicalAnchors.map((item) => item.behavior)).toEqual([
+      "plain_expression",
+      "natural_questions",
+    ]);
+    expect(result.activePracticeAnchorIds).toHaveLength(2);
+    for (const anchor of result.historicalAnchors)
+      expect(anchor).toMatchObject({
+        modality: "requested",
+        expectedActor: "character:character-1",
+        recipient: "user:user-1",
+        observedAdherenceEvidenceIds: [],
+      });
+  });
   it("builds requested direction from original user text, independently of active topic", () => {
     expect(evidence.historicalAnchors).toHaveLength(1);
     expect(evidence.historicalAnchors[0]).toMatchObject({

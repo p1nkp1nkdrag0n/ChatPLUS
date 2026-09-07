@@ -27,8 +27,13 @@ export type PersonaPracticeScope = z.infer<typeof PersonaPracticeScopeSchema>;
 export const PersonaPracticeProposalSchema = z
   .object({
     kind: z.literal("relationship_practice"),
-    facet: z.enum(["advice_timing", "follow_up_questions"]),
-    practice: z.enum(["listen_first", "fewer_questions"]),
+    facet: z.enum(["advice_timing", "follow_up_questions", "expression_style"]),
+    practice: z.enum([
+      "listen_first",
+      "fewer_questions",
+      "natural_questions",
+      "plain_expression",
+    ]),
     scope: PersonaPracticeScopeSchema,
     /** The complete original user request, not a model explanation of their psychology. */
     content: z.string().trim().min(1).max(2_000),
@@ -36,8 +41,14 @@ export const PersonaPracticeProposalSchema = z
   .strict()
   .refine(
     (proposal) =>
-      (proposal.facet === "advice_timing") ===
-      (proposal.practice === "listen_first"),
+      (
+        ({
+          listen_first: "advice_timing",
+          fewer_questions: "follow_up_questions",
+          natural_questions: "follow_up_questions",
+          plain_expression: "expression_style",
+        }) as const
+      )[proposal.practice] === proposal.facet,
     { message: "Practice must match its finite facet", path: ["practice"] },
   );
 export type PersonaPracticeProposal = z.infer<

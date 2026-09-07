@@ -23,7 +23,12 @@ export const InteractionEvidenceAnchorSchema = z
     requestedBy: z.string().min(1).optional(),
     expectedActor: z.string().min(1),
     recipient: z.string().min(1),
-    behavior: z.enum(["listen_first", "fewer_questions"]),
+    behavior: z.enum([
+      "listen_first",
+      "fewer_questions",
+      "natural_questions",
+      "plain_expression",
+    ]),
     scope: z.object({ topic: z.string().min(1).optional() }).strict(),
     modality: z.enum([
       "requested",

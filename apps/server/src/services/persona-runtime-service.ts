@@ -262,11 +262,25 @@ export class PersonaRuntimeService {
         input.nowUtc,
       );
       if (messageSource === undefined) return result;
+      const proposals = deriveExplicitPersonaPractices({
+        text: source.content,
+        userId: input.userId ?? LOCAL_USER_ID,
+      });
       if (input.mode === "enforced") {
         const retractions = deriveExplicitPersonaPracticeRetractions({
           text: source.content,
           userId: input.userId ?? LOCAL_USER_ID,
-        });
+        }).filter(
+          (request) =>
+            !proposals.some(
+              (proposal) =>
+                // A replacement direction uses the existing supersession path;
+                // avoid withdrawing it first and producing two revisions.
+                request.facet === proposal.facet &&
+                request.scope.userId === proposal.scope.userId &&
+                request.scope.topic === proposal.scope.topic,
+            ),
+        );
         const withdrawn = this.repository
           .listAdaptations(agentId)
           .filter(
@@ -309,10 +323,6 @@ export class PersonaRuntimeService {
           result.revision = head.revision + 1;
         }
       }
-      const proposals = deriveExplicitPersonaPractices({
-        text: source.content,
-        userId: input.userId ?? LOCAL_USER_ID,
-      });
       if (proposals.length === 0) return result;
       const pending = proposals.flatMap((proposal) => {
         const key = `${input.sourceMessageId}:${personaScopeKey(proposal)}`;

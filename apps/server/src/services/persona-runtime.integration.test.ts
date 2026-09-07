@@ -156,6 +156,118 @@ describe("scoped persona runtime persistence and revision fences", () => {
     expect(capture("shadow").revision).toBe(1);
   });
 
+  it("persists plain expression and natural questions with message/memory provenance across sessions and restart", () => {
+    const text = "以后少打比方，直接说。以后你可以主动问一点。";
+    message("new_expression_preferences", text);
+    const captured = capture("new_expression_preferences");
+    expect(captured.acceptedAdaptationIds).toHaveLength(2);
+    const view = snapshot("普通闲聊");
+    expect(
+      view.relationshipPractices.map((item) => item.proposal.practice),
+    ).toEqual(["plain_expression", "natural_questions"]);
+    for (const practice of view.relationshipPractices) {
+      expect(practice.proposal.content).toBe(text);
+      expect(practice.sourceMessageId).toBe("new_expression_preferences");
+      expect(
+        practice.sources.map((source) => source.sourceType).sort(),
+      ).toEqual(["memory", "message"]);
+      expect(
+        practice.sources.every((source) =>
+          validity.isSourceCurrent(spec.id, source, LATER),
+        ),
+      ).toBe(true);
+    }
+    expect(capture("new_expression_preferences").revision).toBe(
+      captured.revision,
+    );
+    expect(store.getCharacterSpec(spec.id)).toEqual(spec);
+    database.close();
+    reopen();
+    sessionId = store.createSession(
+      spec.id,
+      "After expression feedback",
+      LATER,
+    ).id;
+    message("plain_current_share", "今天喝了乌龙茶。", "user", LATER);
+    expect(capture("plain_current_share", LATER).acceptedAdaptationIds).toEqual(
+      [],
+    );
+    expect(snapshot("普通闲聊")).toEqual(view);
+  });
+
+  it("supersedes the question direction and supports source-backed withdrawal without resurrecting fewer questions", () => {
+    message("old_question_direction", "以后少追问。");
+    capture("old_question_direction");
+    message("new_question_direction", "以后你可以主动问一点。", "user", LATER);
+    const changed = capture("new_question_direction", LATER);
+    expect(changed.revision).toBe(2);
+    expect(
+      snapshot().relationshipPractices.map((item) => item.proposal.practice),
+    ).toEqual(["natural_questions"]);
+    const history = new PersonaRuntimeRepository(store).listAdaptations(
+      spec.id,
+    );
+    expect(
+      history.find((item) => item.proposal.practice === "fewer_questions")
+        ?.status,
+    ).toBe("superseded");
+    message("temporary_question_exception", "今晚少问。", "user", LATER);
+    expect(capture("temporary_question_exception", LATER).revision).toBe(2);
+    expect(snapshot().relationshipPractices[0]?.proposal.practice).toBe(
+      "natural_questions",
+    );
+    message("withdraw_natural_questions", "以后不用主动问了。", "user", LATER);
+    expect(capture("withdraw_natural_questions", LATER).revision).toBe(3);
+    expect(capture("withdraw_natural_questions", LATER).revision).toBe(3);
+    expect(snapshot().relationshipPractices).toEqual([]);
+    database.close();
+    reopen();
+    expect(snapshot().relationshipPractices).toEqual([]);
+  });
+
+  it("keeps expression feedback scoped and ignores short replies, skipped questions and quotations", () => {
+    message(
+      "scoped_expression",
+      "以后聊工作时，少打比方直接说。以后聊电影时，你可以主动问一点。",
+    );
+    expect(capture("scoped_expression").acceptedAdaptationIds).toHaveLength(2);
+    expect(
+      snapshot("工作").relationshipPractices.map(
+        (item) => item.proposal.practice,
+      ),
+    ).toEqual(["plain_expression"]);
+    expect(
+      snapshot("电影").relationshipPractices.map(
+        (item) => item.proposal.practice,
+      ),
+    ).toEqual(["natural_questions"]);
+    expect(snapshot("晚饭").relationshipPractices).toEqual([]);
+    for (const [index, text] of [
+      "嗯。",
+      "咖啡店。",
+      "我们换个话题。",
+      "同事说以后少打比方。",
+      "今晚你可以主动问一点。",
+    ].entries()) {
+      message(`no_preference_${index}`, text, "user", LATER);
+      expect(
+        capture(`no_preference_${index}`, LATER).acceptedAdaptationIds,
+      ).toEqual([]);
+    }
+    expect(snapshot().revision).toBe(1);
+    message(
+      "withdraw_plain_work",
+      "以后聊工作时，不用特意少打比方。",
+      "user",
+      LATER,
+    );
+    expect(capture("withdraw_plain_work", LATER).revision).toBe(2);
+    expect(snapshot("工作").relationshipPractices).toEqual([]);
+    expect(snapshot("电影").relationshipPractices[0]?.proposal.practice).toBe(
+      "natural_questions",
+    );
+  });
+
   it("skips stale-base shadow observations without writes while enforced capture still rejects the stale version", () => {
     message("learned_before_publish");
     capture("learned_before_publish");

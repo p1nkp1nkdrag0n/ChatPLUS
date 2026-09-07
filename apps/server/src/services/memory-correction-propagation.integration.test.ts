@@ -721,6 +721,73 @@ describe("memory correction derivation validity", () => {
     ).not.toContain("周四");
   });
 
+  it("keeps corrected names current after committed checkpoint and autobiography compression", () => {
+    const original = remember("name-original", "同事叫林乔。妹妹叫沈禾。");
+    const oldColleague = original.find((memory) =>
+      memory.content.includes("同事"),
+    )!;
+    const firstSnapshot = deriveSnapshot([oldColleague], true);
+    const correction = remember("name-corrected", "同事叫林桥，不是林乔。");
+    new MemoryLifecycleService(
+      new ContinuityMemoryRepository(store),
+      new FakeClock(NOW),
+    ).reconcileNewMemories(
+      AGENT,
+      correction.map((memory) => memory.id),
+    );
+    expect(
+      validity.isDerivedCurrent(
+        AGENT,
+        "autobiography_entry",
+        firstSnapshot.prepared.bundle.entries[0]!.id,
+      ),
+    ).toBe(false);
+    const compressed = deriveSnapshot(correction, true);
+    expect(compressed.prepared.bundle.snapshot.revision).toBe(2);
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM conversation_checkpoints WHERE status = 'committed'",
+        )
+        .get(),
+    ).toEqual({ count: 2 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM autobiography_snapshots")
+        .get(),
+    ).toEqual({ count: 2 });
+    const recall = new MemoryRecallService(store, undefined, {
+      continuityIndex: new ContinuityIndexService(
+        repository,
+        new FakeClock(LATER),
+      ),
+      dateDigests: new DateDigestService(new ContinuityMemoryRepository(store)),
+    }).recall({
+      agentId: AGENT,
+      query: "同事叫什么，妹妹叫什么？",
+      nowUtc: LATER,
+      requireDurableEvidence: true,
+    });
+    expect(recall.abstained).toBe(false);
+    if (recall.abstained)
+      throw new Error("Compressed current facts unavailable");
+    expect(
+      recall.evidenceBundle.evidence
+        .map((item) => item.currentFact?.value)
+        .sort(),
+    ).toEqual(["林桥", "沈禾"].sort());
+    expect(
+      recall.evidenceBundle.evidence
+        .map((item) => item.memoryContent)
+        .join(" "),
+    ).not.toContain("林乔");
+    // Compression executes actual source-checked persistence, without a paid
+    // model. Its retained audit wording cannot outrank the current fact slots.
+    expect(compressed.prepared.bundle.entries[0]?.content).toContain(
+      "不是林乔",
+    );
+  });
+
   it("rejects artifact writes with missing sources and never grants validity to an unregistered object", () => {
     expect(
       validity.isDerivedCurrent(AGENT, "persona_adaptation", "unknown"),

@@ -7,6 +7,7 @@ import {
 
 import { deriveCurrentConversationRequests } from "./conversation-requests.js";
 import { resolveCurrentConversationTopic } from "./conversation-topic.js";
+import { deriveFactQueryNeeds } from "./current-fact-projection.js";
 import { ADVICE_POLICY_VERSION, deriveAdvicePolicy } from "./advice-policy.js";
 import {
   buildTurnExpressionContext,
@@ -48,6 +49,7 @@ export function buildConversationContextPlan(
   const requests = deriveCurrentConversationRequests(originalQuery);
   const { listen, detailedAnalysisRequested, adviceRequested } = requests;
   const recollection = RECOLLECTION.test(originalQuery);
+  let factNeeds = deriveFactQueryNeeds(originalQuery);
   const venting =
     VENTING.test(originalQuery) || MENTAL_OVERLOAD.test(originalQuery);
   const references = [...new Set(originalQuery.match(REFERENCES) ?? [])].slice(
@@ -62,6 +64,18 @@ export function buildConversationContextPlan(
       message.sessionId === input.sessionId &&
       message.role === "user",
   );
+  if (
+    factNeeds.length === 0 &&
+    /^(?:你)?(?:记错了|说错了|那个名字错了|这个编号不对)[。！!]?$/u.test(
+      originalQuery.trim(),
+    )
+  ) {
+    const previousRequest = recentUserMessages.at(-1);
+    const previousNeeds = deriveFactQueryNeeds(previousRequest?.text ?? "");
+    // A single prior user query supplies the missing target, never its answer.
+    // Multiple possible entities remain unresolved for necessary clarification.
+    if (previousNeeds.length === 1) factNeeds = previousNeeds;
+  }
   const sources =
     references.length === 0
       ? []
@@ -100,6 +114,7 @@ export function buildConversationContextPlan(
     expandedQueries: [...new Set(sources.map((message) => message.text))],
     contextMessageIds: sources.map((message) => message.id),
     unresolvedReferences: references,
+    factQueryNeeds: factNeeds,
     intent,
     adviceRequested,
     detailedAnalysisRequested,
@@ -132,11 +147,11 @@ export function buildConversationContextPlan(
       originalQuery,
       recentUserMessages,
     }),
-    maxRecallEvidence: complexRecall ? 8 : 3,
+    maxRecallEvidence: Math.max(complexRecall ? 8 : 3, factNeeds.length),
     maxExplicitMemories: complexRecall
       ? 8
-      : recollection
-        ? 3
+      : recollection || factNeeds.length > 0
+        ? Math.max(3, factNeeds.length)
         : listen || venting
           ? 0
           : 2,

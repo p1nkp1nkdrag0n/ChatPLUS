@@ -2,6 +2,7 @@ import {
   boundedRecallQueryTokens,
   deriveExplicitUserMemoryClaim,
   extractExplicitWeeklyPlanFacts,
+  extractExplicitCurrentFactProjections,
   hasExplicitMemoryCorrectionForClaim,
   isExplicitUserMemoryStatement,
   recallExactIdentifierAnchors,
@@ -847,6 +848,28 @@ function materializeVerifiedClaim(input: {
     const message = catalog.messages.get(item.sourceId);
     return message?.role === "user" ? [message.content] : [];
   });
+  // These finite projections validate the whole source first and bind an
+  // individual entity/attribute/value. A reason code or supplied claim cannot
+  // convert a different fact into correction authority.
+  const projected = userEvidenceTexts
+    .flatMap(extractExplicitCurrentFactProjections)
+    .find(
+      (fact) =>
+        fact.content === candidate.content &&
+        (candidate.claim === undefined ||
+          candidate.claim.subjectKey === fact.subjectKey),
+    );
+  if (projected !== undefined)
+    return {
+      subjectKey: projected.subjectKey,
+      disposition: "affirmed",
+      recordedAtUtc: nowUtc,
+      ...(projected.revisionIntent === undefined
+        ? {}
+        : { revisionIntent: projected.revisionIntent }),
+    };
+  if (candidate.claim?.subjectKey.startsWith("user_fact:current:"))
+    return undefined;
   if (
     candidate.claim?.subjectKey.startsWith("user_fact:weekly_plan:") === true ||
     (candidate.claim === undefined &&

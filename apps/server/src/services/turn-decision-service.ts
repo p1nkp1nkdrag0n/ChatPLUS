@@ -23,6 +23,7 @@ import {
   deriveExplicitUserMemoryClaim,
   extractExplicitDeadlineFact,
   extractExplicitStoredItemFact,
+  extractExplicitCurrentFactProjections,
   extractExplicitWeeklyPlanFacts,
   guardPersonaReply,
   hasExplicitMemoryCorrection,
@@ -1986,29 +1987,49 @@ export function deriveServerOwnedUserMemoryCandidates(
   nowUtc: string,
 ): MemoryCandidate[] {
   const normalized = text.normalize("NFKC").trim();
-  const candidates: MemoryCandidate[] = extractExplicitWeeklyPlanFacts(
+  const candidates: MemoryCandidate[] = extractExplicitCurrentFactProjections(
     normalized,
-  ).map((plan) => ({
-    ...explicitUserSemanticCandidate({
-      content: `用户将${plan.activity}的时间安排在每周${plan.weekday}${plan.timeOfDay}；这是每周计划，不代表已经执行。`,
+  ).map((fact) => {
+    const candidate = explicitUserSemanticCandidate({
+      content: fact.content,
       tags: [
-        "user_fact",
-        "weekly_plan",
-        ...(plan.explicitCorrection ? ["explicit_correction"] : []),
+        fact.attribute === "usual_drink" ? "user_preference" : "user_fact",
+        "current_fact",
+        fact.entity,
+        fact.attribute,
       ],
-      subjectKey: plan.subjectKey,
+      subjectKey: fact.subjectKey,
       nowUtc,
-      importance: 0.76,
-      stability: "situational",
-      correction: plan.explicitCorrection,
-    }),
-    temporalMetadata: {
-      mentionedAtUtc: nowUtc,
-      recordedAtUtc: nowUtc,
-      temporalCertainty: "unknown",
-      temporalStatus: "planned",
-    },
-  }));
+      importance: 0.88,
+      correction: fact.revisionIntent === "explicit_correction",
+    });
+    if (fact.revisionIntent !== undefined && candidate.claim !== undefined)
+      candidate.claim.revisionIntent = fact.revisionIntent;
+    return candidate;
+  });
+  candidates.push(
+    ...extractExplicitWeeklyPlanFacts(normalized).map((plan) => ({
+      ...explicitUserSemanticCandidate({
+        content: `用户将${plan.activity}的时间安排在每周${plan.weekday}${plan.timeOfDay}；这是每周计划，不代表已经执行。`,
+        tags: [
+          "user_fact",
+          "weekly_plan",
+          ...(plan.explicitCorrection ? ["explicit_correction"] : []),
+        ],
+        subjectKey: plan.subjectKey,
+        nowUtc,
+        importance: 0.76,
+        stability: "situational",
+        correction: plan.explicitCorrection,
+      }),
+      temporalMetadata: {
+        mentionedAtUtc: nowUtc,
+        recordedAtUtc: nowUtc,
+        temporalCertainty: "unknown" as const,
+        temporalStatus: "planned" as const,
+      },
+    })),
+  );
   if (fixtureMemoryStatementIsUnsafe(normalized)) return candidates;
 
   const correction = hasExplicitMemoryCorrection(normalized);

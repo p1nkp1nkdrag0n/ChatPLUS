@@ -2,6 +2,7 @@ import type { Memory } from "@personasim/contracts";
 import {
   canonicalMemoryConflictPair,
   deriveExplicitUserMemoryClaim,
+  extractExplicitCurrentFactProjections,
   hasExplicitMemoryCorrectionForClaim,
   planMemoryLifecycleTransition,
   reconcileMemoryClaims,
@@ -129,7 +130,11 @@ export class MemoryLifecycleService {
       ) {
         continue;
       }
-      if (incoming.claim?.revisionIntent === "explicit_correction") {
+      if (
+        incoming.claim?.revisionIntent === "explicit_correction" ||
+        incoming.claim?.revisionIntent === "temporal_update" ||
+        this.hasVerifiedCurrentFact(incoming)
+      ) {
         results.push(
           ...this.reconcileExplicitCorrectionBatch(agentId, incomingMemoryId),
         );
@@ -169,12 +174,15 @@ export class MemoryLifecycleService {
       if (
         incoming.memory.agentId !== agentId ||
         subjectKey === undefined ||
-        incoming.memory.claim?.revisionIntent !== "explicit_correction"
+        (incoming.memory.claim?.revisionIntent !== "explicit_correction" &&
+          incoming.memory.claim?.revisionIntent !== "temporal_update" &&
+          !this.hasVerifiedCurrentFact(incoming.memory))
       ) {
         return [];
       }
 
       this.alignLegacyWeeklyClaims(incoming.memory, nowUtc);
+      this.alignLegacyCurrentClaims(incoming.memory, nowUtc);
 
       const existing = this.repository
         .listLifecycleMemories(agentId)
@@ -207,7 +215,10 @@ export class MemoryLifecycleService {
             }
           : {
               kind: "supersede",
-              reasonCode: "explicit_user_correction",
+              reasonCode:
+                incoming.memory.claim?.revisionIntent === "explicit_correction"
+                  ? "explicit_user_correction"
+                  : "later_explicit_claim",
               subjectKey,
               existingStatus: "superseded",
               incomingStatus: "active",
@@ -396,6 +407,102 @@ export class MemoryLifecycleService {
       }
       return results;
     });
+  }
+
+  private hasVerifiedCurrentFact(memory: Memory): boolean {
+    if (
+      !memory.claim?.subjectKey.startsWith("user_fact:current:") ||
+      !isReliableWeeklyUserMemory(memory)
+    )
+      return false;
+    return this.repository
+      .listUserMessageEvidence(memory)
+      .some(
+        (source) =>
+          source.createdAtUtc <= memory.claim!.recordedAtUtc &&
+          extractExplicitCurrentFactProjections(source.content).some(
+            (fact) =>
+              fact.subjectKey === memory.claim?.subjectKey &&
+              fact.content === memory.content,
+          ),
+      );
+  }
+
+  private alignLegacyCurrentClaims(incoming: Memory, nowUtc: string): void {
+    const incomingFact = extractExplicitCurrentFactProjections(
+      incoming.content,
+    )[0];
+    if (
+      incomingFact === undefined ||
+      incomingFact.subjectKey !== incoming.claim?.subjectKey
+    )
+      return;
+    const verifiedIncoming = this.repository
+      .listUserMessageEvidence(incoming)
+      .some((source) =>
+        extractExplicitCurrentFactProjections(source.content).some(
+          (fact) =>
+            fact.subjectKey === incomingFact.subjectKey &&
+            fact.value === incomingFact.value &&
+            fact.revisionIntent === incoming.claim?.revisionIntent,
+        ),
+      );
+    if (!verifiedIncoming) return;
+    for (const { memory } of this.repository.listLifecycleMemories(
+      incoming.agentId,
+    )) {
+      if (
+        memory.claim !== undefined ||
+        memory.id === incoming.id ||
+        memoryWasRecordedAfter(memory, incoming) ||
+        !isReliableWeeklyUserMemory(memory) ||
+        !["active", "aging", "needs_review"].includes(memory.status)
+      )
+        continue;
+      const facts = extractExplicitCurrentFactProjections(memory.content);
+      // A multi-fact original must remain intact; only an atomic legacy record
+      // can gain a whole-memory replacement edge.
+      if (
+        facts.length !== 1 ||
+        facts[0]?.subjectKey !== incomingFact.subjectKey
+      )
+        continue;
+      const fact = facts[0];
+      const source = this.repository
+        .listUserMessageEvidence(memory)
+        .find((item) =>
+          extractExplicitCurrentFactProjections(item.content).some(
+            (candidate) =>
+              candidate.subjectKey === fact.subjectKey &&
+              candidate.value === fact.value,
+          ),
+        );
+      if (source === undefined) continue;
+      const claim = {
+        subjectKey: fact.subjectKey,
+        disposition: "affirmed" as const,
+        recordedAtUtc: memory.createdAtUtc,
+      };
+      if (!this.repository.attachLegacyClaim(memory.id, claim)) continue;
+      requireInsert(
+        this.repository.insertDomainEvent({
+          agentId: memory.agentId,
+          streamType: "memory",
+          streamId: memory.id,
+          streamVersion: nextStreamVersion(this.repository, memory.id),
+          eventType: "memory.claim.legacy_aligned",
+          recordedAtUtc: nowUtc,
+          payload: {
+            memoryId: memory.id,
+            claim,
+            correctionMemoryId: incoming.id,
+            sourceMessageId: source.sourceId,
+          },
+          idempotencyKey: `memory-legacy-claim:${memory.id}:${incoming.id}`,
+        }),
+        "Legacy current fact alignment event already exists without its claim.",
+      );
+    }
   }
 
   private alignLegacyWeeklyClaims(incoming: Memory, nowUtc: string): void {

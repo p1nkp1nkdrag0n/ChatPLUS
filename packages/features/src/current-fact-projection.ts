@@ -141,7 +141,9 @@ export function extractExplicitCurrentFactProjections(
         value: drink,
         content: `用户日常饮品：${drink}。`,
         ...(temporal === null
-          ? {}
+          ? prefixed
+            ? { revisionIntent: "explicit_correction" as const }
+            : {}
           : {
               revisionIntent: "temporal_update" as const,
               previousValue: temporal[1]!,
@@ -189,7 +191,7 @@ export function deriveFactQueryNeeds(text: string): FactQueryNeed[] {
   ))
     add(match[1]!, "identifier");
   if (
-    /(?:我|用户).{0,8}(?:喝什么|喝的是|饮品|饮料)|(?:以前|现在).{0,6}(?:喝什么|喝的是)/u.test(
+    /(?:我|用户).{0,8}(?:喝什么|喝的是|饮品|饮料)|(?:以前|现在|最初|原先).{0,6}(?:喝什么|喝的是)/u.test(
       query,
     )
   )

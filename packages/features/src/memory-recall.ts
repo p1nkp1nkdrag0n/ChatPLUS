@@ -9,6 +9,7 @@ import type {
   MemoryRecallQuery,
   MemoryRecallResult,
   MemoryStability,
+  MemoryClaim,
   RetrievedMemoryEvidence,
   RetrievalScoreBreakdown,
   TemporalMetadata,
@@ -22,6 +23,11 @@ import {
 } from "@personasim/contracts";
 
 import { clamp, normalizeText, stableId } from "./shared.js";
+import {
+  deriveFactQueryNeeds,
+  extractExplicitCurrentFactProjections,
+  isFactHistoryQuery,
+} from "./current-fact-projection.js";
 
 export interface RecallableMemory {
   id: string;
@@ -46,6 +52,7 @@ export interface RecallableMemory {
   sourceMessageIds?: readonly string[] | undefined;
   sourceActivityEventIds?: readonly string[] | undefined;
   evidence?: readonly MemoryEvidence[] | undefined;
+  claim?: MemoryClaim | undefined;
 }
 
 export interface MemoryRecallInput {
@@ -567,6 +574,11 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
 
   let evidenceCount = 0;
   const candidates: ScoredCandidate[] = [];
+  const factNeeds =
+    typeof input.query === "string"
+      ? deriveFactQueryNeeds(query.query)
+      : (input.query.contextPlan?.factQueryNeeds ??
+        deriveFactQueryNeeds(query.query));
   for (const memory of temporalMatched) {
     const formal = evidenceFor(memory, input.evidence ?? []);
     if (formal.length === 0) continue;
@@ -585,8 +597,24 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       return rightScore - leftScore || left.id.localeCompare(right.id);
     })[0];
     if (chosen === undefined) continue;
+    const verifiedProjection =
+      memory.namespace === "user_model" &&
+      memory.attribution === "user_explicit" &&
+      memory.certainty === "explicit" &&
+      chosen.sourceType === "message"
+        ? extractExplicitCurrentFactProjections(chosen.quote ?? "").find(
+            (fact) =>
+              fact.content === memory.content &&
+              fact.subjectKey === memory.claim?.subjectKey &&
+              factNeeds.some((need) => need.subjectKey === fact.subjectKey),
+          )
+        : undefined;
+    const projection = isFactHistoryQuery(query.query)
+      ? undefined
+      : verifiedProjection;
 
     const lexical = Math.max(
+      verifiedProjection === undefined ? 0 : 1,
       ...query.candidateQueries.map((text) =>
         Math.max(
           lexicalScore(memory.content, text),
@@ -595,6 +623,7 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       ),
     );
     const tag = Math.max(
+      verifiedProjection === undefined ? 0 : 1,
       ...query.candidateQueries.map((text) => tagScore(memory.tags, text)),
     );
     if (lexical === 0 && tag === 0 && query.range === undefined) continue;
@@ -626,6 +655,15 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       retrieved: {
         memoryId: memory.id,
         memoryContent: memory.content,
+        ...(projection === undefined
+          ? {}
+          : {
+              currentFact: {
+                entity: projection.entity,
+                attribute: projection.attribute,
+                value: projection.value,
+              },
+            }),
         memoryKind: memory.kind,
         namespace: memoryNamespace(memory),
         certainty: certaintyFor(memory),
@@ -666,6 +704,25 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
     generatedAtUtc: input.nowUtc,
     score: evidence[0]?.score ?? 0,
     evidence,
+    ...(factNeeds.length === 0
+      ? {}
+      : {
+          factCoverage: factNeeds.map((need) => ({
+            entity: need.entity,
+            attribute: need.attribute,
+            covered: selected.some((candidate) => {
+              const projected = candidate.retrieved.currentFact;
+              return (
+                (projected?.entity === need.entity &&
+                  projected.attribute === need.attribute) ||
+                (isFactHistoryQuery(query.query) &&
+                  extractExplicitCurrentFactProjections(
+                    candidate.retrieved.memoryContent,
+                  ).some((fact) => fact.subjectKey === need.subjectKey))
+              );
+            }),
+          })),
+        }),
   });
   return MemoryRecallResultSchema.parse({
     mode: bundle.mode,

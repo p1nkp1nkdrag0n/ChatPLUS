@@ -21,11 +21,15 @@ import {
   recallCandidateQueries,
   recallMemory,
   stableId,
+  deriveFactQueryNeeds,
+  extractExplicitCurrentFactProjections,
+  isFactHistoryQuery,
   type DateDigest,
   type TemporalQueryResolution,
 } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
+import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
 import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import {
   explicitFactCandidateScore,
@@ -207,6 +211,36 @@ export function inspectContinuityRecall(
     query.contextPlan?.maxRecallEvidence ?? 3,
   );
   const minimumScore = query.minimumScore ?? DEFAULT_MINIMUM_SCORE;
+  const factNeeds =
+    query.contextPlan?.factQueryNeeds ?? deriveFactQueryNeeds(query.query);
+  if (
+    factNeeds.length > 0 &&
+    !isLinkedFriendDestinationIntent(query.query) &&
+    (explicitFactParse.kind === "none" ||
+      explicitFactParse.kind === "unsupported")
+  ) {
+    const selection = prepareCurrentFactRecall(
+      store,
+      input,
+      query,
+      candidateLimit,
+      maxEvidence,
+      minimumScore,
+    );
+    return buildInspection({
+      store,
+      input,
+      started,
+      prepared: selection.prepared,
+      result: selection.result,
+      finalTier: selection.result.abstained ? "none" : "basic_memory",
+      tierByMemoryId: tierMap(selection.candidates),
+      temporalResolution: {
+        kind: "current_fact_slots",
+        requestedSubjectKeys: factNeeds.map((need) => need.subjectKey),
+      },
+    });
+  }
   const searchLimit = Math.min(100, candidateLimit);
   const searchedCards = [
     ...new Map(
@@ -1600,6 +1634,300 @@ function groupAllEvidenceByMemory(
     grouped.set(item.memoryId, current);
   }
   return grouped;
+}
+
+/** Reserve a verified candidate for each requested entity/attribute before a
+ * global ranking can consume its evidence budget. Legacy raw records are
+ * projected read-only from their original user evidence, never rewritten. */
+function prepareCurrentFactRecall(
+  store: DatabaseStore,
+  input: AgentMemoryRecallInput,
+  query: MemoryRecallQuery,
+  candidateLimit: number,
+  maxEvidence: number,
+  minimumScore: number,
+): PreparedTierSelection {
+  const needs =
+    query.contextPlan?.factQueryNeeds ?? deriveFactQueryNeeds(query.query);
+  const selected: HierarchyCandidate[] = [];
+  for (const need of needs) {
+    const scan = readStableExplicitUserMemoryScan(
+      store,
+      input.agentId,
+      input.nowUtc,
+      {
+        searchTerms:
+          need.attribute === "usual_drink" ? ["饮品", "喝"] : [need.entity],
+        scanLimit: 500,
+        suppressedMemoryIds: input.suppressedMemoryIds ?? [],
+      },
+    );
+    if (scan.truncated) continue;
+    const matches: Array<{
+      candidate: HierarchyCandidate;
+      value: string;
+      revision?: string;
+      recordedAtUtc: string;
+    }> = [];
+    for (const memory of scan.memories) {
+      if (!memoryExistedAtRecall(memory, input.nowUtc)) continue;
+      const facts = extractExplicitCurrentFactProjections(memory.content);
+      const fact = facts.find((item) => item.subjectKey === need.subjectKey);
+      if (
+        fact === undefined ||
+        (memory.claim !== undefined &&
+          memory.claim.subjectKey !== fact.subjectKey)
+      )
+        continue;
+      const verified = readMemoryEvidence(store, [memory.id])
+        .flatMap((evidence) => {
+          if (evidence.sourceType !== "message") return [];
+          const source = store.database
+            .prepare(
+              "SELECT content, created_at_utc FROM messages WHERE id = ? AND agent_id = ? AND role = 'user'",
+            )
+            .get(evidence.sourceId, input.agentId) as
+            { content: string; created_at_utc: string } | undefined;
+          if (
+            source === undefined ||
+            source.created_at_utc > input.nowUtc ||
+            evidence.recordedAtUtc > input.nowUtc ||
+            (evidence.quote !== undefined &&
+              !isGroundedEvidenceExcerpt(source.content, evidence.quote))
+          )
+            return [];
+          const supported = extractExplicitCurrentFactProjections(
+            source.content,
+          ).find(
+            (item) =>
+              item.subjectKey === fact.subjectKey && item.value === fact.value,
+          );
+          return supported === undefined
+            ? []
+            : [
+                {
+                  evidence: { ...evidence, quote: source.content },
+                  fact: supported,
+                  recordedAtUtc: source.created_at_utc,
+                },
+              ];
+        })
+        .sort((left, right) =>
+          right.recordedAtUtc.localeCompare(left.recordedAtUtc),
+        );
+      const support = verified[0];
+      if (support === undefined) continue;
+      // Existing hierarchy snapshots already support synthetic source-backed
+      // candidates. A compound legacy report needs one view per fact so that
+      // correcting its colleague cannot discard its still-valid sibling.
+      const id =
+        facts.length > 1
+          ? stableId("memory", `current-fact:${memory.id}:${fact.subjectKey}`)
+          : memory.id;
+      const projectedMemory = MemorySchema.parse({
+        ...memory,
+        id,
+        content: fact.content,
+        claim: {
+          subjectKey: fact.subjectKey,
+          disposition: "affirmed",
+          recordedAtUtc: support.recordedAtUtc,
+          ...(support.fact.revisionIntent === undefined
+            ? {}
+            : { revisionIntent: support.fact.revisionIntent }),
+        },
+      });
+      const projectedEvidence = {
+        ...support.evidence,
+        memoryId: id,
+        ...(id === memory.id
+          ? {}
+          : {
+              id: stableId(
+                "evidence",
+                `${support.evidence.id}:${fact.subjectKey}`,
+              ),
+            }),
+      };
+      matches.push({
+        candidate: {
+          tier: "basic_memory",
+          memory: projectedMemory,
+          evidence: [projectedEvidence],
+        },
+        value: fact.value,
+        ...(support.fact.revisionIntent === undefined
+          ? {}
+          : { revision: support.fact.revisionIntent }),
+        recordedAtUtc: support.recordedAtUtc,
+      });
+    }
+    matches.sort(
+      (left, right) =>
+        right.recordedAtUtc.localeCompare(left.recordedAtUtc) ||
+        left.candidate.memory.id.localeCompare(right.candidate.memory.id),
+    );
+    const newest = matches[0];
+    if (newest === undefined) continue;
+    const conflicts = matches.filter((item) => item.value !== newest.value);
+    if (
+      conflicts.length > 0 &&
+      ((newest.revision === undefined && need.attribute === "usual_drink") ||
+        conflicts.some((item) => item.recordedAtUtc >= newest.recordedAtUtc))
+    )
+      continue;
+    if (
+      need.attribute === "usual_drink" &&
+      isFactHistoryQuery(query.query) &&
+      /(?:最初|最早|原先)/u.test(query.query)
+    ) {
+      const historical = earliestTemporalFactCandidate(
+        store,
+        input,
+        newest.candidate,
+      );
+      if (historical !== undefined) selected.push(historical);
+    } else selected.push(newest.candidate);
+  }
+  const prepared = prepareCandidates(
+    store,
+    input.agentId,
+    query,
+    Math.max(candidateLimit, needs.length),
+    maxEvidence,
+    // Explicitly requested history uses verified audit quotes, including the
+    // previous value. Ordinary queries have exact finite slot matching instead.
+    isFactHistoryQuery(query.query) && query.minimumScore === undefined
+      ? 0
+      : minimumScore,
+    selected,
+  );
+  return {
+    prepared,
+    candidates: selected,
+    result: evaluateTier(prepared, input.nowUtc, "basic_memory"),
+  };
+}
+
+/** Walk only proven temporal replacement edges. A corrected error is never
+ * rehabilitated as a former true value. Historical views remain read-only and
+ * are used only for an explicitly earliest-history request. */
+function earliestTemporalFactCandidate(
+  store: DatabaseStore,
+  input: AgentMemoryRecallInput,
+  current: HierarchyCandidate,
+): HierarchyCandidate | undefined {
+  const repository = new ContinuityMemoryRepository(store);
+  let successor = current;
+  let endedAtUtc: string | undefined;
+  const visited = new Set<string>();
+  const suppressed = new Set(input.suppressedMemoryIds ?? []);
+  for (let depth = 0; depth < 32; depth++) {
+    if (visited.has(successor.memory.id)) return undefined;
+    visited.add(successor.memory.id);
+    if (successor.memory.claim?.revisionIntent !== "temporal_update")
+      return historicalView(successor);
+    const transitions = successor.evidence.flatMap((evidence) =>
+      extractExplicitCurrentFactProjections(evidence.quote ?? "").filter(
+        (fact) =>
+          fact.subjectKey === successor.memory.claim?.subjectKey &&
+          fact.revisionIntent === "temporal_update",
+      ),
+    );
+    if (transitions.length !== 1 || transitions[0]?.previousValue === undefined)
+      return undefined;
+    const transition = transitions[0];
+    const predecessorIds = store.database
+      .prepare(
+        "SELECT id FROM memories WHERE agent_id = ? AND superseded_by_id = ? AND claim_subject_key = ? AND status = 'superseded' LIMIT 33",
+      )
+      .all(input.agentId, successor.memory.id, transition.subjectKey) as Array<{
+      id: string;
+    }>;
+    if (predecessorIds.length > 32) return undefined;
+    const predecessors = predecessorIds.flatMap(({ id }) => {
+      if (suppressed.has(id)) return [];
+      const memory = repository.getLifecycleMemory(id)?.memory;
+      if (
+        memory === undefined ||
+        memory.namespace !== "user_model" ||
+        memory.attribution !== "user_explicit" ||
+        memory.certainty !== "explicit" ||
+        memory.confidence < 0.8 ||
+        memory.createdAtUtc > successor.memory.createdAtUtc
+      )
+        return [];
+      const fact = extractExplicitCurrentFactProjections(memory.content).find(
+        (item) =>
+          item.subjectKey === transition.subjectKey &&
+          item.value === transition.previousValue,
+      );
+      if (fact === undefined) return [];
+      const evidence = readMemoryEvidence(store, [id]).filter((item) => {
+        if (item.sourceType !== "message" || item.recordedAtUtc > input.nowUtc)
+          return false;
+        const source = store.database
+          .prepare(
+            "SELECT content, created_at_utc FROM messages WHERE id = ? AND agent_id = ? AND role = 'user'",
+          )
+          .get(item.sourceId, input.agentId) as
+          { content: string; created_at_utc: string } | undefined;
+        return (
+          source !== undefined &&
+          source.created_at_utc <= memory.createdAtUtc &&
+          source.created_at_utc <= input.nowUtc &&
+          (item.quote === undefined ||
+            isGroundedEvidenceExcerpt(source.content, item.quote)) &&
+          extractExplicitCurrentFactProjections(source.content).some(
+            (candidate) =>
+              candidate.subjectKey === fact.subjectKey &&
+              candidate.value === fact.value,
+          )
+        );
+      });
+      if (evidence.length === 0) return [];
+      return [
+        { tier: "basic_memory" as const, memory, evidence: [evidence[0]!] },
+      ];
+    });
+    if (predecessors.length === 0) return historicalView(successor);
+    if (predecessors.length !== 1) return undefined;
+    endedAtUtc = successor.memory.createdAtUtc;
+    successor = predecessors[0]!;
+  }
+  return undefined;
+
+  function historicalView(candidate: HierarchyCandidate): HierarchyCandidate {
+    if (candidate.memory.id === current.memory.id) return candidate;
+    const id = stableId(
+      "memory",
+      `historical-fact:${candidate.memory.id}:${current.memory.id}`,
+    );
+    const record = { ...candidate.memory };
+    delete record.supersededById;
+    delete record.expiresAtUtc;
+    return {
+      tier: "basic_memory",
+      memory: MemorySchema.parse({
+        ...record,
+        id,
+        status: "active",
+        temporalMetadata: {
+          ...record.temporalMetadata,
+          recordedAtUtc: record.createdAtUtc,
+          temporalCertainty: "unknown",
+          temporalStatus: "occurred",
+          occurredStartAtUtc: record.createdAtUtc,
+          occurredEndAtUtc: endedAtUtc,
+        },
+      }),
+      evidence: candidate.evidence.map((item) => ({
+        ...item,
+        id: stableId("evidence", `${item.id}:${id}`),
+        memoryId: id,
+      })),
+    };
+  }
 }
 
 function prepareCandidates(

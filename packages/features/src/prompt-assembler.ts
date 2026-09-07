@@ -10,6 +10,8 @@ import type {
 } from "@personasim/contracts";
 
 import { deriveAdvicePolicy } from "./advice-policy.js";
+import { isFactHistoryQuery } from "./current-fact-projection.js";
+import { currentFactPromptEvidence } from "./prompt-segments/retrieved-evidence-segment.js";
 import { turnExpressionPromptView } from "./turn-expression-policy.js";
 import { interactionEvidencePromptView } from "./interaction-attribution.js";
 import type { MemoryLike } from "./memory-engine.js";
@@ -467,7 +469,10 @@ function compactTextList(values: readonly string[]): string[] {
 function compactMemoryEvidence(bundle: EvidenceBundle): EvidenceBundle {
   // Retrieval owns the item count. The final segment budget selects whole
   // records, including qualifiers, source spans and attribution.
-  return { ...bundle, evidence: [...bundle.evidence] };
+  return {
+    ...bundle,
+    evidence: bundle.evidence.map(currentFactPromptEvidence),
+  };
 }
 
 function compactScheduleItem(item: ScheduleItemLike) {
@@ -919,7 +924,9 @@ export function assembleChatPrompt(
           ]),
       ...decisionInstructions,
     ].join("\n"),
-    ...(input.autobiography === undefined
+    ...(input.autobiography === undefined ||
+    ((input.conversationPlan?.factQueryNeeds?.length ?? 0) > 0 &&
+      !isFactHistoryQuery(input.userMessage))
       ? {}
       : { autobiography: compactAutobiography(input.autobiography) }),
     userModel: [

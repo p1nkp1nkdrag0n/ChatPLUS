@@ -5,6 +5,7 @@ import {
   DailyLifeIntentSchema,
   LifeOutcomeSchema,
   LifeThreadSchema,
+  isCompanionCharacterPolicy,
   type CharacterGoal,
   type CharacterGoalMilestone,
   type CharacterSpec,
@@ -70,7 +71,7 @@ export function createDailyLifeContext(input: {
     availabilityConfidence: "inferred",
     theme:
       input.threads[0]?.title ??
-      (input.spec.compilationPolicyVersion === "companion_character_v2"
+      (isCompanionCharacterPolicy(input.spec.compilationPolicyVersion)
         ? undefined
         : input.spec.persona.goals[0]?.title),
     currentFocus: focusForPeriod(input.intents, currentPeriod),
@@ -397,7 +398,7 @@ export function buildDailyIntents(
   const goalIntents: DailyIntentSeed[] = spec.persona.goals
     .filter(
       (goal) =>
-        spec.compilationPolicyVersion !== "companion_character_v2" ||
+        !isCompanionCharacterPolicy(spec.compilationPolicyVersion) ||
         threads.some(
           (thread) =>
             thread.status === "active" && matchesGoalBinding(thread, goal),

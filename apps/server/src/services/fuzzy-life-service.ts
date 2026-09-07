@@ -39,6 +39,7 @@ import {
   type SupportIntervention,
   type SupportMode,
   type RuntimeState,
+  isCompanionCharacterPolicy,
 } from "@personasim/contracts";
 import { validateCharacterPressureEvidence } from "./pressure-state-evidence.js";
 import { projectCharacterTime, stableId } from "@personasim/features";
@@ -233,7 +234,7 @@ export class FuzzyLifeService {
       .listDailyIntents(context.id)
       .filter(
         (intent) =>
-          spec.compilationPolicyVersion !== "companion_character_v2" ||
+          !isCompanionCharacterPolicy(spec.compilationPolicyVersion) ||
           intent.sourceKind !== "goal" ||
           intent.threadIds.some((id) =>
             threads.some((thread) => thread.id === id),
@@ -315,7 +316,7 @@ export class FuzzyLifeService {
             effectiveLocalDate: context.localDate,
             recordedAtUtc: toUtc,
             ...(intent.sourceKind === "goal" &&
-            spec.compilationPolicyVersion === "companion_character_v2" &&
+            isCompanionCharacterPolicy(spec.compilationPolicyVersion) &&
             !intent.threadIds.some((id) => {
               const thread = this.repository.findThreadById(id);
               return (
@@ -380,8 +381,9 @@ export class FuzzyLifeService {
             ? snapshot.threads.every(
                 (thread) => thread.progressionPolicy !== "evidence_driven_v2",
               )
-            : this.store.getCharacterSpec(agentId)?.compilationPolicyVersion !==
-              "companion_character_v2",
+            : !isCompanionCharacterPolicy(
+                this.store.getCharacterSpec(agentId)?.compilationPolicyVersion,
+              ),
         lifeThreadStageIsNotDailyOutcome: true,
         lifeThreadStageIsNotProofOfExternalSuccess: true,
       },
@@ -2570,7 +2572,8 @@ export class FuzzyLifeService {
     actionId: string | undefined,
   ): void {
     const spec = this.store.getCharacterSpec(input.agentId);
-    if (spec?.compilationPolicyVersion !== "companion_character_v2") return;
+    if (!spec || !isCompanionCharacterPolicy(spec.compilationPolicyVersion))
+      return;
     const messages = this.store.listMessages(input.sessionId, 4);
     const userMessage = messages.find(
       (message) =>
@@ -2804,7 +2807,7 @@ export class FuzzyLifeService {
   }
 
   private ensureGoalThreads(spec: CharacterSpec, atUtc: string): LifeThread[] {
-    if (spec.compilationPolicyVersion === "companion_character_v2") {
+    if (isCompanionCharacterPolicy(spec.compilationPolicyVersion)) {
       this.ensureEvidenceDrivenGoalThreads(spec, atUtc);
       return this.repository.listActiveThreads(spec.id, 6);
     }

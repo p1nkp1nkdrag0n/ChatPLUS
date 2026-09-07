@@ -14,7 +14,7 @@ import {
 // bounded per-call budget that still leaves ample room for a complete draft.
 export const CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS = 32_000;
 export const CHARACTER_COMPILATION_MAX_RETRIES = 1;
-export const CHARACTER_COMPILATION_POLICY_VERSION = "companion_character_v2";
+export const CHARACTER_COMPILATION_POLICY_VERSION = "companion_character_v3";
 
 export const CHARACTER_COMPILER_SYSTEM = [
   "You are a character-behavior compiler, not a biography embellisher.",
@@ -48,6 +48,9 @@ const CHARACTER_COMPILATION_STRATEGY = [
   "8a. If the source supplies only a story year or year-month, use anchored_story with anchorPrecision=year or month. storyAnchorLocalDate is then an operational clock seed, not an authored exact-date fact; never present its synthetic day as source evidence.",
   "9. routines are broad life anchors only. Their clock fields are compatibility metadata, not a precise timetable or evidence that an activity occurred. Do not make schedule mechanics the character's personality. proactivePolicy.enabled must be false.",
   "Keep the draft specific enough to produce distinctive behavior, but avoid encyclopedic repetition of the input.",
+  "10. Ordinary traits do not authorize absolute boundaries. Do not turn independent judgment into never compromising, or a natural speaking style into refusing another person's comfort. Preserve each instruction's target and scope. No minimum number of hard boundaries is required.",
+  "11. The server owns authorityAudit and provenance authorization; never generate authorityAudit or claim that origin/sourceRefs grant permission. Explicit structured authoring declarations are applied by the server, not broadened by the model.",
+  "12. frequentPhrases must be [] unless the author or source explicitly supplied those phrases. Describe register and observational habits instead of inventing recurring openings. sharedContext must contain only explicitly supplied relationship facts, never inferred mutual knowledge from a relationship label.",
 ].join("\n");
 
 const CHARACTER_IMPORT_STRATEGY = [
@@ -183,7 +186,8 @@ export function authoritativeImportedDraft(
               item.origin === "user_spec" ? "model_inference" : item.origin,
           })),
           goals: candidate.persona.goals.map((goal) =>
-            fallback.compilationPolicyVersion === "companion_character_v2"
+            fallback.compilationPolicyVersion !== "legacy_template_v1" &&
+            fallback.compilationPolicyVersion !== undefined
               ? withoutGeneratedMilestones(goal)
               : goal,
           ),
@@ -404,7 +408,8 @@ function applyOriginalFormAuthority(
             )
           : []),
       ].map((goal) =>
-        fallback.compilationPolicyVersion === "companion_character_v2"
+        fallback.compilationPolicyVersion !== "legacy_template_v1" &&
+        fallback.compilationPolicyVersion !== undefined
           ? withoutGeneratedMilestones(goal)
           : goal,
       ),

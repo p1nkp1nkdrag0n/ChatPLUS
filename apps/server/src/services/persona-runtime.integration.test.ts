@@ -12,6 +12,7 @@ import { buildOriginalDraft } from "../domain/defaults.js";
 import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
 import { PersonaRuntimeRepository } from "../repositories/persona-runtime-repository.js";
 import { PersonaRuntimeService } from "./persona-runtime-service.js";
+import { CHARACTER_COMPILATION_POLICY_VERSION } from "./character-compiler.js";
 
 const NOW = "2026-09-06T12:00:00.000Z";
 const LATER = "2026-09-07T12:00:00.000Z";
@@ -48,7 +49,7 @@ describe("scoped persona runtime persistence and revision fences", () => {
           tier: "daily",
           timezone: "Asia/Shanghai",
         },
-        "companion_character_v2",
+        CHARACTER_COMPILATION_POLICY_VERSION,
       ),
       id: "agent_persona",
       version: 1,

@@ -8,6 +8,7 @@ import {
   CorrespondenceMailboxResponseSchema,
   SendMessageResponseSchema,
   characterSpecSchema,
+  isCompanionCharacterPolicy,
   type CharacterSpec,
 } from "@personasim/contracts";
 import { z } from "zod";
@@ -435,7 +436,7 @@ async function runLockedContinuity(
             ).character;
       await json("generated-character.json", generated);
       if (
-        generated.compilationPolicyVersion !== "companion_character_v2" ||
+        !isCompanionCharacterPolicy(generated.compilationPolicyVersion) ||
         generated.persona.goals.length !== 0 ||
         generated.persona.contradictions.length !== 0
       )

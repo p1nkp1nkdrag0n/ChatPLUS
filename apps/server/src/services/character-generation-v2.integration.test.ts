@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
 import { FakeClock } from "../runtime/clock.js";
+import { CHARACTER_COMPILATION_POLICY_VERSION } from "./character-compiler.js";
 
 describe("companion generation lifecycle", () => {
   let app: PersonaSimApp | undefined;
@@ -81,7 +82,9 @@ describe("companion generation lifecycle", () => {
       });
       expect(response.statusCode).toBe(201);
       let character = response.json<{ character: CharacterSpec }>().character;
-      expect(character.compilationPolicyVersion).toBe("companion_character_v2");
+      expect(character.compilationPolicyVersion).toBe(
+        CHARACTER_COMPILATION_POLICY_VERSION,
+      );
       expect(character.persona.goals).toEqual([]);
       expect(character.persona.contradictions).toEqual([]);
 
@@ -95,7 +98,9 @@ describe("companion generation lifecycle", () => {
       });
       expect(edited.statusCode).toBe(200);
       character = edited.json<{ character: CharacterSpec }>().character;
-      expect(character.compilationPolicyVersion).toBe("companion_character_v2");
+      expect(character.compilationPolicyVersion).toBe(
+        CHARACTER_COMPILATION_POLICY_VERSION,
+      );
       const published = await app.inject({
         method: "POST",
         url: `/api/characters/${character.id}/publish`,
@@ -112,7 +117,9 @@ describe("companion generation lifecycle", () => {
       const spec = reopened.json<{ character: CharacterSpec }>().character;
       expect(spec.persona.goals).toEqual([]);
       expect(spec.persona.contradictions).toEqual([]);
-      expect(spec.compilationPolicyVersion).toBe("companion_character_v2");
+      expect(spec.compilationPolicyVersion).toBe(
+        CHARACTER_COMPILATION_POLICY_VERSION,
+      );
       const session = await app.inject({
         method: "POST",
         url: `/api/agents/${character.id}/sessions`,

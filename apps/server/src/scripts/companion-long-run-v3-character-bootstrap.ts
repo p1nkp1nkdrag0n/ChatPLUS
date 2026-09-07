@@ -6,6 +6,7 @@ import { performance } from "node:perf_hooks";
 import {
   CharacterSpecSchema,
   CreateSessionResponseSchema,
+  isCompanionCharacterPolicy,
   type CharacterSpec,
   type OriginalCharacterInput,
   type RuntimeState,
@@ -335,8 +336,9 @@ function validateCharacterBuild(input: {
     (source) => source["sourceType"] === "original_character_brief",
   );
   const goals = spec?.persona.goals ?? [];
-  const evidenceDriven =
-    spec?.compilationPolicyVersion === "companion_character_v2";
+  const evidenceDriven = isCompanionCharacterPolicy(
+    spec?.compilationPolicyVersion,
+  );
   const milestonesValid =
     goals.length > 0 &&
     goals.every((goal) => {
@@ -421,7 +423,7 @@ function validateCharacterBuild(input: {
             ))
         : milestonesValid,
       evidenceDriven
-        ? "companion_character_v2: authored goals preserved; no calendar milestones"
+        ? `${spec?.compilationPolicyVersion}: authored goals preserved; no calendar milestones`
         : goals
             .map((goal) =>
               (goal.milestones ?? []).map((milestone) => milestone.afterDays),

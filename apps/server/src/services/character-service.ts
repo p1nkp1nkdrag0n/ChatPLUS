@@ -49,6 +49,12 @@ import {
   type CharacterMutation,
 } from "./character-draft-editor.js";
 import type { LlmService } from "./llm-service.js";
+import {
+  assertCharacterAuthority,
+  authorizeEditedCharacter,
+  authorizeGeneratedCharacter,
+  characterAuthorityReview,
+} from "./character-authority.js";
 
 type PendingCharacterSource = {
   id: string;
@@ -78,11 +84,17 @@ export class CharacterService {
     summary: ReturnType<DatabaseStore["getCharacterSummary"]>;
     spec: CharacterSpec;
     sources: Array<Record<string, unknown>>;
+    authorityReview: ReturnType<typeof characterAuthorityReview>;
   } {
     const summary = this.store.getCharacterSummary(agentId);
     const spec = this.store.getCharacterSpec(agentId);
     if (!summary || !spec) throw notFound("Character");
-    return { summary, spec, sources: this.store.listCharacterSources(agentId) };
+    return {
+      summary,
+      spec,
+      sources: this.store.listCharacterSources(agentId),
+      authorityReview: characterAuthorityReview(spec),
+    };
   }
 
   async generate(rawInput: unknown): Promise<CharacterSpec> {
@@ -105,7 +117,12 @@ export class CharacterService {
         reasonSummary: "根据原创角色表单生成结构化角色草稿。",
       },
     });
-    const draft = authoritativeOriginalDraft(proposal.draft, input, fallback);
+    const draft = authorizeGeneratedCharacter(
+      authoritativeOriginalDraft(proposal.draft, input, fallback),
+      input,
+      fallback,
+      proposal.draft,
+    );
     if (input.characterBrief === undefined) return this.createFromDraft(draft);
     const sourceHash = createHash("sha256")
       .update(input.characterBrief)
@@ -144,11 +161,11 @@ export class CharacterService {
     const sourceHash = createHash("sha256")
       .update(input.sourceText)
       .digest("hex");
-    const draft = authoritativeImportedDraft(
-      proposal.draft,
+    const draft = authorizeGeneratedCharacter(
+      authoritativeImportedDraft(proposal.draft, input, fallback, sourceHash),
       input,
       fallback,
-      sourceHash,
+      proposal.draft,
     );
     return this.createFromDraft(draft, {
       id: createEntityId("source"),
@@ -179,11 +196,25 @@ export class CharacterService {
       stripCharacterMetadata(current),
     );
     const nowUtc = this.clock.nowUtc();
-    const candidate = applyLifePlanningAuthority(
+    if (
+      "authorityDecisions" in mutation &&
+      Object.keys(mutation).some(
+        (key) => !["authorityDecisions", "expectedVersion"].includes(key),
+      )
+    ) {
+      throw new ApiError(
+        422,
+        "authority_confirmation_mixed_edit",
+        "Confirm a reviewed candidate separately from editing new content.",
+      );
+    }
+    let candidate = applyLifePlanningAuthority(
       ensureTimeBasedGoalMilestones(
         normalizeTemporalAnchor(
           {
-            ...applyCharacterMutation(currentDraft, mutation),
+            ...("authorityDecisions" in mutation
+              ? currentDraft
+              : applyCharacterMutation(currentDraft, mutation)),
             // Compilation is server-owned metadata. Older clients omitting
             // it must not reactivate legacy calendar backfill on a v2 draft.
             compilationPolicyVersion: currentDraft.compilationPolicyVersion,
@@ -202,6 +233,18 @@ export class CharacterService {
     );
     assertTimezone(candidate.identity.timezone);
     protectLockedCharacterFields(currentDraft, candidate);
+    // A quarantined proposal is still an edit with auditable source references;
+    // invalid identifiers must not disappear before the existing validation.
+    assertCharacterSourceRefs(candidate);
+    candidate = authorizeEditedCharacter(
+      candidate,
+      currentDraft,
+      "authorityDecisions" in mutation
+        ? mutation.authorityDecisions
+        : undefined,
+      expectedVersion,
+    );
+    candidate.compilationPolicyVersion = CHARACTER_COMPILATION_POLICY_VERSION;
     assertCharacterSourceRefs(candidate);
 
     const next = characterSpecSchema.parse({
@@ -239,12 +282,18 @@ export class CharacterService {
     const head = this.store.getCharacterSpec(agentId);
     if (!source || !head) throw notFound("Character version");
     const nowUtc = this.clock.nowUtc();
-    const sourceDraft = applyLifePlanningAuthority(
-      ensureTimeBasedGoalMilestones(
-        characterDraftSchema.parse(stripCharacterMetadata(source)),
+    const sourceDraft = authorizeEditedCharacter(
+      applyLifePlanningAuthority(
+        ensureTimeBasedGoalMilestones(
+          characterDraftSchema.parse(stripCharacterMetadata(source)),
+        ),
+        this.lifePlanningMode,
       ),
-      this.lifePlanningMode,
+      characterDraftSchema.parse(stripCharacterMetadata(source)),
+      undefined,
+      undefined,
     );
+    sourceDraft.compilationPolicyVersion = CHARACTER_COMPILATION_POLICY_VERSION;
     assertCharacterClockIsEditable(
       this.store,
       agentId,
@@ -297,6 +346,9 @@ export class CharacterService {
         "An archived character cannot be published.",
       );
     }
+    // Already-published historical versions retain their exact saved content.
+    if (head.status === "published") return head;
+    assertCharacterAuthority(head);
     const nowUtc = this.clock.nowUtc();
     const published = characterSpecSchema.parse({
       ...applyLifePlanningAuthority(
@@ -369,7 +421,13 @@ export class CharacterService {
       tier: "high_fidelity",
       timezone: "Asia/Shanghai",
     };
-    return this.createFromDraft(buildOriginalDraft(input));
+    const fallback = buildOriginalDraft(
+      input,
+      CHARACTER_COMPILATION_POLICY_VERSION,
+    );
+    return this.createFromDraft(
+      authorizeGeneratedCharacter(fallback, input, fallback),
+    );
   }
 
   private createFromDraft(
@@ -390,7 +448,9 @@ export class CharacterService {
     assertTimezone(draft.identity.timezone);
     const id = createEntityId("character");
     const spec = characterSpecSchema.parse({
-      ...normalizeCharacterRuleIds(draft),
+      ...(draft.authorityAudit === undefined
+        ? normalizeCharacterRuleIds(draft)
+        : draft),
       id,
       version: 1,
       status: "draft",

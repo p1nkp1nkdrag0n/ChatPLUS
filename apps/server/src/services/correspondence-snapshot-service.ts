@@ -24,6 +24,10 @@ import { DateTime } from "luxon";
 
 import type { Database } from "../db/connection.js";
 import type { DatabaseStore } from "../db/store.js";
+import {
+  CURRENT_PRESSURE_PROJECTION_SQL,
+  CURRENT_PRESSURE_INTERVENTION_SQL,
+} from "../repositories/life-repository.js";
 import { registerFuzzyLifeEffectiveAtSqlFunction } from "../domain/fuzzy-life-effective-time.js";
 import {
   CorrespondenceRepository,
@@ -806,6 +810,7 @@ function selectMutableCausalRows(
                       ${jsonColumn} AS recordJson
                  FROM ${table}
                 WHERE agent_id = ? AND effective_local_date <= ?
+                  ${table === "pressure_episodes" ? `AND ${CURRENT_PRESSURE_PROJECTION_SQL}` : ""}
                   AND julianday(recorded_at_utc) <= julianday(?)
                   AND julianday(updated_at_utc) <= julianday(?)
                   AND julianday(fuzzy_life_effective_at_utc(
@@ -859,6 +864,7 @@ function selectImmutableCausalRows(
                       ${jsonColumn} AS recordJson
                  FROM ${table}
                 WHERE agent_id = ? AND effective_local_date <= ?
+                  ${table === "support_interventions" ? `AND ${CURRENT_PRESSURE_INTERVENTION_SQL}` : ""}
                   AND julianday(recorded_at_utc) <= julianday(?)
                   AND julianday(fuzzy_life_effective_at_utc(
                         effective_local_date, effective_period,

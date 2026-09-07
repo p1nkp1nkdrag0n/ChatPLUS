@@ -35,6 +35,26 @@ export class MemoryValidityRepository {
     sourceId: string,
     nowUtc?: string,
   ): MemoryValiditySource | undefined {
+    if (
+      sourceType === "domain_event" &&
+      this.store.database
+        .prepare(
+          `SELECT 1 FROM domain_events e
+      WHERE e.agent_id = ? AND e.id = ? AND e.stream_type = 'pressure_episode'
+        AND (EXISTS (SELECT 1 FROM pressure_projection_validity v WHERE v.agent_id = e.agent_id
+          AND v.pressure_episode_id = e.stream_id AND v.state = 'invalidated')
+          OR EXISTS (SELECT 1 FROM pressure_evidence_invalidations i WHERE i.agent_id = e.agent_id
+            AND i.pressure_episode_id = e.stream_id AND (
+              i.source_message_id = e.causation_id
+              OR EXISTS (SELECT 1 FROM json_tree(e.payload_json) ref WHERE ref.type = 'text' AND ref.value = i.source_message_id)
+              OR EXISTS (SELECT 1 FROM pressure_contribution_journal j, json_each(j.after_json, '$.sourceMessageIds') ref
+                WHERE j.agent_id = e.agent_id AND j.pressure_episode_id = e.stream_id
+                  AND j.source_message_id = e.causation_id AND ref.value = i.source_message_id)
+            )))`,
+        )
+        .get(agentId, sourceId) !== undefined
+    )
+      return undefined;
     const queries: Record<MemoryValiditySourceType, string> = {
       memory: `SELECT content, namespace, certainty, attribution, stability, status,
         claim_subject_key, claim_disposition, superseded_by_id, merged_into_id,

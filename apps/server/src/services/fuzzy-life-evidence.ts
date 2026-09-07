@@ -100,7 +100,7 @@ export function analyzeStateAttributions(input: {
       const metricContinuation: boolean =
         previousMetric &&
         /^但(?:压力|清晰度).{0,12}\d+(?:\.\d+)?\s*\/\s*10/u.test(value);
-      const independent =
+      const independent: boolean =
         !metricContinuation &&
         /^(?:另外|此外|另一个话题|但|不过|然而|可是|而)/u.test(value);
       if (independent || !/^[，,]$/u.test(previousSeparator)) {

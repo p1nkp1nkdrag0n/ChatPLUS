@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   CharacterSpecSchema,
   EffectivePersonaSnapshotSchema,
+  PressureEpisodeSchema,
   type CharacterSpec,
   type RuntimeState,
   type TemporalTask,
@@ -19,6 +20,7 @@ import { DatabaseStore } from "../db/store.js";
 import { buildOriginalDraft, initialRuntimeState } from "../domain/defaults.js";
 import { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
 import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
+import { LifeRepository } from "../repositories/life-repository.js";
 import { ActorQueue } from "../runtime/actor-queue.js";
 import { FakeClock } from "../runtime/clock.js";
 import { CorrespondenceSnapshotService } from "./correspondence-snapshot-service.js";
@@ -80,6 +82,54 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
       rmSync(fileDirectory, { recursive: true, force: true });
       fileDirectory = undefined;
     }
+  });
+
+  it("excludes invalidated pressure projections while retaining supported pressure in a new snapshot", async () => {
+    const lifeRepository = new LifeRepository(database);
+    for (const id of ["pressure-valid", "pressure-invalid"]) {
+      lifeRepository.insertPressure(
+        PressureEpisodeSchema.parse({
+          id,
+          agentId: AGENT_ID,
+          subject: "character",
+          pressureKind: "work",
+          triggerSummary: id,
+          status: "open",
+          initialPressure: 0.5,
+          currentPressure: 0.5,
+          initialClarity: 0.5,
+          currentClarity: 0.5,
+          initialFeltUnderstood: 0.2,
+          currentFeltUnderstood: 0.2,
+          interventionIds: [],
+          outcomeIds: [],
+          sourceMessageIds: ["message-before-arrival"],
+          latestEvidenceMessageId: "message-before-arrival",
+          effectiveLocalDate: "2026-09-07",
+          effectivePeriod: "morning",
+          temporalPrecision: "period",
+          recordedAtUtc: BEFORE_ARRIVAL,
+          updatedAtUtc: BEFORE_ARRIVAL,
+          idempotencyKey: id,
+          schemaVersion: 1,
+        }),
+      );
+    }
+    database
+      .prepare(
+        "INSERT INTO pressure_projection_validity(agent_id,pressure_episode_id,state,updated_at_utc) VALUES (?,'pressure-invalid','invalidated',?)",
+      )
+      .run(AGENT_ID, OBSERVED_AT);
+    await createCatchUp(
+      snapshotService.createOutboundArrivalTaskHandler("enforced"),
+    ).catchUpAgent(AGENT_ID, OBSERVED_AT);
+    const snapshot = repository.getSnapshotForIncomingLetter(
+      outboundTask.entityId,
+    )!;
+    expect(JSON.stringify(snapshot.contextJson)).toContain("pressure-valid");
+    expect(JSON.stringify(snapshot.contextJson)).not.toContain(
+      "pressure-invalid",
+    );
   });
 
   it("atomically freezes an as-of snapshot and leaves model work pending in shadow", async () => {

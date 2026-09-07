@@ -1028,6 +1028,7 @@ export class FuzzyLifeService {
       );
       if (targetPressureId !== undefined) {
         this.linkPressureIntervention(
+          input.agentId,
           targetPressureId,
           interventionId,
           input.recordedAtUtc,
@@ -1871,6 +1872,7 @@ export class FuzzyLifeService {
     );
     if (pressureEpisodeId !== undefined) {
       this.linkPressureIntervention(
+        input.agentId,
         pressureEpisodeId,
         interventionId,
         input.recordedAtUtc,
@@ -2437,16 +2439,7 @@ export class FuzzyLifeService {
   }
 
   private listPressureEpisodes(agentId: string): PressureEpisode[] {
-    return (
-      this.store.database
-        .prepare(
-          `SELECT episode_json AS json FROM pressure_episodes
-           WHERE agent_id = ? ORDER BY updated_at_utc DESC, rowid DESC`,
-        )
-        .all(agentId) as { json: string }[]
-    ).map((row) =>
-      PressureEpisodeSchema.parse(JSON.parse(row.json) as unknown),
-    );
+    return this.repository.listPressures(agentId, 256);
   }
 
   private pressureEvidenceTexts(episode: PressureEpisode): string[] {
@@ -2463,19 +2456,13 @@ export class FuzzyLifeService {
   }
 
   private linkPressureIntervention(
+    agentId: string,
     pressureEpisodeId: string,
     interventionId: string,
     recordedAtUtc: string,
   ): void {
-    const row = this.store.database
-      .prepare(
-        "SELECT episode_json AS json FROM pressure_episodes WHERE id = ?",
-      )
-      .get(pressureEpisodeId) as { json: string } | undefined;
-    if (row === undefined) return;
-    const current = PressureEpisodeSchema.parse(
-      JSON.parse(row.json) as unknown,
-    );
+    const current = this.repository.findPressure(agentId, pressureEpisodeId);
+    if (current === undefined) return;
     if (current.interventionIds.includes(interventionId)) return;
     this.repository.updatePressure(
       PressureEpisodeSchema.parse({

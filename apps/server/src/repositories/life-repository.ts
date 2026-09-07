@@ -26,6 +26,21 @@ import {
 } from "@personasim/contracts";
 
 import type { Database } from "../db/connection.js";
+import { DatabaseStore } from "../db/store.js";
+import { MemoryValidityRepository } from "./memory-validity-repository.js";
+
+export const CURRENT_PRESSURE_PROJECTION_SQL = `NOT EXISTS (
+  SELECT 1 FROM pressure_projection_validity pressure_validity
+  WHERE pressure_validity.agent_id = pressure_episodes.agent_id
+    AND pressure_validity.pressure_episode_id = pressure_episodes.id
+    AND pressure_validity.state = 'invalidated'
+)`;
+export const CURRENT_PRESSURE_INTERVENTION_SQL = `(support_interventions.dilemma_id IS NOT NULL OR NOT EXISTS (
+  SELECT 1 FROM pressure_projection_validity pressure_validity
+  WHERE pressure_validity.agent_id = support_interventions.agent_id
+    AND pressure_validity.pressure_episode_id = support_interventions.pressure_episode_id
+    AND pressure_validity.state = 'invalidated'
+))`;
 
 type JsonRow = Record<string, unknown>;
 
@@ -49,7 +64,7 @@ export class LifeRepository {
     agentId: string,
     localDate: string,
   ): DailyLifeContext | undefined {
-    return parseOptional(
+    const context = parseOptional(
       this.database
         .prepare(
           `SELECT context_json AS json
@@ -59,6 +74,7 @@ export class LifeRepository {
         .get(agentId, localDate),
       DailyLifeContextSchema,
     );
+    return context === undefined ? undefined : this.currentContext(context);
   }
 
   listDailyContextsBefore(
@@ -75,11 +91,11 @@ export class LifeRepository {
         )
         .all(agentId, beforeLocalDate),
       DailyLifeContextSchema,
-    );
+    ).map((context) => this.currentContext(context));
   }
 
   insertDailyContext(context: DailyLifeContext): boolean {
-    const value = DailyLifeContextSchema.parse(context);
+    const value = this.currentContext(DailyLifeContextSchema.parse(context));
     return (
       this.database
         .prepare(
@@ -118,7 +134,7 @@ export class LifeRepository {
   }
 
   updateDailyContext(context: DailyLifeContext): void {
-    const value = DailyLifeContextSchema.parse(context);
+    const value = this.currentContext(DailyLifeContextSchema.parse(context));
     const result = this.database
       .prepare(
         `UPDATE daily_life_contexts SET
@@ -490,10 +506,11 @@ export class LifeRepository {
 
   insertPressure(value: PressureEpisode): boolean {
     const episode = PressureEpisodeSchema.parse(value);
-    return (
-      this.database
-        .prepare(
-          `INSERT OR IGNORE INTO pressure_episodes(
+    return this.database.transaction(() => {
+      const inserted =
+        this.database
+          .prepare(
+            `INSERT OR IGNORE INTO pressure_episodes(
              id, agent_id, session_id, thread_id, dilemma_id, subject,
              pressure_kind, trigger_summary, status, initial_pressure,
              current_pressure, initial_clarity, current_clarity,
@@ -504,17 +521,64 @@ export class LifeRepository {
              recorded_at_utc, updated_at_utc, idempotency_key,
              schema_version, episode_json
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            episode.id,
+            episode.agentId,
+            episode.sessionId ?? null,
+            episode.threadId ?? null,
+            episode.dilemmaId ?? null,
+            episode.subject,
+            episode.pressureKind,
+            episode.triggerSummary,
+            episode.status,
+            episode.initialPressure,
+            episode.currentPressure,
+            episode.initialClarity,
+            episode.currentClarity,
+            episode.initialFeltUnderstood,
+            episode.currentFeltUnderstood,
+            JSON.stringify(episode.interventionIds),
+            JSON.stringify(episode.outcomeIds),
+            JSON.stringify(episode.sourceMessageIds),
+            episode.latestEvidenceMessageId,
+            episode.resolutionEvidenceMessageId ?? null,
+            episode.effectiveLocalDate,
+            episode.effectivePeriod ?? null,
+            episode.temporalPrecision,
+            episode.recordedAtUtc,
+            episode.updatedAtUtc,
+            episode.idempotencyKey,
+            episode.schemaVersion,
+            JSON.stringify(episode),
+          ).changes > 0;
+      if (inserted) this.journalPressure(undefined, episode);
+      return inserted;
+    })();
+  }
+
+  updatePressure(
+    value: PressureEpisode,
+    options: { recordContribution?: boolean } = {},
+  ): void {
+    const episode = PressureEpisodeSchema.parse(value);
+    this.database.transaction(() => {
+      const before = this.findPressure(episode.agentId, episode.id, {
+        includeInvalidated: true,
+      });
+      const result = this.database
+        .prepare(
+          `UPDATE pressure_episodes SET status = ?, trigger_summary = ?, initial_pressure = ?,
+           current_pressure = ?, initial_clarity = ?, current_clarity = ?,
+           initial_felt_understood = ?, current_felt_understood = ?,
+           intervention_ids_json = ?, outcome_ids_json = ?,
+           source_message_ids_json = ?, latest_evidence_message_id = ?,
+           resolution_evidence_message_id = ?, updated_at_utc = ?,
+           episode_json = ? WHERE id = ? AND agent_id = ?`,
         )
         .run(
-          episode.id,
-          episode.agentId,
-          episode.sessionId ?? null,
-          episode.threadId ?? null,
-          episode.dilemmaId ?? null,
-          episode.subject,
-          episode.pressureKind,
-          episode.triggerSummary,
           episode.status,
+          episode.triggerSummary,
           episode.initialPressure,
           episode.currentPressure,
           episode.initialClarity,
@@ -526,50 +590,88 @@ export class LifeRepository {
           JSON.stringify(episode.sourceMessageIds),
           episode.latestEvidenceMessageId,
           episode.resolutionEvidenceMessageId ?? null,
-          episode.effectiveLocalDate,
-          episode.effectivePeriod ?? null,
-          episode.temporalPrecision,
-          episode.recordedAtUtc,
           episode.updatedAtUtc,
-          episode.idempotencyKey,
-          episode.schemaVersion,
           JSON.stringify(episode),
-        ).changes > 0
+          episode.id,
+          episode.agentId,
+        );
+      if (result.changes !== 1)
+        throw new Error("Pressure episode was not updated");
+      if (options.recordContribution !== false)
+        this.journalPressure(before, episode);
+    })();
+  }
+
+  findPressure(
+    agentId: string,
+    id: string,
+    options: { includeInvalidated?: boolean } = {},
+  ): PressureEpisode | undefined {
+    return parseOptional(
+      this.database
+        .prepare(
+          `SELECT episode_json AS json FROM pressure_episodes
+      WHERE agent_id = ? AND id = ? ${options.includeInvalidated ? "" : `AND ${CURRENT_PRESSURE_PROJECTION_SQL}`}`,
+        )
+        .get(agentId, id),
+      PressureEpisodeSchema,
     );
   }
 
-  updatePressure(value: PressureEpisode): void {
-    const episode = PressureEpisodeSchema.parse(value);
-    const result = this.database
+  listPressures(
+    agentId: string,
+    limit = 50,
+    options: { includeInvalidated?: boolean } = {},
+  ): PressureEpisode[] {
+    return parseRows(
+      this.database
+        .prepare(
+          `SELECT episode_json AS json FROM pressure_episodes
+      WHERE agent_id = ? ${options.includeInvalidated ? "" : `AND ${CURRENT_PRESSURE_PROJECTION_SQL}`}
+      ORDER BY updated_at_utc DESC LIMIT ?`,
+        )
+        .all(agentId, limit),
+      PressureEpisodeSchema,
+    );
+  }
+
+  private journalPressure(
+    before: PressureEpisode | undefined,
+    after: PressureEpisode,
+  ): void {
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    const source = new MemoryValidityRepository(
+      new DatabaseStore(this.database),
+    ).readSource(after.agentId, "message", after.latestEvidenceMessageId);
+    this.database
       .prepare(
-        `UPDATE pressure_episodes SET status = ?, initial_pressure = ?,
-           current_pressure = ?, initial_clarity = ?, current_clarity = ?,
-           initial_felt_understood = ?, current_felt_understood = ?,
-           intervention_ids_json = ?, outcome_ids_json = ?,
-           source_message_ids_json = ?, latest_evidence_message_id = ?,
-           resolution_evidence_message_id = ?, updated_at_utc = ?,
-           episode_json = ? WHERE id = ? AND agent_id = ?`,
+        `INSERT INTO pressure_contribution_journal
+      (agent_id, pressure_episode_id, source_message_id, source_hash, before_json, after_json, recorded_at_utc)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        episode.status,
-        episode.initialPressure,
-        episode.currentPressure,
-        episode.initialClarity,
-        episode.currentClarity,
-        episode.initialFeltUnderstood,
-        episode.currentFeltUnderstood,
-        JSON.stringify(episode.interventionIds),
-        JSON.stringify(episode.outcomeIds),
-        JSON.stringify(episode.sourceMessageIds),
-        episode.latestEvidenceMessageId,
-        episode.resolutionEvidenceMessageId ?? null,
-        episode.updatedAtUtc,
-        JSON.stringify(episode),
-        episode.id,
-        episode.agentId,
+        after.agentId,
+        after.id,
+        after.latestEvidenceMessageId,
+        source?.sourceHash ?? null,
+        before ? JSON.stringify(before) : null,
+        JSON.stringify(after),
+        after.updatedAtUtc,
       );
-    if (result.changes !== 1)
-      throw new Error("Pressure episode was not updated");
+  }
+
+  private currentContext(context: DailyLifeContext): DailyLifeContext {
+    return {
+      ...context,
+      currentPressureEpisodeIds: context.currentPressureEpisodeIds.filter(
+        (id) =>
+          this.database
+            .prepare(
+              `SELECT 1 FROM pressure_projection_validity WHERE agent_id = ? AND pressure_episode_id = ? AND state = 'invalidated'`,
+            )
+            .get(context.agentId, id) === undefined,
+      ),
+    };
   }
 
   listOpenPressures(agentId: string, limit = 6): PressureEpisode[] {
@@ -578,6 +680,7 @@ export class LifeRepository {
         .prepare(
           `SELECT episode_json AS json FROM pressure_episodes
            WHERE agent_id = ? AND status IN ('open', 'improving', 'worsening')
+             AND ${CURRENT_PRESSURE_PROJECTION_SQL}
            ORDER BY updated_at_utc DESC LIMIT ?`,
         )
         .all(agentId, limit),
@@ -629,6 +732,7 @@ export class LifeRepository {
         .prepare(
           `SELECT intervention_json AS json FROM support_interventions
            WHERE agent_id = ?
+             AND ${CURRENT_PRESSURE_INTERVENTION_SQL}
            ORDER BY recorded_at_utc DESC, rowid DESC LIMIT ?`,
         )
         .all(agentId, limit),

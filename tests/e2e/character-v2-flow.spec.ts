@@ -1,6 +1,11 @@
 import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
+type CharacterSpec = {
+  id: string;
+  version: number;
+  persona: { boundaries: unknown[] };
+};
 
 test("creates and publishes a character with optional concerns left blank", async ({
   page,
@@ -110,6 +115,123 @@ test("removes every goal and tension and persists the empty editor state", async
   expect(persisted.character.persona.goals).toEqual([]);
   expect(persisted.character.persona.contradictions).toEqual([]);
   expect(persisted.character.compilationPolicyVersion).toBe(
-    "companion_character_v2",
+    "companion_character_v3",
   );
+});
+
+test("reviews an exact quarantined constraint and saves the author's confirmation", async ({
+  page,
+  request,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning")
+      errors.push(message.text());
+  });
+  const generated = await request.post("/api/characters/generate", {
+    data: {
+      name: `来源复核-${test.info().project.name}`,
+      worldSetting: "当代城市",
+      workOrRole: "插画师",
+      coreTraits: ["细心"],
+      initialRelationship: "刚认识",
+      dialogueStyle: "自然中文",
+      tier: "daily",
+      timezone: "Asia/Shanghai",
+    },
+  });
+  expect(generated.ok()).toBe(true);
+  const { character } = (await generated.json()) as {
+    character: CharacterSpec;
+  };
+  const edited = await request.patch(`/api/characters/${character.id}/draft`, {
+    data: {
+      expectedVersion: character.version,
+      patch: {
+        persona: {
+          boundaries: [
+            {
+              id: "review-boundary",
+              condition: "被要求透露住址",
+              forbiddenBehavior: "披露住址",
+              responsePattern: "说明这是私事",
+              hard: true,
+            },
+          ],
+        },
+      },
+    },
+  });
+  expect(edited.ok()).toBe(true);
+  const before = ((await edited.json()) as { character: CharacterSpec })
+    .character;
+  expect(before.persona.boundaries).toEqual([]);
+  await page.goto(`/characters/${character.id}/edit`);
+  await expect(page).toHaveTitle("PersonaSim");
+  await page.getByRole("button", { name: "约束来源", exact: true }).click();
+  const review = page.getByRole("region", { name: "约束来源复核" });
+  await expect(
+    review.getByRole("heading", { name: "约束来源复核" }),
+  ).toBeVisible();
+  const candidate = review
+    .locator("details")
+    .filter({ hasText: "persona.boundaries" })
+    .filter({ hasText: "披露住址" });
+  await expect(candidate.getByLabel("原始候选")).toHaveValue(/披露住址/);
+  await expect(candidate.getByLabel("当前采用内容")).toHaveValue("尚未采用");
+  await expect(
+    candidate.getByRole("button", { name: "不采用此候选" }),
+  ).toBeVisible();
+  const screenshotDirectory = process.env["CHATPLUS_QA_SCREENSHOT_DIR"];
+  if (screenshotDirectory)
+    await page.screenshot({
+      path: join(
+        screenshotDirectory,
+        `authority-pending-${test.info().project.name}.png`,
+      ),
+      fullPage: true,
+    });
+  await candidate.getByRole("button", { name: "确认此内容与强度" }).click();
+  await expect(candidate.locator("summary")).toContainText("已确认");
+  await expect(
+    candidate.getByRole("button", { name: "确认此内容与强度" }),
+  ).toHaveCount(0);
+  const persisted = (
+    (await (await request.get(`/api/characters/${character.id}`)).json()) as {
+      character: CharacterSpec;
+    }
+  ).character;
+  expect(persisted.version).toBeGreaterThan(before.version);
+  expect(persisted.persona.boundaries).toEqual([
+    expect.objectContaining({
+      id: "review-boundary",
+      hard: true,
+      forbiddenBehavior: "披露住址",
+    }),
+  ]);
+  const rejectedCandidate = review
+    .locator("details")
+    .filter({ has: page.getByRole("button", { name: "不采用此候选" }) })
+    .first();
+  const candidateSummary = await rejectedCandidate
+    .locator("summary")
+    .textContent();
+  await rejectedCandidate.getByRole("button", { name: "不采用此候选" }).click();
+  await expect(
+    review
+      .locator("details")
+      .filter({ hasText: candidateSummary.replace("待复核", "未采用") })
+      .first(),
+  ).toBeVisible();
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  expect(errors).toEqual([]);
+  if (screenshotDirectory)
+    await page.screenshot({
+      path: join(
+        screenshotDirectory,
+        `authority-confirmed-${test.info().project.name}.png`,
+      ),
+      fullPage: true,
+    });
 });

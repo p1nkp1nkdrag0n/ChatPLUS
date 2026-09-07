@@ -235,6 +235,19 @@ export const api = {
           body: body({ spec, expectedVersion: spec.version }),
         },
       ),
+    reviewAuthority: (
+      id: string,
+      expectedVersion: number,
+      decision: {
+        candidateId: string;
+        candidateSha256: string;
+        decision: "accept" | "reject";
+      },
+    ) =>
+      request<CharacterDetail | CharacterSpec>(`/api/characters/${id}/draft`, {
+        method: "PATCH",
+        body: body({ expectedVersion, authorityDecisions: [decision] }),
+      }),
     publish: (id: string, expectedVersion: number) =>
       request<CharacterDetail | CharacterSpec>(
         `/api/characters/${id}/publish`,

@@ -21,6 +21,13 @@
   gap: 10px;
 }
 
+.authority-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block: 12px 20px;
+}
+
 .editor-header h1 {
   font-family: var(--font-editorial);
   font-size: 27px;

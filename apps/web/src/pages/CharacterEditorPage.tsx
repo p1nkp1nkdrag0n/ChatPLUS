@@ -26,6 +26,10 @@ import type {
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { TierLabel } from "../components/TierLabel";
 import { ensureUserEditSource } from "../components/character-editor/source";
+import {
+  AuthorityReview,
+  type AuthorityDecision,
+} from "../components/character-editor/AuthorityReview";
 import type { SelectedField } from "../components/character-editor/types";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
 import { formatLocalDateTime } from "../lib/date";
@@ -36,6 +40,7 @@ const TABS = [
   ["dialogue", "语言风格"],
   ["relationship", "关系"],
   ["knowledge", "知识与边界"],
+  ["authority", "约束来源"],
   ["life", "生活策略"],
   ["json", "高级 JSON"],
   ["versions", "版本历史"],
@@ -123,6 +128,20 @@ export default function CharacterEditorPage() {
     },
   });
 
+  const authorityMutation = useMutation({
+    mutationFn: (decision: AuthorityDecision) => {
+      if (!spec) throw new Error("角色尚未加载");
+      return api.characters.reviewAuthority(spec.id, spec.version, decision);
+    },
+    onSuccess: (result) => {
+      const value = unwrapCharacter(result);
+      setSpec(value);
+      setBaseline(value);
+      setJsonText(JSON.stringify(value, null, 2));
+      void queryClient.invalidateQueries({ queryKey: ["characters"] });
+    },
+  });
+
   const isDirty = useMemo(
     () =>
       Boolean(
@@ -193,9 +212,15 @@ export default function CharacterEditorPage() {
     }
   };
 
-  const busy = saveMutation.isPending || publishMutation.isPending;
+  const busy =
+    saveMutation.isPending ||
+    publishMutation.isPending ||
+    authorityMutation.isPending;
   return (
     <div className="editor-page">
+      {authorityMutation.isError ? (
+        <ErrorBlock error={authorityMutation.error} />
+      ) : null}
       <header className="editor-header">
         <div>
           <div className="editor-header__name">
@@ -251,6 +276,16 @@ export default function CharacterEditorPage() {
 
       <div className="editor-workspace">
         <section className="editor-canvas">
+          {tab === "authority" ? (
+            <>
+              {isDirty ? <p>请先保存当前编辑，再确认约束候选。</p> : null}
+              <AuthorityReview
+                spec={spec}
+                busy={busy || isDirty}
+                onDecide={(decision) => authorityMutation.mutate(decision)}
+              />
+            </>
+          ) : null}
           {tab === "identity" ? (
             <IdentityEditor
               spec={spec}

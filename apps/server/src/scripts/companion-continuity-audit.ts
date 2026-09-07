@@ -3,6 +3,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { z } from "zod";
+import { ConversationContextPlanSchema } from "@personasim/contracts";
+import { buildConversationQualityMetrics } from "./conversation-quality-metrics.js";
 
 import { providerMetricsReport } from "./provider-metrics-summary.js";
 import type { ProfiledLlmCallMetric } from "./provider-metrics-summary.js";
@@ -46,6 +48,59 @@ export async function writeContinuityAudit(directory: string): Promise<void> {
       jsonLines(join(directory, "attempts.jsonl")),
     ]);
   const byTurn = new Map(turns.map((row) => [row.turn, row]));
+  if (turns.length > 0) {
+    const baseline = z
+      .object({
+        dialogue: z.object({
+          frequentPhrases: z.array(z.string()),
+          frequentPhrasesOrigin: z.string().optional(),
+        }),
+      })
+      .parse(
+        JSON.parse(
+          await readFile(join(directory, "baseline-character.json"), "utf8"),
+        ),
+      );
+    const finalTurns = [...byTurn.values()].map((row) => {
+      const response = z
+        .object({
+          userMessage: z.object({ content: z.string() }),
+          assistantMessage: z.object({
+            content: z.string(),
+            metadata: z.record(z.string(), z.unknown()),
+          }),
+        })
+        .parse(row.response);
+      const context = z
+        .object({ plan: z.unknown() })
+        .safeParse(response.assistantMessage.metadata.companionContext);
+      const plan = ConversationContextPlanSchema.safeParse(
+        context.success ? context.data.plan : undefined,
+      );
+      return {
+        turnId: `T${String(row.turn)}`,
+        userText: response.userMessage.content,
+        assistantText: response.assistantMessage.content,
+        ...(plan.success && plan.data.questionIntent !== undefined
+          ? { frozenPlan: plan.data }
+          : {}),
+      };
+    });
+    const quality = buildConversationQualityMetrics({
+      turns: finalTurns,
+      protectedPhrases: ["user_spec", "canon_extract"].includes(
+        baseline.dialogue.frequentPhrasesOrigin ?? "",
+      )
+        ? baseline.dialogue.frequentPhrases
+        : [],
+    });
+    // Descriptive output only; independently supplied human judgments stay in a
+    // separate file and are never replaced by a resumed runner.
+    await writeFile(
+      join(directory, "quality-worksheet.json"),
+      `${JSON.stringify(quality, null, 2)}\n`,
+    );
+  }
   const checkpointIds = new Set<string>();
   for (const row of checkpoints)
     for (const cp of z

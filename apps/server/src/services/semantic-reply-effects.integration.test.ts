@@ -4,6 +4,7 @@ import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
+import qwenRegressions from "../test-fixtures/qwen-fresh-regressions.json";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { GenerateObjectInput } from "./llm-service.js";
 
@@ -124,6 +125,136 @@ describe("semantic reply effects through actual HTTP submission", () => {
     );
     return body;
   }
+
+  it("keeps the full Qwen T8 analysis but rejects its user-fatigue pressure candidate through the provider route", async () => {
+    await setup();
+    envelopes.push({
+      replyDecision: { text: qwenRegressions.pressure.assistantText },
+      worldEffects: {},
+    });
+    const result = await send(
+      qwenRegressions.pressure.userText,
+      "qwen-t8-full",
+    );
+    expect(result.assistantMessage.content).toBe(
+      qwenRegressions.pressure.assistantText,
+    );
+    const db = app.personasim.store.database;
+    expect(
+      db.prepare("SELECT count(*) AS n FROM pressure_episodes").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      db
+        .prepare(
+          "SELECT count(*) AS n FROM domain_events WHERE event_type='life.pressure_disclosed_by_character'",
+        )
+        .get(),
+    ).toEqual({ n: 0 });
+    expect(
+      db
+        .prepare(
+          "SELECT payload_json FROM domain_events WHERE event_type='life.pressure_candidate_rejected'",
+        )
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          payload_json: expect.stringContaining(
+            "experiencer_not_speaker",
+          ) as unknown,
+        }),
+      ]),
+    );
+    const counts = {
+      calls: calls.length,
+      events: db.prepare("SELECT count(*) AS n FROM domain_events").get(),
+    };
+    const replay = await send(
+      qwenRegressions.pressure.userText,
+      "qwen-t8-full",
+    );
+    expect(replay.idempotentReplay).toBe(true);
+    expect(calls).toHaveLength(counts.calls);
+    expect(db.prepare("SELECT count(*) AS n FROM domain_events").get()).toEqual(
+      counts.events,
+    );
+  });
+
+  it.each([true, false])(
+    "persists a character feeling only with independent pre-turn state (authorized: %s)",
+    async (authorized) => {
+      await setup();
+      const state = app.personasim.store.getRuntimeState(agentId)!;
+      app.personasim.store.updateRuntimeState({
+        ...state,
+        stress: authorized ? 0.75 : 0.1,
+        energy: authorized ? 0.3 : 0.9,
+      });
+      envelopes.push({
+        replyDecision: { text: "我最近压力很大，累得不行。" },
+        worldEffects: {},
+      });
+      const result = await send("你最近怎么样？", "character-state");
+      const db = app.personasim.store.database;
+      const rows = db
+        .prepare("SELECT subject, episode_json FROM pressure_episodes")
+        .all() as Array<{ subject: string; episode_json: string }>;
+      expect(rows).toHaveLength(authorized ? 1 : 0);
+      if (authorized)
+        expect(JSON.parse(rows[0]!.episode_json)).toMatchObject({
+          subject: "character",
+          metricOrigin: "algorithm_initial",
+          sourceMessageIds: [result.assistantMessage.id],
+        });
+      else
+        expect(
+          db
+            .prepare(
+              "SELECT count(*) AS n FROM domain_events WHERE event_type='life.pressure_candidate_rejected'",
+            )
+            .get(),
+        ).toMatchObject({ n: 2 });
+      envelopes.push({
+        replyDecision: { text: "这阵子确实不容易。" },
+        worldEffects: {},
+      });
+      const user = await send("我最近压力很大。", "user-state");
+      expect(
+        db
+          .prepare(
+            "SELECT source_message_ids_json FROM pressure_episodes WHERE subject='user'",
+          )
+          .all(),
+      ).toEqual([
+        expect.objectContaining({
+          source_message_ids_json: JSON.stringify([user.userMessage.id]),
+        }),
+      ]);
+    },
+  );
+
+  it.each([qwenRegressions.advice.assistantText, "你可以折一只千纸鹤。"])(
+    "repairs scoped or unresolved advice once, preserves final surfaces, and does not repeat the model on replay: %s",
+    async (bad) => {
+      await setup();
+      envelopes.push({ replyDecision: { text: bad }, worldEffects: {} });
+      const text = "今天我只想吐槽一句，不用替我解决。";
+      const result = await send(text, "qwen-advice");
+      expect(
+        calls.filter((call) => call.purpose === "repair_chat_turn"),
+      ).toHaveLength(1);
+      expect(result.assistantMessage.metadata.semanticReplyGuard).toMatchObject(
+        { repairCalls: 1, finalIssues: [] },
+      );
+      expect(result.decision.chunks.join("\n")).toBe(
+        result.assistantMessage.content,
+      );
+      expect(result.assistantMessage.content).not.toBe(bad);
+      const n = calls.length;
+      expect((await send(text, "qwen-advice")).idempotentReplay).toBe(true);
+      expect(calls).toHaveLength(n);
+    },
+  );
 
   it.each([true, false])(
     "X02 keeps independently grounded user facts and an event follow-up while rejecting an interaction memory (visible error: %s)",

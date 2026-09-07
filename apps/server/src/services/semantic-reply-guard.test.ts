@@ -112,6 +112,81 @@ describe("final reply semantic inspection", () => {
     ).toMatchObject({ diagnosis: "none", issues: [] });
   });
 
+  it("confirms the actual combined T3 pilot advice and preserves its separate content question", () => {
+    const current = buildConversationContextPlan({
+      agentId: "character",
+      sessionId: "session",
+      recentMessages: [],
+      originalQuery:
+        "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    });
+    // Literal provider output: correction-expression-qwen-20260907-remaining,
+    // combined/T3. Replaying this text offline does not rerun the provider.
+    const firstSentence =
+      "面条偏咸确实有点可惜，尤其是刚忙完想好好吃口热乎的时候。";
+    const adviceSentence =
+      "这种时候往往越喝汤越觉得齁，或者配点清淡的小菜、喝口白水顺一顺。";
+    const contentQuestion = "你今晚是煮的挂面还是别的什么面？";
+    const original = decision(firstSentence + adviceSentence + contentQuestion);
+    const inspected = inspectSemanticReply({
+      conversationPlan: current,
+      decision: original,
+    });
+    expect(inspected.diagnosis).toBe("confirmed");
+    expect(inspected.advice).toMatchObject({
+      policy: "none_now",
+      policyEvidence: "explicit_current",
+      diagnosis: "confirmed",
+    });
+    expect(inspected.advice?.confirmedIssues).toContainEqual(
+      expect.objectContaining({
+        code: "ADVICE_NOT_REQUESTED_NOW",
+        text: "喝口白水",
+      }),
+    );
+    expect(
+      inspected.adviceDiagnostics.map((item) => item.inspection.diagnosis),
+    ).toEqual(["confirmed", "confirmed"]);
+
+    const safe = conservativeSemanticReply({
+      conversationPlan: current,
+      decision: original,
+    });
+    expect(safe.reply.text).toContain(firstSentence);
+    expect(safe.reply.text).toContain(contentQuestion);
+    expect(safe.reply.text).not.toContain(adviceSentence);
+    expect(
+      inspectSemanticReply({ conversationPlan: current, decision: safe }),
+    ).toMatchObject({ diagnosis: "none", issues: [] });
+  });
+
+  it.each([
+    ["description", "喝口白水的感觉确实清爽。你今晚煮的是什么面？"],
+    ["reported action", "你刚才配点清淡的小菜、喝口白水顺一顺。"],
+    ["quotation", "朋友说：“配点清淡的小菜、喝口白水顺一顺。”"],
+    ["denial", "我不是让你配点清淡的小菜、喝口白水顺一顺。"],
+  ])("does not repair the T3 activity when used as %s", (_label, text) => {
+    const current = buildConversationContextPlan({
+      agentId: "character",
+      sessionId: "session",
+      recentMessages: [],
+      originalQuery: "先听我说，不用建议。",
+    });
+    const original = decision(text);
+    const inspected = inspectSemanticReply({
+      conversationPlan: current,
+      decision: original,
+    });
+    expect(inspected).toMatchObject({ diagnosis: "none", issues: [] });
+    expect(inspected.advice?.confirmedIssues).toEqual([]);
+    expect(
+      conservativeSemanticReply({
+        conversationPlan: current,
+        decision: original,
+      }),
+    ).toBe(original);
+  });
+
   it("rebuilds divergent visible chunks from the independently valid full text", () => {
     const original = decision("云的形状真有意思。", [
       "你可以列清单，然后去散步。",

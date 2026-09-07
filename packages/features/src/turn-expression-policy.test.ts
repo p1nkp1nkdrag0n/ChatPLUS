@@ -8,6 +8,80 @@ import { buildConversationContextPlan } from "./conversation-context-plan.js";
 
 describe("turn-local expression policy", () => {
   it.each([
+    ["那家店灯打得很低，我觉得舒服。", "natural_optional"],
+    ["想聊聊，但不知道说什么，你问一点吧。", "natural_optional"],
+    ["先听我说，不用建议。", "natural_optional"],
+    ["就吐槽一句，不想展开。", "none"],
+    ["今晚少问。", "none"],
+    ["以后你可以主动问一点。", "natural_optional"],
+    ["今天先聊到这，晚安。", "none"],
+    ["同事叫林桥，不是林乔。", "none"],
+    ["同事叫林桥，不是林乔。你问一点别的吧。", "natural_optional"],
+    ["我那个项目编号是什么？", "none"],
+    ["我那个项目编号是什么？然后请帮我分析一下进度。", "natural_optional"],
+    ["请先问我缺什么条件，但别再追问了。", "none"],
+    ["不用追问。不过现在你可以问一点。", "natural_optional"],
+    ["同事说‘今晚少问’，他在跟别人聊天。", "natural_optional"],
+    ["不是让你问一点，今天不想展开。", "none"],
+    ["不是让你问一点。", "none"],
+    ["我不想让你主动问一点。", "none"],
+    ["今天不想展开，不知道聊什么。", "none"],
+    ["我在听晚安这首歌。", "natural_optional"],
+    ["今晚少问，以后你可以主动问一点。", "none"],
+    ["今天不想展开，以后可以问我一点。", "none"],
+    ["今晚少问，不过现在请问我缺哪些信息。", "necessary_for_explicit_task"],
+    ["同事叫林桥，不是林乔。帮我写一封邮件。", "natural_optional"],
+    ["同事叫林桥，不是林乔。不用帮我写邮件。", "none"],
+    ["请用一个比喻解释这个概念。", "natural_optional"],
+  ])(
+    "keeps correction, closure, invitation and advice separate: %s",
+    (text, intent) => {
+      expect(deriveQuestionIntent(text).questionIntent).toBe(intent);
+    },
+  );
+
+  it("carries recent answers and topic changes only as bounded final conversation data", () => {
+    const recentMessages = [
+      { id: "q1", role: "assistant" as const, text: "那是什么店？" },
+      { id: "a1", role: "user" as const, text: "咖啡店。" },
+      { id: "q2", role: "assistant" as const, text: "咖啡味道怎么样？" },
+      {
+        id: "a2",
+        role: "user" as const,
+        text: "还行。换个话题，今天买了本书。",
+      },
+    ].map((message) => ({ ...message, agentId: "a", sessionId: "s" }));
+    const before = structuredClone(recentMessages);
+    const plan = buildConversationContextPlan({
+      originalQuery: "今天买的书挺有意思。",
+      agentId: "a",
+      sessionId: "s",
+      recentMessages,
+    });
+    expect(plan.questionIntent).toBe("natural_optional");
+    expect(plan.expressionContext?.recentDialogue).toEqual(
+      recentMessages.map(({ role, text }) => ({ role, text })),
+    );
+    expect(recentMessages).toEqual(before);
+    expect(plan).not.toHaveProperty("unansweredQuestions");
+    expect(plan).not.toHaveProperty("relationshipPractices");
+  });
+
+  it("omits oversized dialogue without clipping it into a new fact", () => {
+    const context = buildTurnExpressionContext({
+      assistantTexts: [],
+      recentDialogue: [
+        ...Array.from({ length: 8 }, (_, i) => ({
+          role: "user" as const,
+          text: `第${i}句话`,
+        })),
+        { role: "assistant", text: "很长".repeat(700) },
+      ],
+    });
+    expect(context.recentDialogue).toHaveLength(5);
+    expect(context.recentDialogue?.[0]?.text).toBe("第3句话");
+  });
+  it.each([
     [
       "朋友那句‘少追问我’不是在替我提要求，但请先问我还缺哪些信息。",
       "necessary_for_explicit_task",

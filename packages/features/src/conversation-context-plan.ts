@@ -121,6 +121,17 @@ export function buildConversationContextPlan(
     supportStyle,
     ...deriveQuestionIntent(originalQuery),
     expressionContext: buildTurnExpressionContext({
+      recentDialogue: input.recentMessages
+        .filter(
+          (message) =>
+            message.agentId === input.agentId &&
+            message.sessionId === input.sessionId &&
+            (message.role === "user" || message.role === "assistant"),
+        )
+        .map((message) => ({
+          role: message.role,
+          text: message.text,
+        })),
       assistantTexts: input.recentMessages
         .filter(
           (message) =>

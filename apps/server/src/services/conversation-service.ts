@@ -525,6 +525,7 @@ export class ConversationService {
     });
     const decidedTurn = await this.decisions.decide({
       ...semanticContext,
+      replyGrounding: assembledPrompt.replyGrounding,
       ...(selectedLifeContext.context === undefined
         ? {}
         : { lifeContext: selectedLifeContext.context }),
@@ -635,6 +636,7 @@ export class ConversationService {
     if (semanticEnabled) {
       const last = await this.decisions.finalizeSemanticReply({
         ...semanticContext,
+        replyGrounding: assembledPrompt.replyGrounding,
         spec,
         agentId: input.agentId,
         userText: input.text,

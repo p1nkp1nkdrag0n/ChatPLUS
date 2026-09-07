@@ -1,8 +1,15 @@
-import type { ConversationContextPlan } from "@personasim/contracts";
+import type {
+  ConversationContextPlan,
+  PersonaAdaptation,
+} from "@personasim/contracts";
 import {
   deriveCurrentConversationRequests,
   withoutQuotedConversationText,
 } from "./conversation-requests.js";
+import {
+  deriveFactQueryNeeds,
+  extractExplicitCurrentFactProjections,
+} from "./memory-claim.js";
 
 export const TURN_EXPRESSION_OPENINGS = [
   "这样啊",
@@ -36,6 +43,7 @@ export function hasProtectedTurnOpening(
 export function buildTurnExpressionContext(input: {
   assistantTexts: readonly string[];
   protectedPhrases?: readonly string[];
+  recentDialogue?: readonly { role: "user" | "assistant"; text: string }[];
 }): NonNullable<ConversationContextPlan["expressionContext"]> {
   const allProtectedPhrases = [
     ...new Set(
@@ -63,6 +71,17 @@ export function buildTurnExpressionContext(input: {
       .filter(([, count]) => count >= 2)
       .map(([text, count]) => ({ text, count })),
     protectedPhrases,
+    ...(input.recentDialogue === undefined
+      ? {}
+      : {
+          recentDialogue: input.recentDialogue
+            .slice(-6)
+            .filter(
+              (message) =>
+                message.text.length > 0 && message.text.length <= 1_200,
+            )
+            .map(({ role, text }) => ({ role, text })),
+        }),
   };
 }
 
@@ -101,6 +120,7 @@ export function deriveQuestionIntent(
       active,
     );
   let clarification = false;
+  let invitation = false;
   let noQuestions = false;
   for (const clause of operative) {
     const events = [
@@ -112,11 +132,28 @@ export function deriveQuestionIntent(
         match,
         kind: "stop" as const,
       })),
+      ...[...clause.matchAll(INVITE_QUESTIONS)].map((match) => ({
+        match,
+        kind: "invite" as const,
+      })),
+      ...[...clause.matchAll(END_TURN)].map((match) => ({
+        match,
+        kind: "stop" as const,
+      })),
     ].sort((a, b) => a.match.index - b.match.index);
     for (const { match, kind } of events) {
       const prefix = clause.slice(0, match.index);
+      const lastTiming = [
+        ...prefix.matchAll(/以后|今后|往后|将来|现在|今晚|今天|这轮/gu),
+      ].at(-1)?.[0];
+      if (
+        noQuestions &&
+        kind !== "stop" &&
+        /^(?:以后|今后|往后|将来)$/u.test(lastTiming ?? "")
+      )
+        continue;
       if (NEGATED_REQUEST.test(prefix)) {
-        if (kind === "ask") {
+        if (kind === "ask" || kind === "invite") {
           clarification = false;
           noQuestions = true;
         }
@@ -129,9 +166,12 @@ export function deriveQuestionIntent(
         )
       ) {
         clarification = false;
+        invitation = false;
         noQuestions = true;
       } else {
-        clarification = true;
+        clarification =
+          kind === "ask" && /(?:缺|信息|条件|补充|确认|澄清)/u.test(clause);
+        invitation = !clarification;
         noQuestions = false;
       }
     }
@@ -146,7 +186,23 @@ export function deriveQuestionIntent(
       questionIntent: "necessary_for_explicit_task",
       questionIntentReason: "explicit_clarification",
     };
-  if (requests.adviceRequested || requests.detailedAnalysisRequested)
+  if (invitation)
+    return {
+      questionIntent: "natural_optional",
+      questionIntentReason: "ordinary",
+    };
+  const independentTask = operative.some((clause) =>
+    [
+      ...clause.matchAll(
+        /(?:请(?:你)?|帮我|替我).{0,6}(?:写|草拟|翻译|总结|计算|解释|比较|设计|起草)/gu,
+      ),
+    ].some((match) => !NEGATED_REQUEST.test(clause.slice(0, match.index))),
+  );
+  if (
+    requests.adviceRequested ||
+    requests.detailedAnalysisRequested ||
+    independentTask
+  )
     return {
       questionIntent: "natural_optional",
       questionIntentReason: "ordinary",
@@ -158,6 +214,11 @@ export function deriveQuestionIntent(
     };
   if (closedVent)
     return { questionIntent: "none", questionIntentReason: "closed_vent" };
+  const completedCorrection = extractExplicitCurrentFactProjections(
+    active,
+  ).some((fact) => fact.revisionIntent === "explicit_correction");
+  if (completedCorrection || deriveFactQueryNeeds(active).length > 0)
+    return { questionIntent: "none", questionIntentReason: "ordinary" };
   return {
     questionIntent: "natural_optional",
     questionIntentReason: "ordinary",
@@ -171,20 +232,33 @@ const REPORTED_OR_HYPOTHETICAL =
 const CLARIFICATION_REQUEST =
   /(?:请|可以|先|需要).{0,8}(?:问我|向我确认|帮我澄清)|有哪些.{0,5}(?:信息|条件).{0,5}(?:要|需要).{0,3}(?:补充|确认)/giu;
 const NO_QUESTIONS =
-  /(?:不用|不要|不必|无需|别)(?:再|继续|先)?(?:追问|问|向我确认|帮我澄清)/giu;
+  /(?:不用|不要|不必|无需|别)(?:再|继续|先)?(?:追问|问|向我确认|帮我澄清)|(?:今晚|这轮|现在|今天)?(?:少问|少追问)/giu;
+const INVITE_QUESTIONS =
+  /(?:你|请你|可以|主动)(?:也|来|先|再)?(?:主动)?(?:问(?:我)?(?:一|几)?(?:点|个|些|句)|带(?:一点)?话题)/giu;
+const END_TURN =
+  /(?:不想|不用|不要|不必)(?:再|继续)?展开|(?:只|就)(?:说|吐槽)一句|说到这(?:里)?|到此为止|先聊到这|不聊了|^(?:那就|先)?晚安(?:啦|了|吧)?$/giu;
 const NEGATED_REQUEST =
-  /(?:不是|并非|不用|不要|不必|没让|没有让|无需|别)(?:你|请你|让你)?\s*$/u;
+  /(?:不是|并非|不用|不要|不必|不想|不希望|没让|没有让|无需|别)(?:你|请你|让你|让|要你|要)?\s*$/u;
 
 /** Shared by initial generation and every bounded repair path. */
-export function turnExpressionPromptView(plan: ConversationContextPlan) {
+export function turnExpressionPromptView(
+  plan: ConversationContextPlan,
+  practices: readonly Pick<PersonaAdaptation, "proposal">[] = [],
+) {
   return {
     questionIntent: plan.questionIntent ?? "natural_optional",
     questionIntentReason: plan.questionIntentReason,
     recentExpression: plan.expressionContext,
+    applicablePractices: practices.map(({ proposal }) => ({
+      practice: proposal.practice,
+      scope: proposal.scope,
+    })),
+    practiceGuidance:
+      "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
     questionGuidance:
-      "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
     expressionGuidance:
-      "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
     analysisGuidance:
       "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance.",
   };

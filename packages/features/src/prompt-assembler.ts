@@ -119,6 +119,8 @@ export interface AssemblePromptInput {
 }
 
 export interface AssembledPrompt {
+  /** Complete admitted grounding reused by bounded repair, with no new retrieval. */
+  replyGrounding: string;
   system: string;
   prompt: string;
   messages: PromptMessageLike[];
@@ -854,11 +856,14 @@ export function assembleChatPrompt(
           adviceRequested: input.conversationPlan.adviceRequested,
           helpTiming: input.conversationPlan.helpTiming,
           advicePolicy: deriveAdvicePolicy(input.conversationPlan),
-          expression: turnExpressionPromptView(input.conversationPlan),
+          expression: turnExpressionPromptView(
+            input.conversationPlan,
+            input.effectivePersona?.relationshipPractices,
+          ),
           adviceGuidance:
             "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
           guidance:
-            "Sharing and venting need not become analysis, advice, a follow-up question, a goal update or relationship growth. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
+            "Use the shared expression view for response style and questions. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
         };
   const promptContext: DefaultPromptContext = {
     appPolicy:
@@ -1103,7 +1108,46 @@ export function assembleChatPrompt(
     ],
     replyStrategy,
     segmentTrace: assembled.trace,
+    // Reuse complete, admitted grounding records in any existing repair. Never
+    // recall again or resurrect a segment dropped by the initial token budget.
+    replyGrounding: retainedReplyGrounding(assembled),
   };
+}
+
+function retainedReplyGrounding(assembled: {
+  prompt: string;
+  trace: {
+    segments: readonly { id: string; included: boolean; truncated: boolean }[];
+  };
+}): string {
+  const lines = assembled.prompt.split("\n");
+  const entries = [
+    ["13_retrieved_evidence", "RETRIEVED_EVIDENCE_JSON"],
+    ["07_user_model", "REFERENCE_CONTEXT_JSON"],
+    ["14_recent_verbatim", "RECENT_VERBATIM_JSON"],
+    ["10z_life_context", "LIFE_CONTEXT_JSON"],
+  ] as const;
+  return entries
+    .flatMap(([id, label]) => {
+      if (
+        !assembled.trace.segments.some(
+          (segment) => segment.id === id && segment.included,
+        )
+      )
+        return [];
+      const index = lines.indexOf(label);
+      const payload = index < 0 ? undefined : lines[index + 1];
+      if (payload === undefined) return [];
+      try {
+        // The assembler emits JSON on one line. Fail closed if a renderer ever
+        // changes shape; partial excerpts must not become repaired facts.
+        JSON.parse(payload);
+        return [`${label}\n${payload}`];
+      } catch {
+        return [];
+      }
+    })
+    .join("\n");
 }
 
 /** Global pressure may shorten ordinary context, never half-deliver a control. */

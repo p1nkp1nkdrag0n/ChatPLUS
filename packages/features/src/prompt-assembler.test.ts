@@ -51,6 +51,75 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
 };
 
 describe("complete evidence budgets", () => {
+  it("keeps complete records admitted by whole-record budget compaction in repair grounding", () => {
+    const evidence = Array.from({ length: 8 }, (_, index) => {
+      const memoryId = `budget-memory-${index}`;
+      return {
+        ...MEMORY_EVIDENCE.evidence[0]!,
+        memoryId,
+        memoryContent: `那是咖啡店${index}。${"当时公开的具体细节。".repeat(110)}`,
+        evidence: {
+          ...MEMORY_EVIDENCE.evidence[0]!.evidence,
+          id: `budget-evidence-${index}`,
+          memoryId,
+          quote: `我说的是咖啡店${index}。${"当时公开的具体细节。".repeat(110)}`,
+        },
+      };
+    });
+    const result = assembleChatPrompt(
+      baseInput({
+        memoryEvidence: { ...MEMORY_EVIDENCE, evidence },
+        memoryUse: {
+          backgroundEvidenceIds: evidence.map((item) => item.evidence.id),
+          behavioralPreferenceEvidenceIds: [],
+          explicitMentionEvidenceIds: [],
+          omissions: [],
+        },
+      }),
+    );
+    const admitted = promptSegmentJson(
+      result.prompt,
+      "RETRIEVED_EVIDENCE_JSON",
+    ) as { evidence: unknown[] };
+    expect(admitted.evidence.length).toBeGreaterThan(0);
+    expect(admitted.evidence.length).toBeLessThan(8);
+    expect(
+      result.segmentTrace.segments.find(
+        (item) => item.id === "13_retrieved_evidence",
+      )?.truncated,
+    ).toBe(true);
+    expect(
+      promptSegmentJson(result.replyGrounding, "RETRIEVED_EVIDENCE_JSON"),
+    ).toEqual(admitted);
+  });
+  it("shares corrected current values with repairs while retaining the original correction only in audit", () => {
+    const original: EvidenceBundle = {
+      ...MEMORY_EVIDENCE,
+      query: "同事叫什么？",
+      factCoverage: [{ entity: "同事", attribute: "name", covered: true }],
+      evidence: [
+        {
+          ...MEMORY_EVIDENCE.evidence[0]!,
+          memoryContent: "用户的同事姓名：林桥。",
+          currentFact: { entity: "同事", attribute: "name", value: "林桥" },
+          evidence: {
+            ...MEMORY_EVIDENCE.evidence[0]!.evidence,
+            quote: "同事叫林桥，不是林乔。",
+            contextSummary: "旧名字林乔已被纠正。",
+          },
+        },
+      ],
+    };
+    const result = assembleChatPrompt(
+      baseInput({ userMessage: original.query, memoryEvidence: original }),
+    );
+    expect(result.prompt).toContain("林桥");
+    expect(result.prompt).not.toContain("林乔");
+    expect(result.replyGrounding).toContain("林桥");
+    expect(result.replyGrounding).not.toContain("林乔");
+    expect(result.replyGrounding).toContain('"sourceId":"message-hiking"');
+    expect(original.evidence[0]?.evidence.quote).toContain("不是林乔");
+  });
   it.each([undefined, 3_000, 4_000, 8_000])(
     "keeps use permissions with evidence at %s tokens",
     (budget) => {
@@ -252,6 +321,18 @@ function promptSegmentJson(prompt: string, label: string): unknown {
 }
 
 describe("complete turn-control delivery", () => {
+  it("reuses only complete admitted grounding in repairs", () => {
+    const result = assembleChatPrompt(
+      baseInput({
+        userMessage: "那家店怎么样？",
+        recentMessages: [{ role: "user", content: "是咖啡店，灯光很舒服。" }],
+      }),
+    );
+    expect(result.replyGrounding).toContain("咖啡店");
+    expect(result.replyGrounding).toContain("RECENT_VERBATIM_JSON");
+    expect(result.replyGrounding).not.toContain("OUTPUT_CONTRACT_JSON");
+    expect(result.replyGrounding).not.toContain("REPLY_STRATEGY_JSON");
+  });
   it.each([
     "只是抱怨一下今天又改了方案，不用解决。",
     "朋友说‘别再问我’，那是他对别人说的，不是在替我提要求。",

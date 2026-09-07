@@ -54,7 +54,10 @@ describe("persona runtime through committed HTTP turns", () => {
     vi.restoreAllMocks();
   });
 
-  async function setup(mode: PersonaRuntimeMode = "enforced") {
+  async function setup(
+    mode: PersonaRuntimeMode = "enforced",
+    liveWorldEffectsMode?: "off",
+  ) {
     app = await buildApp({
       config: readConfig({
         nodeEnv: "test",
@@ -65,6 +68,7 @@ describe("persona runtime through committed HTTP turns", () => {
         autobiographyMode: "off",
         companionContextMode: "enforced",
         personaRuntimeMode: mode,
+        ...(liveWorldEffectsMode === undefined ? {} : { liveWorldEffectsMode }),
         llm: {
           provider: "fixture",
           baseUrl: "https://example.invalid",
@@ -151,6 +155,67 @@ describe("persona runtime through committed HTTP turns", () => {
         .get(spec.id) as { count: number }
     ).count;
   }
+
+  it("shares answered details with repair and never learns a preference from an ordinary question or skip", async () => {
+    await setup("enforced", "off");
+    const sessionId = await newSession();
+    const originalGenerate = app.personasim.llm.generateObject.bind(
+      app.personasim.llm,
+    );
+    let reply = "那是什么店？";
+    let breakReply = false;
+    const generate = vi
+      .spyOn(app.personasim.llm, "generateObject")
+      .mockImplementation((input) => {
+        if (input.purpose === "chat_turn" && breakReply)
+          return Promise.resolve({ invalid: true } as never);
+        if (input.purpose === "chat_turn" && input.fixture !== undefined) {
+          const fixture = structuredClone(input.fixture) as {
+            replyDecision?: { text: string; chunks?: string[] };
+          };
+          if (fixture.replyDecision) {
+            fixture.replyDecision.text = reply;
+            fixture.replyDecision.chunks = [reply];
+          }
+          return Promise.resolve(fixture as never);
+        }
+        return originalGenerate(input);
+      });
+    const first = await send(
+      sessionId,
+      "那家店灯光挺舒服的。",
+      "question-grounding-1",
+    );
+    expect(first.statusCode, first.body).toBe(201);
+    expect(first.json<ChatTurnResult>().assistantMessage.content).toBe(
+      "那是什么店？",
+    );
+    reply = "咖啡店啊，灯光舒服确实适合坐一会儿。";
+    const answer = await send(sessionId, "咖啡店。", "question-grounding-2");
+    expect(answer.statusCode, answer.body).toBe(201);
+    generate.mockClear();
+    breakReply = true;
+    const userText = "换个话题，今天买了本书。先听我说，不用建议。";
+    const response = await send(sessionId, userText, "question-grounding-3");
+    expect(response.statusCode, response.body).toBe(201);
+    const chat = generate.mock.calls.find(
+      ([input]) => input.purpose === "chat_turn",
+    )?.[0];
+    const repair = generate.mock.calls.find(
+      ([input]) => input.purpose === "repair_chat_turn",
+    )?.[0];
+    for (const prompt of [chat?.prompt, repair?.prompt]) {
+      expect(prompt).toContain('"questionIntent":"natural_optional"');
+      expect(prompt).toContain("咖啡店");
+      expect(prompt).toContain("recentDialogue");
+    }
+    expect(count("persona_adaptations")).toBe(0);
+    const calls = generate.mock.calls.length;
+    const replay = await send(sessionId, userText, "question-grounding-3");
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(generate.mock.calls).toHaveLength(calls);
+    expect(snapshot().relationshipPractices).toEqual([]);
+  });
 
   it("preserves active and ordered requests in generated and repaired HTTP prompts", async () => {
     await setup();

@@ -1037,6 +1037,10 @@ export const PressureEpisodeSchema = z
     triggerSummary: NonEmptyTextSchema,
     status: z.enum(["open", "improving", "worsening", "resolved"]),
     initialPressure: UnitIntervalSchema,
+    /** Provenance of the numeric pressure, absent on legacy episodes. */
+    metricOrigin: z
+      .enum(["explicit_self_report", "algorithm_initial", "algorithm_update"])
+      .optional(),
     currentPressure: UnitIntervalSchema,
     initialClarity: UnitIntervalSchema,
     currentClarity: UnitIntervalSchema,

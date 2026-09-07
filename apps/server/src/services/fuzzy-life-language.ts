@@ -11,6 +11,7 @@ import type {
 import { clamp01, inferDomain } from "./fuzzy-life-planning.js";
 import {
   analyzeLifeEvidence,
+  analyzeStateAttributions,
   evidenceSubject,
   evidenceValence,
 } from "./fuzzy-life-evidence.js";
@@ -587,8 +588,15 @@ export function isIdentityFacetOfLifeChoice(text: string): boolean {
 }
 
 export function isPressureFeedbackText(text: string): boolean {
-  return analyzeLifeEvidence(text).clauses.some(
-    (clause) => clause.pressureFeedback,
+  return analyzeStateAttributions({
+    text,
+    speakerRole: "user",
+    sourceMessageId: "classification",
+  }).some(
+    (candidate) =>
+      candidate.kind === "feedback" &&
+      candidate.experiencer === "speaker" &&
+      candidate.modality === "asserted",
   );
 }
 

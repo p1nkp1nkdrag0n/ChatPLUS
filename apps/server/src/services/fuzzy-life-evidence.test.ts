@@ -2,10 +2,130 @@ import { describe, expect, it } from "vitest";
 
 import {
   analyzeLifeEvidence,
+  analyzeStateAttributions,
+  STATE_ATTRIBUTION_VERSION,
   evidenceSubject,
   evidenceValence,
 } from "./fuzzy-life-evidence.js";
 import { collectLifeAssociationEvidence } from "./fuzzy-life-association.js";
+
+describe("versioned relative state attribution", () => {
+  const candidates = (
+    text: string,
+    speakerRole: "character" | "user" = "character",
+  ) =>
+    analyzeStateAttributions({
+      text,
+      speakerRole,
+      sourceMessageId: "source-state-1",
+    });
+
+  it.each([
+    ["我理解你的疲惫。", "addressee", "explicit", "asserted"],
+    [
+      "我觉得可以分开来看，在这种时候你的疲惫是合理的反应。",
+      "addressee",
+      "explicit",
+      "asserted",
+    ],
+    ["她说‘我压力很大’。", "third_party", "explicit", "reported"],
+    ["如果是我，我可能也会焦虑。", "speaker", "explicit", "conditional"],
+    ["我并不疲惫，只是在理解你。", "speaker", "explicit", "negated"],
+    ["我明天会很焦虑。", "speaker", "explicit", "planned"],
+    ["我很焦虑吗？", "speaker", "explicit", "question"],
+    ["请翻译：我很焦虑。", "speaker", "explicit", "meta"],
+    ["我觉得可以分开来看，压力很大。", "unknown", "unresolved", "asserted"],
+    ["最近压力很大。", "unknown", "unresolved", "asserted"],
+  ] as const)(
+    "keeps the local experiencer and evidence mode: %s",
+    (text, experiencer, bindingMethod, modality) => {
+      expect(
+        candidates(text).find((item) => item.kind === "pressure"),
+      ).toMatchObject({
+        experiencer,
+        bindingMethod,
+        modality,
+        attributionVersion: STATE_ATTRIBUTION_VERSION,
+        speakerRole: "character",
+        sourceMessageId: "source-state-1",
+      });
+    },
+  );
+
+  it("does not let the cognition speaker leak across a sentence boundary", () => {
+    expect(
+      candidates("我觉得你很累。最近压力很大。").map(
+        (item) => item.experiencer,
+      ),
+    ).toEqual(["addressee", "unknown"]);
+  });
+
+  it.each(["user", "character"] as const)(
+    "binds first person to the actual %s speaker while preserving legacy subject semantics",
+    (speakerRole) => {
+      const text = "我最近加班，累得不行。";
+      expect(candidates(text, speakerRole)).toEqual([
+        expect.objectContaining({
+          sourceText: "累得不行",
+          speakerRole,
+          experiencer: "speaker",
+          bindingMethod: "local_ellipsis",
+          modality: "asserted",
+        }),
+      ]);
+      expect(analyzeLifeEvidence(text).clauses[0]?.subject).toBe("user");
+    },
+  );
+
+  it.each([
+    "我觉得我有点累。",
+    "我觉得很累。",
+    "听你这么说，我也有点难受。",
+    "你的话让我很焦虑。",
+  ])("recognizes the embedded or affected experiencer: %s", (text) => {
+    expect(candidates(text)).toContainEqual(
+      expect.objectContaining({
+        experiencer: "speaker",
+        bindingMethod: "explicit",
+        modality: "asserted",
+      }),
+    );
+  });
+
+  it("retains quantified pressure and feedback with raw source spans", () => {
+    const text =
+      "🎬　我最近加班，　累得不行。\n我压力是 0.72。你这样说让我感到被理解，压力缓解了。";
+    const result = candidates(text);
+    expect(
+      result.some(
+        (item) => item.kind === "feedback" && item.experiencer === "speaker",
+      ),
+    ).toBe(true);
+    expect(result.some((item) => item.sourceText === "我压力是 0.72")).toBe(
+      true,
+    );
+    for (const item of result) {
+      expect(text.slice(item.sourceSpan.start, item.sourceSpan.end)).toBe(
+        item.sourceText,
+      );
+    }
+  });
+
+  it.each([
+    "我最近加班。累得不行。",
+    "我最近加班；累得不行。",
+    "我最近加班，另外这个项目压力很大，累得不行。",
+    "我最近加班，但压力很大。",
+    "我最近加班，‘你很焦虑’，累得不行。",
+  ])("abstains after topic, quote and sentence boundaries: %s", (text) => {
+    expect(
+      candidates(text).filter(
+        (item) =>
+          item.experiencer === "speaker" && item.modality === "asserted",
+      ),
+    ).toEqual([]);
+  });
+});
 
 describe("clause-level life evidence", () => {
   it("retains actual acceptance and its funding cost without promoting a possible future salary", () => {

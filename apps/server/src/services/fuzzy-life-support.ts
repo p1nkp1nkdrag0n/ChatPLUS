@@ -3,6 +3,8 @@ import type { SupportMode } from "@personasim/contracts";
 import { extractDilemmaChoices, topicOverlap } from "./fuzzy-life-choice.js";
 import {
   analyzeLifeEvidence,
+  analyzeStateAttributions,
+  STATE_PRESSURE_PREDICATE as PRESSURE,
   type LifeEvidenceClause,
 } from "./fuzzy-life-evidence.js";
 
@@ -12,14 +14,8 @@ export interface SpeakerSelfDisclosure {
   feedbackText: string;
 }
 
-const PRESSURE =
-  /焦虑|压力|清晰度|难受|低落|撑不住|烦躁|崩溃|害怕|发愁|失眠|反复想|很乱|不知所措|累坏|(?:有点|很|真|太|挺|实在|一直|最近|也|都)累|疲惫|疲倦|一直.{0,6}压着|压得.{0,8}(?:喘不过气|难受)|肩膀.{0,8}(?:绷|紧)/u;
-const DENIED_PRESSURE =
-  /(?:并不|没有|不再|不觉得|没觉得|毫无|一点也不).{0,8}(?:焦虑|压力|难受|低落|烦躁|害怕|失眠|疲惫|疲倦|累)|不(?:焦虑|难受|害怕|累)|不是.{0,8}(?:焦虑|难受|累)/u;
 const DILEMMA =
   /犹豫|纠结|拿不定主意|左右为难|举棋不定|没(?:有)?决定|难以决定|不知.{0,8}(?:选|该)|要不要|该不该|是否应该|选哪个|怎么选|怎么办/u;
-const PRESSURE_TOPIC_MENTION =
-  /(?:话题|谈话|讨论).{0,20}(?:从|关于)|(?:刚才|之前|前面).{0,8}(?:说|聊|谈|提到).{0,12}(?:焦虑|压力)/u;
 
 /** The evidence parser calls first person "user"; here that means the actual speaker. */
 export function analyzeSpeakerSelfDisclosure(
@@ -56,7 +52,15 @@ export function analyzeSpeakerSelfDisclosure(
         (allowUnstatedSubject && clause.subject === "unspecified"))
     );
   });
-  const active = owned.filter((clause) => clause.modality === "asserted");
+  // This text-only adapter preserves the legacy return shape. Persistence must
+  // call analyzeStateAttributions with the actual source message and role.
+  const activeStates = analyzeStateAttributions({
+    text,
+    speakerRole: "character",
+    sourceMessageId: "",
+  }).filter(
+    (state) => state.experiencer === "speaker" && state.modality === "asserted",
+  );
   const dilemmaClauses = owned.filter((clause) =>
     ["asserted", "question"].includes(clause.modality),
   );
@@ -69,23 +73,14 @@ export function analyzeSpeakerSelfDisclosure(
     extractDilemmaChoices(dilemmaText, dilemmaClassify) !== undefined;
   return {
     dilemmaText: hasDilemma ? dilemmaText : "",
-    pressureText: joinSources(
-      active.filter(
-        (clause) =>
-          PRESSURE.test(clause.classifyText) &&
-          !PRESSURE_TOPIC_MENTION.test(clause.classifyText) &&
-          !DENIED_PRESSURE.test(clause.classifyText),
-      ),
-    ),
-    feedbackText: joinSources(
-      active.filter(
-        (clause) =>
-          clause.pressureFeedback ||
-          /让我(?:觉得|感到).{0,12}(?:被听见|被理解|轻松|难受|焦虑)|你(?:没)?听懂了/u.test(
-            clause.classifyText,
-          ),
-      ),
-    ),
+    pressureText: activeStates
+      .filter((state) => state.kind === "pressure")
+      .map((state) => state.sourceText)
+      .join("，"),
+    feedbackText: activeStates
+      .filter((state) => state.kind === "feedback")
+      .map((state) => state.sourceText)
+      .join("，"),
   };
 }
 

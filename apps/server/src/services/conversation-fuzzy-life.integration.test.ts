@@ -458,6 +458,7 @@ describe("fuzzy-life conversation integration", () => {
           "我最近为《夜航》的剪辑发愁。我在重剪结尾和保留原版之间犹豫，压力 6/10。",
       });
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       const sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -507,6 +508,7 @@ describe("fuzzy-life conversation integration", () => {
             : "我现在轻松多了，谢谢你陪我。",
     });
     const character = await createAndPublish(app);
+    seedCharacterPressureBasis(app, character.id);
     const sessionId = await createSession(app, character.id);
     const disclosure = await sendChat(
       app,
@@ -599,6 +601,7 @@ describe("fuzzy-life conversation integration", () => {
           : "我现在轻松多了，谢谢你听我说。",
     });
     const character = await createAndPublish(app);
+    seedCharacterPressureBasis(app, character.id);
     const sessionId = await createSession(app, character.id);
     await sendChat(
       app,
@@ -650,6 +653,7 @@ describe("fuzzy-life conversation integration", () => {
           : "我现在压力 3/10。你的考试也很辛苦，我在听你说。",
     });
     const character = await createAndPublish(app);
+    seedCharacterPressureBasis(app, character.id);
     const sessionId = await createSession(app, character.id);
     await sendChat(
       app,
@@ -740,6 +744,7 @@ describe("fuzzy-life conversation integration", () => {
           ++replies === 1 ? "我最近剪片很累。" : "我听见你的意思了。",
       });
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       const sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -773,6 +778,7 @@ describe("fuzzy-life conversation integration", () => {
         clock,
       );
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       let sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -803,6 +809,7 @@ describe("fuzzy-life conversation integration", () => {
         semanticReply: () => (++replies === 1 ? "我最近剪片很累。" : reply),
       });
       const character = await createAndPublish(app);
+      seedCharacterPressureBasis(app, character.id);
       const sessionId = await createSession(app, character.id);
       await sendChat(
         app,
@@ -1287,7 +1294,7 @@ describe("fuzzy-life conversation integration", () => {
         sessionId,
         character.id,
         "mode-switch-older-pressure",
-        "刚下班。今天没有发生大事，就是被很多小消息磨得很累。",
+        "我刚下班。我被很多小消息磨得很累，今天没有遇到大事。",
       );
       const olderPressure = latestJson<PressureEpisode>(
         app,
@@ -2653,7 +2660,7 @@ describe("fuzzy-life conversation integration", () => {
     for (const [id, text] of [
       [
         "pressure-work-identity-facet",
-        "最难受的不是忙，而是我觉得自己每一天都在做不相信的东西。",
+        "我最难受的不是忙，而是我觉得自己每一天都在做不相信的东西。",
       ],
       [
         "pressure-work-fear-facet",
@@ -2887,7 +2894,7 @@ describe("fuzzy-life conversation integration", () => {
         firstScale.id,
       ),
     ).toMatchObject({
-      outcomeIds: [recordedOutcome.id],
+        outcomeIds: [recordedOutcome.id],
       currentPressure: 0.6,
       currentClarity: 0.7,
     });
@@ -4153,4 +4160,15 @@ function asRecord(value: unknown): Record<string, unknown> {
     throw new TypeError("Expected a record value");
   }
   return value as Record<string, unknown>;
+}
+
+// Positive disclosure cases start from an independently authored simulation state.
+function seedCharacterPressureBasis(app: PersonaSimApp, agentId: string): void {
+  const state = app.personasim.store.getRuntimeState(agentId)!;
+  app.personasim.store.updateRuntimeState({
+    ...state,
+    stress: 0.75,
+    energy: 0.3,
+    moodValence: -0.25,
+  });
 }

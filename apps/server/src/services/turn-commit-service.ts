@@ -337,6 +337,7 @@ export class TurnCommitService {
             assistantText: semanticMessages.assistantMessage.content,
             recordedAtUtc: input.nowUtc,
             correlationId: input.command.clientMessageId,
+            priorState: currentState,
           });
         }
         this.audits.persistConversationTurn({

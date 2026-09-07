@@ -38,7 +38,9 @@ import {
   type ReflectionRecord,
   type SupportIntervention,
   type SupportMode,
+  type RuntimeState,
 } from "@personasim/contracts";
+import { validateCharacterPressureEvidence } from "./pressure-state-evidence.js";
 import { projectCharacterTime, stableId } from "@personasim/features";
 
 import type { DatabaseStore } from "../db/store.js";
@@ -605,6 +607,8 @@ export class FuzzyLifeService {
     assistantText: string;
     recordedAtUtc: string;
     correlationId: string;
+    /** State before this reply's effects; the reply cannot authorize itself. */
+    priorState?: RuntimeState;
   }): ConversationLifeImpact {
     // A user's offer can only refer to disclosures already visible before
     // this reply. New assistant disclosures are recorded afterwards.
@@ -886,6 +890,10 @@ export class FuzzyLifeService {
         ...(dilemma === undefined ? {} : { dilemmaId: dilemma.id }),
         subject: "user",
         pressureKind: pressureKind(domain),
+        metricOrigin:
+          parseScaleMetric(userPressureClassifyText, "pressure") === undefined
+            ? "algorithm_initial"
+            : "explicit_self_report",
         triggerSummary: userDisclosure.pressureText,
         status: "open",
         initialPressure:
@@ -1388,12 +1396,6 @@ export class FuzzyLifeService {
     input: Parameters<FuzzyLifeService["recordConversationTurn"]>[0],
   ): ConversationLifeImpact {
     const evidence = analyzeSpeakerSelfDisclosure(input.assistantText);
-    if (
-      !evidence.dilemmaText &&
-      !evidence.pressureText &&
-      !evidence.feedbackText
-    )
-      return {};
     const spec = this.store.getCharacterSpec(input.agentId);
     if (!spec) throw notFound("Character");
     const local = projectCharacterTime(spec.identity, input.recordedAtUtc);
@@ -1431,6 +1433,59 @@ export class FuzzyLifeService {
         this.repository.updateDilemma(dilemma);
       }
     }
+    const validation = validateCharacterPressureEvidence({
+      store: this.store,
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      messageId: input.assistantMessageId,
+      text: input.assistantText,
+      spec,
+      priorState: input.priorState ?? this.store.getRuntimeState(input.agentId),
+      hasExistingPressure:
+        this.selectCharacterPressure(
+          input,
+          [evidence.pressureText, evidence.feedbackText]
+            .filter(Boolean)
+            .join("，"),
+          supportTopicText(
+            [evidence.pressureText, evidence.feedbackText].join("，"),
+          ) === "",
+          dilemma,
+        ) !== undefined,
+    });
+    for (const { candidate, reason } of validation.rejected) {
+      this.recordEvent({
+        agentId: input.agentId,
+        streamType: "pressure_evidence",
+        streamId: stableId(
+          "pressure-candidate",
+          `${input.assistantMessageId}:${candidate.kind}:${candidate.sourceSpan.start}`,
+        ),
+        eventType: "life.pressure_candidate_rejected",
+        recordedAtUtc: input.recordedAtUtc,
+        effectiveAtUtc: input.recordedAtUtc,
+        payload: {
+          reason,
+          attributionVersion: candidate.attributionVersion,
+          kind: candidate.kind,
+          experiencer: candidate.experiencer,
+          modality: candidate.modality,
+          sourceMessageId: input.assistantMessageId,
+          sourceSpan: candidate.sourceSpan,
+        },
+        correlationId: input.correlationId,
+        causationId: input.assistantMessageId,
+        idempotencyKey: `pressure-rejected:${input.assistantMessageId}:${candidate.kind}:${candidate.sourceSpan.start}`,
+      });
+    }
+    evidence.pressureText = validation.accepted
+      .filter((item) => item.candidate.kind === "pressure")
+      .map((item) => item.candidate.sourceText)
+      .join("，");
+    evidence.feedbackText = validation.accepted
+      .filter((item) => item.candidate.kind === "feedback")
+      .map((item) => item.candidate.sourceText)
+      .join("，");
     const pressureText = [evidence.pressureText, evidence.feedbackText]
       .filter(Boolean)
       .join("，");
@@ -1498,6 +1553,12 @@ export class FuzzyLifeService {
               ? "worsening"
               : (pressure?.status ?? "open"),
       initialPressure: pressure?.initialPressure ?? currentPressure,
+      metricOrigin:
+        explicitPressure === undefined
+          ? pressure
+            ? "algorithm_update"
+            : "algorithm_initial"
+          : "explicit_self_report",
       currentPressure,
       initialClarity: pressure?.initialClarity ?? currentClarity,
       currentClarity,
@@ -1542,6 +1603,7 @@ export class FuzzyLifeService {
         dilemmaId: next.dilemmaId,
         subject: "character",
         evidenceMessageId: sourceId,
+        stateEvidence: validation.accepted,
         before: pressure ? pressureLifecycleSnapshot(pressure) : undefined,
         after: pressureLifecycleSnapshot(next),
       },
@@ -3112,6 +3174,10 @@ export class FuzzyLifeService {
           ? explicitClarity
           : episode.initialClarity,
       currentPressure: nextPressure,
+      metricOrigin:
+        explicitPressure === undefined
+          ? "algorithm_update"
+          : "explicit_self_report",
       currentClarity: nextClarity,
       currentFeltUnderstood: nextFeltUnderstood,
       sourceMessageIds: [

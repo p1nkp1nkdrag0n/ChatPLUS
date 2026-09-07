@@ -29,3 +29,5 @@ Remove-Item Env:RUN_PAID_CONTINUITY
 原始结果在 `artifacts/correction-expression-gpt-5-6-sol-20260908/result.json`，其中 `completed=false`。脚本完成收尾并退出 0 不代表模型短测完成。公开的 [失败证据与原始文件哈希](GPT_5_6_Sol_Expression_Attempt_Evidence/provenance.json)保留请求模型、各次时间、错误代码、状态和用量未知标记，不包含凭据或请求正文。
 
 继续条件：需要供应商恢复该 API Key 所属分组，或在本机将 `gpt56-sol` 更新为已有授权且可用的配置，然后以全新目录登记下一次运行。当前访问状态未恢复时，不继续重复请求。
+
+后续记录（2026-09-08）：用户明确要求重试后，同一命名配置已能返回模型回复。本次新的 24 次尝试取得 23 条有效输出，联合组 T6 为 HTTP 502；详见 [Sol 重试与三模型比较](GPT_5_6_Sol_Expression_Comparison.md)。上述四次 403 及未知用量属于原运行，保持不变。

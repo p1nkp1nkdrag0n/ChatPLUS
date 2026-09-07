@@ -20,6 +20,7 @@ import { LifeRepository } from "../repositories/life-repository.js";
 import { FakeClock } from "../runtime/clock.js";
 import qwenRegressions from "../test-fixtures/qwen-fresh-regressions.json";
 import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
+import { getLongRunV3Turn } from "../scenarios/companion-long-run-v3-manifest.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { FixtureTurnBehavior } from "./turn-decision-service.js";
 import {
@@ -84,6 +85,59 @@ describe("fuzzy-life conversation integration", () => {
     if (app !== undefined) await app.close();
     app = undefined;
     vi.restoreAllMocks();
+  });
+
+  it("persists T65 listening from its actual fixture reply without inventing a decision or outcome", async () => {
+    app = await createTestApp(companionLongRunV3FixtureBehavior);
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reviewed-t65-existing-pressure",
+      "最近工作上有件事一直压着我，我一想到要处理，肩膀就会绷起来。",
+    );
+    const supportCountBefore = scalarCount(app, "support_interventions");
+    const turn = getLongRunV3Turn(65);
+    if (typeof turn.userText !== "string")
+      throw new Error("Expected literal T65");
+    const response = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "reviewed-t65-listen-only",
+      turn.userText,
+    );
+    expect(response.assistantMessage.content).toBe(
+      companionLongRunV3FixtureBehavior.semanticReply?.({
+        userText: turn.userText,
+        prompt: "",
+      }),
+    );
+    expect(scalarCount(app, "support_interventions")).toBe(
+      supportCountBefore + 1,
+    );
+    expect(
+      latestJson<SupportIntervention>(
+        app,
+        "support_interventions",
+        "intervention_json",
+      ),
+    ).toMatchObject({
+      mode: "listen_only",
+      sourceMessageId: response.assistantMessage.id,
+      offeredBy: "character",
+      receivedBy: "user",
+      pressureEpisodeId: latestJson<PressureEpisode>(
+        app,
+        "pressure_episodes",
+        "episode_json",
+      ).id,
+    });
+    expect(scalarCount(app, "decision_records")).toBe(0);
+    expect(scalarCount(app, "action_records")).toBe(0);
+    expect(scalarCount(app, "outcome_records")).toBe(0);
   });
 
   it("does not persist Qwen T8's full analysis of the user's fatigue as character pressure", async () => {
@@ -2894,7 +2948,7 @@ describe("fuzzy-life conversation integration", () => {
         firstScale.id,
       ),
     ).toMatchObject({
-        outcomeIds: [recordedOutcome.id],
+      outcomeIds: [recordedOutcome.id],
       currentPressure: 0.6,
       currentClarity: 0.7,
     });

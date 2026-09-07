@@ -1,0 +1,2 @@
+# Preserve reviewed evidence bytes on Windows and other platforms for SHA-256 verification.
+docs/plans/Qwen_Three_Run_120_Turn_Evidence/** -text

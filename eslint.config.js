@@ -50,4 +50,8 @@ export default tseslint.config(
     files: ["eslint.config.js"],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    files: ["docs/plans/Qwen_Three_Run_120_Turn_Evidence/verify-package.mjs"],
+    ...tseslint.configs.disableTypeChecked,
+  },
 );

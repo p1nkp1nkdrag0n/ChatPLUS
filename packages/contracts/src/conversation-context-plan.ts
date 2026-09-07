@@ -12,6 +12,19 @@ export const ConversationContextPlanSchema = z
     expandedQueries: z.array(z.string().min(1).max(1_200)).max(3),
     contextMessageIds: z.array(EntityIdSchema).max(3),
     unresolvedReferences: z.array(z.string().min(1).max(80)).max(8),
+    /** Retrieval targets only; never values or permission to mutate a fact. */
+    factQueryNeeds: z
+      .array(
+        z
+          .object({
+            subjectKey: z.string().min(1).max(200),
+            entity: z.string().min(1).max(80),
+            attribute: z.enum(["name", "identifier", "usual_drink"]),
+          })
+          .strict(),
+      )
+      .max(8)
+      .optional(),
     intent: z.enum([
       "sharing",
       "venting",

@@ -1,4 +1,10 @@
 import { normalizeText } from "./shared.js";
+import { extractExplicitCurrentFactProjections } from "./current-fact-projection.js";
+export {
+  extractExplicitCurrentFactProjections,
+  deriveFactQueryNeeds,
+  isFactHistoryQuery,
+} from "./current-fact-projection.js";
 
 export type ExplicitUserMemoryClaimCategory = "user_fact" | "user_preference";
 
@@ -84,6 +90,28 @@ export function deriveExplicitUserMemoryClaim(input: {
   evidenceText: string;
   candidateContent?: string;
 }): DerivedExplicitUserMemoryClaim | undefined {
+  const projected = extractExplicitCurrentFactProjections(
+    input.evidenceText,
+  ).filter(
+    (fact) =>
+      (input.category === "user_preference") ===
+      (fact.attribute === "usual_drink"),
+  );
+  const currentFact =
+    input.candidateContent === undefined
+      ? projected[0]
+      : projected.find(
+          (fact) =>
+            fact.content === input.candidateContent ||
+            extractExplicitCurrentFactProjections(
+              input.candidateContent ?? "",
+            ).some(
+              (candidate) =>
+                candidate.subjectKey === fact.subjectKey &&
+                candidate.value === fact.value,
+            ),
+        );
+  if (currentFact !== undefined) return claim(currentFact.subjectKey);
   const weeklyFacts = extractExplicitWeeklyPlanFacts(input.evidenceText);
   if (input.category === "user_fact") {
     if (input.candidateContent === undefined && weeklyFacts[0] !== undefined) {
@@ -152,6 +180,21 @@ export function hasExplicitMemoryCorrectionForClaim(input: {
   subjectKey: string;
   candidateContent?: string;
 }): boolean {
+  if (
+    extractExplicitCurrentFactProjections(input.evidenceText).some(
+      (fact) =>
+        fact.subjectKey === input.subjectKey &&
+        fact.revisionIntent === "explicit_correction" &&
+        (input.candidateContent === undefined ||
+          input.candidateContent === fact.content ||
+          extractExplicitCurrentFactProjections(input.candidateContent).some(
+            (candidate) =>
+              candidate.subjectKey === fact.subjectKey &&
+              candidate.value === fact.value,
+          )),
+    )
+  )
+    return true;
   if (input.subjectKey.startsWith("user_fact:weekly_plan:")) {
     const candidateFacts =
       input.candidateContent === undefined

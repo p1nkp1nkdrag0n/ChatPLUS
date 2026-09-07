@@ -14,7 +14,7 @@ export interface MemoryClaimLike {
   subjectKey: string;
   disposition: "affirmed" | "negated" | "cancelled" | "completed";
   recordedAtUtc: string;
-  revisionIntent?: "explicit_correction" | undefined;
+  revisionIntent?: "explicit_correction" | "temporal_update" | undefined;
 }
 
 export interface MemoryLike {
@@ -177,7 +177,8 @@ export function mergeMemoryProposal(
   const base =
     duplicate !== undefined &&
     duplicate.score >= 0.72 &&
-    (safe.claim?.revisionIntent !== "explicit_correction" ||
+    ((safe.claim?.revisionIntent === undefined &&
+      !safe.claim?.subjectKey.startsWith("user_fact:current:")) ||
       normalizeText(duplicate.memory.content) === normalizeText(safe.content))
       ? duplicate.memory
       : undefined;

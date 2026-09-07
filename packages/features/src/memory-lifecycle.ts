@@ -16,7 +16,7 @@ export interface MemoryClaimSemanticsLike {
   subjectKey: string;
   disposition: MemoryClaimDispositionLike;
   recordedAtUtc: string;
-  revisionIntent?: "explicit_correction" | undefined;
+  revisionIntent?: "explicit_correction" | "temporal_update" | undefined;
 }
 
 export interface LifecycleMemoryLike {
@@ -224,13 +224,36 @@ export function reconcileMemoryClaims(input: {
       normalizeText(input.incoming.content);
   if (
     claimChanged &&
-    incomingClaim.revisionIntent === "explicit_correction" &&
+    incomingClaim.subjectKey.startsWith("user_fact:current:") &&
+    Date.parse(incomingClaim.recordedAtUtc) >
+      Date.parse(existingClaim.recordedAtUtc) &&
+    claimIsReliable(input.incoming)
+  ) {
+    return {
+      kind: "supersede",
+      reasonCode:
+        incomingClaim.revisionIntent === "explicit_correction"
+          ? "explicit_user_correction"
+          : "later_explicit_claim",
+      subjectKey: incomingClaim.subjectKey,
+      existingStatus: "superseded",
+      incomingStatus: "active",
+      winnerMemoryId: input.incoming.id,
+    };
+  }
+  if (
+    claimChanged &&
+    (incomingClaim.revisionIntent === "explicit_correction" ||
+      incomingClaim.revisionIntent === "temporal_update") &&
     incomingIsNotEarlier(input.existing, input.incoming) &&
     claimIsReliable(input.incoming)
   ) {
     return {
       kind: "supersede",
-      reasonCode: "explicit_user_correction",
+      reasonCode:
+        incomingClaim.revisionIntent === "temporal_update"
+          ? "later_explicit_claim"
+          : "explicit_user_correction",
       subjectKey: incomingClaim.subjectKey,
       existingStatus: "superseded",
       incomingStatus: "active",

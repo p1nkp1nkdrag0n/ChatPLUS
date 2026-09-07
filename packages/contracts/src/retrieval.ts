@@ -95,6 +95,14 @@ export const RetrievedMemoryEvidenceSchema = z
   .object({
     memoryId: EntityIdSchema,
     memoryContent: z.string().trim().min(1).max(2_000),
+    currentFact: z
+      .object({
+        entity: z.string().min(1).max(80),
+        attribute: z.enum(["name", "identifier", "usual_drink"]),
+        value: z.string().min(1).max(80),
+      })
+      .strict()
+      .optional(),
     memoryKind: MemoryKindSchema,
     namespace: MemoryNamespaceSchema,
     certainty: MemoryCertaintySchema,
@@ -117,6 +125,18 @@ export const EvidenceBundleSchema = z
     generatedAtUtc: UtcDateTimeSchema,
     score: UnitIntervalSchema,
     evidence: z.array(RetrievedMemoryEvidenceSchema).min(1).max(8),
+    factCoverage: z
+      .array(
+        z
+          .object({
+            entity: z.string().min(1).max(80),
+            attribute: z.enum(["name", "identifier", "usual_drink"]),
+            covered: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(8)
+      .optional(),
   })
   .strict()
   .refine(

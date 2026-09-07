@@ -35,6 +35,12 @@ const BUDGET = {
   maxPhysicalRequests: 2,
   maxReservedTokenUnits: 350_000,
 } as const;
+const SINGLE_ATTEMPT = {
+  purpose: "compile_character",
+  maxRetries: 0,
+  enforcement: "harness_generateObject_override",
+  productionPolicyUnchanged: true,
+} as const;
 const AT = "2026-09-09T00:00:00.000Z";
 const COMMON = {
   name: "沈禾",
@@ -116,7 +122,7 @@ const configs: ServerConfig[] = CASES.map(({ id }) => ({
   ...base,
   llm,
   nodeEnv: "test",
-  profile: "qwen-generation-controls-v1",
+  profile: "qwen-generation-controls-v2",
   host: "127.0.0.1",
   databasePath: join(directory, id, "personasim.sqlite"),
   clockMode: "fake",
@@ -147,7 +153,12 @@ const identities = await Promise.all(
   configs.map((config) =>
     captureContinuityRunIdentity({
       config,
-      experiment: { track: "C", cases: CASES, budget: BUDGET, retries: 0 },
+      experiment: {
+        track: "C",
+        cases: CASES,
+        budget: BUDGET,
+        singleAttempt: SINGLE_ATTEMPT,
+      },
       explicitSecrets: secrets,
     }),
   ),
@@ -155,10 +166,11 @@ const identities = await Promise.all(
 await freezeContinuityManifest(
   join(directory, "manifest.json"),
   {
-    schema: "qwen-generation-controls-v1",
+    schema: "qwen-generation-controls-v2",
     fixture: values.fixture,
     cases: CASES,
     budget: BUDGET,
+    singleAttempt: SINGLE_ATTEMPT,
     identities,
     fingerprint: continuityHash(identities),
   },
@@ -200,6 +212,18 @@ for (const [index, testCase] of CASES.entries()) {
         onMetric: (event) => append("provider-metrics.jsonl", event),
       },
     });
+    // This pre-registered control samples each compile exactly once. Production
+    // compilation explicitly supplies its own retry policy, so config alone
+    // cannot enforce this experiment; leave every other purpose unchanged.
+    const generateObject = app.personasim.llm.generateObject.bind(
+      app.personasim.llm,
+    );
+    app.personasim.llm.generateObject = (input) =>
+      generateObject(
+        input.purpose === SINGLE_ATTEMPT.purpose
+          ? { ...input, maxRetries: SINGLE_ATTEMPT.maxRetries }
+          : input,
+      );
     const origin = await app.listen({ host: "127.0.0.1", port: 0 });
     const http = async (path: string, payload: unknown) => {
       const response = await fetch(`${origin}${path}`, {
@@ -251,21 +275,28 @@ for (const [index, testCase] of CASES.entries()) {
               row.stage === "reserved" && row.context?.caseId === testCase.id,
           ).length
       : 0;
-    const providerSucceeded =
-      completed?.success === true &&
-      (values.fixture
-        ? physicalRequestsForCase === 0
-        : physicalRequestsForCase === 1);
+    const compileCalls = calls.filter(
+      (event): event is Extract<LlmLogicalCallEvent, { stage: "started" }> =>
+        event.stage === "started" && event.purpose === "compile_character",
+    );
+    const providerSucceeded = completed?.success === true;
+    const singleAttemptEvidence = {
+      expectedPhysicalRequests: values.fixture ? 0 : 1,
+      physicalRequests: physicalRequestsForCase,
+      logicalCompileCalls: compileCalls.length,
+      observedMaxRetries: compileCalls.map((event) => event.maxRetries ?? null),
+    };
+    const singleAttemptContract =
+      compileCalls.length === 1 &&
+      compileCalls.every((event) => event.maxRetries === 0) &&
+      physicalRequestsForCase === singleAttemptEvidence.expectedPhysicalRequests;
     const result = {
       caseId: testCase.id,
       input: testCase.input,
       fixture: values.fixture,
       generatedStatus: generated.status,
       publishedStatus: published?.status ?? null,
-      logicalCompileCalls: calls.filter(
-        (event) =>
-          event.stage === "started" && event.purpose === "compile_character",
-      ).length,
+      logicalCompileCalls: compileCalls.length,
       rawProvider: {
         source: values.fixture
           ? "fixture_logical_output"
@@ -296,28 +327,30 @@ for (const [index, testCase] of CASES.entries()) {
       checks,
       physicalRequestsForCase,
       providerSucceeded,
+      singleAttemptContract,
+      singleAttemptEvidence,
       safePublication:
         generated.status === 201 &&
         published?.status === 200 &&
         Object.values(checks).every(Boolean),
-      providerFailureWasNotRetried:
-        calls.filter((event) => event.stage === "started").length <= 1 &&
-        physicalRequestsForCase <= 1,
     };
     json(join(caseDirectory, "result.json"), result);
     results.push({
       caseId: testCase.id,
       safePublication: result.safePublication,
       providerSucceeded,
+      singleAttemptContract,
+      singleAttemptEvidence,
       checks,
       rawChecks: result.rawChecks,
     });
-    if (!result.safePublication || !providerSucceeded) process.exitCode = 1;
+    if (!result.safePublication || !providerSucceeded || !singleAttemptContract)
+      process.exitCode = 1;
   } catch (error) {
     json(join(caseDirectory, "error.json"), {
       caseId: testCase.id,
       error: error instanceof Error ? error.message : String(error),
-      noRetry: true,
+      noHarnessResampling: true,
     });
     results.push({
       caseId: testCase.id,
@@ -344,6 +377,7 @@ const reservations = ledger.filter((row) => row.stage === "reserved");
 json(join(directory, "summary.json"), {
   fixture: values.fixture,
   budget: BUDGET,
+  singleAttempt: SINGLE_ATTEMPT,
   physicalRequests: reservations.length,
   reservedTokenUnits: reservations.reduce(
     (sum, row) => sum + (row.reservedTokenUnits ?? 0),
@@ -351,7 +385,7 @@ json(join(directory, "summary.json"), {
   ),
   results,
   scope:
-    "Two pre-registered generation/publish controls. Raw quality and safe publication are separate outcomes; pending candidates are not silently treated as model success.",
+    "Two pre-registered generation/publish controls. Provider success, single-attempt contract, raw quality and safe publication are separate outcomes. Pending candidates are not silently treated as model success; production retry policy is unchanged.",
 });
 console.log(
   JSON.stringify(

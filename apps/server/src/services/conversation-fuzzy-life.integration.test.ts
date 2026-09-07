@@ -18,6 +18,7 @@ import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { LifeRepository } from "../repositories/life-repository.js";
 import { FakeClock } from "../runtime/clock.js";
+import qwenRegressions from "../test-fixtures/qwen-fresh-regressions.json";
 import { companionLongRunV3FixtureBehavior } from "../scenarios/companion-long-run-v3-fixture.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { FixtureTurnBehavior } from "./turn-decision-service.js";
@@ -83,6 +84,28 @@ describe("fuzzy-life conversation integration", () => {
     if (app !== undefined) await app.close();
     app = undefined;
     vi.restoreAllMocks();
+  });
+
+  it("does not persist Qwen T8's full analysis of the user's fatigue as character pressure", async () => {
+    app = await createTestApp({
+      semanticReply: () => qwenRegressions.pressure.assistantText,
+    });
+    const character = await createAndPublish(app);
+    const sessionId = await createSession(app, character.id);
+    const result = await sendChat(
+      app,
+      sessionId,
+      character.id,
+      "qwen-t8-attribution",
+      qwenRegressions.pressure.userText,
+    );
+    expect(result.assistantMessage.content).toBe(
+      qwenRegressions.pressure.assistantText,
+    );
+    expect(scalarCount(app, "pressure_episodes")).toBe(0);
+    expect(domainEventCount(app, "life.pressure_disclosed_by_character")).toBe(
+      0,
+    );
   });
 
   it("keeps two real conversation branches separate across sessions, stages, and replay", async () => {

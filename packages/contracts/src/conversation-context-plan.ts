@@ -38,7 +38,7 @@ export const ConversationContextPlanSchema = z
     advicePolicy: z
       .enum(["requested", "none_now", "optional_light"])
       .optional(),
-    advicePolicyVersion: z.literal("advice_load_v1").optional(),
+    advicePolicyVersion: z.enum(["advice_load_v1", "advice_load_v2"]).optional(),
     /** Topic eligibility is separate from unresolved retrieval candidates. */
     resolvedCurrentTopic: z
       .object({

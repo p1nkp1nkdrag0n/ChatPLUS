@@ -20,7 +20,7 @@ describe("conversation context planning", () => {
         adviceRequested: false,
         supportStyle: "listen",
         advicePolicy: "none_now",
-        advicePolicyVersion: "advice_load_v1",
+        advicePolicyVersion: "advice_load_v2",
       });
       expect(
         buildConversationContextPlan({

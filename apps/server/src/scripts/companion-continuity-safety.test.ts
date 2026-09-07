@@ -217,17 +217,32 @@ describe("completed turn resume verification", () => {
   it("checks database, fixed input and saved response before allowing a completed turn to be skipped", async () => {
     const directory = await temporary();
     const character = await baseline(directory);
-    const scenario = ContinuityScenarioSchema.parse(
-      JSON.parse(
-        await readFile(
-          join(
-            CONTINUITY_WORKSPACE_ROOT,
-            "docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/ChatPLUS_Continuity_Review/03_scenario.public.json",
-          ),
-          "utf8",
-        ),
-      ),
-    );
+    // Resume invariants need fixed valid inputs, not an external review plan.
+    const scenario = ContinuityScenarioSchema.parse({
+      version: "companion-continuity-real-v1-proposal",
+      simulatedStart: "2026-09-07T09:00:00+09:00",
+      timezone: "Asia/Tokyo",
+      characterInput: {
+        name: "许岚",
+        workOrRole: "设计师",
+        worldSetting: "当代城市",
+        coreTraits: ["直接"],
+        initialRelationship: "朋友",
+        dialogueStyle: "自然简洁",
+        tier: "high_fidelity",
+        timezone: "Asia/Tokyo",
+      },
+      steps: Array.from({ length: 120 }, (_, index) => ({
+        turn: index + 1,
+        sessionKey: `S${Math.floor(index / 8) + 1}`,
+        simulatedDay: Math.floor(index / 8),
+        minuteInSession: (index % 8) * 3,
+        kind: "interaction",
+        userText: `这是第${index + 1}次普通聊天，今天只是散了会步。`,
+        clientMessageIdTemplate: `{runId}-turn-${index + 1}`,
+      })),
+      driverOnlyActions: [],
+    });
     const first = scenario.steps[0]!;
     const database = new BetterSqlite3(join(directory, "baseline.sqlite"));
     try {

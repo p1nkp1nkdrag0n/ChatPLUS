@@ -43,17 +43,73 @@ describe("final reply semantic inspection", () => {
       conversationPlan: plan,
       decision: decision(chunks.join("\n"), chunks),
     });
-    expect(result.issues).toContainEqual(
+    expect(result.diagnosis).toBe("uncertain");
+    expect(result.issues).toEqual([]);
+    const visible = result.adviceDiagnostics.find(
+      (item) => item.surface === "chunks",
+    )?.inspection;
+    expect(visible?.issues).toContainEqual(
       expect.objectContaining({
         code: "ADVICE_LOAD_EXCEEDS_LIGHT",
-        surface: "chunks",
       }),
     );
+    expect(visible?.confirmedIssues).toEqual([]);
     expect(
       result.issues.filter(
         (issue) => "surface" in issue && issue.surface === "chunk",
       ),
     ).toHaveLength(0);
+  });
+
+  it("does not project away harmless content or uncertain style preferences", () => {
+    const original = decision("云的形状真有意思。\n不如休息一下，也可以喝水。");
+    expect(
+      conservativeSemanticReply({ conversationPlan: plan, decision: original }),
+    ).toBe(original);
+  });
+
+  it("keeps quoted action questions intact when delivery bubbles split the quote", () => {
+    const current = buildConversationContextPlan({
+      agentId: "character",
+      sessionId: "session",
+      recentMessages: [],
+      originalQuery: "这轮不用给我建议。",
+    });
+    const chunks = ["朋友说：“要不要洗澡，", "或者列个清单？”"];
+    const original = decision(chunks.join("\n"), chunks);
+    expect(
+      inspectSemanticReply({ conversationPlan: current, decision: original }),
+    ).toMatchObject({
+      diagnosis: "none",
+      issues: [],
+    });
+    expect(
+      conservativeSemanticReply({
+        conversationPlan: current,
+        decision: original,
+      }),
+    ).toBe(original);
+  });
+
+  it("confirms a current prohibition but leaves a content question available", () => {
+    const current = buildConversationContextPlan({
+      agentId: "character",
+      sessionId: "session",
+      recentMessages: [],
+      originalQuery: "先听我说，不用给我建议。",
+    });
+    expect(
+      inspectSemanticReply({
+        conversationPlan: current,
+        decision: decision("要不要洗澡？"),
+      }),
+    ).toMatchObject({ diagnosis: "confirmed" });
+    expect(
+      inspectSemanticReply({
+        conversationPlan: current,
+        decision: decision("那家店是什么店？"),
+      }),
+    ).toMatchObject({ diagnosis: "none", issues: [] });
   });
 
   it("rebuilds divergent visible chunks from the independently valid full text", () => {

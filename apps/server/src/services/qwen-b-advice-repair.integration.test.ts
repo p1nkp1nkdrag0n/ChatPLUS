@@ -19,9 +19,13 @@ describe("Qwen B trial advice through the shared HTTP repair budget", () => {
     await app?.close();
   });
 
-  it.each([false, true])(
-    "repairs the full observed T6 at most once and replays without calls (repair still bad: %s)",
-    async (repairStillBad) => {
+  it.each([
+    { explicitBan: false, repairStillBad: false },
+    { explicitBan: true, repairStillBad: false },
+    { explicitBan: true, repairStillBad: true },
+  ])(
+    "requires an explicit current ban for bounded T6 repair and replays without calls: %o",
+    async ({ explicitBan, repairStillBad }) => {
       app = await buildApp({
         config: readConfig({
           nodeEnv: "test",
@@ -55,13 +59,17 @@ describe("Qwen B trial advice through the shared HTTP repair budget", () => {
         (input) => {
           calls.push(input.purpose);
           if (input.purpose === "chat_turn")
-            return Promise.resolve({ replyDecision: { text: RAW_T6 }, worldEffects: {} });
+            return Promise.resolve({
+              replyDecision: { text: RAW_T6 },
+              worldEffects: {},
+            });
           if (input.purpose === "repair_chat_turn")
             return Promise.resolve({
               text: repairStillBad ? RAW_T6 : REPAIRED,
               deliveryMode: "single_block",
             });
-          if (input.fixture !== undefined) return Promise.resolve(input.fixture);
+          if (input.fixture !== undefined)
+            return Promise.resolve(input.fixture);
           throw new Error(`Unexpected model purpose: ${input.purpose}`);
         },
       );
@@ -80,7 +88,9 @@ describe("Qwen B trial advice through the shared HTTP repair budget", () => {
         },
       });
       expect(generated.statusCode, generated.body).toBe(201);
-      const character = generated.json<{ character: { id: string; version: number } }>().character;
+      const character = generated.json<{
+        character: { id: string; version: number };
+      }>().character;
       const published = await app.inject({
         method: "POST",
         url: `/api/characters/${character.id}/publish`,
@@ -97,31 +107,66 @@ describe("Qwen B trial advice through the shared HTTP repair budget", () => {
       const request = {
         method: "POST" as const,
         url: `/api/sessions/${sessionId}/messages`,
-        payload: { agentId: character.id, text: USER_T6, clientMessageId: "qwen-b-t6" },
+        payload: {
+          agentId: character.id,
+          text: explicitBan ? `${USER_T6}这轮不用建议，先听我说。` : USER_T6,
+          clientMessageId: "qwen-b-t6",
+        },
       };
       const response = await app.inject(request);
       expect(response.statusCode, response.body).toBe(201);
       const result = response.json<ChatTurnResult>();
-      expect(calls.filter((purpose) => purpose === "repair_chat_turn")).toHaveLength(1);
-      expect(result.assistantMessage.metadata.semanticReplyGuard).toMatchObject({
-        repairCalls: 1,
-        initialIssues: expect.arrayContaining([
-          expect.objectContaining({ code: "ADVICE_ACTION_UNRESOLVED", text: "把灯光调暗" }),
-          expect.objectContaining({ code: "ADVICE_ACTION_UNRESOLVED", text: "听点白噪音" }),
-        ]) as unknown,
-        finalIssues: [],
-        finalAdvice: { policy: "none_now", passed: true },
-      });
-      expect(result.decision.chunks.join("\n")).toBe(result.assistantMessage.content);
-      expect(result.assistantMessage.content).not.toContain("把灯光调暗");
-      expect(result.assistantMessage.content).not.toContain("听点白噪音");
-      if (!repairStillBad) expect(result.assistantMessage.content).toBe(REPAIRED);
+      expect(
+        calls.filter((purpose) => purpose === "repair_chat_turn"),
+      ).toHaveLength(explicitBan ? 1 : 0);
+      expect(result.assistantMessage.metadata.semanticReplyGuard).toMatchObject(
+        {
+          repairCalls: explicitBan ? 1 : 0,
+          initialDiagnosis: explicitBan ? "confirmed" : "uncertain",
+          initialAdvice: {
+            diagnosis: explicitBan ? "confirmed" : "uncertain",
+            coverage: { status: "unresolved" },
+          },
+          initialIssues: explicitBan
+            ? (expect.arrayContaining([
+                expect.objectContaining({
+                  code: "ADVICE_ACTION_UNRESOLVED",
+                  text: "把灯光调暗",
+                }),
+                expect.objectContaining({
+                  code: "ADVICE_ACTION_UNRESOLVED",
+                  text: "听点白噪音",
+                }),
+              ]) as unknown)
+            : [],
+          finalIssues: [],
+          finalAdvice: {
+            policy: "none_now",
+            passed: explicitBan,
+            diagnosis: explicitBan ? "none" : "uncertain",
+          },
+        },
+      );
+      expect(result.decision.chunks.join("\n")).toBe(
+        result.assistantMessage.content,
+      );
+      if (explicitBan) {
+        expect(result.assistantMessage.content).not.toContain("把灯光调暗");
+        expect(result.assistantMessage.content).not.toContain("听点白噪音");
+        if (!repairStillBad)
+          expect(result.assistantMessage.content).toBe(REPAIRED);
+      } else
+        expect(result.assistantMessage.content.replace(/\s/gu, "")).toBe(
+          RAW_T6.replace(/\s/gu, ""),
+        );
 
       const beforeReplayCalls = calls.length;
       const database = app.personasim.store.database;
       const counts = () => ({
         messages: database.prepare("SELECT count(*) AS n FROM messages").get(),
-        events: database.prepare("SELECT count(*) AS n FROM domain_events").get(),
+        events: database
+          .prepare("SELECT count(*) AS n FROM domain_events")
+          .get(),
       });
       const beforeReplay = counts();
       const replayResponse = await app.inject(request);

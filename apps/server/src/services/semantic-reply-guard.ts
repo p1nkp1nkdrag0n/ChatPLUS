@@ -5,6 +5,7 @@ import type {
 } from "@personasim/contracts";
 import {
   deriveAdvicePolicy,
+  deriveAdvicePolicyEvidence,
   inspectAdviceLoad,
   inspectInteractionAttribution,
 } from "@personasim/features";
@@ -21,10 +22,14 @@ export interface SemanticReplyContext {
   conversationPlan?: ConversationContextPlan;
   interactionEvidence?: InteractionEvidenceSnapshot;
   repairBudget?: ReplyRepairBudget;
+  replyGrounding?: string;
 }
 
 export function sharedSemanticContext(input: SemanticReplyContext) {
   return {
+    ...(input.replyGrounding === undefined
+      ? {}
+      : { replyGrounding: input.replyGrounding }),
     ...(input.interactionEvidence === undefined
       ? {}
       : { interactionEvidence: input.interactionEvidence }),
@@ -56,28 +61,22 @@ export function inspectSemanticReply(
       : inspectAdviceLoad({
           text: input.decision.reply.text,
           policy: deriveAdvicePolicy(input.conversationPlan),
+          policyEvidence: deriveAdvicePolicyEvidence(input.conversationPlan),
         });
-  const chunkAdvice =
-    input.conversationPlan === undefined
-      ? []
-      : input.decision.reply.chunks.flatMap((text, chunkIndex) =>
-          inspectAdviceLoad({
-            text,
-            policy: deriveAdvicePolicy(input.conversationPlan!),
-          }).issues.map((issue) => ({
-            ...issue,
-            surface: "chunk",
-            chunkIndex,
-          })),
-        );
+  // Bubbles can split a quotation or reported clause. Inspect their complete
+  // visible text so a fragment cannot turn quoted data into a fresh imperative.
   const visible = input.decision.reply.chunks.join("\n");
-  const combinedAdvice =
+  const combinedAdviceInspection =
     input.conversationPlan === undefined
-      ? []
+      ? undefined
       : inspectAdviceLoad({
           text: visible,
           policy: deriveAdvicePolicy(input.conversationPlan),
-        }).issues.map((issue) => ({ ...issue, surface: "chunks" as const }));
+          policyEvidence: deriveAdvicePolicyEvidence(input.conversationPlan),
+        });
+  const combinedAdvice = (combinedAdviceInspection?.confirmedIssues ?? []).map(
+    (issue) => ({ ...issue, surface: "chunks" as const }),
+  );
   const coherence =
     !enabled ||
     visible.replace(/\s/gu, "") ===
@@ -92,16 +91,39 @@ export function inspectSemanticReply(
             surface: "chunks" as const,
           },
         ];
+  const issues = [
+    ...(interaction?.violations ?? []),
+    ...(advice?.confirmedIssues ?? []),
+    ...combinedAdvice,
+    ...coherence,
+  ];
+  const adviceDiagnostics = [
+    ...(advice === undefined
+      ? []
+      : [{ surface: "text" as const, inspection: advice }]),
+    ...(combinedAdviceInspection === undefined
+      ? []
+      : [
+          {
+            surface: "chunks" as const,
+            inspection: combinedAdviceInspection,
+          },
+        ]),
+  ];
   return {
     interaction,
     advice,
-    issues: [
-      ...(interaction?.violations ?? []),
-      ...(advice?.issues ?? []),
-      ...chunkAdvice,
-      ...combinedAdvice,
-      ...coherence,
-    ],
+    adviceDiagnostics,
+    diagnosis:
+      issues.length > 0
+        ? ("confirmed" as const)
+        : adviceDiagnostics.some(
+              ({ inspection }) => inspection.diagnosis === "uncertain",
+            )
+          ? ("uncertain" as const)
+          : ("none" as const),
+    // Only confirmed findings enter existing repair and sentence-projection paths.
+    issues,
   };
 }
 
@@ -117,6 +139,7 @@ export function conservativeSemanticReply(
   },
 ): AgentTurnDecision {
   const issues = inspectSemanticReply(input).issues;
+  if (issues.length === 0) return input.decision;
   const retained = projectReplySentences(
     input.decision.reply.text,
     issues.filter((issue) => !("surface" in issue) || issue.surface === "text"),
@@ -144,13 +167,16 @@ export function conservativeSemanticReply(
 }
 
 export interface SemanticReplyAudit {
-  policyVersion: "conversation_semantic_boundaries_v1";
+  policyVersion: "conversation_semantic_boundaries_v2";
   originalTextSha256: string;
   finalTextSha256: string;
   initialIssues: unknown[];
   finalIssues: unknown[];
   sourceMessageIds: string[];
   repairCalls: number;
+  initialDiagnosis: ReturnType<typeof inspectSemanticReply>["diagnosis"];
+  finalDiagnosis: ReturnType<typeof inspectSemanticReply>["diagnosis"];
+  initialAdvice?: ReturnType<typeof inspectAdviceLoad>;
   finalAdvice?: ReturnType<typeof inspectAdviceLoad>;
 }
 
@@ -165,8 +191,19 @@ export function semanticReplyAudit(
     ...input,
     decision: input.finalDecision,
   });
+  const initial = inspectSemanticReply({
+    ...input,
+    decision: {
+      ...input.finalDecision,
+      reply: {
+        ...input.finalDecision.reply,
+        text: input.originalText,
+        chunks: [input.originalText],
+      },
+    },
+  });
   return {
-    policyVersion: "conversation_semantic_boundaries_v1",
+    policyVersion: "conversation_semantic_boundaries_v2",
     originalTextSha256: replyTextHash(input.originalText),
     finalTextSha256: replyTextHash(input.finalDecision.reply.text),
     initialIssues: input.initialIssues,
@@ -179,6 +216,10 @@ export function semanticReplyAudit(
       ),
     ],
     repairCalls: input.repairBudget?.attempts ?? 0,
+    initialDiagnosis:
+      input.initialIssues.length > 0 ? "confirmed" : initial.diagnosis,
+    finalDiagnosis: final.diagnosis,
+    ...(initial.advice === undefined ? {} : { initialAdvice: initial.advice }),
     ...(final.advice === undefined ? {} : { finalAdvice: final.advice }),
   };
 }

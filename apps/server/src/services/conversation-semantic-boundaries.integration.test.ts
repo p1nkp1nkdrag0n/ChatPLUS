@@ -259,7 +259,7 @@ describe("final conversational semantic boundaries through normal HTTP routes", 
     ).toHaveLength(1);
   });
 
-  it("A01/X01 controls the original pre-preference T6 advice and rejects a follow-up from the removed advice", async () => {
+  it("A01/X01 records inferred T6 advice as diagnostic while rejecting its unadopted follow-up", async () => {
     await setup();
     const before = app.personasim.store.database
       .prepare("SELECT count(*) AS n FROM persona_adaptations")
@@ -282,16 +282,18 @@ describe("final conversational semantic boundaries through normal HTTP routes", 
       "改了一天，回到家脑子还在接着上班，确实很耗人。没有出大事，也不代表今天就轻松。";
     const result = await send(T6);
     expect(result.assistantMessage.content.replace(/\s/gu, "")).toBe(
-      repairedText.replace(/\s/gu, ""),
+      BAD_ADVICE.replace(/\s/gu, ""),
     );
     expect(result.assistantMessage.metadata.semanticReplyGuard).toMatchObject({
-      repairCalls: 1,
+      repairCalls: 0,
+      initialDiagnosis: "uncertain",
+      finalDiagnosis: "uncertain",
       finalIssues: [],
-      finalAdvice: { actionCount: 0 },
+      finalAdvice: { actionCount: 4, confirmedIssues: [] },
     });
     expect(
-      calls.find((call) => call.purpose === "repair_chat_turn")?.prompt,
-    ).toContain("ADVICE_NOT_REQUESTED_NOW");
+      calls.filter((call) => call.purpose === "repair_chat_turn"),
+    ).toHaveLength(0);
     expect(
       app.personasim.store.database
         .prepare("SELECT count(*) AS n FROM follow_up_intents")
@@ -304,6 +306,54 @@ describe("final conversational semantic boundaries through normal HTTP routes", 
       .all();
     expect(rejected.length).toBeGreaterThan(0);
   });
+
+  it.each([
+    [
+      "今天路上看到一片云。",
+      "云像一小块棉花。不如休息一下，也可以喝水。",
+      "uncertain",
+    ],
+    [T6, "林桥今天把方案交完了。要不要休息一下？", "uncertain"],
+    [
+      "我只想吐槽，不用建议。",
+      "洗澡的好处是暖和，散步这件事本身挺普通。",
+      "none",
+    ],
+    ["先听我说，不用给我建议。", "那家店是什么店？", "none"],
+  ])(
+    "preserves correct content and spends no repair calls on weak style findings: %s",
+    async (query, original, diagnosis) => {
+      await setup();
+      replies.push(envelope(original));
+      repairedText = "林乔今天把方案交完了。";
+      const result = await send(query, "false-repair-control");
+      expect(result.assistantMessage.content.replace(/\s/gu, "")).toBe(
+        original.replace(/\s/gu, ""),
+      );
+      expect(
+        calls.filter((call) => call.purpose === "repair_chat_turn"),
+      ).toHaveLength(0);
+      expect(result.assistantMessage.metadata.semanticReplyGuard).toMatchObject(
+        {
+          repairCalls: 0,
+          initialDiagnosis: diagnosis,
+          finalDiagnosis: diagnosis,
+          finalIssues: [],
+        },
+      );
+      expect(
+        app.personasim.store.database
+          .prepare("SELECT count(*) AS n FROM follow_up_intents")
+          .get(),
+      ).toEqual({ n: 0 });
+      const beforeReplay = calls.length;
+      const replay = await send(query, "false-repair-control");
+      expect(replay.assistantMessage.content).toBe(
+        result.assistantMessage.content,
+      );
+      expect(calls).toHaveLength(beforeReplay);
+    },
+  );
 
   it.each([
     "我现在想具体想一想了，请帮我分析一下：怎样区分真正做错了，和只是被反复修改弄得烦。",

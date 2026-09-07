@@ -1,7 +1,10 @@
 import type { ConversationContextPlan } from "@personasim/contracts";
+import { deriveCurrentConversationRequests } from "./conversation-requests.js";
 
-export const ADVICE_POLICY_VERSION = "advice_load_v2";
+export const ADVICE_POLICY_VERSION = "advice_load_v3";
 export type AdvicePolicy = "requested" | "none_now" | "optional_light";
+export type AdviceDiagnosis = "confirmed" | "uncertain" | "none";
+export type AdvicePolicyEvidence = "explicit_current" | "inferred";
 export type AdvicePolicyInput = Pick<
   ConversationContextPlan,
   | "adviceRequested"
@@ -24,6 +27,18 @@ export function deriveAdvicePolicy(plan: AdvicePolicyInput): AdvicePolicy {
   if (plan.supportStyle === "listen" || plan.intent === "venting")
     return "none_now";
   return "optional_light";
+}
+
+/** A venting label is useful generation guidance, not proof of a current ban. */
+export function deriveAdvicePolicyEvidence(
+  plan: AdvicePolicyInput & Pick<ConversationContextPlan, "originalQuery">,
+): AdvicePolicyEvidence {
+  const current = deriveCurrentConversationRequests(plan.originalQuery);
+  return deriveAdvicePolicy(plan) === "none_now" &&
+    current.listen &&
+    !current.conflicting
+    ? "explicit_current"
+    : "inferred";
 }
 
 export interface AdviceAction {
@@ -63,11 +78,16 @@ export interface UnsupportedAdviceCandidate {
 export interface AdviceLoadInspection {
   policyVersion: typeof ADVICE_POLICY_VERSION;
   policy: AdvicePolicy;
+  /** Whether the reply meets the preferred load; failure alone does not authorize repair. */
   passed: boolean;
+  diagnosis: AdviceDiagnosis;
+  policyEvidence: AdvicePolicyEvidence;
   /** Counts recognized concrete actions only; inspect coverage before using zero. */
   actionCount: number;
   actions: AdviceAction[];
   issues: AdviceLoadIssue[];
+  /** Only a supported current prohibition authorizes automatic language repair. */
+  confirmedIssues: AdviceLoadIssue[];
   reviewRequired: boolean;
   coverage: {
     status: "no_action_frame" | "resolved" | "partial" | "unresolved";
@@ -135,7 +155,12 @@ interface AdviceFrame {
 export function inspectAdviceLoad(input: {
   text: string;
   policy: AdvicePolicy;
+  /** Direct callers supplying none_now may bind an explicit ban; planners must supply its evidence. */
+  policyEvidence?: AdvicePolicyEvidence;
 }): AdviceLoadInspection {
+  const policyEvidence =
+    input.policyEvidence ??
+    (input.policy === "none_now" ? "explicit_current" : "inferred");
   const visible = input.text.replace(
     /“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|"[^"\n]*"|(?<!\p{L})'[^'\n]*'(?!\p{L})|`[^`]*`/gu,
     (quote) => " ".repeat(quote.length),
@@ -195,7 +220,8 @@ export function inspectAdviceLoad(input: {
       changedSubjectOrScope
     ) {
       closeFrame();
-      excluded = changedSubjectOrScope || excluded === "other" ? "other" : "denied";
+      excluded =
+        changedSubjectOrScope || excluded === "other" ? "other" : "denied";
       continue;
     }
     if (CONVERSATION_INVITATION.test(candidateBody)) {
@@ -206,7 +232,8 @@ export function inspectAdviceLoad(input: {
       excluded = "other";
       continue;
     }
-    const explicitUser = (trial !== null && /^你/u.test(clause)) ||
+    const explicitUser =
+      (trial !== null && /^你/u.test(clause)) ||
       /(?:你(?:也|还)?(?:可以|应该|应当|需要|必须|最好|得)|建议你|\byou (?:can|could|must|should|need to)\b)/iu.test(
         clause,
       );
@@ -220,7 +247,11 @@ export function inspectAdviceLoad(input: {
       !(CONTRAST.test(rawClause) && cue !== null)
     )
       continue;
-    if (explicitUser || newTrialAfterDenial || (CONTRAST.test(rawClause) && cue !== null))
+    if (
+      explicitUser ||
+      newTrialAfterDenial ||
+      (CONTRAST.test(rawClause) && cue !== null)
+    )
       excluded = undefined;
     if (NON_PHYSICAL_DIRECTION.test(candidateBody)) {
       closeFrame();
@@ -259,6 +290,7 @@ export function inspectAdviceLoad(input: {
     }
     const strength = explicitStrength ?? frame?.strength;
     let accepted = 0;
+    let described = false;
     for (const candidate of candidates) {
       const before = segment.text.slice(0, candidate.index);
       const after = segment.text.slice(candidate.index + candidate[0].length);
@@ -268,11 +300,19 @@ export function inspectAdviceLoad(input: {
         /(?:已经|刚才|昨天|你说|他说|她说|并非|不是|没让).{0,10}$/u.test(
           before,
         ) ||
-        /^(?:的(?:东西|时候|人|结果)|过|了|都没用|都没什么用|让我|会让人|能让人|不是|并不|不等于|未必|也未必|有助于|可以让|很|挺)/u.test(
+        /^(?:的(?:东西|时候|人|结果|好处|感觉|意义|理由|方式|时间|想法)|这(?:件事|种活动|个习惯)|本身|后(?:的|让|会|感觉)|过|了|都没用|都没什么用|让我|会让人|能让人|是|不是|并不|不等于|未必|也未必|有助于|可以让|很|挺)/u.test(
           after,
         )
-      )
+      ) {
+        described = true;
         continue;
+      }
+      // A question about an activity does not assign it. Explicit proposal
+      // frames such as “要不要洗澡？” remain recommendations under none_now.
+      if (cue === null && /(?:吗|么|呢)\s*$/u.test(after.trim())) {
+        described = true;
+        continue;
+      }
       const bareImperative =
         /^(?:\s*(?:[-*•]|\d+[.)、]))?\s*(?:你|先|再|然后|接着|去|就|每天|请|别|不要)*\s*$/u.test(
           before,
@@ -319,6 +359,13 @@ export function inspectAdviceLoad(input: {
       }
     }
     if (accepted > 0) continue;
+    if (described) {
+      // A descriptive clause changes the speech act; its later examples do not
+      // inherit the preceding suggestion's authority over the user.
+      closeFrame();
+      excluded = "other";
+      continue;
+    }
     const coordinated =
       COORDINATED.test(rawClause) ||
       /(?:、|或|\band\b|\bor\b)/iu.test(segment.separator);
@@ -381,13 +428,27 @@ export function inspectAdviceLoad(input: {
         issue("ADVICE_LOAD_EXCEEDS_LIGHT", action);
     }
   }
+  const confirmedIssues =
+    input.policy === "none_now" && policyEvidence === "explicit_current"
+      ? issues
+      : [];
+  const diagnosis: AdviceDiagnosis =
+    confirmedIssues.length > 0
+      ? "confirmed"
+      : issues.length > 0 ||
+          (input.policy !== "requested" && unsupportedCandidates.length > 0)
+        ? "uncertain"
+        : "none";
   return {
     policyVersion: ADVICE_POLICY_VERSION,
     policy: input.policy,
+    policyEvidence,
+    diagnosis,
     passed: issues.length === 0,
     actionCount: actions.length,
     actions,
     issues,
+    confirmedIssues,
     reviewRequired: unsupportedCandidates.length > 0,
     coverage: {
       status:

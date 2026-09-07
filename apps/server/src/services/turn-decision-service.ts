@@ -325,6 +325,7 @@ export class TurnDecisionService {
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
     interactionEvidence?: InteractionEvidenceSnapshot;
+    replyGrounding?: string;
     repairBudget?: ReplyRepairBudget;
     lifeContext?: FuzzyLifePromptContext;
     userText: string;
@@ -366,6 +367,7 @@ export class TurnDecisionService {
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
     interactionEvidence?: InteractionEvidenceSnapshot;
+    replyGrounding?: string;
     repairBudget?: ReplyRepairBudget;
     decision: AgentTurnDecision;
     nowUtc: string;
@@ -423,6 +425,7 @@ export class TurnDecisionService {
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
     interactionEvidence?: InteractionEvidenceSnapshot;
+    replyGrounding?: string;
     repairBudget?: ReplyRepairBudget;
     lifeContext?: FuzzyLifePromptContext;
     userText: string;
@@ -647,6 +650,7 @@ export class TurnDecisionService {
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
     interactionEvidence?: InteractionEvidenceSnapshot;
+    replyGrounding?: string;
     repairBudget?: ReplyRepairBudget;
     lifeContext?: FuzzyLifePromptContext;
     userText: string;
@@ -955,6 +959,7 @@ export class TurnDecisionService {
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
     interactionEvidence?: InteractionEvidenceSnapshot;
+    replyGrounding?: string;
     repairBudget: ReplyRepairBudget;
     lifeContext?: FuzzyLifePromptContext;
     userText: string;
@@ -1039,8 +1044,15 @@ export class TurnDecisionService {
         ...initial.issues,
       ],
     });
-    if (input.priorAudit !== undefined)
+    if (input.priorAudit !== undefined) {
       audit.originalTextSha256 = input.priorAudit.originalTextSha256;
+      if (input.priorAudit.initialAdvice !== undefined)
+        audit.initialAdvice = input.priorAudit.initialAdvice;
+      audit.initialDiagnosis =
+        audit.initialIssues.length > 0
+          ? "confirmed"
+          : input.priorAudit.initialDiagnosis;
+    }
     audit.finalTextSha256 = replyTextHash(decision.reply.text);
     return { decision, audit, usedFallback, rejections };
   }

@@ -39,7 +39,7 @@ export const ConversationContextPlanSchema = z
       .enum(["requested", "none_now", "optional_light"])
       .optional(),
     advicePolicyVersion: z
-      .enum(["advice_load_v1", "advice_load_v2"])
+      .enum(["advice_load_v1", "advice_load_v2", "advice_load_v3"])
       .optional(),
     questionIntent: z
       .enum(["none", "natural_optional", "necessary_for_explicit_task"])
@@ -67,6 +67,18 @@ export const ConversationContextPlanSchema = z
           )
           .max(5),
         protectedPhrases: z.array(z.string().max(200)).max(24),
+        /** Bounded final dialogue for this turn only; never an unanswered-task queue. */
+        recentDialogue: z
+          .array(
+            z
+              .object({
+                role: z.enum(["user", "assistant"]),
+                text: z.string().min(1).max(1_200),
+              })
+              .strict(),
+          )
+          .max(6)
+          .optional(),
       })
       .strict()
       .optional(),

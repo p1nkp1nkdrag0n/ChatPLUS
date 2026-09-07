@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveAdvicePolicy, inspectAdviceLoad } from "./advice-policy.js";
+import {
+  deriveAdvicePolicy,
+  deriveAdvicePolicyEvidence,
+  inspectAdviceLoad,
+} from "./advice-policy.js";
 import { buildConversationContextPlan } from "./conversation-context-plan.js";
 
 const context = { agentId: "agent", sessionId: "session", recentMessages: [] };
@@ -21,6 +25,49 @@ const QWEN_B_T13_REPLY =
   "好。那我不出主意。两版都改完，今天先停在这，别再多想了。";
 
 describe("advice policy from current requests", () => {
+  it.each([
+    ["这轮不用建议，先听我说。", "explicit_current"],
+    ["先让我说完，然后再帮我分析。", "explicit_current"],
+    [T6, "inferred"],
+    ["先听我说，也请帮我分析。", "inferred"],
+    ["朋友说“不要给我建议”。", "inferred"],
+    ["不用先听我说，直接给我建议。", "inferred"],
+  ])(
+    "binds automatic repair to current direct requests: %s",
+    (text, expected) => {
+      expect(deriveAdvicePolicyEvidence(plan(text))).toBe(expected);
+    },
+  );
+
+  it("retains inferred load as an uncertain diagnostic without authorizing repair", () => {
+    const current = plan(T6);
+    const result = inspectAdviceLoad({
+      text: T6_REPLY,
+      policy: deriveAdvicePolicy(current),
+      policyEvidence: deriveAdvicePolicyEvidence(current),
+    });
+    expect(result).toMatchObject({
+      diagnosis: "uncertain",
+      passed: false,
+      actionCount: 4,
+      confirmedIssues: [],
+    });
+    expect(result.issues).not.toHaveLength(0);
+  });
+
+  it("diagnoses light-load preferences without an automatic rewrite requirement", () => {
+    expect(
+      inspectAdviceLoad({
+        text: "不如休息一下，也可以喝水。",
+        policy: "optional_light",
+      }),
+    ).toMatchObject({
+      diagnosis: "uncertain",
+      confirmedIssues: [],
+      actionCount: 2,
+    });
+  });
+
   it("A01 prevents the original four-action T6 response without using later relationship practices", () => {
     const current = plan(T6);
     expect(current.advicePolicy).toBe("none_now");
@@ -112,6 +159,37 @@ describe("advice policy from current requests", () => {
 
 describe("actual advice speech acts and action load", () => {
   it.each([
+    "洗澡的好处是暖和，散步的感觉也很舒服。",
+    "散步这件事本身挺普通。",
+    "洗澡后的感觉怎么样？",
+    "洗澡舒服吗？",
+    "你说的那家店是什么店？",
+    "“要不要洗澡？”是朋友的原话。",
+  ])(
+    "keeps nominalizations, descriptions, content questions and quotes outside instructions: %s",
+    (text) => {
+      expect(inspectAdviceLoad({ text, policy: "none_now" })).toMatchObject({
+        diagnosis: "none",
+        actionCount: 0,
+        confirmedIssues: [],
+      });
+    },
+  );
+
+  it.each(["要不要去洗澡？", "要不要列个清单？", "请先洗澡。"])(
+    "keeps action suggestions subject to an explicit prohibition regardless of punctuation: %s",
+    (text) => {
+      const result = inspectAdviceLoad({ text, policy: "none_now" });
+      expect(result.diagnosis).toBe("confirmed");
+      expect(result.confirmedIssues).toContainEqual(
+        expect.objectContaining({
+          code: "ADVICE_NOT_REQUESTED_NOW",
+        }),
+      );
+    },
+  );
+
+  it.each([
     ["A06", "不是让你去画画或列清单。"],
     ["denied directive", "我并非建议你洗澡或者出门走一圈。"],
     ["reported activities", "你说画画和走路都没用。"],
@@ -202,6 +280,13 @@ describe("actual advice speech acts and action load", () => {
     expect(result.passed).toBe(false);
     for (const action of result.actions)
       expect(text.slice(action.start, action.end)).toBe(action.text);
+  });
+
+  it("does not inherit a recommendation through a descriptive noun phrase", () => {
+    const text = "你可以休息一下，洗澡是她的建议，或者翻杂志也是她的说法。";
+    const result = inspectAdviceLoad({ text, policy: "none_now" });
+    expect(result.actions.map((action) => action.text)).toEqual(["休息一下"]);
+    expect(result.coverage.unsupportedCandidates).toEqual([]);
   });
 
   it("does not let optional wording hide a later command to do the same action", () => {
@@ -401,11 +486,12 @@ describe("Qwen B imperative recommendation frames", () => {
     expect(result.actionCount).toBe(0);
     expect(result.reviewRequired).toBe(true);
     expect(result.coverage.status).toBe("unresolved");
-    expect(result.coverage.unsupportedCandidates.map((item) => item.text)).toEqual([
-      "把灯光调暗",
-      "听点白噪音",
-    ]);
-    expect(result.issues.every((item) => item.code === "ADVICE_ACTION_UNRESOLVED")).toBe(true);
+    expect(
+      result.coverage.unsupportedCandidates.map((item) => item.text),
+    ).toEqual(["把灯光调暗", "听点白噪音"]);
+    expect(
+      result.issues.every((item) => item.code === "ADVICE_ACTION_UNRESOLVED"),
+    ).toBe(true);
     for (const item of result.coverage.unsupportedCandidates) {
       expect(item.certainty).toBe("explicit");
       expect(QWEN_B_T6_REPLY.slice(item.start, item.end)).toBe(item.text);
@@ -421,15 +507,22 @@ describe("Qwen B imperative recommendation frames", () => {
     "试着换一种轻松的活动，比如给照片换个相框，或者摆弄一下旧相机。",
     "先不用做计划，试着听点白噪音。",
     "不必逼自己继续工作，尝试一下给照片换个相框。",
-  ])("does not treat a new finite imperative as a reliable zero: %s", (text) => {
-    const result = inspectAdviceLoad({ text, policy: "none_now" });
-    expect(result.passed).toBe(false);
-    expect(result.reviewRequired).toBe(true);
-    expect(result.issues.some((item) => item.code === "ADVICE_ACTION_UNRESOLVED")).toBe(true);
-    for (const item of result.coverage.unsupportedCandidates)
-      expect(text.slice(item.start, item.end)).toBe(item.text);
-    expect(inspectAdviceLoad({ text, policy: "requested" }).passed).toBe(true);
-  });
+  ])(
+    "does not treat a new finite imperative as a reliable zero: %s",
+    (text) => {
+      const result = inspectAdviceLoad({ text, policy: "none_now" });
+      expect(result.passed).toBe(false);
+      expect(result.reviewRequired).toBe(true);
+      expect(
+        result.issues.some((item) => item.code === "ADVICE_ACTION_UNRESOLVED"),
+      ).toBe(true);
+      for (const item of result.coverage.unsupportedCandidates)
+        expect(text.slice(item.start, item.end)).toBe(item.text);
+      expect(inspectAdviceLoad({ text, policy: "requested" }).passed).toBe(
+        true,
+      );
+    },
+  );
 
   it("inherits the trial frame across recognized and unknown alternatives", () => {
     const text = "试着换个轻松的动作，比如洗个澡，或者听点白噪音。";
@@ -455,21 +548,42 @@ describe("Qwen B imperative recommendation frames", () => {
     "假如你试着把灯光调暗，你会怎么看那个建议？",
     "你说不要多想是别人当时的安慰。",
     "我今天先停在这，别再多想了是我给自己的提醒。",
-  ])("keeps denial, changed actor, reports and hypotheses outside user tasks: %s", (text) => {
-    expect(inspectAdviceLoad({ text, policy: "none_now" })).toMatchObject({
+  ])(
+    "keeps denial, changed actor, reports and hypotheses outside user tasks: %s",
+    (text) => {
+      expect(inspectAdviceLoad({ text, policy: "none_now" })).toMatchObject({
+        passed: true,
+        actionCount: 0,
+        reviewRequired: false,
+      });
+    },
+  );
+
+  it("marks B T13 closure and mental direction for review without inventing physical task load", () => {
+    const result = inspectAdviceLoad({
+      text: QWEN_B_T13_REPLY,
+      policy: "none_now",
+    });
+    expect(result).toMatchObject({
+      passed: true,
+      actionCount: 0,
+      issues: [],
+      reviewRequired: true,
+    });
+    expect(
+      result.coverage.unsupportedCandidates.map((item) => item.text),
+    ).toContain("别再多想了");
+    expect(
+      result.coverage.unsupportedCandidates.every(
+        (item) => item.certainty === "possible",
+      ),
+    ).toBe(true);
+    expect(
+      inspectAdviceLoad({ text: "先不用做计划，我听着。", policy: "none_now" }),
+    ).toMatchObject({
       passed: true,
       actionCount: 0,
       reviewRequired: false,
-    });
-  });
-
-  it("marks B T13 closure and mental direction for review without inventing physical task load", () => {
-    const result = inspectAdviceLoad({ text: QWEN_B_T13_REPLY, policy: "none_now" });
-    expect(result).toMatchObject({ passed: true, actionCount: 0, issues: [], reviewRequired: true });
-    expect(result.coverage.unsupportedCandidates.map((item) => item.text)).toContain("别再多想了");
-    expect(result.coverage.unsupportedCandidates.every((item) => item.certainty === "possible")).toBe(true);
-    expect(inspectAdviceLoad({ text: "先不用做计划，我听着。", policy: "none_now" })).toMatchObject({
-      passed: true, actionCount: 0, reviewRequired: false,
     });
   });
 });

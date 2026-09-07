@@ -1,0 +1,887 @@
+[
+  {
+    "arm": "baseline",
+    "turn": 1,
+    "user": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "assistant": "低一点的灯光确实会让空间安静下来，视线也没那么容易被各种细节拉走。路过时碰到这样舒服的店，感觉像意外捡到了一小段放松的时间。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": []
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "baseline",
+    "turn": 2,
+    "user": "那是家咖啡店。我点了热拿铁，坐了一会儿。",
+    "assistant": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种不太打扰人的氛围，哪怕只是路过进去坐一会儿，也能让人慢下来。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实会让空间安静下来，视线也没那么容易被各种细节拉走。路过时碰到这样舒服的店，感觉像意外捡到了一小段放松的时间。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "baseline",
+    "turn": 3,
+    "user": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "assistant": "好，你说，我先听着。今晚这碗面有点咸，确实会让原本想好好吃顿饭的感觉打点折扣。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实会让空间安静下来，视线也没那么容易被各种细节拉走。路过时碰到这样舒服的店，感觉像意外捡到了一小段放松的时间。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种不太打扰人的氛围，哪怕只是路过进去坐一会儿，也能让人慢下来。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "baseline",
+    "turn": 4,
+    "user": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "assistant": "那我问个轻松的：如果现在可以立刻去一个地方待一会儿，你会想去安静的咖啡店、热闹的街上，还是别的地方？",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实会让空间安静下来，视线也没那么容易被各种细节拉走。路过时碰到这样舒服的店，感觉像意外捡到了一小段放松的时间。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种不太打扰人的氛围，哪怕只是路过进去坐一会儿，也能让人慢下来。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着。今晚这碗面有点咸，确实会让原本想好好吃顿饭的感觉打点折扣。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "baseline",
+    "turn": 5,
+    "user": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。",
+    "assistant": "暖黄的台灯光会把桌面照得很柔和，感觉整个房间也跟着安静了一点。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种不太打扰人的氛围，哪怕只是路过进去坐一会儿，也能让人慢下来。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着。今晚这碗面有点咸，确实会让原本想好好吃顿饭的感觉打点折扣。"
+          },
+          {
+            "role": "user",
+            "text": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那我问个轻松的：如果现在可以立刻去一个地方待一会儿，你会想去安静的咖啡店、热闹的街上，还是别的地方？"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "baseline",
+    "turn": 6,
+    "user": "今天就说到这吧，不想再展开了，晚安。",
+    "assistant": "好，晚安。希望这盏暖黄的台灯陪你安静地休息一会儿。",
+    "expression": {
+      "questionIntent": "none",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着。今晚这碗面有点咸，确实会让原本想好好吃顿饭的感觉打点折扣。"
+          },
+          {
+            "role": "user",
+            "text": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那我问个轻松的：如果现在可以立刻去一个地方待一会儿，你会想去安静的咖啡店、热闹的街上，还是别的地方？"
+          },
+          {
+            "role": "user",
+            "text": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。"
+          },
+          {
+            "role": "assistant",
+            "text": "暖黄的台灯光会把桌面照得很柔和，感觉整个房间也跟着安静了一点。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "plain_only",
+    "turn": 1,
+    "user": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "assistant": "低一点的灯光确实会让空间更安静，也没那么有压迫感。店里的明暗如果控制得好，反而会让人更愿意慢下来待一会儿。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": []
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "plain_only",
+    "turn": 2,
+    "user": "那是家咖啡店。我点了热拿铁，坐了一会儿。",
+    "assistant": "低灯光配一杯热拿铁，确实很适合坐下来缓一会儿。咖啡店如果不吵，哪怕只是安静地坐着，也会让人觉得这段时间没有被浪费。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实会让空间更安静，也没那么有压迫感。店里的明暗如果控制得好，反而会让人更愿意慢下来待一会儿。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "plain_only",
+    "turn": 3,
+    "user": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "assistant": "好，先不建议。拿铁挺香，今晚煮的面有点咸。你慢慢说，我听着。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实会让空间更安静，也没那么有压迫感。店里的明暗如果控制得好，反而会让人更愿意慢下来待一会儿。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配一杯热拿铁，确实很适合坐下来缓一会儿。咖啡店如果不吵，哪怕只是安静地坐着，也会让人觉得这段时间没有被浪费。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "plain_only",
+    "turn": 4,
+    "user": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "assistant": "那我问个轻松的：今天除了那家低灯光的咖啡店，还有没有哪个小片段让你觉得还不错？",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实会让空间更安静，也没那么有压迫感。店里的明暗如果控制得好，反而会让人更愿意慢下来待一会儿。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配一杯热拿铁，确实很适合坐下来缓一会儿。咖啡店如果不吵，哪怕只是安静地坐着，也会让人觉得这段时间没有被浪费。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，先不建议。拿铁挺香，今晚煮的面有点咸。你慢慢说，我听着。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "plain_only",
+    "turn": 5,
+    "user": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。",
+    "assistant": "好，这个先跳过。桌上的台灯一打开，暖黄色的光应该会让房间显得柔和不少，看着也挺舒服。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配一杯热拿铁，确实很适合坐下来缓一会儿。咖啡店如果不吵，哪怕只是安静地坐着，也会让人觉得这段时间没有被浪费。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，先不建议。拿铁挺香，今晚煮的面有点咸。你慢慢说，我听着。"
+          },
+          {
+            "role": "user",
+            "text": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那我问个轻松的：今天除了那家低灯光的咖啡店，还有没有哪个小片段让你觉得还不错？"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "plain_only",
+    "turn": 6,
+    "user": "今天就说到这吧，不想再展开了，晚安。",
+    "assistant": "好，今天就聊到这里。晚安，愿你在暖黄的灯光里睡个好觉。",
+    "expression": {
+      "questionIntent": "none",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，先不建议。拿铁挺香，今晚煮的面有点咸。你慢慢说，我听着。"
+          },
+          {
+            "role": "user",
+            "text": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那我问个轻松的：今天除了那家低灯光的咖啡店，还有没有哪个小片段让你觉得还不错？"
+          },
+          {
+            "role": "user",
+            "text": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，这个先跳过。桌上的台灯一打开，暖黄色的光应该会让房间显得柔和不少，看着也挺舒服。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: acknowledge the present content and let this turn end; do not request more details or guess a need the user has already disclaimed. Do not move to an unrelated question just to keep the turn open. For a closed vent, do not announce that you are following a listening policy, tell the user to stop working or feeling, or immediately redirect them to another topic. natural_optional: ask only if it advances this conversation. necessary_for_explicit_task: ask the specific missing information needed for the requested task. A listen-first practice is not a duty to keep asking questions.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "questions_only",
+    "turn": 1,
+    "user": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "assistant": "低照度的灯光确实容易让空间显得安静、松弛一些，尤其是光线集中在局部、周围不过分明亮的时候，会有种被轻轻包住的感觉。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": []
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "questions_only",
+    "turn": 2,
+    "user": "那是家咖啡店。我点了热拿铁，坐了一会儿。",
+    "assistant": "听起来那家咖啡店很适合慢下来坐一会儿。低低的灯光配热拿铁，整个人大概会更容易放松。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低照度的灯光确实容易让空间显得安静、松弛一些，尤其是光线集中在局部、周围不过分明亮的时候，会有种被轻轻包住的感觉。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "questions_only",
+    "turn": 3,
+    "user": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "assistant": "好，你说，我先听着，不给建议。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低照度的灯光确实容易让空间显得安静、松弛一些，尤其是光线集中在局部、周围不过分明亮的时候，会有种被轻轻包住的感觉。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "听起来那家咖啡店很适合慢下来坐一会儿。低低的灯光配热拿铁，整个人大概会更容易放松。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "questions_only",
+    "turn": 4,
+    "user": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "assistant": "那就从一个很小的细节开始吧：今天有没有哪一刻让你觉得“还行”，哪怕只是路上看到什么、吃到什么，或者短暂地放松了一下？",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低照度的灯光确实容易让空间显得安静、松弛一些，尤其是光线集中在局部、周围不过分明亮的时候，会有种被轻轻包住的感觉。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "听起来那家咖啡店很适合慢下来坐一会儿。低低的灯光配热拿铁，整个人大概会更容易放松。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着，不给建议。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "questions_only",
+    "turn": 5,
+    "user": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。",
+    "assistant": "可以，跳过就好。桌上的台灯一打开，暖黄的光应该会把周围照得柔和很多，哪怕只是一个小角落，也会显得挺舒服。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "听起来那家咖啡店很适合慢下来坐一会儿。低低的灯光配热拿铁，整个人大概会更容易放松。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着，不给建议。"
+          },
+          {
+            "role": "user",
+            "text": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那就从一个很小的细节开始吧：今天有没有哪一刻让你觉得“还行”，哪怕只是路上看到什么、吃到什么，或者短暂地放松了一下？"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "questions_only",
+    "turn": 6,
+    "user": "今天就说到这吧，不想再展开了，晚安。",
+    "assistant": "好，今晚就说到这里。晚安，愿你睡个安稳觉。",
+    "expression": {
+      "questionIntent": "none",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着，不给建议。"
+          },
+          {
+            "role": "user",
+            "text": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那就从一个很小的细节开始吧：今天有没有哪一刻让你觉得“还行”，哪怕只是路上看到什么、吃到什么，或者短暂地放松了一下？"
+          },
+          {
+            "role": "user",
+            "text": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。"
+          },
+          {
+            "role": "assistant",
+            "text": "可以，跳过就好。桌上的台灯一打开，暖黄的光应该会把周围照得柔和很多，哪怕只是一个小角落，也会显得挺舒服。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "When a nonessential opening is repeated in recentExpression, lower its prominence and respond directly to the content. This is a temporary cue, not a forbidden word or a new persona trait. Preserve explicitly authored phrase requirements. Do not replace one repeated opening with another stock template. Ordinary sharing does not justify conclusions about the user's psychological traits or abilities; respond to the shared detail without routinely turning it into a character assessment.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "combined",
+    "turn": 1,
+    "user": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "assistant": "低一点的灯光确实容易让空间变得安静、松弛，待着会比亮堂的店更舒服。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": []
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "combined",
+    "turn": 2,
+    "user": "那是家咖啡店。我点了热拿铁，坐了一会儿。",
+    "assistant": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种店不用急着做什么，安静待着就已经挺舒服了。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实容易让空间变得安静、松弛，待着会比亮堂的店更舒服。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "combined",
+    "turn": 3,
+    "user": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "assistant": "好，你说，我先听着。今晚煮的面有点咸，刚才那杯拿铁倒是挺香；你想从哪儿说起都可以。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实容易让空间变得安静、松弛，待着会比亮堂的店更舒服。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种店不用急着做什么，安静待着就已经挺舒服了。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "combined",
+    "turn": 4,
+    "user": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "assistant": "那我先问个轻一点的：今天除了那家低灯光的咖啡店，还有没有哪个小瞬间让你觉得还不错？哪怕只是吃到合口的东西、看到一件有意思的小事。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "今天路过一家店，灯打得很低，我觉得挺舒服。"
+          },
+          {
+            "role": "assistant",
+            "text": "低一点的灯光确实容易让空间变得安静、松弛，待着会比亮堂的店更舒服。"
+          },
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种店不用急着做什么，安静待着就已经挺舒服了。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着。今晚煮的面有点咸，刚才那杯拿铁倒是挺香；你想从哪儿说起都可以。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  },
+  {
+    "arm": "combined",
+    "turn": 5,
+    "user": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。",
+    "assistant": "暖黄的台灯一打开，桌面应该会显得柔和很多。比起店里的低灯光，它更像是把舒服的感觉带回了自己的空间里。",
+    "expression": {
+      "questionIntent": "natural_optional",
+      "questionIntentReason": "ordinary",
+      "recentExpression": {
+        "policyVersion": "turn_expression_v1",
+        "windowSize": 5,
+        "repeatedOpenings": [],
+        "protectedPhrases": [],
+        "recentDialogue": [
+          {
+            "role": "user",
+            "text": "那是家咖啡店。我点了热拿铁，坐了一会儿。"
+          },
+          {
+            "role": "assistant",
+            "text": "低灯光配热拿铁，确实很适合坐下来缓一会儿。那种店不用急着做什么，安静待着就已经挺舒服了。"
+          },
+          {
+            "role": "user",
+            "text": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。"
+          },
+          {
+            "role": "assistant",
+            "text": "好，你说，我先听着。今晚煮的面有点咸，刚才那杯拿铁倒是挺香；你想从哪儿说起都可以。"
+          },
+          {
+            "role": "user",
+            "text": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那我先问个轻一点的：今天除了那家低灯光的咖啡店，还有没有哪个小瞬间让你觉得还不错？哪怕只是吃到合口的东西、看到一件有意思的小事。"
+          }
+        ]
+      },
+      "applicablePractices": [],
+      "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+      "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use recentDialogue to receive an answer before considering another question, follow a topic change, and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+      "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+      "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+    }
+  }
+]

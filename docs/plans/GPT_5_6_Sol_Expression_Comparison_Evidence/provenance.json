@@ -1,0 +1,476 @@
+{
+  "schema": "sol-expression-comparison-evidence-v1",
+  "syntheticScenarioInputs": true,
+  "providerResponsesAreReal": true,
+  "authorizationContext": "User explicitly requested one retry after the prior GROUP_DISABLED run. Baseline access was verified before the other independent arms were started. No alternate credentials or route were selected by the assistant.",
+  "priorBlockedAttempt": {
+    "directory": "artifacts/correction-expression-gpt-5-6-sol-20260908",
+    "physicalAttempts": 4,
+    "httpStatus": 403,
+    "errorCode": "GROUP_DISABLED",
+    "validReplies": 0,
+    "usage": "unknown",
+    "ledgerSha256": "0bf7634328387ade73bf983cf072c04e8c7b9abdbf347f8fc05a85706e1da742",
+    "publicEvidence": "../GPT_5_6_Sol_Expression_Attempt_Evidence/provenance.json"
+  },
+  "runs": [
+    {
+      "directory": "artifacts/correction-expression-gpt-5-6-sol-20260908-retry1-baseline",
+      "sourceFingerprint": {
+        "revision": "b1b1789d7859b412096ee76889997171da1de00c",
+        "dirty": true,
+        "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+      },
+      "predecessor": "artifacts/correction-expression-gpt-5-6-sol-20260908",
+      "result": {
+        "completed": true,
+        "fixture": false,
+        "logicalCalls": 6,
+        "failures": [],
+        "score": "not_automatically_assigned"
+      },
+      "physicalAttempts": 6,
+      "validReplies": 6,
+      "hashes": {
+        "manifest.json": "d3cd6b9a85e0804fc5ce6c0c9dcc57108a26de6de95dbcac394b19dcd4f651bb",
+        "attempts.jsonl": "267c85ef3542be3d0a6d84f52cb98468e4bc6e4fe3074cccc996af6bc217c0fd",
+        "result.json": "32ed689cd8e63c8573578985f6106860b0463cacb197343c5879bf3c50f63f43",
+        "transcript.jsonl": "256ac0bb403ef95777e669c5d48cd226cc8acb941cdfadd463e38c8a4441726f",
+        "provider-metrics.jsonl": "252a17682ae74dda234725806762c9f85d5afe06eafc0c183f9def878eafa0dc"
+      }
+    },
+    {
+      "directory": "artifacts/correction-expression-gpt-5-6-sol-20260908-retry1-remaining",
+      "sourceFingerprint": {
+        "revision": "b1b1789d7859b412096ee76889997171da1de00c",
+        "dirty": true,
+        "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+      },
+      "predecessor": "artifacts/correction-expression-gpt-5-6-sol-20260908-retry1-baseline",
+      "result": {
+        "completed": false,
+        "fixture": false,
+        "logicalCalls": 18,
+        "failures": [
+          {
+            "arm": "combined",
+            "turn": 6,
+            "error": "LLM request failed with HTTP 502"
+          }
+        ],
+        "score": "not_automatically_assigned"
+      },
+      "physicalAttempts": 18,
+      "validReplies": 17,
+      "hashes": {
+        "manifest.json": "f3660796c57cb27e3da462c8c6b97c958bd7bb1814c0e25bd5984481e3d6a2e2",
+        "attempts.jsonl": "4c8c0164f464468522edf3a12c44d740552047cb9285870cee5d2ba0df219b04",
+        "result.json": "e7fe792841bb86959bb62134b5d21bbbb5a394c4dbb0d8d2a0bbd3cbfed34d89",
+        "transcript.jsonl": "7f7e19b9fa41ac660409325deab4ff974065fd1f75f4c9377e72e8ee4f7cfb8a",
+        "provider-metrics.jsonl": "8bf41124f65c1134d911d482941736d0d70cb98c21f4e8ad8e76c2c9b30e89ce"
+      }
+    }
+  ],
+  "requestedProfile": "gpt56-sol",
+  "requestedModels": ["gpt-5.6-sol"],
+  "reportedResponseModels": ["gpt-5.6-sol"],
+  "effectiveRequest": {
+    "maxOutputTokens": 2500,
+    "reasoningEffort": "medium",
+    "responseFormat": {
+      "type": "json_object"
+    },
+    "temperature": null,
+    "stream": false
+  },
+  "maxRetries": 0,
+  "plannedGeneratedReplies": 24,
+  "completed": false,
+  "retryPhysicalAttempts": 24,
+  "httpResponses": 24,
+  "validReplies": 23,
+  "cumulativeAttemptsIncludingPriorBlockedRun": 28,
+  "failures": [
+    {
+      "directory": "artifacts/correction-expression-gpt-5-6-sol-20260908-retry1-remaining",
+      "arm": "combined",
+      "turn": 6,
+      "error": "LLM request failed with HTTP 502"
+    }
+  ],
+  "observedPromptTokens": 28255,
+  "observedCompletionTokens": 2837,
+  "observedTotalTokens": 31092,
+  "usageCompleteForRetry": false,
+  "cumulativeUsageIncludingPriorBlockedRun": null,
+  "calls": [
+    {
+      "arm": "baseline",
+      "turn": 1,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 801,
+      "completionTokens": 109,
+      "totalTokens": 910,
+      "latencyMs": 10760.6278
+    },
+    {
+      "arm": "baseline",
+      "turn": 2,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 970,
+      "completionTokens": 100,
+      "totalTokens": 1070,
+      "latencyMs": 16429.8698
+    },
+    {
+      "arm": "baseline",
+      "turn": 3,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1142,
+      "completionTokens": 150,
+      "totalTokens": 1292,
+      "latencyMs": 19135.0178
+    },
+    {
+      "arm": "baseline",
+      "turn": 4,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1290,
+      "completionTokens": 143,
+      "totalTokens": 1433,
+      "latencyMs": 18459.02700000001
+    },
+    {
+      "arm": "baseline",
+      "turn": 5,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1366,
+      "completionTokens": 84,
+      "totalTokens": 1450,
+      "latencyMs": 12306.433400000009
+    },
+    {
+      "arm": "baseline",
+      "turn": 6,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1408,
+      "completionTokens": 84,
+      "totalTokens": 1492,
+      "latencyMs": 13286.896799999988
+    },
+    {
+      "arm": "plain_only",
+      "turn": 1,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 886,
+      "completionTokens": 92,
+      "totalTokens": 978,
+      "latencyMs": 16069.839300000001
+    },
+    {
+      "arm": "plain_only",
+      "turn": 2,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1041,
+      "completionTokens": 122,
+      "totalTokens": 1163,
+      "latencyMs": 13119.8661
+    },
+    {
+      "arm": "plain_only",
+      "turn": 3,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1221,
+      "completionTokens": 127,
+      "totalTokens": 1348,
+      "latencyMs": 17400.9183
+    },
+    {
+      "arm": "plain_only",
+      "turn": 4,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1353,
+      "completionTokens": 182,
+      "totalTokens": 1535,
+      "latencyMs": 13012.300000000003
+    },
+    {
+      "arm": "plain_only",
+      "turn": 5,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1412,
+      "completionTokens": 85,
+      "totalTokens": 1497,
+      "latencyMs": 16161.115099999995
+    },
+    {
+      "arm": "plain_only",
+      "turn": 6,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1462,
+      "completionTokens": 69,
+      "totalTokens": 1531,
+      "latencyMs": 14528.8995
+    },
+    {
+      "arm": "questions_only",
+      "turn": 1,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 923,
+      "completionTokens": 119,
+      "totalTokens": 1042,
+      "latencyMs": 18482.1667
+    },
+    {
+      "arm": "questions_only",
+      "turn": 2,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1084,
+      "completionTokens": 91,
+      "totalTokens": 1175,
+      "latencyMs": 26773.91470000001
+    },
+    {
+      "arm": "questions_only",
+      "turn": 3,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1236,
+      "completionTokens": 106,
+      "totalTokens": 1342,
+      "latencyMs": 16580.30190000002
+    },
+    {
+      "arm": "questions_only",
+      "turn": 4,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1332,
+      "completionTokens": 211,
+      "totalTokens": 1543,
+      "latencyMs": 24986.510699999984
+    },
+    {
+      "arm": "questions_only",
+      "turn": 5,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1414,
+      "completionTokens": 111,
+      "totalTokens": 1525,
+      "latencyMs": 17412.706000000006
+    },
+    {
+      "arm": "questions_only",
+      "turn": 6,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1496,
+      "completionTokens": 125,
+      "totalTokens": 1621,
+      "latencyMs": 18624.590999999986
+    },
+    {
+      "arm": "combined",
+      "turn": 1,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1008,
+      "completionTokens": 96,
+      "totalTokens": 1104,
+      "latencyMs": 17618.558700000023
+    },
+    {
+      "arm": "combined",
+      "turn": 2,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1133,
+      "completionTokens": 91,
+      "totalTokens": 1224,
+      "latencyMs": 16487.386900000012
+    },
+    {
+      "arm": "combined",
+      "turn": 3,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1287,
+      "completionTokens": 222,
+      "totalTokens": 1509,
+      "latencyMs": 14752.849699999992
+    },
+    {
+      "arm": "combined",
+      "turn": 4,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1439,
+      "completionTokens": 195,
+      "totalTokens": 1634,
+      "latencyMs": 22160.75880000001
+    },
+    {
+      "arm": "combined",
+      "turn": 5,
+      "status": 200,
+      "responseModel": "gpt-5.6-sol",
+      "finishReason": "stop",
+      "promptTokens": 1551,
+      "completionTokens": 123,
+      "totalTokens": 1674,
+      "latencyMs": 34415.88949999999
+    },
+    {
+      "arm": "combined",
+      "turn": 6,
+      "status": 502,
+      "responseModel": null,
+      "finishReason": null,
+      "promptTokens": null,
+      "completionTokens": null,
+      "totalTokens": null,
+      "latencyMs": 232.48989999998594
+    }
+  ],
+  "armCounts": [
+    {
+      "arm": "baseline",
+      "qwen": 4,
+      "claude": 6,
+      "sol": 6
+    },
+    {
+      "arm": "plain_only",
+      "qwen": 1,
+      "claude": 6,
+      "sol": 6
+    },
+    {
+      "arm": "questions_only",
+      "qwen": 6,
+      "claude": 6,
+      "sol": 6
+    },
+    {
+      "arm": "combined",
+      "qwen": 6,
+      "claude": 0,
+      "sol": 5
+    }
+  ],
+  "pairwise": [
+    {
+      "model": "qwen",
+      "opportunities": 16,
+      "sameUserText": 15,
+      "reference": {
+        "replies": 16,
+        "totalCodePoints": 897,
+        "meanCodePoints": 56.0625,
+        "withQuestionMark": 8,
+        "withQueShi": 10
+      },
+      "sol": {
+        "replies": 16,
+        "totalCodePoints": 733,
+        "meanCodePoints": 45.8125,
+        "withQuestionMark": 3,
+        "withQueShi": 7
+      },
+      "nonHistoryExpressionDifferences": []
+    },
+    {
+      "model": "claude",
+      "opportunities": 18,
+      "sameUserText": 15,
+      "reference": {
+        "replies": 18,
+        "totalCodePoints": 467,
+        "meanCodePoints": 25.944444444444443,
+        "withQuestionMark": 13,
+        "withQueShi": 12
+      },
+      "sol": {
+        "replies": 18,
+        "totalCodePoints": 752,
+        "meanCodePoints": 41.77777777777778,
+        "withQuestionMark": 3,
+        "withQueShi": 6
+      },
+      "nonHistoryExpressionDifferences": []
+    }
+  ],
+  "threeWay": {
+    "opportunities": 11,
+    "sameUserText": 9,
+    "diagnostics": {
+      "qwen": {
+        "replies": 11,
+        "totalCodePoints": 548,
+        "meanCodePoints": 49.81818181818182,
+        "withQuestionMark": 5,
+        "withQueShi": 6
+      },
+      "claude": {
+        "replies": 11,
+        "totalCodePoints": 306,
+        "meanCodePoints": 27.818181818181817,
+        "withQuestionMark": 8,
+        "withQueShi": 8
+      },
+      "sol": {
+        "replies": 11,
+        "totalCodePoints": 501,
+        "meanCodePoints": 45.54545454545455,
+        "withQuestionMark": 2,
+        "withQueShi": 5
+      }
+    }
+  },
+  "limitations": [
+    "One trajectory per arm; no statistical significance, human satisfaction or long-term quality claim.",
+    "History and adaptive user wording can differ even when non-history expression fields agree.",
+    "Sol and Qwen use json_object/openai_reasoning_effort; Claude uses prompt_json/anthropic_output_config. Same medium labels do not guarantee equal reasoning budgets.",
+    "Only common valid opportunities support text comparisons; missing rows remain missing.",
+    "Question marks, phrase counts and lengths are diagnostic only, not quality scores.",
+    "Prompt-only generation, not the final product repair or persistence path.",
+    "Baseline and other independent arms can overlap in execution time; provider latency is descriptive only."
+  ]
+}

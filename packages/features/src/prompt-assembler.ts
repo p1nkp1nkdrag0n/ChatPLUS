@@ -34,7 +34,9 @@ import {
   createDefaultPromptSegments,
   createFollowUpContextPromptSegment,
   createLifeContextPromptSegment,
+  estimatePromptTokens,
   PromptSegmentRegistry,
+  PromptSegmentRegistryError,
   type DefaultPromptContext,
   type PromptAssemblyTrace,
   type PromptSegment,
@@ -838,6 +840,21 @@ export function assembleChatPrompt(
           ? ""
           : `:persona:${input.effectivePersona.policyVersion}:${input.effectivePersona.revision}:memory:${input.effectivePersona.memoryRevision}`);
   const compactedRelationship = compactRelationship(relationship);
+  const turnControl =
+    input.conversationPlan === undefined
+      ? undefined
+      : {
+          conversationIntent: input.conversationPlan.intent,
+          supportStyle: input.conversationPlan.supportStyle,
+          adviceRequested: input.conversationPlan.adviceRequested,
+          helpTiming: input.conversationPlan.helpTiming,
+          advicePolicy: deriveAdvicePolicy(input.conversationPlan),
+          expression: turnExpressionPromptView(input.conversationPlan),
+          adviceGuidance:
+            "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
+          guidance:
+            "Sharing and venting need not become analysis, advice, a follow-up question, a goal update or relationship growth. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
+        };
   const promptContext: DefaultPromptContext = {
     appPolicy:
       commonPolicy +
@@ -923,20 +940,7 @@ export function assembleChatPrompt(
     ...(retrievedEvidenceUses === undefined ? {} : { retrievedEvidenceUses }),
     recentVerbatim: recentMessages,
     replyStrategy: {
-      ...(input.conversationPlan === undefined
-        ? {}
-        : {
-            conversationIntent: input.conversationPlan.intent,
-            supportStyle: input.conversationPlan.supportStyle,
-            adviceRequested: input.conversationPlan.adviceRequested,
-            helpTiming: input.conversationPlan.helpTiming,
-            advicePolicy: deriveAdvicePolicy(input.conversationPlan),
-            expression: turnExpressionPromptView(input.conversationPlan),
-            adviceGuidance:
-              "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
-            guidance:
-              "Sharing and venting need not become analysis, advice, a follow-up question, a goal update or relationship growth. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
-          }),
+      ...turnControl,
       complexity: replyStrategy.complexity,
       softTargetCharacters: {
         minimum: replyStrategy.targetMinChars,
@@ -966,19 +970,22 @@ export function assembleChatPrompt(
       : { lifeContext: input.lifeContext }),
   };
 
+  const promptSafeContext = projectPromptTemporalData(
+    input.character.identity,
+    promptContext,
+  ) as DefaultPromptContext;
   const registry = new PromptSegmentRegistry<DefaultPromptContext>(
     createDefaultPromptSegments().map((segment) =>
-      segment.id === "16_user_message"
+      segment.id === "16_user_message" ||
+      (turnControl !== undefined && segment.id === "15_reply_strategy")
         ? {
             ...segment,
+            // Reserve this turn's actual payload, not a larger global context.
+            // The legacy 500-token strategy slot predates the finite controls
+            // and otherwise clips their qualifications before global admission.
             tokenBudget: Math.max(
               segment.tokenBudget,
-              Math.ceil(
-                (
-                  "CURRENT_USER_MESSAGE_JSON\n" +
-                  JSON.stringify(promptContext.userMessage)
-                ).length / 4,
-              ),
+              estimatePromptTokens(segment.render(promptSafeContext) ?? ""),
             ),
           }
         : segment,
@@ -1064,16 +1071,21 @@ export function assembleChatPrompt(
         }),
     });
   }
-  const promptSafeContext = projectPromptTemporalData(
-    input.character.identity,
-    promptContext,
-  ) as DefaultPromptContext;
   const assembled = registry.render(
     promptSafeContext,
     input.maxInputTokens === undefined
       ? {}
       : { maxInputTokens: input.maxInputTokens },
   );
+  if (turnControl !== undefined) {
+    const expected = promptSafeContext.replyStrategy as Record<string, unknown>;
+    assertTurnControlDelivered(
+      assembled.prompt,
+      Object.fromEntries(
+        Object.keys(turnControl).map((key) => [key, expected[key]]),
+      ),
+    );
+  }
 
   return {
     system: assembled.system,
@@ -1085,6 +1097,36 @@ export function assembleChatPrompt(
     replyStrategy,
     segmentTrace: assembled.trace,
   };
+}
+
+/** Global pressure may shorten ordinary context, never half-deliver a control. */
+function assertTurnControlDelivered(
+  prompt: string,
+  expected: Record<string, unknown>,
+): void {
+  const lines = prompt.split("\n");
+  const index = lines.indexOf("REPLY_STRATEGY_JSON");
+  let delivered: unknown;
+  try {
+    delivered = index < 0 ? undefined : JSON.parse(lines[index + 1] ?? "null");
+  } catch {
+    delivered = undefined;
+  }
+  if (
+    typeof delivered !== "object" ||
+    delivered === null ||
+    Array.isArray(delivered) ||
+    Object.entries(expected).some(
+      ([key, value]) =>
+        JSON.stringify((delivered as Record<string, unknown>)[key]) !==
+        JSON.stringify(value),
+    )
+  ) {
+    throw new PromptSegmentRegistryError(
+      "required_segments_exceed_budget",
+      "The prompt budget cannot retain the complete current-turn reply controls.",
+    );
+  }
 }
 
 export const assemblePrompt = assembleChatPrompt;

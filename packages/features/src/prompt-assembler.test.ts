@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EvidenceBundle } from "@personasim/contracts";
 import { buildConversationContextPlan } from "./conversation-context-plan.js";
+import { turnExpressionPromptView } from "./turn-expression-policy.js";
 
 import {
   assembleChatPrompt,
@@ -9,6 +10,7 @@ import {
 import {
   DEFAULT_PROMPT_SEGMENT_IDS,
   estimatePromptTokens,
+  PromptSegmentRegistryError,
 } from "./prompt-segments/index.js";
 
 const NOW = "2026-08-21T12:00:00.000Z";
@@ -248,6 +250,114 @@ function promptSegmentJson(prompt: string, label: string): unknown {
   }
   return JSON.parse(serialized) as unknown;
 }
+
+describe("complete turn-control delivery", () => {
+  it.each([
+    "只是抱怨一下今天又改了方案，不用解决。",
+    "朋友说‘别再问我’，那是他对别人说的，不是在替我提要求。",
+    "请帮我分析一下，是哪里出了错，还有什么需要核对？",
+  ])("delivers the complete frozen guidance for %s", (userMessage) => {
+    const conversationPlan = buildConversationContextPlan({
+      originalQuery: userMessage,
+      agentId: "agent-test",
+      sessionId: "session-test",
+      recentMessages: [],
+      protectedPhrases: Array.from({ length: 24 }, (_, i) => `作者用语 ${i}`),
+    });
+    const before = structuredClone(conversationPlan);
+    const result = assembleChatPrompt(
+      baseInput({ userMessage, conversationPlan }),
+    );
+    const strategy = promptSegmentJson(
+      result.prompt,
+      "REPLY_STRATEGY_JSON",
+    ) as {
+      expression: ReturnType<typeof turnExpressionPromptView>;
+      guidance: string;
+    };
+    expect(strategy.expression).toEqual(turnExpressionPromptView(before));
+    expect(strategy.expression.questionGuidance).toContain(
+      "For a closed vent, do not announce that you are following a listening policy",
+    );
+    expect(strategy.expression.expressionGuidance).toContain(
+      "psychological traits or abilities",
+    );
+    expect(strategy.expression.analysisGuidance).toContain(
+      "Do not redefine an actual mistake as requiring irreversible harm",
+    );
+    expect(strategy.guidance).toContain(
+      "do not collapse the ordered request into advice now or indefinite listening",
+    );
+    expect(
+      result.segmentTrace.segments.find((s) => s.id === "15_reply_strategy"),
+    ).toMatchObject({ included: true, truncated: false });
+    expect(result.messages[1]!.content).toBe(result.prompt);
+    expect(conversationPlan).toEqual(before);
+  });
+
+  it("keeps turn controls complete while optional context competes for a fixed total budget", () => {
+    const userMessage = "先让我说完，再帮我详细分析。";
+    const conversationPlan = buildConversationContextPlan({
+      originalQuery: userMessage,
+      agentId: "agent-test",
+      sessionId: "session-test",
+      recentMessages: [],
+    });
+    const input = baseInput({ userMessage, conversationPlan });
+    const unconstrained = assembleChatPrompt(input);
+    const maximumTokens = unconstrained.segmentTrace.segments
+      .filter((segment) => segment.required)
+      .reduce((total, segment) => total + segment.estimatedTokens + 1, 100);
+    const constrained = assembleChatPrompt({
+      ...input,
+      maxInputTokens: maximumTokens,
+      recentMessages: Array.from({ length: 30 }, (_, i) => ({
+        role: "assistant" as const,
+        content: `历史 ${i}。${"这是一段较长的历史对话。".repeat(80)}`,
+      })),
+    });
+    expect(
+      (
+        promptSegmentJson(constrained.prompt, "REPLY_STRATEGY_JSON") as {
+          expression: unknown;
+          helpTiming: unknown;
+        }
+      ).expression,
+    ).toEqual(turnExpressionPromptView(conversationPlan));
+    expect(
+      promptSegmentJson(constrained.prompt, "REPLY_STRATEGY_JSON"),
+    ).toMatchObject({ helpTiming: "after_user_finishes" });
+    expect(constrained.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(
+      maximumTokens,
+    );
+    expect(
+      constrained.segmentTrace.segments.some(
+        (segment) =>
+          !segment.required &&
+          (segment.truncated || segment.reason === "global_budget"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects insufficient total space rather than sending a clipped turn instruction", () => {
+    const userMessage = "只是吐槽一句，不用解决。";
+    const conversationPlan = buildConversationContextPlan({
+      originalQuery: userMessage,
+      agentId: "agent-test",
+      sessionId: "session-test",
+      recentMessages: [],
+    });
+    expect(() =>
+      assembleChatPrompt(
+        baseInput({
+          userMessage,
+          conversationPlan,
+          maxInputTokens: 512,
+        }),
+      ),
+    ).toThrow(PromptSegmentRegistryError);
+  });
+});
 
 describe("assembleChatPrompt registry integration", () => {
   it.each(["reply_only", "schedule_negotiation", "legacy_effects"] as const)(

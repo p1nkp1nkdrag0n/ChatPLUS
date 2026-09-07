@@ -24,7 +24,7 @@
 
 ## 复现命令
 
-从仓库根目录执行默认的无付费 fixture 试跑，输出应使用新的目录：
+从仓库根目录执行无付费 fixture 试跑，输出应使用新的目录：
 
 ```powershell
 pnpm exec tsx apps/server/src/scripts/correction-expression-pilot.ts --fixture --output artifacts/correction-expression-fixture-new

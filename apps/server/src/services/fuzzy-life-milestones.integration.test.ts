@@ -172,6 +172,12 @@ describe("time-based fuzzy-life milestones", () => {
       spec: draft,
       expectedVersion: head.version,
     });
+    expect(updated.compilationPolicyVersion).toBe(
+      head.compilationPolicyVersion,
+    );
+    expect(updated.authorityAudit?.policyVersion).toBe(
+      "character_authority_v1",
+    );
     app.personasim.characters.publish(character.id, updated.version);
 
     clock.advance({ days: 50 });

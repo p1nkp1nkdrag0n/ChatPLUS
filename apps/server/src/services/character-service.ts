@@ -244,7 +244,8 @@ export class CharacterService {
         : undefined,
       expectedVersion,
     );
-    candidate.compilationPolicyVersion = CHARACTER_COMPILATION_POLICY_VERSION;
+    // Authority review does not recompile lifecycle semantics. Keep the current
+    // policy so an ordinary edit cannot stop an existing calendar-based plan.
     assertCharacterSourceRefs(candidate);
 
     const next = characterSpecSchema.parse({
@@ -293,7 +294,8 @@ export class CharacterService {
       undefined,
       undefined,
     );
-    sourceDraft.compilationPolicyVersion = CHARACTER_COMPILATION_POLICY_VERSION;
+    // Restore the selected version's lifecycle policy while applying today's
+    // authority review; the head's newer compiler policy is unrelated.
     assertCharacterClockIsEditable(
       this.store,
       agentId,

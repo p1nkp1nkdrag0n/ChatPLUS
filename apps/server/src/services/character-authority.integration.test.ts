@@ -913,4 +913,74 @@ describe("server-owned character authority", () => {
     ).toEqual([]);
     expect(server.personasim.store.getCharacterSpec(old.id, 1)).toEqual(old);
   });
+
+  it.each([undefined, "legacy_template_v1", "companion_character_v2"] as const)(
+    "keeps historical lifecycle policy %s through editing and restore while auditing authority",
+    async (policy) => {
+      const server = await setup();
+      const generated = await server.inject({
+        method: "POST",
+        url: "/api/characters/generate",
+        payload: INPUT,
+      });
+      const historical = generated.json<{ character: CharacterSpec }>()
+        .character;
+      if (policy === undefined) delete historical.compilationPolicyVersion;
+      else historical.compilationPolicyVersion = policy;
+      historical.persona.boundaries = structuredClone(BAD_BOUNDARIES);
+      delete historical.authorityAudit;
+      server.personasim.store.replaceVersion(historical);
+      server.personasim.store.updateCharacterHead(historical);
+
+      const edited = await server.inject({
+        method: "PATCH",
+        url: `/api/characters/${historical.id}/draft`,
+        payload: {
+          expectedVersion: 1,
+          path: "identity.name",
+          value: "许岚编辑稿",
+        },
+      });
+      expect(edited.statusCode).toBe(200);
+      const next = edited.json<{ character: CharacterSpec }>().character;
+      expect(next.compilationPolicyVersion).toBe(policy);
+      expect(next.authorityAudit?.policyVersion).toBe("character_authority_v1");
+      expect(next.persona.boundaries).toEqual([]);
+      expect(
+        next.authorityAudit?.candidates.find(
+          (item) => item.ruleId === "bound-1",
+        ),
+      ).toMatchObject({
+        status: "pending",
+        strength: "hard",
+      });
+
+      // A newer compiled head must not replace the restored version's policy.
+      next.compilationPolicyVersion = "companion_character_v3";
+      server.personasim.store.replaceVersion(next);
+      server.personasim.store.updateCharacterHead(next);
+      const restored = await server.inject({
+        method: "POST",
+        url: `/api/characters/${historical.id}/versions/1/restore`,
+      });
+      expect(restored.statusCode).toBe(200);
+      const result = restored.json<{ character: CharacterSpec }>().character;
+      expect(result.compilationPolicyVersion).toBe(policy);
+      expect(result.authorityAudit?.policyVersion).toBe(
+        "character_authority_v1",
+      );
+      expect(result.persona.boundaries).toEqual([]);
+      expect(
+        result.authorityAudit?.candidates.find(
+          (item) => item.ruleId === "bound-1",
+        ),
+      ).toMatchObject({
+        status: "pending",
+        strength: "hard",
+      });
+      expect(
+        server.personasim.store.getCharacterSpec(historical.id, 1),
+      ).toEqual(historical);
+    },
+  );
 });

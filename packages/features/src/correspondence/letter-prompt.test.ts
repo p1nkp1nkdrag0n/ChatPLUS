@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLetterReplyPrompt,
   deriveAllowedLetterReplyReferenceIds,
+  resolveLetterReplyReferences,
 } from "./letter-prompt.js";
 import { deriveLetterStrategy } from "./letter-strategy.js";
 
@@ -71,6 +72,36 @@ const snapshot: LetterGenerationSnapshot = {
 };
 
 describe("buildLetterReplyPrompt", () => {
+  it("resolves only unique exact references from this call, never durable IDs or repaired prefixes", () => {
+    const bindings = [
+      { localId: "ref_call_a_1", evidenceId: "letter-one" },
+      { localId: "ref_call_a_2", evidenceId: "memory-one" },
+    ];
+    expect(
+      resolveLetterReplyReferences(["ref_call_a_2", "ref_call_a_1"], bindings),
+    ).toEqual(["memory-one", "letter-one"]);
+    for (const ids of [
+      ["letter-one"],
+      ["ref_call_b_1"],
+      ["memory_call_a_1"],
+      ["ref_call_a_1", "ref_call_a_1"],
+    ]) {
+      expect(resolveLetterReplyReferences(ids, bindings)).toBeUndefined();
+    }
+    expect(
+      resolveLetterReplyReferences(
+        ["ref_call_a_1"],
+        [...bindings, { localId: "ref_call_a_1", evidenceId: "other-letter" }],
+      ),
+    ).toBeUndefined();
+    expect(
+      resolveLetterReplyReferences(
+        ["ref_call_a_1"],
+        [...bindings, { localId: "ref_call_a_3", evidenceId: "letter-one" }],
+      ),
+    ).toBeUndefined();
+  });
+
   it("uses the arrival snapshot without leaking processing time or live future facts", () => {
     const built = buildLetterReplyPrompt({
       snapshot,
@@ -88,20 +119,19 @@ describe("buildLetterReplyPrompt", () => {
     expect(built.system).toContain("A plan is not an outcome");
     expect(built.system).toContain("complete correspondence letter");
     expect(built.prompt).toContain(ARRIVAL);
-    expect(built.prompt).toContain("evidence-before-arrival");
-    expect(built.prompt).toContain("keepsake-before-arrival");
+    expect(built.prompt).not.toContain("evidence-before-arrival");
+    expect(built.prompt).not.toContain("keepsake-before-arrival");
     expect(built.prompt).toContain("雨夜票根");
     expect(built.prompt).not.toContain(PROCESSED);
     expect(built.prompt).not.toContain("future-evidence-from-september-9");
 
     const parsed = JSON.parse(built.prompt) as Record<string, unknown>;
     expect(parsed["ALLOWED_REFERENCED_EVIDENCE_IDS"]).toEqual([
-      ...snapshot.evidenceIds,
-      snapshot.incomingLetterId,
+      ...built.referenceBindings.map((item) => item.localId),
     ]);
     expect(
       (parsed["SNAPSHOT_EVIDENCE"] as Record<string, unknown>)["evidenceIds"],
-    ).toEqual(snapshot.evidenceIds);
+    ).toEqual(built.referenceBindings.slice(0, -1).map((item) => item.localId));
   });
 
   it("serializes stable named prompt sections and keeps strategy non-factual", () => {
@@ -121,6 +151,7 @@ describe("buildLetterReplyPrompt", () => {
       "ARRIVAL_TIME_AND_POSTMARK",
       "CHARACTER_SPEC_COMPACT",
       "LETTER_ARRIVAL_EFFECTIVE_TIME",
+      "LETTER_PARTICIPANTS",
       "LETTER_STRATEGY",
       "LIFE_INTERVAL_DIGEST",
       "PRIOR_CORRESPONDENCE_SUMMARY",
@@ -295,11 +326,11 @@ describe("buildLetterReplyPrompt", () => {
       snapshot.incomingLetterId,
     ]);
     expect(parsed["ALLOWED_REFERENCED_EVIDENCE_IDS"]).toEqual(
-      deriveAllowedLetterReplyReferenceIds(frozen),
+      built.referenceBindings.map((item) => item.localId),
     );
     expect(
       (parsed["SNAPSHOT_EVIDENCE"] as Record<string, unknown>)["evidenceIds"],
-    ).toEqual(snapshot.evidenceIds);
+    ).toEqual(built.referenceBindings.slice(0, -1).map((item) => item.localId));
     expect(JSON.stringify(frozen)).toBe(before);
   });
 

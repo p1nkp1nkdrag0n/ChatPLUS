@@ -286,18 +286,18 @@ function applyOriginalFormAuthority(
   const consumedTraitIndexes = new Set<number>();
   const authorTraits = input.coreTraits.map((name, index) => {
     const normalizedName = name.trim().toLocaleLowerCase();
-    let generatedIndex = draft.persona.traits.findIndex(
+    const matchingIndexes = draft.persona.traits.flatMap(
       (trait, candidateIndex) =>
         !consumedTraitIndexes.has(candidateIndex) &&
-        trait.name.trim().toLocaleLowerCase() === normalizedName,
+        trait.name.trim().toLocaleLowerCase() === normalizedName
+          ? [candidateIndex]
+          : [],
     );
-    if (generatedIndex < 0) {
-      generatedIndex = draft.persona.traits.findIndex(
-        (trait, candidateIndex) =>
-          !consumedTraitIndexes.has(candidateIndex) &&
-          trait.id === fallback.persona.traits[index]!.id,
-      );
-    }
+    // Rule IDs are model-visible routing hints, not semantic evidence. If a
+    // name is absent or ambiguous, preserve the authored sentence instead of
+    // attaching another trait's description, triggers, and exceptions to it.
+    const generatedIndex =
+      matchingIndexes.length === 1 ? matchingIndexes[0]! : -1;
     if (generatedIndex >= 0) consumedTraitIndexes.add(generatedIndex);
     const generated =
       generatedIndex < 0 ? undefined : draft.persona.traits[generatedIndex];
@@ -310,7 +310,15 @@ function applyOriginalFormAuthority(
       sourceRefs: [sourceId],
     };
   });
-  const authorTraitIds = new Set(authorTraits.map((trait) => trait.id));
+  const unmatchedTraits = draft.persona.traits.filter(
+    (_, index) => !consumedTraitIndexes.has(index),
+  );
+  const candidateTraitIds = new Set(unmatchedTraits.map((trait) => trait.id));
+  for (const trait of authorTraits) {
+    // Keep the untouched candidate ID and content available to the existing
+    // authority audit; a colliding generic ID belongs to neither author field.
+    if (candidateTraitIds.has(trait.id)) trait.id = createEntityId("rule");
+  }
   const baseContradiction = fallback.persona.contradictions.find(
     (item) =>
       item.origin === "user_spec" && item.sideA === input.coreContradiction,
@@ -382,13 +390,7 @@ function applyOriginalFormAuthority(
     },
     persona: {
       ...draft.persona,
-      traits: [
-        ...authorTraits,
-        ...draft.persona.traits.filter(
-          (trait, index) =>
-            !consumedTraitIndexes.has(index) && !authorTraitIds.has(trait.id),
-        ),
-      ],
+      traits: [...authorTraits, ...unmatchedTraits],
       values: draft.persona.values,
       contradictions: [
         ...(authorContradiction ? [authorContradiction] : []),

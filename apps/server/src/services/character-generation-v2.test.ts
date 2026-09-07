@@ -122,6 +122,53 @@ describe("companion character compilation", () => {
     expect(legacy).not.toHaveProperty("compilationPolicyVersion");
   });
 
+  it("never joins a generic trait ID to unrelated model semantics and retains the candidate", () => {
+    const fallback = buildOriginalDraft(INPUT, POLICY);
+    const candidate = structuredClone(fallback);
+    candidate.persona.traits[0] = {
+      ...candidate.persona.traits[0]!,
+      name: "爱主动表达",
+      description: "有话时通常先说出自己的想法",
+      triggers: ["朋友还在叙述时"],
+      exceptions: ["没有想法时"],
+    };
+    const before = structuredClone(candidate);
+    const result = authoritativeOriginalDraft(candidate, INPUT, fallback);
+    expect(result.persona.traits[0]).toMatchObject({
+      ...fallback.persona.traits[0],
+      id: expect.any(String),
+    });
+    expect(result.persona.traits[0]?.id).not.toBe("trait-1");
+    expect(result.persona.traits[1]).toEqual({
+      ...candidate.persona.traits[0],
+      origin: "model_inference",
+      sourceRefs: ["original-form"],
+    });
+    expect(candidate).toEqual(before);
+  });
+
+  it("falls back to the author sentence when duplicate model names cannot be uniquely matched", () => {
+    const fallback = buildOriginalDraft(INPUT, POLICY);
+    const candidate = structuredClone(fallback);
+    candidate.persona.traits[0]!.description = "候选一";
+    candidate.persona.traits.push({
+      ...candidate.persona.traits[0]!,
+      id: "another-listening-trait",
+      description: "候选二",
+    });
+    const result = authoritativeOriginalDraft(candidate, INPUT, fallback);
+    expect(result.persona.traits.map((trait) => trait.description)).toEqual([
+      fallback.persona.traits[0]!.description,
+      "候选一",
+      "候选二",
+    ]);
+    expect(
+      result.persona.traits
+        .slice(1)
+        .every((trait) => trait.origin === "model_inference"),
+    ).toBe(true);
+  });
+
   it("does not invent canon goals or tensions for an imported fallback", () => {
     const input = {
       characterName: "阿澄",

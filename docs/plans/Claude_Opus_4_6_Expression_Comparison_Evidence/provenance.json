@@ -1,0 +1,449 @@
+{
+  "schema": "claude-expression-comparison-evidence-v2",
+  "syntheticScenarioInputs": true,
+  "providerResponsesAreReal": true,
+  "runs": [
+    {
+      "directory": "artifacts/correction-expression-claude-opus-4-6-20260907",
+      "sourceFingerprint": {
+        "revision": "92e2b0ef7030286c86ac819d89cdab96b4dedecd",
+        "dirty": true,
+        "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+      },
+      "predecessor": null,
+      "result": {
+        "completed": false,
+        "fixture": false,
+        "logicalCalls": 19,
+        "failures": [
+          {
+            "arm": "combined",
+            "turn": 1,
+            "error": "LLM request failed with HTTP 524"
+          }
+        ],
+        "score": "not_automatically_assigned"
+      },
+      "physicalAttempts": 19,
+      "validReplies": 18,
+      "hashes": {
+        "manifest.json": "570321933ca86e38ddaf74649cdf68bfb0e164e3f43641f6be648ac13df08825",
+        "attempts.jsonl": "df335be0a6683e6d6616d9149adcbdf7a8aef360abde9a9c8391140ef8bf57a6",
+        "transcript.jsonl": "8aff263836a352bf2f7b82a1b9c1619dbe88ce913db16a1b645877f94a22aead",
+        "result.json": "f4dc229dc0fb9af184ad4d63bdbfc3dbbb35ff00c590bb908e348f1c2e7e8f6f",
+        "provider-metrics.jsonl": "28594265bd4efe15a85b46d8e245aa2f3330f8727e7c203d6bc8be3f52f99984"
+      }
+    },
+    {
+      "directory": "artifacts/correction-expression-claude-opus-4-6-20260908-combined",
+      "sourceFingerprint": {
+        "revision": "92e2b0ef7030286c86ac819d89cdab96b4dedecd",
+        "dirty": true,
+        "dirtyPatchSha256": "ad98a86ada0c8f5ee3e015a1a3a1848bbb51b730e0fa04e64ecbc0b2ddf5f89f"
+      },
+      "predecessor": "artifacts/correction-expression-claude-opus-4-6-20260907",
+      "result": {
+        "completed": false,
+        "fixture": false,
+        "logicalCalls": 1,
+        "failures": [
+          {
+            "arm": "combined",
+            "turn": 1,
+            "error": "LLM request failed with HTTP 524"
+          }
+        ],
+        "score": "not_automatically_assigned"
+      },
+      "physicalAttempts": 1,
+      "validReplies": 0,
+      "hashes": {
+        "manifest.json": "969270c9a05ab99c653fd6509fa99381b6a6baf2e80ad27f7023e327b18c4310",
+        "attempts.jsonl": "05bdca4817490990ea2b6cd5b645d656167fe077a8f55ea7bcb69731154f42b6",
+        "result.json": "087ee376034dbdc48d9362dc8b27936c8873f2dddf007638bd6524d4e61faeb9",
+        "provider-metrics.jsonl": "a5cdc059a042534b511dcc44cd5b65b66ba7a11ba60a43cdda4c6c2282493c04"
+      }
+    }
+  ],
+  "infrastructureRetry": {
+    "reason": "First combined/T1 returned HTTP 524 with no model text or usage. One declared supplemental trajectory used the same request; no returned model reply was resampled.",
+    "failedRequestMatchesSupplement": true,
+    "additionalAttemptAboveOriginal24RequestPlan": 0,
+    "maximumAdditionalTrajectories": 1
+  },
+  "firstAttemptAtUtc": "2026-09-07T15:59:58.700Z",
+  "sourceFingerprint": {
+    "revision": "92e2b0ef7030286c86ac819d89cdab96b4dedecd",
+    "dirty": true,
+    "dirtyPatchSha256": "bdc87afaf279d423bc6f41b5480ff4c512ec115a317f238e11626ba760c194c6"
+  },
+  "baselineGuidanceRevision": "8ce79cb379d1da720aa6ed4992281e82c33cb137",
+  "requestedProfile": "claude",
+  "configuredProfileModel": "claude-opus-5",
+  "requestedModelOverride": "claude-opus-4-6",
+  "requestedModels": ["claude-opus-4-6"],
+  "reportedResponseModels": ["claude-opus-4-6"],
+  "effectiveRequest": {
+    "model": "claude-opus-4-6",
+    "maxOutputTokens": 2500,
+    "thinking": {
+      "type": "adaptive"
+    },
+    "outputConfig": {
+      "effort": "medium"
+    },
+    "responseFormat": null,
+    "temperature": null,
+    "stream": false
+  },
+  "structuredOutputMode": "prompt_json",
+  "reasoningRequestFormat": "anthropic_output_config",
+  "maxRetries": 0,
+  "budget": {
+    "maxPhysicalRequests": 24,
+    "maxReservedTokenUnits": 600000
+  },
+  "completed": false,
+  "physicalAttempts": 20,
+  "httpResponses": 20,
+  "httpStatuses": [
+    200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
+    200, 200, 200, 524, 524
+  ],
+  "calls": [
+    {
+      "arm": "baseline",
+      "turn": 1,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 950,
+      "completionTokens": 61,
+      "totalTokens": 1011,
+      "latencyMs": 7113.207
+    },
+    {
+      "arm": "baseline",
+      "turn": 2,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1112,
+      "completionTokens": 60,
+      "totalTokens": 1172,
+      "latencyMs": 3972.8972999999987
+    },
+    {
+      "arm": "baseline",
+      "turn": 3,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1302,
+      "completionTokens": 48,
+      "totalTokens": 1350,
+      "latencyMs": 3237.7425000000003
+    },
+    {
+      "arm": "baseline",
+      "turn": 4,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1442,
+      "completionTokens": 55,
+      "totalTokens": 1497,
+      "latencyMs": 2776.2180000000026
+    },
+    {
+      "arm": "baseline",
+      "turn": 5,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1522,
+      "completionTokens": 64,
+      "totalTokens": 1586,
+      "latencyMs": 3697.6429000000026
+    },
+    {
+      "arm": "baseline",
+      "turn": 6,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1621,
+      "completionTokens": 39,
+      "totalTokens": 1660,
+      "latencyMs": 45348.265400000004
+    },
+    {
+      "arm": "plain_only",
+      "turn": 1,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1044,
+      "completionTokens": 47,
+      "totalTokens": 1091,
+      "latencyMs": 3725.9916999999987
+    },
+    {
+      "arm": "plain_only",
+      "turn": 2,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1191,
+      "completionTokens": 75,
+      "totalTokens": 1266,
+      "latencyMs": 78063.5889
+    },
+    {
+      "arm": "plain_only",
+      "turn": 3,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1398,
+      "completionTokens": 69,
+      "totalTokens": 1467,
+      "latencyMs": 9449.080600000016
+    },
+    {
+      "arm": "plain_only",
+      "turn": 4,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1580,
+      "completionTokens": 42,
+      "totalTokens": 1622,
+      "latencyMs": 4084.2194000000018
+    },
+    {
+      "arm": "plain_only",
+      "turn": 5,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1660,
+      "completionTokens": 90,
+      "totalTokens": 1750,
+      "latencyMs": 4531.996299999999
+    },
+    {
+      "arm": "plain_only",
+      "turn": 6,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1783,
+      "completionTokens": 42,
+      "totalTokens": 1825,
+      "latencyMs": 23755.68770000001
+    },
+    {
+      "arm": "questions_only",
+      "turn": 1,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1081,
+      "completionTokens": 86,
+      "totalTokens": 1167,
+      "latencyMs": 68943.4982
+    },
+    {
+      "arm": "questions_only",
+      "turn": 2,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1282,
+      "completionTokens": 87,
+      "totalTokens": 1369,
+      "latencyMs": 5691.964600000036
+    },
+    {
+      "arm": "questions_only",
+      "turn": 3,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1514,
+      "completionTokens": 60,
+      "totalTokens": 1574,
+      "latencyMs": 9862.223100000003
+    },
+    {
+      "arm": "questions_only",
+      "turn": 4,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1677,
+      "completionTokens": 57,
+      "totalTokens": 1734,
+      "latencyMs": 4008.4394999999786
+    },
+    {
+      "arm": "questions_only",
+      "turn": 5,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1736,
+      "completionTokens": 95,
+      "totalTokens": 1831,
+      "latencyMs": 4579.8425999999745
+    },
+    {
+      "arm": "questions_only",
+      "turn": 6,
+      "status": 200,
+      "responseModel": "claude-opus-4-6",
+      "finishReason": "stop",
+      "promptTokens": 1857,
+      "completionTokens": 46,
+      "totalTokens": 1903,
+      "latencyMs": 3817.9554000000353
+    },
+    {
+      "arm": "combined",
+      "turn": 1,
+      "status": 524,
+      "finishReason": null,
+      "promptTokens": null,
+      "completionTokens": null,
+      "totalTokens": null,
+      "latencyMs": 125174.76059999998
+    },
+    {
+      "arm": "combined",
+      "turn": 1,
+      "status": 524,
+      "finishReason": null,
+      "promptTokens": null,
+      "completionTokens": null,
+      "totalTokens": null,
+      "latencyMs": 125295.4914
+    }
+  ],
+  "validReplies": 18,
+  "failures": [
+    {
+      "arm": "combined",
+      "turn": 1,
+      "error": "LLM request failed with HTTP 524"
+    },
+    {
+      "arm": "combined",
+      "turn": 1,
+      "error": "LLM request failed with HTTP 524"
+    }
+  ],
+  "observedPromptTokens": 25752,
+  "observedCompletionTokens": 1123,
+  "observedTotalTokens": 26875,
+  "usageComplete": false,
+  "unreportedUsageResponses": [
+    {
+      "context": {
+        "arm": "combined",
+        "turn": 1
+      },
+      "status": 524
+    },
+    {
+      "context": {
+        "arm": "combined",
+        "turn": 1
+      },
+      "status": 524
+    }
+  ],
+  "totalTokensIncludingUnreported": null,
+  "latencyMs": [
+    7113.207, 3972.8972999999987, 3237.7425000000003, 2776.2180000000026,
+    3697.6429000000026, 45348.265400000004, 3725.9916999999987, 78063.5889,
+    9449.080600000016, 4084.2194000000018, 4531.996299999999, 23755.68770000001,
+    68943.4982, 5691.964600000036, 9862.223100000003, 4008.4394999999786,
+    4579.8425999999745, 3817.9554000000353, 125174.76059999998, 125295.4914
+  ],
+  "armStats": [
+    {
+      "arm": "baseline",
+      "qwen": {
+        "count": 4,
+        "codePointLengths": [49, 52, 7, 54],
+        "totalCodePoints": 162
+      },
+      "claude": {
+        "count": 6,
+        "codePointLengths": [28, 28, 11, 18, 28, 5],
+        "totalCodePoints": 118
+      }
+    },
+    {
+      "arm": "plain_only",
+      "qwen": {
+        "count": 1,
+        "codePointLengths": [70],
+        "totalCodePoints": 70
+      },
+      "claude": {
+        "count": 6,
+        "codePointLengths": [26, 30, 28, 17, 45, 8],
+        "totalCodePoints": 154
+      }
+    },
+    {
+      "arm": "questions_only",
+      "qwen": {
+        "count": 6,
+        "codePointLengths": [111, 66, 22, 42, 53, 22],
+        "totalCodePoints": 316
+      },
+      "claude": {
+        "count": 6,
+        "codePointLengths": [51, 48, 25, 20, 40, 11],
+        "totalCodePoints": 195
+      }
+    },
+    {
+      "arm": "combined",
+      "qwen": {
+        "count": 6,
+        "codePointLengths": [79, 58, 76, 62, 74, 38],
+        "totalCodePoints": 387
+      },
+      "claude": {
+        "count": 0,
+        "codePointLengths": [],
+        "totalCodePoints": 0
+      }
+    }
+  ],
+  "pairedOpportunities": 11,
+  "sameUserTextOpportunities": 10,
+  "pairedDiagnostics": {
+    "qwenTotalCodePoints": 548,
+    "claudeTotalCodePoints": 306,
+    "claudeShorterPairs": 9,
+    "qwenRepliesWithQuestionMark": 5,
+    "claudeRepliesWithQuestionMark": 8,
+    "qwenRepliesWithQueShi": 6,
+    "claudeRepliesWithQueShi": 8,
+    "interpretation": "Diagnostic counts only; not a naturalness score or a question quota."
+  },
+  "nonHistoryExpressionDifferences": [],
+  "limitations": [
+    "One trajectory per arm; no statistical significance, human satisfaction or long-term quality claim.",
+    "Shared scenario driver and matching non-history expression views; adaptive user wording and generated histories can differ.",
+    "Provider-compatible reasoning/structured-output request formats differ from Qwen; this is a configured-provider comparison, not model-weight isolation.",
+    "Qwen has 17 valid replies and two interrupted arms; missing rounds are not scored as language failures.",
+    "Claude combined was restarted once after HTTP 524 returned no model output. The original failed attempt and unknown usage remain counted; this is not zero-retry end-to-end completion.",
+    "Prompt-only generation; does not run final product repair, persistence, correction, restart or compression."
+  ]
+}

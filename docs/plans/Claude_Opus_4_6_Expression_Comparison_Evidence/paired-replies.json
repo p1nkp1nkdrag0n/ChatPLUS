@@ -1,0 +1,123 @@
+[
+  {
+    "arm": "baseline",
+    "turn": 1,
+    "qwenUser": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "claudeUser": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "sameUserText": true,
+    "qwenReply": "那种氛围感确实挺治愈的。灯光压得低，视线范围就小了，周围好像也跟着安静下来，人自然会觉得放松不少。",
+    "claudeReply": "低光确实容易让人放松，空间感会柔和很多。是什么类型的店？",
+    "qwenCodePoints": 49,
+    "claudeCodePoints": 28
+  },
+  {
+    "arm": "baseline",
+    "turn": 2,
+    "qwenUser": "那是家咖啡店。我点了热拿铁，坐了一会儿。",
+    "claudeUser": "是家咖啡店，我点了热拿铁，坐了一会儿。",
+    "sameUserText": false,
+    "qwenReply": "热拿铁配那种低光线，确实是很典型的放松组合。奶泡的绵密感加上柔和的视觉环境，能让整个人慢下来。坐多久了？",
+    "claudeReply": "咖啡店用低光确实常见，比较适合坐着待一会儿。拿铁怎么样？",
+    "qwenCodePoints": 52,
+    "claudeCodePoints": 28
+  },
+  {
+    "arm": "baseline",
+    "turn": 3,
+    "qwenUser": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "claudeUser": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "sameUserText": true,
+    "qwenReply": "好的，我在听。",
+    "claudeReply": "嗯，咸了确实不太舒服。",
+    "qwenCodePoints": 7,
+    "claudeCodePoints": 11
+  },
+  {
+    "arm": "baseline",
+    "turn": 4,
+    "qwenUser": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "claudeUser": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "sameUserText": true,
+    "qwenReply": "好，那我起个头。既然刚才提到了那家咖啡店，除了灯光，那家店里的音乐或者周围人的状态有什么特别让你印象深的吗？",
+    "claudeReply": "那今天除了咖啡店和煮面，还做了什么？",
+    "qwenCodePoints": 54,
+    "claudeCodePoints": 18
+  },
+  {
+    "arm": "plain_only",
+    "turn": 1,
+    "qwenUser": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "claudeUser": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "sameUserText": true,
+    "qwenReply": "那种低色温的光线确实容易让人放松，像是把外界的锐度都磨平了一层。是那种暖黄调的灯光吗？感觉这种氛围很适合一个人静静待着，或者和朋友慢慢聊天。",
+    "claudeReply": "低照度确实会让空间安静下来。你记得是什么类型的店吗？",
+    "qwenCodePoints": 70,
+    "claudeCodePoints": 26
+  },
+  {
+    "arm": "questions_only",
+    "turn": 1,
+    "qwenUser": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "claudeUser": "今天路过一家店，灯打得很低，我觉得挺舒服。",
+    "sameUserText": true,
+    "qwenReply": "低色温的灯光确实能营造出一种柔和、放松的氛围。这种光线下，空间边界往往会变得模糊，让人感觉更私密、更安全。作为设计师，我也常觉得光是塑造空间情绪最关键的手段之一。你是觉得店里的光影布局特别巧妙，还是单纯享受那种静谧的感觉？",
+    "claudeReply": "低光的店确实容易让人放松，尤其灯光不直射、显色也温和的时候。是照明本身做得克制，还是空间和光配合得好？",
+    "qwenCodePoints": 111,
+    "claudeCodePoints": 51
+  },
+  {
+    "arm": "questions_only",
+    "turn": 2,
+    "qwenUser": "是家咖啡店，我点了热拿铁，坐了一会儿。",
+    "claudeUser": "是家咖啡店，我点了热拿铁，坐了一会儿。",
+    "sameUserText": true,
+    "qwenReply": "热拿铁配柔和的光，确实是种很治愈的组合。咖啡的暖意和光线的包裹感叠加在一起，会让人不知不觉放松下来。能在那里安静坐一会儿，挺难得的。",
+    "claudeReply": "热拿铁配低光确实是个舒服的组合。那家店是整体氛围都做得让人想待着，还是主要就光线这块让你印象深？",
+    "qwenCodePoints": 66,
+    "claudeCodePoints": 48
+  },
+  {
+    "arm": "questions_only",
+    "turn": 3,
+    "qwenUser": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "claudeUser": "拿铁挺香的。换个话题，今晚煮了面，有点咸。先听我说，不用建议。",
+    "sameUserText": true,
+    "qwenReply": "咸了就咸了，不用急着补救，这顿饭也就翻篇了。",
+    "claudeReply": "那就盐加多了。咸了确实没法补回来，只能下次少放点。",
+    "qwenCodePoints": 22,
+    "claudeCodePoints": 25
+  },
+  {
+    "arm": "questions_only",
+    "turn": 4,
+    "qwenUser": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "claudeUser": "今天就是想随便聊聊，但我不知道说什么，你问一点吧。",
+    "sameUserText": true,
+    "qwenReply": "行，那我来问一个具体的。\n\n你煮的是哪种面？挂面、手擀面，还是那种需要煮很久的拉面？",
+    "claudeReply": "那今天除了那家咖啡店和煮面，还做了什么？",
+    "qwenCodePoints": 42,
+    "claudeCodePoints": 20
+  },
+  {
+    "arm": "questions_only",
+    "turn": 5,
+    "qwenUser": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。",
+    "claudeUser": "这个我先跳过吧。刚才把桌上的台灯打开了，暖黄的光挺好看。",
+    "sameUserText": true,
+    "qwenReply": "那就不问了，暖黄的灯光确实有一种让人静下来的力量。这种光色很稳，打在桌面上，连周围的空间都显得柔和了许多。",
+    "claudeReply": "暖黄光确实温暖，尤其晚上用起来不刺眼。是那种钨丝灯泡的黄，还是LED调的暖色温？",
+    "qwenCodePoints": 53,
+    "claudeCodePoints": 40
+  },
+  {
+    "arm": "questions_only",
+    "turn": 6,
+    "qwenUser": "今天就说到这吧，不想再展开了，晚安。",
+    "claudeUser": "今天就说到这吧，不想再展开了，晚安。",
+    "sameUserText": true,
+    "qwenReply": "好，那就到这里。享受这盏灯带来的安稳，晚安。",
+    "claudeReply": "好，那就到这儿。晚安。",
+    "qwenCodePoints": 22,
+    "claudeCodePoints": 11
+  }
+]

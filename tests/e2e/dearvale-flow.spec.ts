@@ -7,12 +7,6 @@ import {
 } from "@playwright/test";
 
 test.describe("Dearvale desktop journeys", () => {
-  test.skip(
-    ({ isMobile }) => isMobile,
-    "The approved Dearvale redesign is desktop only.",
-  );
-  test.use({ viewport: { width: 1440, height: 900 } });
-
   test("keeps the illustrated public journey independent from the character runtime", async ({
     page,
     request,
@@ -114,12 +108,14 @@ test.describe("Dearvale desktop journeys", () => {
       await route.continue();
     });
     try {
+      await page.emulateMedia({ reducedMotion: "no-preference" });
       await page.goto("/");
       await page.getByRole("button", { name: "前往林间" }).click();
       await expect(page.locator(".story-stage")).toHaveAttribute(
         "data-state",
         "2",
       );
+      await expectSettledStoryScene(page, 2, "林间的对话");
       await requested;
       const forest = page
         .locator(".story-background")
@@ -174,12 +170,19 @@ test.describe("Dearvale desktop journeys", () => {
       if (coastRequests === 1) await route.abort("failed");
       else await route.continue();
     });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.goto("/");
     await page.getByRole("button", { name: "前往书信" }).click();
     await expect(page.locator(".story-stage")).toHaveAttribute(
       "data-state",
       "3",
     );
+    await expectSettledStoryScene(page, 3, "书信的对话");
+    const desk = page
+      .locator(".story-background")
+      .filter({ has: page.locator('img[src$="/desk.png"]') });
+    await expectOpaqueBackground(desk);
+    await expectDecodedBackground(desk.locator("img"));
     const retry = page.getByRole("button", { name: "重新加载风景" });
     await expect(retry).toBeVisible();
     await scrollToStoryPosition(page, 4);
@@ -187,9 +190,6 @@ test.describe("Dearvale desktop journeys", () => {
       "data-state",
       "3",
     );
-    const desk = page
-      .locator(".story-background")
-      .filter({ has: page.locator('img[src$="/desk.png"]') });
     await expectOpaqueBackground(desk);
     await expectDecodedBackground(desk.locator("img"));
     await expect(
@@ -248,7 +248,8 @@ test.describe("Dearvale desktop journeys", () => {
     request,
   }) => {
     const characterId = await createCharacter(request, "会话恢复");
-    const otherCharacterId = await createCharacter(request, "查找邻居", false);
+    const searchName = `查找邻居-${test.info().project.name}-${Date.now()}`;
+    const otherCharacterId = await createCharacter(request, searchName, false);
     await page.goto(`/characters/${characterId}/chat`);
     await expect(page.getByTestId("chat-input")).toBeEnabled();
     const firstSessionId = sessionFromUrl(page);
@@ -273,7 +274,7 @@ test.describe("Dearvale desktop journeys", () => {
     await expect(
       page.getByRole("complementary", { name: "角色近况" }),
     ).toBeVisible();
-    await page.getByLabel("搜索角色", { exact: true }).fill("查找邻居");
+    await page.getByLabel("搜索角色", { exact: true }).fill(searchName);
     await expect(page.locator(".chat-character")).toHaveCount(1);
     await page.locator(".chat-character").click();
     await expect(page).toHaveURL(
@@ -475,6 +476,44 @@ async function scrollToStoryPosition(
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
   }, position);
+}
+
+async function expectSettledStoryScene(
+  page: Page,
+  position: number,
+  regionName: string,
+): Promise<void> {
+  // data-state changes at the midpoint of a fade. Let the native smooth scroll
+  // reach its destination before deliberately jumping to an unavailable image;
+  // otherwise the test itself freezes an unfinished crossfade as the last frame.
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("story-journey")
+        .evaluate((element, expectedPosition) => {
+          const journey = element as HTMLElement;
+          const destination =
+            journey.offsetTop +
+            ((journey.offsetHeight - window.innerHeight) * expectedPosition) /
+              5;
+          return Math.abs(window.scrollY - destination);
+        }, position),
+    )
+    .toBeLessThanOrEqual(1);
+  // Scroll observers update styles on the following animation frame.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect
+    .poll(() =>
+      page
+        .getByRole("region", { name: regionName })
+        .evaluate((element) => Number(getComputedStyle(element).opacity)),
+    )
+    .toBeGreaterThan(0.999);
 }
 
 async function expectDecodedBackground(image: Locator): Promise<void> {

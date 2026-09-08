@@ -13,15 +13,18 @@ test("reads real correspondence inside the mailbox without caching decrypted let
   page,
   request,
 }) => {
-  await page.setViewportSize({ width: 1600, height: 1000 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const demo = await request.post("/api/demo/ensure");
-  expect(demo.ok()).toBe(true);
-  const { characterId } = (await demo.json()) as { characterId: string };
+  const suffix = `${test.info().project.name}-${Date.now()}`;
+  // Viewport projects share a disposable backend. Give each run its own
+  // correspondent so old opened letters and unfinished drafts cannot leak in.
+  const characterId = await createPublishedCharacter(
+    request,
+    `书信阅读-${suffix}`,
+  );
   const draft = await request.post(`/api/agents/${characterId}/letters`, {
     data: {
-      clientRequestId: "embedded-reader-first-draft",
+      clientRequestId: `embedded-reader-draft:${suffix}`,
       subject: "关于那片花海",
       body: "那天的风很温柔。我沿着湖边的小路走了很久，看到一整片白色的小花。想把这个安静的下午也写给你。",
     },
@@ -31,7 +34,7 @@ test("reads real correspondence inside the mailbox without caching decrypted let
     letter: MailboxLetter;
   };
   const sealed = await request.post(`/api/letters/${outgoing.id}/seal`, {
-    data: { clientRequestId: "embedded-reader-first-seal" },
+    data: { clientRequestId: `embedded-reader-seal:${suffix}` },
   });
   expect(sealed.ok()).toBe(true);
 
@@ -93,7 +96,7 @@ test("reads real correspondence inside the mailbox without caching decrypted let
   }, "/src/app/queryClient.ts");
   expect(cached).not.toContain(opened.body);
   await page.screenshot({
-    path: join(tmpdir(), "dearvale-mailbox-desktop.png"),
+    path: join(tmpdir(), `dearvale-mailbox-${test.info().project.name}.png`),
   });
 
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -195,6 +198,36 @@ test("reads real correspondence inside the mailbox without caching decrypted let
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+async function createPublishedCharacter(
+  request: APIRequestContext,
+  name: string,
+): Promise<string> {
+  const generatedResponse = await request.post("/api/characters/generate", {
+    data: {
+      name,
+      worldSetting: "当代的小城",
+      workOrRole: "独立插画师",
+      coreTraits: ["温柔", "细心"],
+      initialRelationship: "相互信任的老朋友",
+      dialogueStyle: "自然、温暖且具体",
+      tier: "high_fidelity",
+      timezone: "Asia/Shanghai",
+    },
+  });
+  expect(generatedResponse.ok()).toBe(true);
+  const { character } = (await generatedResponse.json()) as {
+    character: { id: string; version: number };
+  };
+  const publishedResponse = await request.post(
+    `/api/characters/${character.id}/publish`,
+    {
+      data: { expectedVersion: character.version },
+    },
+  );
+  expect(publishedResponse.ok()).toBe(true);
+  return character.id;
+}
 
 async function advance(request: APIRequestContext, days: number) {
   const response = await request.post("/api/developer/clock/advance", {

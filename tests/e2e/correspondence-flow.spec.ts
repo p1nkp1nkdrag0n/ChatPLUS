@@ -323,7 +323,7 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     const suffix = `${test.info().project.name}-${Date.now()}`;
     const agentId = await createPublishedHighFidelityCharacter(
       request,
-      `恢复旅人·${test.info().project.name === "chromium" ? "桌面" : "移动"}`,
+      `恢复旅人·${test.info().project.name}`,
     );
     await rememberCharacter(page, agentId);
     const createdResponse = await request.post(

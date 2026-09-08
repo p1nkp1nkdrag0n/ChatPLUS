@@ -1,17 +1,18 @@
 :root {
   color-scheme: light;
-  --canvas: #f7f8f7;
-  --surface: #ffffff;
-  --surface-subtle: #f1f3f2;
-  --ink: #171a1c;
-  --ink-soft: #3f474c;
-  --muted: #697279;
-  --faint: #9aa2a6;
-  --line: #dde1df;
-  --line-strong: #c8cecb;
-  --accent: #ef4b24;
-  --accent-strong: #d93d18;
-  --accent-soft: #fff0e9;
+  --canvas: #fbfaf6;
+  --surface: #fdfcf8;
+  --surface-subtle: #f1efe7;
+  --surface-muted: #f1efe7;
+  --ink: #18392f;
+  --ink-soft: #3e5147;
+  --muted: #7c8278;
+  --faint: #a3a79d;
+  --line: #e5e2d7;
+  --line-strong: #cccdbf;
+  --accent: #466c55;
+  --accent-strong: #2f5542;
+  --accent-soft: #e7eedf;
   --sage: #62a85d;
   --sage-soft: #edf7ec;
   --blue: #5b84d7;
@@ -21,15 +22,13 @@
   --danger: #c43e33;
   --danger-soft: #fff0ee;
   --shadow-popover: 0 18px 45px rgba(24, 31, 28, 0.12);
-  --radius-xs: 5px;
-  --radius-sm: 7px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --font-ui:
-    Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui,
-    sans-serif;
-  --font-editorial:
-    "Source Han Serif SC", "Noto Serif SC", "Songti SC", SimSun, serif;
+  --radius-xs: 8px;
+  --radius-sm: 14px;
+  --radius-md: 20px;
+  --radius-lg: 24px;
+  --font-ui: "Noto Serif SC", "Songti SC", SimSun, serif;
+  --font-editorial: "Noto Serif SC", "Songti SC", SimSun, serif;
+  --font-brand: "Cormorant Garamond", Georgia, serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --nav-width: 174px;
   --header-height: 76px;

@@ -53,11 +53,11 @@ p {
 }
 
 ::selection {
-  background: rgba(239, 75, 36, 0.18);
+  background: rgba(99, 136, 95, 0.2);
 }
 
 :focus-visible {
-  outline: 2px solid rgba(239, 75, 36, 0.6);
+  outline: 2px solid #668c6e;
   outline-offset: 2px;
 }
 

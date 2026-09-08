@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowRight, Leaf } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigationType } from "react-router-dom";
 import {
   useMotionPreference,
   type MotionPreference,
@@ -33,14 +33,20 @@ function StartLink({ small = false }: { small?: boolean }) {
 
 export default function MarketingPage() {
   const { preference, mode, updatePreference } = useMotionPreference();
+  const { hash } = useLocation();
+  const navigationType = useNavigationType();
   const [later, setLater] = useState(false);
   useEffect(() => {
     const previous = document.title;
     document.title = "ChatPLUS · 让相遇，慢慢成为故事";
+    if (navigationType !== "POP" && !hash) {
+      window.scrollTo({ top: 0, behavior: "instant" });
+      document.getElementById("site-title")?.focus({ preventScroll: true });
+    }
     return () => {
       document.title = previous;
     };
-  }, []);
+  }, [hash, navigationType]);
   return (
     <main className="marketing-page" data-motion={mode}>
       <a className="site-skip" href="#site-title">
@@ -253,7 +259,9 @@ export default function MarketingPage() {
             <span />
             往后，还有很多可能
           </p>
-          <h2 id="ocean-title">故事不必一开始就完整。</h2>
+          <h2 id="ocean-title">
+            故事不必<span className="ocean-title-rest">一开始就完整。</span>
+          </h2>
           <p>{content.ocean.description}</p>
           <div className="scene-actions">
             <StartLink />

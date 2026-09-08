@@ -28,6 +28,7 @@
 .river-artwork-frame .layer-bank {
   z-index: 2;
   right: -26%;
+  bottom: -12%;
 }
 @media (max-width: 700px) {
   .scene--forest .layer-forest,

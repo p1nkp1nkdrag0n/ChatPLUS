@@ -1,6 +1,16 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type { MotionMode } from "../hooks/useMotionPreference";
 import { art } from "./content";
+
+const SceneArtReady = createContext(true);
 
 interface SceneProps {
   id: string;
@@ -20,6 +30,7 @@ export function Scene({
   children,
 }: SceneProps) {
   const ref = useRef<HTMLElement>(null);
+  const [artReady, setArtReady] = useState(scene === "S01");
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
@@ -52,9 +63,14 @@ export function Scene({
     const observer = new IntersectionObserver(
       ([entry]) => {
         visible = entry?.isIntersecting ?? false;
+        // Native lazy images may fetch several chapters before the first scroll.
+        // Keep image nodes mounted for load listeners, but attach their sources
+        // when their own chapter enters the viewport. Retain them on exit.
+        if (entry?.isIntersecting && entry.intersectionRatio > 0)
+          setArtReady(true);
         requestUpdate();
       },
-      { rootMargin: "0px", threshold: 0 },
+      { rootMargin: "0px", threshold: [0, 0.001] },
     );
     observer.observe(node);
     window.addEventListener("scroll", requestUpdate, { passive: true });
@@ -77,7 +93,9 @@ export function Scene({
       data-active="false"
       aria-labelledby={labelledBy}
     >
-      {children}
+      <SceneArtReady.Provider value={artReady}>
+        {children}
+      </SceneArtReady.Provider>
     </section>
   );
 }
@@ -99,6 +117,7 @@ export function Layer({
   eager = false,
   children,
 }: LayerProps) {
+  const artReady = useContext(SceneArtReady);
   return (
     <div
       className={`scene-layer ${className}`}
@@ -110,11 +129,15 @@ export function Layer({
         {!src.startsWith("ui/") ? (
           <source
             media="(max-width: 700px)"
-            srcSet={`${art}/${src.replace(".webp", "-mobile.webp")}`}
+            srcSet={
+              artReady
+                ? `${art}/${src.replace(".webp", "-mobile.webp")}`
+                : undefined
+            }
           />
         ) : null}
         <img
-          src={`${art}/${src}`}
+          src={artReady ? `${art}/${src}` : undefined}
           alt=""
           draggable={false}
           decoding="async"

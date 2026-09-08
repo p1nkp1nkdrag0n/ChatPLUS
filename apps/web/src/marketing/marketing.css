@@ -983,6 +983,9 @@ body:has(.marketing-page) {
     font-size: 33px;
     line-height: 1.55;
   }
+  .ocean-title-rest {
+    display: block;
+  }
   .ocean-copy .chapter-number {
     max-width: 310px;
   }

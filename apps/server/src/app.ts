@@ -16,6 +16,7 @@ import { registerRoutes, type RouteServices } from "./http/routes.js";
 import type { Clock } from "./runtime/clock.js";
 import type { HourlyScheduler } from "./runtime/hourly-scheduler.js";
 import type { LlmServiceObservationOptions } from "./services/llm-service.js";
+import { ensureDemoConversation } from "./services/demo-conversation-service.js";
 import type { FixtureTurnBehavior } from "./services/turn-decision-service.js";
 
 export type BuildAppOptions = {
@@ -66,8 +67,7 @@ export async function buildApp(
   });
   const services = composition.routeServices;
   const { scheduler, temporalTaskScheduler } = composition;
-  const { store, characters, schedules, life, conversations, correspondence } =
-    services;
+  const { store, characters, schedules, life, correspondence } = services;
 
   try {
     app.addHook("onClose", async () => {
@@ -193,14 +193,12 @@ export async function buildApp(
 
     const shouldSeed = options.seedDemo ?? config.seedDemo;
     if (shouldSeed && store.countCharacters() === 0) {
-      const demo = characters.createDemoCharacter();
-      characters.publish(demo.id);
+      const demo = ensureDemoConversation(services);
       if (config.lifePlanningMode === "fuzzy") {
-        life.ensureToday(demo.id);
+        life.ensureToday(demo.characterId);
       } else {
-        await schedules.ensure72Hours(demo.id, true);
+        await schedules.ensure72Hours(demo.characterId, true);
       }
-      conversations.createSession(demo.id, `与${demo.identity.name}的对话`);
     }
 
     if (

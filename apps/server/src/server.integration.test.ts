@@ -64,6 +64,7 @@ describe("PersonaSim server integration", () => {
         "025_continuity_grounding.sql",
         "026_pressure_evidence_validity.sql",
         "027_stored_item_extraction_repair.sql",
+        "028_demo_conversations.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database

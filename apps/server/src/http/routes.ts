@@ -52,6 +52,7 @@ import {
 import type { ContinuityIndexService } from "../services/continuity-index-service.js";
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
+import { ensureDemoConversation } from "../services/demo-conversation-service.js";
 import type { FollowUpService } from "../services/follow-up-service.js";
 import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { LlmService } from "../services/llm-service.js";
@@ -171,6 +172,8 @@ export function registerRoutes(
     });
     return { characters: items, items };
   });
+
+  app.post("/api/demo/ensure", () => ensureDemoConversation(services));
 
   app.post("/api/characters/generate", async (request, reply) => {
     const spec = await characters.generate(request.body);

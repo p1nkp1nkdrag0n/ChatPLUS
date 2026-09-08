@@ -37,6 +37,11 @@ export type StoredSession = {
   updatedAtUtc: string;
 };
 
+export type DemoConversationRegistration = {
+  characterId: string;
+  sessionId: string | null;
+};
+
 export type StoredMessage = {
   id: string;
   sessionId: string;
@@ -59,6 +64,32 @@ export class DatabaseStore extends LegacyScheduleStore {
 
   transaction<T>(work: () => T): T {
     return this.database.transaction(work)();
+  }
+
+  getDemoConversation(
+    entryKey: string,
+  ): DemoConversationRegistration | undefined {
+    return this.database
+      .prepare(
+        `SELECT character_id AS characterId, session_id AS sessionId
+         FROM demo_conversations WHERE entry_key = ?`,
+      )
+      .get(entryKey) as DemoConversationRegistration | undefined;
+  }
+
+  setDemoConversation(
+    entryKey: string,
+    registration: DemoConversationRegistration,
+  ): void {
+    this.database
+      .prepare(
+        `INSERT INTO demo_conversations(entry_key, character_id, session_id)
+         VALUES (?, ?, ?)
+         ON CONFLICT(entry_key) DO UPDATE SET
+           character_id = excluded.character_id,
+           session_id = excluded.session_id`,
+      )
+      .run(entryKey, registration.characterId, registration.sessionId);
   }
 
   countCharacters(): number {

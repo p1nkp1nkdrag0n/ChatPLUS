@@ -1,4 +1,5 @@
 import {
+  ArrowDown,
   BookOpen,
   ChevronLeft,
   ChevronRight,
@@ -22,12 +23,12 @@ import type { ChatMessage, ChatSession, RuntimeState } from "../api/types";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { LifeContextOverview } from "../components/LifeContextOverview";
 import { StatusMeter } from "../components/StatusMeter";
-import { TierLabel } from "../components/TierLabel";
 import {
   agentOverviewQueryKey,
   primeAgentOverview,
 } from "../hooks/agentEventQueryKeys";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
+import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { formatLocalTime } from "../lib/date";
 import {
   resolveMessageDelivery,
@@ -40,10 +41,13 @@ export default function ChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
-  const [railOpen, setRailOpen] = useState(
-    () => !window.matchMedia("(max-width: 720px)").matches,
-  );
+  const [railOpen, setRailOpen] = useState(false);
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
   const listRef = useRef<HTMLDivElement>(null);
+  const followsLatestRef = useRef(true);
+  const composingRef = useRef(false);
+  const sendInFlightRef = useRef(false);
   const newlyArrivedSequentialIdsRef = useRef(new Set<string>());
   const animatedSequentialIdsRef = useRef(new Set<string>());
   const knownMessageIdsAtSendStartRef = useRef<Set<string> | null>(null);
@@ -104,6 +108,8 @@ export default function ChatPage() {
         text: message,
       }),
     onMutate: () => {
+      followsLatestRef.current = true;
+      setHasUnreadMessages(false);
       knownMessageIdsAtSendStartRef.current = new Set(
         messages.map((message) => message.id),
       );
@@ -134,6 +140,7 @@ export default function ChatPage() {
       ]);
     },
     onSettled: () => {
+      sendInFlightRef.current = false;
       knownMessageIdsAtSendStartRef.current = null;
     },
   });
@@ -143,21 +150,39 @@ export default function ChatPage() {
   }, [characterId]);
 
   useEffect(() => {
+    followsLatestRef.current = true;
+    setHasUnreadMessages(false);
     newlyArrivedSequentialIdsRef.current.clear();
     animatedSequentialIdsRef.current.clear();
     knownMessageIdsAtSendStartRef.current = null;
   }, [session?.id]);
 
   const scrollToLatest = useCallback(() => {
+    if (!followsLatestRef.current) return;
     listRef.current?.scrollTo({
       top: listRef.current.scrollHeight,
-      behavior: "smooth",
+      // Automatic follow must finish before the next sequential chunk arrives.
+      // A smooth intermediate scroll could be mistaken for history reading.
+      behavior: "instant",
     });
   }, []);
 
   useEffect(() => {
-    scrollToLatest();
+    if (followsLatestRef.current) {
+      scrollToLatest();
+    } else if (messages.length > 0) {
+      setHasUnreadMessages(true);
+    }
   }, [messages.length, scrollToLatest, sendMutation.isPending]);
+
+  const returnToLatest = () => {
+    followsLatestRef.current = true;
+    setHasUnreadMessages(false);
+    listRef.current?.scrollTo({
+      top: listRef.current.scrollHeight,
+      behavior: prefersReducedMotion ? "instant" : "smooth",
+    });
+  };
 
   const finishSequentialDelivery = useCallback((messageId: string) => {
     newlyArrivedSequentialIdsRef.current.delete(messageId);
@@ -205,7 +230,8 @@ export default function ChatPage() {
   const showRail = character.tier !== "lightweight";
   const submit = () => {
     const message = text.trim();
-    if (!message || sendMutation.isPending) return;
+    if (!message || sendMutation.isPending || sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     sendMutation.mutate(message);
   };
 
@@ -224,19 +250,20 @@ export default function ChatPage() {
             <h1>{character.identity.name}</h1>
             <span>{character.identity.workOrRole}</span>
           </div>
-          <TierLabel tier={character.tier} />
         </div>
         <div className="chat-header__context">
           <Clock3 size={16} aria-hidden="true" />
           <CharacterClock timezone={timezone} referenceUtc={state?.asOfUtc} />
           <span className="header-divider" />
-          <span className="status-dot" /> 本地模式
+          <span className="chat-runtime-label">此刻的对话</span>
           {showRail ? (
             <button
               className="icon-button"
               type="button"
               onClick={() => setRailOpen((open) => !open)}
               aria-label={railOpen ? "收起状态栏" : "展开状态栏"}
+              aria-expanded={railOpen}
+              aria-controls="chat-state-rail"
             >
               {railOpen ? (
                 <ChevronRight size={18} />
@@ -252,15 +279,22 @@ export default function ChatPage() {
         className="chat-conversation"
         aria-label={`与 ${character.identity.name} 的对话`}
       >
-        <div className="message-list" ref={listRef}>
+        <div
+          className="message-list"
+          ref={listRef}
+          onScroll={(event) => {
+            const list = event.currentTarget;
+            const nearBottom =
+              list.scrollHeight - list.scrollTop - list.clientHeight < 72;
+            followsLatestRef.current = nearBottom;
+            if (nearBottom) setHasUnreadMessages(false);
+          }}
+        >
           {messages.length === 0 ? (
             <div className="conversation-opening">
               <span className="thread-node" />
               <h2>从此刻开始</h2>
-              <p>
-                {character.identity.name}{" "}
-                会按照已发布的人格回应。经历、关系和记忆只会在校验后更新。
-              </p>
+              <p>和{character.identity.name}聊聊今天，或者从一句问候开始。</p>
             </div>
           ) : null}
           {messages.map((message) => (
@@ -285,7 +319,7 @@ export default function ChatPage() {
             <div className="message-group message-group--assistant is-thinking">
               <div className="message-meta">
                 <strong>{character.identity.name}</strong>
-                <span>正在权衡…</span>
+                <span>正在回复…</span>
               </div>
               <div className="thinking-dots">
                 <span />
@@ -297,6 +331,16 @@ export default function ChatPage() {
         </div>
 
         <div className="composer-wrap">
+          {hasUnreadMessages ? (
+            <button
+              className="chat-latest"
+              type="button"
+              onClick={returnToLatest}
+            >
+              <ArrowDown size={14} aria-hidden="true" />
+              查看新消息
+            </button>
+          ) : null}
           {sendMutation.isError ? (
             <ErrorBlock error={sendMutation.error} />
           ) : null}
@@ -308,17 +352,27 @@ export default function ChatPage() {
               aria-label="消息内容"
               data-testid="chat-input"
               onChange={(event) => setText(event.target.value)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.repeat &&
+                  !composingRef.current &&
+                  !event.nativeEvent.isComposing &&
+                  event.nativeEvent.keyCode !== 229
+                ) {
                   event.preventDefault();
                   submit();
                 }
               }}
             />
             <div className="composer__footer">
-              <button className="context-button" type="button">
-                <BookOpen size={15} /> 上下文
-              </button>
               <span>Enter 发送 · Shift+Enter 换行</span>
               <button
                 className="send-button"
@@ -335,7 +389,11 @@ export default function ChatPage() {
       </section>
 
       {railOpen && showRail ? (
-        <aside className="chat-rail">
+        <aside
+          className="chat-rail"
+          id="chat-state-rail"
+          aria-label="角色状态与生活脉络"
+        >
           {state ? <StateOverview state={state} /> : null}
           {lifeContext ? (
             <LifeContextOverview

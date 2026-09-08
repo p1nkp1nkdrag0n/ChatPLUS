@@ -40,7 +40,7 @@ import {
   finalizeConsentModalityWorld,
 } from "./consent-modality-guard.js";
 import {
-  applyExplicitFactReplyGuard,
+  createExplicitFactReplyTurn,
   buildExplicitFactReplyContract,
   explicitFactReplyEffectContext,
   finalizeExplicitFactWorld,
@@ -523,42 +523,11 @@ export class ConversationService {
         ? {}
         : { liveWorldEffectsMode: this.options.liveWorldEffectsMode }),
     });
-    const decidedTurn = await this.decisions.decide({
-      ...semanticContext,
-      replyGrounding: assembledPrompt.replyGrounding,
-      ...(selectedLifeContext.context === undefined
-        ? {}
-        : { lifeContext: selectedLifeContext.context }),
-      ...(appliedContextPlan === undefined
-        ? {}
-        : { conversationPlan: appliedContextPlan }),
-      spec,
-      ...(effectivePersona === undefined ? {} : { effectivePersona }),
-      userText: input.text,
-      agentId: input.agentId,
-      nowUtc,
-      capabilities,
-      system: assembledPrompt.system,
-      prompt: assembledPrompt.prompt,
-      ...(lifeContext === undefined ? {} : { causalContext: lifeContext }),
-      replyStrategy: assembledPrompt.replyStrategy,
-      schedule,
-      effects: turnEffectContext,
-    });
-    const candidateTurn = fuzzyLifeEnabled
-      ? {
-          ...decidedTurn,
-          decision: {
-            ...decidedTurn.decision,
-            scheduleEffects: [],
-            personalIntentCandidates: [],
-          },
-        }
-      : decidedTurn;
-    const guardedTurn =
+    // The frozen checklist already determines every reply value (or a complete
+    // abstention), so generation and model repair cannot contribute to this turn.
+    const decidedTurn =
       explicitFactReplyContract !== undefined
-        ? applyExplicitFactReplyGuard({
-            turn: candidateTurn,
+        ? createExplicitFactReplyTurn({
             contract: explicitFactReplyContract,
             inspectDecision: (decision) =>
               this.decisions.inspect({
@@ -575,6 +544,43 @@ export class ConversationService {
                   : { causalContext: lifeContext }),
               }),
           })
+        : await this.decisions.decide({
+            ...semanticContext,
+            replyGrounding: assembledPrompt.replyGrounding,
+            ...(selectedLifeContext.context === undefined
+              ? {}
+              : { lifeContext: selectedLifeContext.context }),
+            ...(appliedContextPlan === undefined
+              ? {}
+              : { conversationPlan: appliedContextPlan }),
+            spec,
+            ...(effectivePersona === undefined ? {} : { effectivePersona }),
+            userText: input.text,
+            agentId: input.agentId,
+            nowUtc,
+            capabilities,
+            system: assembledPrompt.system,
+            prompt: assembledPrompt.prompt,
+            ...(lifeContext === undefined
+              ? {}
+              : { causalContext: lifeContext }),
+            replyStrategy: assembledPrompt.replyStrategy,
+            schedule,
+            effects: turnEffectContext,
+          });
+    const candidateTurn = fuzzyLifeEnabled
+      ? {
+          ...decidedTurn,
+          decision: {
+            ...decidedTurn.decision,
+            scheduleEffects: [],
+            personalIntentCandidates: [],
+          },
+        }
+      : decidedTurn;
+    const guardedTurn =
+      explicitFactReplyContract !== undefined
+        ? candidateTurn
         : consentModalityGuardContract !== undefined
           ? applyConsentModalityGuard({
               turn: candidateTurn,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   RetrievalReplayInputSchema,
@@ -8,6 +8,7 @@ import {
 import {
   applyExplicitFactReplyGuard,
   buildExplicitFactReplyContract,
+  createExplicitFactReplyTurn,
   decodeExplicitFactReplyValue,
   explicitFactAbstentionReason,
   finalizeExplicitFactWorld,
@@ -240,6 +241,52 @@ describe("explicit fact reply guard", () => {
     });
   });
 
+  it.each(["selected", "abstain"] as const)(
+    "resolves a %s contract with inspection and no fabricated model activity",
+    (kind) => {
+      const contract =
+        kind === "selected"
+          ? selectedContract()
+          : buildExplicitFactReplyContract({ userText: QUERY });
+      if (contract === undefined) throw new Error("Expected a fact contract");
+      const inspectDecision = vi.fn(() => ({
+        validation: { accepted: [], rejections: [] },
+        issues: [],
+      }));
+
+      const turn = createExplicitFactReplyTurn({ contract, inspectDecision });
+
+      expect(inspectDecision).toHaveBeenCalledExactlyOnceWith(turn.decision);
+      expect(turn.decision.reply).toMatchObject({
+        text: contract.replyText,
+        chunks: [contract.replyText],
+      });
+      expect(turn).toMatchObject({
+        repairAttempted: false,
+        usedFallback: false,
+        modelRejections: [],
+        scheduleAction: { kind: "none" },
+        modelScheduleActionAudit: { origin: "server_generated", kind: "none" },
+        explicitFactReplyGuardAudit: {
+          generationSource: "server_explicit_fact_contract",
+          modelGenerationAttempted: false,
+          modelReplyContentChanged: false,
+          modelSideEffectsBlocked: false,
+          modelRepairAttempted: false,
+          modelGenerationFallbackUsed: false,
+          contentDerivedSemanticsSkipped: true,
+        },
+      });
+      expect(turn).not.toHaveProperty("worldEffectsAudit");
+      expect(turn).not.toHaveProperty("continuityEffects");
+      expect(turn.decision.scheduleEffects).toEqual([]);
+      expect(turn.decision.memoryCandidates).toEqual([]);
+      expect(turn.decision.personalIntentCandidates).toEqual([]);
+      expect(turn.decision).not.toHaveProperty("stateDelta");
+      expect(turn.decision).not.toHaveProperty("relationshipDelta");
+    },
+  );
+
   it("replaces the reply and blocks every model-owned mutation surface", () => {
     const contract = selectedContract();
     const guarded = applyExplicitFactReplyGuard({
@@ -296,6 +343,8 @@ describe("explicit fact reply guard", () => {
       selectedMemoryIds: ["memory-tea", "memory-box"],
       selectedEvidenceIds: ["evidence-tea", "evidence-box"],
       serverGuardApplied: true,
+      generationSource: "server_explicit_fact_contract",
+      modelGenerationAttempted: true,
       modelReplyContentChanged: true,
       modelSideEffectsBlocked: true,
       modelRepairAttempted: true,

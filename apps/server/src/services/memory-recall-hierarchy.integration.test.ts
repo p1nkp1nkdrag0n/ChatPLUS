@@ -13,7 +13,10 @@ import {
   type MemoryCandidate,
   type Memory,
 } from "@personasim/contracts";
-import { resolveTemporalQuery } from "@personasim/features";
+import {
+  RELATIONSHIP_BASELINE_FAMILIARITY_PER_TURN,
+  resolveTemporalQuery,
+} from "@personasim/features";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
@@ -624,15 +627,17 @@ describe("continuity memory recall hierarchy", () => {
       chunks: [EXPLICIT_FACT_REPLY],
       deliveryMode: "single_block",
       reasonCode: "explicit_fact_reply_guard_selected",
-      decisionPath: "effects_rejected",
+      decisionPath: "reply_only",
       explicitFactReplyGuard: {
         policyVersion: "explicit_fact_checklist_v1",
         outcome: "selected",
         reasonCode: "explicit_fact_reply_guard_selected",
         expectedFacetCount: 2,
         serverGuardApplied: true,
-        modelReplyContentChanged: true,
-        modelSideEffectsBlocked: true,
+        generationSource: "server_explicit_fact_contract",
+        modelGenerationAttempted: false,
+        modelReplyContentChanged: false,
+        modelSideEffectsBlocked: false,
         modelRepairAttempted: false,
         modelGenerationFallbackUsed: false,
         contentDerivedSemanticsSkipped: true,
@@ -676,11 +681,7 @@ describe("continuity memory recall hierarchy", () => {
       .mocked(app.personasim.llm)
       .generateObject.mock.calls.slice(modelCallCountBeforeGuard)
       .map(([request]) => request);
-    expect(guardedModelCalls).toHaveLength(1);
-    expect(guardedModelCalls[0]).toMatchObject({ purpose: "chat_turn" });
-    expect(guardedModelCalls[0]?.fixture).toBeUndefined();
-    expect(guardedModelCalls[0]?.prompt).toContain(TEA_FACT);
-    expect(guardedModelCalls[0]?.prompt).toContain(BOX_FACT);
+    expect(guardedModelCalls).toHaveLength(0);
     const publishedEvents = publish.mock.calls.map(([event]) => event);
     const publishedMessages = publishedEvents.filter(
       (event) => event.type === "message.created",
@@ -728,16 +729,26 @@ describe("continuity memory recall hierarchy", () => {
     expect(afterGuardState?.relationship.trust).toBe(
       beforeGuardState?.relationship.trust,
     );
+    expect(afterGuardState?.relationship.familiarity).toBeCloseTo(
+      beforeGuardState!.relationship.familiarity +
+        RELATIONSHIP_BASELINE_FAMILIARITY_PER_TURN,
+    );
+    expect(afterGuardState?.relationship.lastInteractionAtUtc).toBe(
+      EXPLICIT_FACT_RECALL_AT,
+    );
     const worldAudit = latestEventPayload(
       app,
       harness.agentId,
       "conversation.world_effects_committed",
     );
     expect(worldAudit).toMatchObject({
-      llmProposalStatus: "blocked",
-      proposed: {
-        stateDelta: { stress: -0.2 },
-        relationshipDelta: { trust: 0.2 },
+      llmProposalStatus: "not_requested",
+      source: { semanticProposal: "none" },
+      proposed: {},
+      relationship: {
+        baselineDelta: {
+          familiarity: RELATIONSHIP_BASELINE_FAMILIARITY_PER_TURN,
+        },
       },
       accepted: {
         stateDelta: false,
@@ -746,16 +757,14 @@ describe("continuity memory recall hierarchy", () => {
         personalIntentCandidateCount: 0,
       },
     });
-    expect(worldAudit["rejectionCodes"]).toContain(
-      "explicit_fact_reply_guard_blocked",
-    );
+    expect(worldAudit["rejectionCodes"]).toEqual([]);
     expect(
       (worldAudit["rejections"] as Array<{ reasonCode?: string }>).filter(
         (rejection) =>
           rejection.reasonCode === "explicit_fact_reply_guard_blocked",
       ),
-    ).toHaveLength(4);
-    expect(chatTurnModelCallCount(app)).toBe(1);
+    ).toHaveLength(0);
+    expect(chatTurnModelCallCount(app)).toBe(0);
 
     const durableCountsAfterFirst = explicitFactReplaySnapshot(
       app,
@@ -777,7 +786,7 @@ describe("continuity memory recall hierarchy", () => {
     expect(explicitFactReplaySnapshot(app, harness.agentId)).toEqual(
       durableCountsAfterFirst,
     );
-    expect(chatTurnModelCallCount(app)).toBe(1);
+    expect(chatTurnModelCallCount(app)).toBe(0);
     expect(publish).toHaveBeenCalledTimes(publishCountAfterFirst);
     const idempotencyConflict = await app.inject({
       method: "POST",
@@ -792,7 +801,7 @@ describe("continuity memory recall hierarchy", () => {
     expect(explicitFactReplaySnapshot(app, harness.agentId)).toEqual(
       durableCountsAfterFirst,
     );
-    expect(chatTurnModelCallCount(app)).toBe(1);
+    expect(chatTurnModelCallCount(app)).toBe(0);
     expect(publish).toHaveBeenCalledTimes(publishCountAfterFirst);
 
     const successfulRun = latestRun(app, harness.agentId);
@@ -1010,7 +1019,9 @@ describe("continuity memory recall hierarchy", () => {
         selectedMemoryIds: [],
         selectedEvidenceIds: [],
         serverGuardApplied: true,
-        modelReplyContentChanged: true,
+        generationSource: "server_explicit_fact_contract",
+        modelGenerationAttempted: false,
+        modelReplyContentChanged: false,
         modelGenerationFallbackUsed: false,
         contentDerivedSemanticsSkipped: true,
       },
@@ -1018,7 +1029,7 @@ describe("continuity memory recall hierarchy", () => {
     expect(explicitFactSideEffectSnapshot(app, harness.agentId)).toEqual(
       beforeIncompleteWrites,
     );
-    expect(chatTurnModelCallCount(app)).toBe(2);
+    expect(chatTurnModelCallCount(app)).toBe(0);
 
     for (const incompleteQuery of [
       "替我核对两件旧事：我喝茶的习惯，和那只木盒的标签。只答事实。",
@@ -1823,13 +1834,14 @@ describe("continuity memory recall hierarchy", () => {
       deliveryMode: "single_block",
       reasonCode: "explicit_fact_reply_guard_selected",
       scheduleActionAudit: {
-        origin: "model_explicit_valid",
-        kind: "request_details",
+        origin: "server_generated",
+        kind: "none",
       },
       explicitFactReplyGuard: {
         outcome: "selected",
         modelRepairAttempted: false,
-        modelSideEffectsBlocked: true,
+        modelGenerationAttempted: false,
+        modelSideEffectsBlocked: false,
       },
     });
     expect(exchange.scheduleChanges).toEqual([]);
@@ -1837,12 +1849,7 @@ describe("continuity memory recall hierarchy", () => {
       .mocked(app.personasim.llm)
       .generateObject.mock.calls.slice(modelCallsBefore)
       .map(([request]) => request);
-    expect(modelCalls).toHaveLength(1);
-    expect(modelCalls[0]).toMatchObject({ purpose: "chat_turn" });
-    expect(modelCalls[0]?.prompt).not.toContain(
-      "SCHEDULE_NEGOTIATION_CONTRACT",
-    );
-    expect(modelCalls[0]?.prompt).not.toContain(pendingId);
+    expect(modelCalls).toHaveLength(0);
     expect(
       publish.mock.calls.some(([event]) => event.type === "schedule.updated"),
     ).toBe(false);
@@ -1867,6 +1874,117 @@ describe("continuity memory recall hierarchy", () => {
         ),
     ).toHaveLength(negotiationEventCountBefore);
   });
+
+  it.each(["source_deleted", "memory_superseded", "runtime_changed"] as const)(
+    "rejects a server fact turn when %s after recall and preserves atomic commit",
+    async (conflict) => {
+      const harness = await createHarness({
+        nowUtc: EXPLICIT_FACT_RECALL_AT,
+        timezone: "Asia/Shanghai",
+        adversarialOpenAiCompatibleDecisionPath: true,
+      });
+      app = harness.app;
+      const store = app.personasim.store;
+      const sourceSession = app.personasim.conversations.createSession(
+        harness.agentId,
+        "Fact source before concurrent change",
+      );
+      const sourceMessageId = `source-before-${conflict}`;
+      insertUserMessage(app, {
+        id: sourceMessageId,
+        sessionId: sourceSession.id,
+        agentId: harness.agentId,
+        content: EXPLICIT_FACT_SOURCE_TEXT,
+        createdAtUtc: EXPLICIT_FACT_SOURCE_AT,
+      });
+      const memories = seedLegacyRecallFixtureMemories({
+        store,
+        agentId: harness.agentId,
+        candidates: [TEA_FACT, BOX_FACT].map((content) =>
+          explicitUserFact(
+            content,
+            ["user fact"],
+            0.9,
+            EXPLICIT_FACT_SOURCE_AT,
+          ),
+        ),
+        nowUtc: EXPLICIT_FACT_SOURCE_AT,
+        maxCandidates: 2,
+        authoritativeMessageId: sourceMessageId,
+      });
+      expect(memories).toHaveLength(2);
+      const session = app.personasim.conversations.createSession(
+        harness.agentId,
+        "Fact turn with stale provenance",
+      );
+      const prepare = app.personasim.memoryRecalls.preparePreviewRecording.bind(
+        app.personasim.memoryRecalls,
+      );
+      const publish = vi.spyOn(app.personasim.sse, "publish");
+      let expectedCounts:
+        ReturnType<typeof explicitFactReplaySnapshot> | undefined;
+      let expectedState = store.getRuntimeState(harness.agentId);
+      vi.spyOn(
+        app.personasim.memoryRecalls,
+        "preparePreviewRecording",
+      ).mockImplementationOnce((input) => {
+        const prepared = prepare(input);
+        expect(prepared.preview.result.abstained).toBe(false);
+        if (conflict === "source_deleted") {
+          store.database
+            .prepare("DELETE FROM messages WHERE id = ?")
+            .run(sourceMessageId);
+        } else if (conflict === "memory_superseded") {
+          store.database
+            .prepare("UPDATE memories SET status = 'superseded' WHERE id = ?")
+            .run(memories[0]!.id);
+        } else {
+          const state = store.getRuntimeState(harness.agentId)!;
+          expect(
+            store.compareAndSetRuntimeState(
+              { ...state, revision: state.revision + 1 },
+              state.revision,
+            ),
+          ).toBe(true);
+        }
+        expectedCounts = explicitFactReplaySnapshot(
+          harness.app,
+          harness.agentId,
+        );
+        expectedState = store.getRuntimeState(harness.agentId);
+        publish.mockClear();
+        return prepared;
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${session.id}/messages`,
+        payload: {
+          agentId: harness.agentId,
+          clientMessageId: `stale-fact-${conflict}`,
+          text: EXPLICIT_FACT_QUERY,
+        },
+      });
+
+      expect(response.statusCode, response.body).toBe(409);
+      expect(JSON.parse(response.body)).toMatchObject({
+        error: {
+          code:
+            conflict === "runtime_changed"
+              ? "stale_runtime_state"
+              : "stale_memory_sources",
+        },
+      });
+      expect(expectedCounts).toBeDefined();
+      expect(explicitFactReplaySnapshot(app, harness.agentId)).toEqual(
+        expectedCounts,
+      );
+      expect(store.getRuntimeState(harness.agentId)).toEqual(expectedState);
+      expect(store.listMessages(session.id)).toEqual([]);
+      expect(chatTurnModelCallCount(app)).toBe(0);
+      expect(publish).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not apply the fact-reply guard to ordinary conversation", async () => {
     const harness = await createHarness({

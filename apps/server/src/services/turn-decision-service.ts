@@ -125,7 +125,8 @@ export type ModelScheduleActionOrigin =
   | "model_missing"
   | "model_invalid"
   | "model_unavailable"
-  | "fixture";
+  | "fixture"
+  | "server_generated";
 
 export interface ModelScheduleActionAudit {
   origin: ModelScheduleActionOrigin;
@@ -140,6 +141,8 @@ export interface ExplicitFactReplyGuardAudit {
   selectedMemoryIds: string[];
   selectedEvidenceIds: string[];
   serverGuardApplied: true;
+  generationSource: "server_explicit_fact_contract";
+  modelGenerationAttempted: boolean;
   modelReplyContentChanged: boolean;
   modelSideEffectsBlocked: boolean;
   modelRepairAttempted: boolean;

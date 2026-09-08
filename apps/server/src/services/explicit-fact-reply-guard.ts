@@ -12,7 +12,10 @@ import {
   type ExplicitFactFacet,
   type ExplicitFactFacetDescriptor,
 } from "../domain/explicit-fact-verification.js";
-import type { AgentTurnDecision } from "../domain/schemas.js";
+import {
+  agentTurnDecisionSchema,
+  type AgentTurnDecision,
+} from "../domain/schemas.js";
 import {
   RetrievalReplayInputSchema,
   type CreateRetrievalRunInput,
@@ -405,6 +408,29 @@ export function renderExplicitFactSafeText(
   return `饮品记录：${qualified}`;
 }
 
+/** Resolve an authoritative contract without inventing an upstream model turn. */
+export function createExplicitFactReplyTurn(input: {
+  contract: ExplicitFactReplyContract;
+  inspectDecision: (decision: AgentTurnDecision) => DecisionInspection;
+}): ResolvedTurn {
+  const decision = agentTurnDecisionSchema.parse(
+    explicitFactDecision(input.contract),
+  );
+  const turn: ResolvedTurn = {
+    decision,
+    inspection: input.inspectDecision(decision),
+    repairAttempted: false,
+    usedFallback: false,
+    modelRejections: [],
+    scheduleAction: { kind: "none" },
+    modelScheduleActionAudit: { origin: "server_generated", kind: "none" },
+  };
+  return {
+    ...turn,
+    explicitFactReplyGuardAudit: replyGuardAudit(turn, input.contract, false),
+  };
+}
+
 export function applyExplicitFactReplyGuard(input: {
   turn: ResolvedTurn;
   contract: ExplicitFactReplyContract;
@@ -518,6 +544,9 @@ function replyGuardAudit(
     selectedMemoryIds: selected ? [...contract.selectedMemoryIds] : [],
     selectedEvidenceIds: selected ? [...contract.selectedEvidenceIds] : [],
     serverGuardApplied: true,
+    generationSource: "server_explicit_fact_contract",
+    modelGenerationAttempted:
+      turn.modelScheduleActionAudit.origin !== "server_generated",
     modelReplyContentChanged:
       turn.decision.reply.text !== contract.replyText ||
       turn.decision.reply.chunks.length !== 1 ||

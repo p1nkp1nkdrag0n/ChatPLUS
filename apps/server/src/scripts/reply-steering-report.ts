@@ -32,6 +32,7 @@ export interface ReplySteeringResult {
   error: string | null;
   promptSha256: string | null;
   nonTargetPromptSha256: string | null;
+  /** Raw-to-final text difference, including delivery formatting, not repair attribution. */
   repairChanged: boolean;
   fallback: boolean;
 }
@@ -365,7 +366,7 @@ function summaryTables(summaries: readonly ReplySteeringSummary[]): string[] {
         `| ${cell(row.profile)} (${row.models.map(cell).join(", ")}) | ${cell(row.personaId)} | ${row.mode} | ${row.successCount} / ${row.count} | ${row.scenarioCount} | ${number(row.medianFinalCharacters)} | ${number(row.medianRawReplyCharacters)} | ${number(row.medianElapsedMs)} | ${number(row.medianSuccessfulElapsedMs)} |`,
     ),
     "",
-    "| 模型配置 | 性格 | 引导模式 | 逻辑调用 | 物理请求 | 重试 | 修复 | 修复改变文本 | 回退 | 输入 token | 输出 token | 完整用量行 |",
+    "| 模型配置 | 性格 | 引导模式 | 逻辑调用 | 物理请求 | 重试 | 修复 | 原始到最终文本变化 | 回退 | 输入 token | 输出 token | 完整用量行 |",
     "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...summaries.map(
       (row) =>

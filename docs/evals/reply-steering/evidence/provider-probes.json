@@ -1,0 +1,207 @@
+{
+  "description": "Supplier probes before matrix. GPT-5.6 Sol was replaced by GPT-6 Astra at user request; Claude excluded after HTTP 524. The first configured Claude alias pointed to claude-opus-5 and also failed with HTTP 524; the retained rows below are the subsequent explicit Opus 4.6 check and the latest short probes.",
+  "earlyAliasFailure": {
+    "physicalRequests": 1,
+    "elapsedMs": 126704,
+    "requestedModel": "claude-opus-5",
+    "profile": "claude",
+    "httpStatus": 524,
+    "usage": "unknown"
+  },
+  "results": [
+    {
+      "profile": "deepseek",
+      "requestedModel": "deepseek-v4-flash",
+      "endpoint": "https://api.deepseek.com",
+      "reasoning": "max",
+      "outputCap": 4096,
+      "physicalRequests": 1,
+      "elapsedMs": 852,
+      "result": {
+        "success": true,
+        "reply": {
+          "reply": "连接正常"
+        }
+      },
+      "metrics": [
+        {
+          "provider": "openai-compatible",
+          "model": "deepseek-v4-flash",
+          "purpose": "chat_turn",
+          "logicalCallId": "6d2ae8e9-462a-4878-b60f-7a8330b4018d",
+          "attempt": 1,
+          "latencyMs": 847,
+          "success": true,
+          "status": 200,
+          "usageSource": "provider",
+          "responseModel": "deepseek-v4-flash",
+          "finishReason": "stop",
+          "inputTokens": 233,
+          "outputTokens": 22,
+          "cacheReadTokens": 128,
+          "cacheReadSource": "usage.prompt_tokens_details.cached_tokens"
+        }
+      ]
+    },
+    {
+      "profile": "bigmodel",
+      "requestedModel": "glm-5.3-flash",
+      "endpoint": "https://open.bigmodel.cn",
+      "reasoning": "low",
+      "outputCap": 4096,
+      "physicalRequests": 1,
+      "elapsedMs": 1534,
+      "result": {
+        "success": true,
+        "reply": {
+          "reply": "连接正常"
+        }
+      },
+      "metrics": [
+        {
+          "provider": "openai-compatible",
+          "model": "glm-5.3-flash",
+          "purpose": "chat_turn",
+          "logicalCallId": "d7dcd427-5b45-4908-b1c2-09da72127806",
+          "attempt": 1,
+          "latencyMs": 1533,
+          "success": true,
+          "status": 200,
+          "usageSource": "provider",
+          "responseModel": "glm-5.3-flash",
+          "finishReason": "stop",
+          "inputTokens": 173,
+          "outputTokens": 8,
+          "cacheReadTokens": 128,
+          "cacheReadSource": "usage.prompt_tokens_details.cached_tokens"
+        }
+      ]
+    },
+    {
+      "profile": "qwen",
+      "requestedModel": "qwen3.8-flash",
+      "endpoint": "https://dashscope.aliyuncs.com",
+      "reasoning": "medium",
+      "outputCap": 4096,
+      "physicalRequests": 1,
+      "elapsedMs": 1474,
+      "result": {
+        "success": true,
+        "reply": {
+          "reply": "连接正常"
+        }
+      },
+      "metrics": [
+        {
+          "provider": "openai-compatible",
+          "model": "qwen3.8-flash",
+          "purpose": "chat_turn",
+          "logicalCallId": "bfa52f6f-037b-492c-9fae-42ce36aaebd8",
+          "attempt": 1,
+          "latencyMs": 1473,
+          "success": true,
+          "status": 200,
+          "usageSource": "provider",
+          "responseModel": "qwen3.8-flash",
+          "finishReason": "stop",
+          "inputTokens": 127,
+          "outputTokens": 42,
+          "cacheReadTokens": 0,
+          "cacheReadSource": "usage.prompt_tokens_details.cached_tokens"
+        }
+      ]
+    },
+    {
+      "profile": "claude",
+      "requestedModel": "claude-opus-4-6",
+      "endpoint": "https://sub.wanzhao.top",
+      "reasoning": "medium",
+      "outputCap": 4096,
+      "physicalRequests": 1,
+      "elapsedMs": 125856,
+      "result": {
+        "success": false,
+        "error": "LLM request failed with HTTP 524",
+        "code": "HTTP_ERROR"
+      },
+      "metrics": [
+        {
+          "provider": "openai-compatible",
+          "model": "claude-opus-4-6",
+          "purpose": "chat_turn",
+          "logicalCallId": "53c6607d-0311-4ef9-8914-2bdf904653c5",
+          "attempt": 1,
+          "latencyMs": 125854,
+          "success": false,
+          "status": 524,
+          "usageSource": "unavailable",
+          "errorCode": "HTTP_ERROR"
+        }
+      ]
+    },
+    {
+      "profile": "gpt56-sol",
+      "requestedModel": "gpt-5.6-sol",
+      "endpoint": "https://sub.wanzhao.top",
+      "reasoning": "medium",
+      "outputCap": 4096,
+      "physicalRequests": 1,
+      "elapsedMs": 2862,
+      "result": {
+        "success": true,
+        "reply": {
+          "reply": "连接正常"
+        }
+      },
+      "metrics": [
+        {
+          "provider": "openai-compatible",
+          "model": "gpt-5.6-sol",
+          "purpose": "chat_turn",
+          "logicalCallId": "c15295a2-3d54-4f80-a2a9-85423a240302",
+          "attempt": 1,
+          "latencyMs": 2860,
+          "success": true,
+          "status": 200,
+          "usageSource": "provider",
+          "responseModel": "gpt-5.6-sol",
+          "finishReason": "stop",
+          "inputTokens": 176,
+          "outputTokens": 13
+        }
+      ]
+    },
+    {
+      "profile": "gpt56-sol",
+      "requestedModel": "gpt-6-astra",
+      "endpoint": "https://sub.wanzhao.top",
+      "reasoning": "medium",
+      "outputCap": 4096,
+      "physicalRequests": 1,
+      "elapsedMs": 3067,
+      "result": {
+        "success": true,
+        "reply": {
+          "reply": "连接正常"
+        }
+      },
+      "metrics": [
+        {
+          "provider": "openai-compatible",
+          "model": "gpt-6-astra",
+          "purpose": "chat_turn",
+          "logicalCallId": "fb354b52-cacf-4bbf-927b-97024c22b882",
+          "attempt": 1,
+          "latencyMs": 3061,
+          "success": true,
+          "status": 200,
+          "usageSource": "provider",
+          "responseModel": "gpt-6-astra",
+          "finishReason": "stop",
+          "inputTokens": 176,
+          "outputTokens": 13
+        }
+      ]
+    }
+  ]
+}

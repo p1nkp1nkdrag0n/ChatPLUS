@@ -105,6 +105,7 @@ export default function CharacterEditorPage() {
       setSpec(value);
       setBaseline(value);
       setJsonText(JSON.stringify(value, null, 2));
+      queryClient.setQueryData(["character", value.id], result);
       void queryClient.invalidateQueries({ queryKey: ["characters"] });
     },
   });
@@ -122,6 +123,8 @@ export default function CharacterEditorPage() {
     },
     onSuccess: (result) => {
       const value = unwrapCharacter(result);
+      // Chat validates publication before loading sessions; replace any cached draft first.
+      queryClient.setQueryData(["character", value.id], result);
       rememberActiveCharacter(value.id);
       void queryClient.invalidateQueries({ queryKey: ["characters"] });
       void navigate(`/characters/${value.id}/chat`);

@@ -323,7 +323,7 @@ function CharacterChat({ characterId }: { characterId: string }) {
                   : `/characters/${item.id}/edit`
               }
             >
-              <CharacterAvatar characterId={item.id} size={56} />
+              <CharacterAvatar characterId={item.id} size={64} />
               <span>
                 {item.name}
                 {item.status === "draft" ? <small>待完成</small> : null}
@@ -350,7 +350,7 @@ function CharacterChat({ characterId }: { characterId: string }) {
       <div className={`chat-page${railOpen ? " has-rail" : ""}`}>
         <header className="chat-header">
           <div className="chat-header__identity">
-            <CharacterAvatar characterId={characterId} size={76} />
+            <CharacterAvatar characterId={characterId} size={88} />
             <div>
               <h1>{character?.identity.name ?? "对话"}</h1>
               <span>
@@ -626,7 +626,7 @@ function SessionConversation({
         ) : null}
         {messagesQuery.isSuccess && messages.length === 0 ? (
           <div className="conversation-opening">
-            <CharacterAvatar characterId={characterId} size={76} />
+            <CharacterAvatar characterId={characterId} size={88} />
             <h2>从此刻开始</h2>
             <p>和{character.identity.name}聊聊今天，或是刚刚浮上心头的小事。</p>
           </div>
@@ -651,7 +651,7 @@ function SessionConversation({
         ))}
         {sendPending ? (
           <div className="message-group message-group--assistant is-thinking">
-            <CharacterAvatar characterId={characterId} size={54} />
+            <CharacterAvatar characterId={characterId} size={64} />
             <div className="message-content">
               <span className="message-meta">正在想一想…</span>
               <div className="thinking-dots" aria-label="正在回复">
@@ -871,7 +871,7 @@ export function MessageBubble({
         <CharacterAvatar
           characterId={characterId ?? message.agentId}
           name={name}
-          size={54}
+          size={64}
         />
       ) : null}
       <div className="message-content">

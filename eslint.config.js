@@ -48,7 +48,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["eslint.config.js"],
+    files: ["eslint.config.js", "scripts/prepare-dearvale-fonts.mjs"],
     ...tseslint.configs.disableTypeChecked,
   },
   {

@@ -114,6 +114,12 @@ function body(value: unknown): string {
 }
 
 export const api = {
+  demo: {
+    ensure: () =>
+      request<{ characterId: string; sessionId: string }>("/api/demo/ensure", {
+        method: "POST",
+      }),
+  },
   health: async () => {
     const value = await request<Record<string, unknown>>("/api/health");
     return {

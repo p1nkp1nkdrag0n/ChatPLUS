@@ -1,0 +1,517 @@
+/* Dearvale desktop surfaces; kept after legacy styles for unchanged utility pages. */
+.dearvale-brand {
+  font-family: var(--font-brand);
+  font-weight: 600;
+  font-size: 40px;
+  letter-spacing: -1.2px;
+}
+.app-shell {
+  --nav-width: 212px;
+  display: grid;
+  grid-template-columns: var(--nav-width) minmax(0, 1fr);
+  min-width: 1040px;
+  height: calc(100dvh - 24px);
+  min-height: 640px;
+  margin: 12px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.app-shell--chat {
+  --nav-width: 88px;
+  border: 0;
+  background: transparent;
+}
+.app-shell .app-nav {
+  position: relative;
+  inset: auto;
+  z-index: 20;
+  display: flex;
+  width: auto;
+  min-height: 0;
+  height: 100%;
+  border-right: 1px solid var(--line);
+  background: #faf8f3;
+  backdrop-filter: none;
+  overflow: hidden;
+}
+.app-shell--chat .app-nav {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+}
+.app-shell .app-nav__brand {
+  position: relative;
+  z-index: 1;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  height: 95px;
+  padding: 0 25px;
+  border: 0;
+  font-family: var(--font-brand);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+.app-shell .app-nav__brand-mark {
+  display: none;
+}
+.app-shell .app-nav__brand > span:last-child {
+  display: inline;
+}
+.app-shell--chat .app-nav__brand {
+  justify-content: center;
+  height: 95px;
+  padding: 12px;
+}
+.app-shell--chat .app-nav__brand-mark {
+  display: flex;
+  width: 54px;
+  height: 65px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.app-shell--chat .app-nav__brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+.app-shell--chat .app-nav__brand > span:last-child {
+  display: none;
+}
+.app-shell .app-nav__groups {
+  position: relative;
+  z-index: 1;
+  padding: 13px 12px 20px;
+}
+.app-shell .app-nav__group {
+  gap: 14px;
+}
+.app-shell .app-nav__item {
+  justify-content: flex-start;
+  min-height: 60px;
+  padding: 0 17px;
+  gap: 18px;
+  border-radius: 16px;
+  font-size: 18px;
+  font-weight: 400;
+}
+.app-shell .app-nav__item > svg {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.app-shell .app-nav__item span {
+  display: inline;
+}
+.app-shell .app-nav__item::before {
+  display: none;
+}
+.app-shell .app-nav__item.is-active {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+.app-shell--chat .app-nav__item {
+  justify-content: center;
+  min-height: 57px;
+  padding: 0;
+}
+.app-shell--chat .app-nav__item span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.app-shell .app-nav__flowers {
+  position: absolute;
+  bottom: -85px;
+  left: -40px;
+  width: 245px;
+  height: 370px;
+  object-fit: contain;
+  opacity: 0.85;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  transform: rotate(-16deg);
+}
+.app-shell .app-nav__group--secondary {
+  margin-top: auto;
+  padding-bottom: 2px;
+}
+.app-shell:not(.app-shell--chat) .app-nav__group--secondary {
+  margin-top: 32px;
+}
+.app-shell .app-main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  overflow: auto;
+}
+.app-shell .page {
+  min-height: 100%;
+  padding: 34px clamp(26px, 3vw, 56px) 48px;
+}
+.memory-navigation {
+  display: flex;
+  gap: 12px;
+  padding: 20px 30px 0;
+}
+.memory-navigation a {
+  border-radius: 99px;
+  padding: 8px 17px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.memory-navigation .is-active {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.button {
+  min-height: 42px;
+  font-weight: 500;
+}
+.button--primary:hover {
+  background: var(--accent-strong);
+}
+.page-header h1 {
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.page-header p {
+  line-height: 1.8;
+}
+.character-row {
+  border-radius: 16px;
+}
+.field input,
+.field select,
+.field textarea {
+  background: var(--surface);
+}
+.status-dot {
+  background: var(--accent);
+}
+
+.story-journey {
+  height: 600svh;
+  min-width: 1040px;
+  padding: 12px;
+  background: var(--canvas);
+}
+.story-stage {
+  position: sticky;
+  top: 12px;
+  height: calc(100svh - 24px);
+  border-radius: 24px;
+  overflow: hidden;
+  isolation: isolate;
+  background: #d4e4dd;
+}
+.story-background {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.story-background img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.story-state {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  --story-drift: 0px;
+}
+.story-state[inert] {
+  pointer-events: none;
+}
+.story-opening h1 {
+  position: absolute;
+  top: 25%;
+  left: 50%;
+  transform: translate(-50%, var(--story-drift));
+  width: min(31.5vw, 550px);
+}
+.story-wordmark {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.story-scroll-cue {
+  position: absolute;
+  left: 50%;
+  bottom: 11%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  padding: 12px 20px;
+  background: transparent;
+  color: #153c29;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+.story-dialogue {
+  position: absolute;
+  width: min(670px, 54vw);
+  top: 23%;
+  left: 50%;
+  transform: translate(-50%, var(--story-drift));
+}
+.story-bubble {
+  display: flex;
+  align-items: center;
+  width: 78%;
+  min-height: 66px;
+  padding: 15px 25px;
+  border: 1px solid #ffffff6b;
+  border-radius: 22px;
+  color: #314237;
+  background: #fffcf0ba;
+  box-shadow: 0 3px 18px #253a2510;
+  font-size: 18px;
+  line-height: 1.8;
+}
+.story-bubble--first {
+  margin-left: auto;
+}
+.story-bubble--second {
+  margin-top: 20px;
+  margin-right: auto;
+  background: #e5eddfb8;
+}
+.story-conversation--3 .story-dialogue {
+  top: 16%;
+}
+.story-conversation--5 .story-bubble {
+  background: #fbf8edc4;
+}
+.story-conversation--5 .story-bubble--second {
+  background: #e8ede4c2;
+}
+.story-progress {
+  position: absolute;
+  z-index: 5;
+  top: 43px;
+  right: 23px;
+  display: grid;
+  gap: 3px;
+}
+.story-progress button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 27px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.story-progress button span {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 3px #294d5340;
+}
+.story-progress button.is-active span {
+  border: 3px solid #fff;
+  background: #254932;
+}
+.story-start {
+  position: absolute;
+  right: 6%;
+  bottom: 8%;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border: 1px solid #f8f2dc91;
+  border-radius: 99px;
+  padding: 13px 24px;
+  background: #fbf7eddf;
+  color: #334c3c;
+  font-size: 16px;
+}
+.story-start:hover {
+  background: #fffdf5;
+}
+.story-loading {
+  position: absolute;
+  z-index: 7;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--canvas);
+}
+.story-retry {
+  position: absolute;
+  z-index: 8;
+  left: 25px;
+  bottom: 25px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: #fff9eeeb;
+  font-size: 13px;
+}
+
+.welcome-page {
+  position: relative;
+  min-width: 1040px;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 80px 24px 42px;
+  overflow: hidden;
+  background: #fbfaf6;
+}
+.welcome-header {
+  position: absolute;
+  z-index: 2;
+  top: 19px;
+  left: 4%;
+  right: 4%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.welcome-back {
+  border-bottom: 1px solid #7c8b7b;
+  padding-bottom: 4px;
+  font-size: 15px;
+}
+.welcome-botanical {
+  position: absolute;
+  z-index: 0;
+  width: 20vw;
+  max-width: 335px;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.welcome-botanical--top {
+  top: -245px;
+  right: -2%;
+  transform: rotate(135deg);
+}
+.welcome-botanical--bottom {
+  bottom: -180px;
+  left: -3%;
+  transform: rotate(-12deg);
+}
+.welcome-card {
+  position: relative;
+  z-index: 1;
+  width: min(676px, 42vw);
+  overflow: hidden;
+  border: 1px solid #d9d8c9;
+  border-radius: 26px;
+  background: #faf8f2;
+}
+.welcome-art {
+  height: clamp(235px, 35svh, 370px);
+  overflow: hidden;
+}
+.welcome-art img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+.welcome-content {
+  padding: 2px 17% 32px;
+  text-align: center;
+}
+.welcome-content h1 {
+  color: #18392f;
+  font-size: clamp(32px, 2.9vw, 48px);
+  font-weight: 500;
+  letter-spacing: -1px;
+  white-space: nowrap;
+  line-height: 1.45;
+}
+.welcome-content h1 span {
+  font-family: var(--font-brand);
+  font-size: 1.25em;
+  font-weight: 500;
+}
+.welcome-description {
+  margin-top: 12px;
+  color: #788075;
+  font-size: clamp(17px, 1.45vw, 22px);
+  line-height: 1.8;
+}
+.welcome-primary {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  width: 94%;
+  min-height: 54px;
+  margin: 28px auto 0;
+  border: 0;
+  border-radius: 99px;
+  background: #41664e;
+  color: #fffdf6;
+  font-size: 21px;
+}
+.welcome-primary:hover {
+  background: #33533f;
+}
+.welcome-hint {
+  margin-top: 9px;
+  color: #7b8376;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.welcome-secondary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 22px;
+}
+.welcome-secondary a {
+  display: grid;
+  place-items: center;
+  min-height: 53px;
+  padding: 10px;
+  border: 1px solid #babfae;
+  border-radius: 16px;
+  background: #fffefa66;
+  font-size: 18px;
+}
+.welcome-secondary a:hover {
+  background: #f1f1e7;
+}
+.welcome-later {
+  display: inline-block;
+  margin-top: 24px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #8c9887;
+  color: #7a8575;
+  font-size: 14px;
+}
+.welcome-content .error-block {
+  margin-top: 14px;
+  text-align: left;
+  font-size: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .story-stage *,
+  .welcome-page * {
+    scroll-behavior: auto;
+    transition: none;
+    animation: none;
+  }
+}

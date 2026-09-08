@@ -1,19 +1,14 @@
 import {
-  Archive,
-  Bot,
-  Braces,
   History,
-  Library,
   Mail,
-  PackageOpen,
-  Plus,
+  MessageCircle,
   Settings,
-  Sparkles,
+  UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { primeAgentOverview } from "../hooks/agentEventQueryKeys";
 import { useAgentEvents } from "../hooks/useAgentEvents";
@@ -30,15 +25,8 @@ interface NavigationItem {
   end?: boolean;
 }
 
-const PRIMARY_NAVIGATION: NavigationItem[] = [
-  { to: "/characters", label: "角色", icon: Library, end: true },
-  { to: "/create", label: "创建", icon: Plus },
-  { to: "/timeline", label: "共同经历", icon: History },
-];
-
 const SECONDARY_NAVIGATION: NavigationItem[] = [
   { to: "/settings", label: "设置", icon: Settings },
-  { to: "/developer", label: "开发者", icon: Braces },
 ];
 
 function NavItem({
@@ -55,6 +43,7 @@ function NavItem({
   return (
     <NavLink
       to={to}
+      title={label}
       {...(end === undefined ? {} : { end })}
       aria-current={relatedRouteActive ? "page" : undefined}
       className={({ isActive }) =>
@@ -69,10 +58,23 @@ function NavItem({
 
 export function AppShell() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [activeCharacterId, setActiveCharacterId] =
     useState(readActiveCharacter);
+  useEffect(() => {
+    document.title = "Dearvale";
+  }, [location.pathname]);
   const previousActiveCharacterId = useRef(activeCharacterId);
   useEffect(() => subscribeActiveCharacter(setActiveCharacterId), []);
+  const charactersQuery = useQuery({
+    queryKey: ["characters"],
+    queryFn: api.characters.list,
+  });
+  const currentCharacter = charactersQuery.data?.characters.find(
+    (character) =>
+      character.id === activeCharacterId && character.status === "published",
+  );
+  const activationId = currentCharacter?.id;
   const activationQuery = useQuery({
     queryKey: ["agent-activation", activeCharacterId],
     queryFn: async () => {
@@ -80,7 +82,7 @@ export function AppShell() {
       primeAgentOverview(queryClient, activeCharacterId!, snapshot);
       return snapshot;
     },
-    enabled: Boolean(activeCharacterId),
+    enabled: Boolean(activationId),
     staleTime: Number.POSITIVE_INFINITY,
   });
   useEffect(() => {
@@ -107,48 +109,60 @@ export function AppShell() {
       }),
     ]);
   }, [activationQuery.data, activeCharacterId, queryClient]);
-  useAgentEvents(activeCharacterId);
-  const primaryNavigation = activeCharacterId
-    ? [
-        ...PRIMARY_NAVIGATION,
-        {
-          to: `/characters/${activeCharacterId}/correspondence`,
-          label: "书信",
-          icon: Mail,
-          activePrefixes: ["/letters/", "/correspondence/threads/"],
-        },
-        {
-          to: `/characters/${activeCharacterId}/relationship-archive`,
-          label: "关系档案",
-          icon: Archive,
-          activePrefixes: [
-            `/characters/${activeCharacterId}/relationship-share`,
-          ],
-        },
-        {
-          to: `/characters/${activeCharacterId}/keepsakes`,
-          label: "纪念物",
-          icon: PackageOpen,
-          activePrefixes: ["/keepsakes/"],
-        },
-      ]
-    : PRIMARY_NAVIGATION;
-  const mobileNavigation = primaryNavigation
-    .filter((item) => item.to !== "/create")
-    .concat(SECONDARY_NAVIGATION.filter((item) => item.to === "/settings"));
+  useAgentEvents(activationId);
+  const root = activationId ? `/characters/${activationId}` : undefined;
+  const chat = /\/characters\/[^/]+\/chat$/.test(location.pathname);
+  const memories =
+    /\/(timeline|relationship-archive|relationship-share|keepsakes)(\/|$)/.test(
+      location.pathname,
+    );
+  const primaryNavigation: NavigationItem[] = [
+    { to: root ? `${root}/chat` : "/chat", label: "对话", icon: MessageCircle },
+    {
+      to: root ? `${root}/correspondence` : "/mailbox",
+      label: "书信",
+      icon: Mail,
+      activePrefixes: ["/letters/", "/correspondence/threads/"],
+    },
+    {
+      to: root ? `${root}/timeline` : "/timeline",
+      label: "记忆",
+      icon: History,
+      activePrefixes: root
+        ? [
+            `${root}/relationship-archive`,
+            `${root}/relationship-share`,
+            `${root}/keepsakes`,
+            "/keepsakes/",
+            "/timeline",
+          ]
+        : ["/keepsakes/"],
+    },
+    {
+      to: "/characters",
+      label: "角色",
+      icon: UserRound,
+      end: true,
+      activePrefixes: [
+        "/create",
+        "/import",
+        ...(location.pathname.endsWith("/edit") ? [location.pathname] : []),
+      ],
+    },
+  ];
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${chat ? " app-shell--chat" : ""}`}>
       <aside className="app-nav" aria-label="主导航">
         <NavLink
           className="app-nav__brand"
-          to="/characters"
-          aria-label="PersonaSim 角色库"
+          to="/welcome"
+          aria-label="Dearvale 欢迎页"
         >
           <span className="app-nav__brand-mark" aria-hidden="true">
-            <Sparkles size={16} strokeWidth={1.8} />
+            <img src="/dearvale/art/botanical.png" alt="" />
           </span>
-          <span>PersonaSim</span>
+          <span>Dearvale</span>
         </NavLink>
 
         <nav className="app-nav__groups">
@@ -164,25 +178,52 @@ export function AppShell() {
           </div>
         </nav>
 
-        <div className="app-nav__runtime">
-          <span className="status-dot" />
-          <div>
-            <strong>本地运行</strong>
-            <span>数据留在这台设备</span>
-          </div>
-          <Bot aria-hidden="true" size={18} strokeWidth={1.6} />
-        </div>
+        {!chat ? (
+          <img
+            className="app-nav__flowers"
+            src="/dearvale/art/botanical.png"
+            alt=""
+          />
+        ) : null}
       </aside>
 
       <main className="app-main">
+        {memories ? (
+          <nav className="memory-navigation" aria-label="记忆分类">
+            <Link
+              to={root ? `${root}/timeline` : "/timeline"}
+              className={
+                location.pathname.endsWith("/timeline") ? "is-active" : ""
+              }
+            >
+              共同经历
+            </Link>
+            {root ? (
+              <>
+                <Link
+                  to={`${root}/relationship-archive`}
+                  className={
+                    location.pathname.includes("relationship-")
+                      ? "is-active"
+                      : ""
+                  }
+                >
+                  关系档案
+                </Link>
+                <Link
+                  to={`${root}/keepsakes`}
+                  className={
+                    location.pathname.includes("keepsakes") ? "is-active" : ""
+                  }
+                >
+                  纪念物
+                </Link>
+              </>
+            ) : null}
+          </nav>
+        ) : null}
         <Outlet />
       </main>
-
-      <nav className="mobile-nav" aria-label="移动端主导航">
-        {mobileNavigation.map((item) => (
-          <NavItem key={item.to} {...item} />
-        ))}
-      </nav>
     </div>
   );
 }

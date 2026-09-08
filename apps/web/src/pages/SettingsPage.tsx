@@ -1,6 +1,7 @@
 import { Check, KeyRound, Server, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppSettings } from "../api/types";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
@@ -29,6 +30,11 @@ export default function SettingsPage() {
     <div className="page page--settings">
       <PageHeader
         title="设置"
+        actions={
+          <Link className="button button--secondary" to="/developer">
+            开发者工具
+          </Link>
+        }
         description="模型凭证只保存在本地后端进程中，不会发送到浏览器存储或角色数据库。"
       />
       {query.isPending ? <LoadingBlock label="正在读取本地设置…" /> : null}

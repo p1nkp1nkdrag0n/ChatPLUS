@@ -6,6 +6,9 @@ import { LoadingBlock } from "../components/Feedback";
 const CharacterLibraryPage = lazy(
   () => import("../pages/CharacterLibraryPage"),
 );
+const LandingPage = lazy(() => import("../pages/LandingPage"));
+const WelcomePage = lazy(() => import("../pages/WelcomePage"));
+const ProductEntryPage = lazy(() => import("../pages/ProductEntryPage"));
 const CharacterGeneratorPage = lazy(
   () => import("../pages/CharacterGeneratorPage"),
 );
@@ -46,10 +49,16 @@ export const RELATIONSHIP_ARCHIVE_ROUTE_PATHS = [
 
 export function App() {
   return (
-    <Suspense fallback={<LoadingBlock label="正在打开 PersonaSim…" fullPage />}>
+    <Suspense fallback={<LoadingBlock label="正在打开 Dearvale…" fullPage />}>
       <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/welcome" element={<WelcomePage />} />
         <Route element={<AppShell />}>
-          <Route index element={<Navigate to="/characters" replace />} />
+          <Route path="/chat" element={<ProductEntryPage kind="chat" />} />
+          <Route
+            path="/mailbox"
+            element={<ProductEntryPage kind="mailbox" />}
+          />
           <Route path="/characters" element={<CharacterLibraryPage />} />
           <Route path="/create" element={<CharacterGeneratorPage />} />
           <Route path="/import" element={<CharacterImportPage />} />

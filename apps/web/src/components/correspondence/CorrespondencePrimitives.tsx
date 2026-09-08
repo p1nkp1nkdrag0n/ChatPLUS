@@ -98,32 +98,35 @@ export function LetterPaper({
     <article
       className={`letter-paper letter-paper--${paper}${readingMode ? " letter-paper--clear" : ""}`}
     >
-      <div className="letter-paper__postmark" aria-label="PersonaSim 邮戳">
-        <span>PERSONASIM</span>
-        <strong>{authoredDate?.replaceAll("-", ".") ?? "MAIL"}</strong>
+      <div className="letter-paper__content">
+        {subject ? (
+          <h1 ref={headingRef} tabIndex={-1} className="letter-paper__subject">
+            {subject}
+          </h1>
+        ) : null}
+        {authoredDate ? (
+          <time className="letter-paper__date" dateTime={authoredDate}>
+            {authoredDate.replaceAll("-", ".")}
+          </time>
+        ) : null}
+        {recipient ? (
+          <p className="letter-paper__recipient">{recipient}：</p>
+        ) : null}
+        {salutation ? (
+          <p className="letter-paper__salutation">{salutation}</p>
+        ) : null}
+        {body ? <div className="letter-paper__body">{body}</div> : children}
+        {closing ? <p className="letter-paper__closing">{closing}</p> : null}
+        {signature ? (
+          <p className="letter-paper__signature">{signature}</p>
+        ) : null}
+        {postscript ? (
+          <aside className="letter-paper__postscript">
+            <strong>附言</strong>
+            <p>{postscript}</p>
+          </aside>
+        ) : null}
       </div>
-      {subject ? (
-        <h1 ref={headingRef} tabIndex={-1} className="letter-paper__subject">
-          {subject}
-        </h1>
-      ) : null}
-      {recipient ? (
-        <p className="letter-paper__recipient">{recipient}：</p>
-      ) : null}
-      {salutation ? (
-        <p className="letter-paper__salutation">{salutation}</p>
-      ) : null}
-      {body ? <div className="letter-paper__body">{body}</div> : children}
-      {closing ? <p className="letter-paper__closing">{closing}</p> : null}
-      {signature ? (
-        <p className="letter-paper__signature">{signature}</p>
-      ) : null}
-      {postscript ? (
-        <aside className="letter-paper__postscript">
-          <strong>附言</strong>
-          <p>{postscript}</p>
-        </aside>
-      ) : null}
     </article>
   );
 }

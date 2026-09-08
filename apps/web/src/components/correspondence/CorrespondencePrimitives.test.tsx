@@ -7,6 +7,7 @@ import type {
 } from "@personasim/contracts";
 import {
   EnvelopePanel,
+  LetterPaper,
   OpenedLetterPaper,
   PaperSelector,
   ReplyGenerationStatus,
@@ -84,6 +85,25 @@ describe("correspondence visual primitives", () => {
     expect(markup).toContain("这是一段可以选择和复制的正文。");
     expect(markup).not.toContain("<img");
     expect(markup).not.toContain("data-body");
+    expect(markup).toContain('class="letter-paper__content"');
+    expect(markup).toMatch(/datetime="2026-09-13"/i);
+    expect(markup).not.toContain("PERSONASIM");
+  });
+
+  it("keeps chosen draft paper treatments and all visible text in the shared paper surface", () => {
+    const markup = renderToStaticMarkup(
+      <LetterPaper
+        paper="midnight"
+        subject="草稿"
+        body="还没有寄出的句子。"
+        recipient="林枫"
+      />,
+    );
+
+    expect(markup).toContain("letter-paper--midnight");
+    expect(markup).toContain("还没有寄出的句子。");
+    expect(markup).toContain("林枫：");
+    expect(markup).not.toContain("<img");
   });
 
   it("labels an already-opened envelope as a repeat read", () => {

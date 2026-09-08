@@ -1,0 +1,528 @@
+/* Daily surfaces inherit the reference's warm paper and quiet green ink.
+   Scene artwork and decorative motion belong to the separate marketing bundle. */
+.app-shell {
+  background: var(--canvas);
+  --paper-shadow: 0 4px 22px rgb(54 65 44 / 4%);
+}
+
+.app-shell ::selection {
+  background: #d7e3cd;
+}
+
+.app-shell :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.app-nav {
+  background: #edeee5;
+  border-right-color: #d9ddce;
+  backdrop-filter: none;
+}
+
+.app-nav__brand {
+  height: 98px;
+  gap: 11px;
+  padding-inline: 22px;
+  border-bottom: 0;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.04em;
+}
+
+.app-nav__brand-mark {
+  border: 0;
+  color: #607753;
+}
+
+.app-nav__groups {
+  gap: 30px;
+  overflow-y: auto;
+  padding: 10px 14px 24px;
+}
+
+.app-nav__group {
+  gap: 7px;
+}
+
+.app-nav__item {
+  min-height: 46px;
+  gap: 13px;
+  padding-inline: 14px;
+  color: #65705f;
+  font-size: 13px;
+  font-weight: 400;
+  transition:
+    color var(--transition),
+    background var(--transition);
+}
+
+.app-nav__item svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.5;
+}
+
+.app-nav__item::before {
+  display: none;
+}
+
+.app-nav__item.is-active {
+  background: #dfe5d7;
+  color: var(--accent-strong);
+}
+
+.app-nav__item:hover {
+  background: #e5e9dd;
+}
+
+.app-nav__group--secondary {
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.app-nav__runtime {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin: 0 20px 24px;
+  padding: 17px 0 0;
+}
+
+.app-nav__runtime > .status-dot {
+  width: 5px;
+  height: 5px;
+  margin-top: 6px;
+}
+
+.app-nav__runtime strong {
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.app-nav__runtime a {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.app-shell .button {
+  min-height: 42px;
+  padding-inline: 18px;
+  font-weight: 500;
+}
+
+.app-shell .button--primary {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.app-shell .page-header h1,
+.app-shell .correspondence-header h1,
+.app-shell .archive-header h1 {
+  color: var(--ink);
+  font-weight: 400;
+  letter-spacing: 0.025em;
+}
+
+.app-shell .page-header p {
+  max-width: 720px;
+  line-height: 1.8;
+}
+
+.app-shell .character-row {
+  border-color: var(--line);
+}
+
+.app-shell .chat-page {
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: var(--header-height) minmax(0, 1fr);
+  background: var(--surface);
+}
+
+.app-shell .chat-page.has-rail {
+  grid-template-columns: minmax(0, 1fr) 292px;
+}
+
+.app-shell .chat-header {
+  padding-inline: 28px;
+  border-bottom-color: #e7e7dd;
+  background: var(--surface);
+}
+
+.app-shell .chat-header__identity h1 {
+  font-size: 23px;
+  font-weight: 400;
+  letter-spacing: 0.045em;
+}
+
+.app-shell .chat-header__identity div > span {
+  display: block;
+  max-width: 28ch;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell .chat-header__context {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.app-shell .chat-conversation {
+  position: relative;
+  background: #faf9f3;
+}
+
+.app-shell .message-list {
+  padding: 40px clamp(24px, 5vw, 90px) 22px;
+  overscroll-behavior-y: contain;
+  scrollbar-color: #d5d9cb transparent;
+  scrollbar-width: thin;
+  scroll-behavior: auto;
+}
+
+.app-shell .message-group {
+  max-width: min(660px, 88%);
+  margin-bottom: 30px;
+}
+
+.app-shell .message-meta {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.app-shell .message-meta strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.app-shell .message-bubble {
+  padding: 14px 19px;
+  border: 1px solid #e7e6dc;
+  border-radius: 4px 16px 16px;
+  background: #fffdf8;
+  box-shadow: 0 2px 7px rgb(62 71 48 / 2%);
+  color: #39483c;
+  font-size: 15px;
+  line-height: 1.95;
+  overflow-wrap: anywhere;
+}
+
+.app-shell .message-group--user .message-bubble {
+  border-color: #dce6d3;
+  border-radius: 16px 4px 16px 16px;
+  background: #e2ebd9;
+  color: #354d38;
+}
+
+.app-shell .conversation-opening {
+  margin: min(12vh, 100px) auto 60px;
+}
+
+.app-shell .conversation-opening h2 {
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}
+
+.app-shell .conversation-opening p {
+  margin-top: 15px;
+  font-size: 13px;
+  line-height: 2;
+}
+
+.app-shell .composer-wrap {
+  position: relative;
+  padding: 12px clamp(20px, 4vw, 66px) 24px;
+  background: #faf9f3;
+}
+
+.app-shell .composer {
+  border-color: #dbded0;
+  border-radius: 16px;
+  background: #fdfbf6;
+  box-shadow: var(--paper-shadow);
+}
+
+.app-shell .composer:focus-within {
+  border-color: #8fa084;
+  box-shadow: 0 0 0 3px rgb(112 138 98 / 8%);
+}
+
+.app-shell .composer textarea {
+  min-height: 58px;
+  max-height: min(180px, 25dvh);
+  padding: 15px 19px 4px;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.app-shell .composer textarea::placeholder {
+  color: #949b8b;
+}
+
+.app-shell .composer__footer {
+  min-height: 48px;
+  padding: 4px 9px 8px 15px;
+}
+
+.app-shell .composer__footer > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.app-shell .send-button {
+  width: 42px;
+  height: 42px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #53725c;
+  transition: background var(--transition);
+}
+
+.app-shell .send-button:not(:disabled):hover {
+  background: var(--accent-strong);
+}
+
+.app-shell .chat-latest {
+  position: absolute;
+  z-index: 2;
+  top: -42px;
+  left: 50%;
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--paper-shadow);
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.app-shell .chat-rail {
+  background: #f0f1e8;
+}
+
+.app-shell .rail-section {
+  padding: 23px 21px;
+}
+
+.app-shell .rail-heading h2,
+.app-shell .life-context__today > strong {
+  font-weight: 500;
+}
+
+.app-shell .life-context__today {
+  border-color: #dbe1d2;
+  background: #e8ede1;
+}
+
+.app-shell .relationship-archive-page,
+.app-shell .keepsake-cabinet-page,
+.app-shell .artifact-detail-page,
+.app-shell .share-composer-page {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.app-shell .archive-filters button.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.app-shell .correspondence-header,
+.app-shell .mailbox-filters {
+  background: var(--surface);
+}
+
+.app-shell .letter-list {
+  background: #f1f1e8;
+}
+
+.app-shell .letter-list-row {
+  border-bottom-color: #e2e3d8;
+}
+
+.app-shell .letter-list-row.is-selected {
+  background: #e8ecdf;
+}
+
+.app-shell .letter-list-row.is-selected::before {
+  display: none;
+}
+
+.app-shell .letter-list-row__topline strong {
+  font-weight: 500;
+}
+
+.app-shell .mailbox-detail {
+  background: #f8f7f0;
+}
+
+.app-shell
+  .letter-paper:not(.letter-paper--midnight):not(.letter-paper--clear) {
+  border-color: #deddd0;
+  box-shadow:
+    3px 4px 0 #ebe9df,
+    4px 5px 0 #dcdccf,
+    0 14px 28px rgb(66 64 44 / 7%);
+  color: #364539;
+}
+
+.app-shell .letter-paper__subject {
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+.app-shell .letter-paper__body {
+  line-height: 2.1;
+}
+
+.app-shell .envelope-panel__open {
+  background: var(--accent);
+}
+
+.app-shell .envelope-panel__open:not(:disabled):hover {
+  background: var(--accent-strong);
+}
+
+@media (max-width: 1180px) {
+  .app-nav__brand {
+    padding-inline: 0;
+  }
+
+  .app-nav__groups {
+    padding-inline: 10px;
+  }
+
+  .app-nav__item {
+    padding-inline: 0;
+  }
+
+  .app-nav__runtime {
+    margin-inline: 18px;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell .chat-page.has-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .chat-rail {
+    max-width: min(88vw, 310px);
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    min-height: calc(100dvh - 62px - env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-shell .chat-page {
+    height: calc(100dvh - 62px - env(safe-area-inset-bottom, 0px));
+    min-height: 0;
+  }
+
+  .app-shell .chat-header {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .app-shell .chat-header__identity {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .app-shell .chat-header__identity h1 {
+    overflow: hidden;
+    max-width: 10em;
+    font-size: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell .chat-header__identity div > span {
+    display: none;
+  }
+
+  .app-shell .chat-header__context {
+    gap: 4px;
+  }
+
+  .app-shell .chat-header__context > time,
+  .app-shell .chat-runtime-label {
+    display: none;
+  }
+
+  .app-shell .message-list {
+    padding: 25px 15px 18px;
+  }
+
+  .app-shell .message-group {
+    max-width: 92%;
+    margin-bottom: 24px;
+  }
+
+  .app-shell .message-bubble {
+    padding: 11px 14px;
+    font-size: 15px;
+    line-height: 1.85;
+  }
+
+  .app-shell .composer-wrap {
+    padding: 8px 11px 11px;
+  }
+
+  .app-shell .composer textarea {
+    min-height: 46px;
+    padding: 10px 14px 0;
+    font-size: 16px;
+  }
+
+  .app-shell .composer__footer {
+    min-height: 46px;
+    padding: 3px 7px 7px 12px;
+  }
+
+  .app-shell .icon-button {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+  }
+
+  .app-shell .chat-rail {
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-nav {
+    height: calc(62px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: #eff0e7;
+    backdrop-filter: none;
+  }
+
+  .mobile-nav .app-nav__item {
+    gap: 4px;
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *,
+  .app-shell *::before,
+  .app-shell *::after {
+    scroll-behavior: auto !important;
+  }
+}

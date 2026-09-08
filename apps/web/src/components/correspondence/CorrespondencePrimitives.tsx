@@ -98,8 +98,8 @@ export function LetterPaper({
     <article
       className={`letter-paper letter-paper--${paper}${readingMode ? " letter-paper--clear" : ""}`}
     >
-      <div className="letter-paper__postmark" aria-label="PersonaSim 邮戳">
-        <span>PERSONASIM</span>
+      <div className="letter-paper__postmark" aria-label="ChatPLUS 邮戳">
+        <span>ChatPLUS</span>
         <strong>{authoredDate?.replaceAll("-", ".") ?? "MAIL"}</strong>
       </div>
       {subject ? (

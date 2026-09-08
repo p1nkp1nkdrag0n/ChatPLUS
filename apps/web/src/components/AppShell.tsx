@@ -1,14 +1,14 @@
 import {
   Archive,
-  Bot,
   Braces,
   History,
   Library,
   Mail,
+  MessageCircle,
   PackageOpen,
   Plus,
   Settings,
-  Sparkles,
+  Sprout,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,11 +32,11 @@ interface NavigationItem {
 
 const PRIMARY_NAVIGATION: NavigationItem[] = [
   { to: "/characters", label: "角色", icon: Library, end: true },
-  { to: "/create", label: "创建", icon: Plus },
   { to: "/timeline", label: "共同经历", icon: History },
 ];
 
 const SECONDARY_NAVIGATION: NavigationItem[] = [
+  { to: "/create", label: "创建", icon: Plus },
   { to: "/settings", label: "设置", icon: Settings },
   { to: "/developer", label: "开发者", icon: Braces },
 ];
@@ -55,6 +55,8 @@ function NavItem({
   return (
     <NavLink
       to={to}
+      aria-label={label}
+      title={label}
       {...(end === undefined ? {} : { end })}
       aria-current={relatedRouteActive ? "page" : undefined}
       className={({ isActive }) =>
@@ -110,7 +112,11 @@ export function AppShell() {
   useAgentEvents(activeCharacterId);
   const primaryNavigation = activeCharacterId
     ? [
-        ...PRIMARY_NAVIGATION,
+        {
+          to: `/characters/${activeCharacterId}/chat`,
+          label: "对话",
+          icon: MessageCircle,
+        },
         {
           to: `/characters/${activeCharacterId}/correspondence`,
           label: "书信",
@@ -131,10 +137,13 @@ export function AppShell() {
           icon: PackageOpen,
           activePrefixes: ["/keepsakes/"],
         },
+        ...PRIMARY_NAVIGATION,
       ]
     : PRIMARY_NAVIGATION;
   const mobileNavigation = primaryNavigation
-    .filter((item) => item.to !== "/create")
+    .filter(
+      (item) => item.to !== "/timeline" && !item.to.endsWith("/keepsakes"),
+    )
     .concat(SECONDARY_NAVIGATION.filter((item) => item.to === "/settings"));
 
   return (
@@ -143,12 +152,12 @@ export function AppShell() {
         <NavLink
           className="app-nav__brand"
           to="/characters"
-          aria-label="PersonaSim 角色库"
+          aria-label="ChatPLUS 角色库"
         >
           <span className="app-nav__brand-mark" aria-hidden="true">
-            <Sparkles size={16} strokeWidth={1.8} />
+            <Sprout size={23} strokeWidth={1.4} />
           </span>
-          <span>PersonaSim</span>
+          <span>ChatPLUS</span>
         </NavLink>
 
         <nav className="app-nav__groups">
@@ -164,13 +173,16 @@ export function AppShell() {
           </div>
         </nav>
 
-        <div className="app-nav__runtime">
+        <div
+          className="app-nav__runtime"
+          title="数据保存在当前服务实例。使用外部模型时，所需上下文会发送给所配置的模型供应商。"
+        >
           <span className="status-dot" />
           <div>
-            <strong>本地运行</strong>
-            <span>数据留在这台设备</span>
+            <strong>关于数据</strong>
+            <span>保存在当前服务实例</span>
+            <NavLink to="/settings">查看模型与数据说明</NavLink>
           </div>
-          <Bot aria-hidden="true" size={18} strokeWidth={1.6} />
         </div>
       </aside>
 

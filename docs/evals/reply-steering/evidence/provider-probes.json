@@ -1,5 +1,52 @@
 {
   "description": "Supplier probes before matrix. GPT-5.6 Sol was replaced by GPT-6 Astra at user request; Claude excluded after HTTP 524. The first configured Claude alias pointed to claude-opus-5 and also failed with HTTP 524; the retained rows below are the subsequent explicit Opus 4.6 check and the latest short probes.",
+  "probeAccounting": {
+    "totalPhysicalRequests": 11,
+    "successfulResponses": 9,
+    "failedResponses": 2,
+    "knownInputTokenSubtotal": 1594,
+    "knownOutputTokenSubtotal": 175,
+    "usageComplete": false,
+    "note": "The first four successful profiles were unintentionally probed again while checking the explicit Claude model because the temporary script ignored the profile filter. Earlier rows below are recovered from session tool output; their original full probe artifact was overwritten. Claude usage is unknown, so known subtotals are not complete run usage."
+  },
+  "earlierSuccessfulProbes": [
+    {
+      "profile": "deepseek",
+      "requestedModel": "deepseek-v4-flash",
+      "physicalRequests": 1,
+      "elapsedMs": 1367,
+      "httpStatus": 200,
+      "inputTokens": 233,
+      "outputTokens": 13
+    },
+    {
+      "profile": "bigmodel",
+      "requestedModel": "glm-5.3-flash",
+      "physicalRequests": 1,
+      "elapsedMs": 2816,
+      "httpStatus": 200,
+      "inputTokens": 173,
+      "outputTokens": 8
+    },
+    {
+      "profile": "qwen",
+      "requestedModel": "qwen3.8-flash",
+      "physicalRequests": 1,
+      "elapsedMs": 2010,
+      "httpStatus": 200,
+      "inputTokens": 127,
+      "outputTokens": 43
+    },
+    {
+      "profile": "gpt56-sol",
+      "requestedModel": "gpt-5.6-sol",
+      "physicalRequests": 1,
+      "elapsedMs": 3544,
+      "httpStatus": 200,
+      "inputTokens": 176,
+      "outputTokens": 13
+    }
+  ],
   "earlyAliasFailure": {
     "physicalRequests": 1,
     "elapsedMs": 126704,

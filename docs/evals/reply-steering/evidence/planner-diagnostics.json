@@ -1,0 +1,160 @@
+[
+  {
+    "scenarioId": "listen-boundary-held",
+    "userText": "嗯，而且后面还有一段没讲。我不是要你现在帮我解决，我只是想把前因后果都说出来。",
+    "history": [
+      {
+        "role": "user",
+        "content": "我跟姐姐吵了一架。我想先把事情说完，你先别给建议，也别替任何一边下判断。"
+      },
+      {
+        "role": "assistant",
+        "content": "好，你先说发生了什么。"
+      },
+      {
+        "role": "user",
+        "content": "她说我每次回家都只顾工作，可我这次已经推了一个会，想多陪她半天。"
+      },
+      {
+        "role": "assistant",
+        "content": "你已经为这次见面挪了时间，听到那句话还是很委屈。"
+      }
+    ],
+    "replyStrategy": {
+      "conversationIntent": "help",
+      "supportStyle": "offer_requested_help",
+      "adviceRequested": true,
+      "helpTiming": "now",
+      "advicePolicy": "requested",
+      "expression": {
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "recentExpression": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "applicablePractices": [],
+        "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+        "topicGuidance": "Follow the current conversational focus, using available recent dialogue to understand what the latest message responds to. A shift can be a new subject, a social response, or a natural closing; no explicit 'change topic' is required. When the current content stands on its own after such a shift, keep earlier distress in the background instead of reopening it to show care, prove memory, or fill space. An unresolved concern is not an obligation to keep discussing it. Continue or recall it when the user follows up, refers back, asks to remember, or the current answer needs that context. A relevant, agreed follow-up may still fit; do not let it override a new focus or explicit closure. Read the whole message: thanks can introduce a follow-up, and an ambiguous short acknowledgment alone does not prove either closure or recovery. A pleasant new experience or enjoyment of chatting does not establish that earlier distress has improved; acknowledge improvement when the user actually reports it. Let a complete response end naturally. This is a turn-local expression judgment, not a lasting preference or a change to the user's emotional state. Examples below illustrate response focus only, never facts about this user or lines to copy.",
+        "topicExamples": [
+          {
+            "priorContext": "The user shared unease about starting school and received support.",
+            "shifted": {
+              "user": "好呀，很高兴与你聊天。",
+              "responseFocus": "Reciprocate the warmth without reopening school distress."
+            },
+            "continued": {
+              "user": "谢谢，可是我还是不太敢跟同学说话。",
+              "responseFocus": "Receive the continuing concern; thanks did not end this topic."
+            }
+          },
+          {
+            "priorContext": "The user previously discussed feeling out of place at school.",
+            "shifted": {
+              "user": "今天食堂有道菜挺好吃。",
+              "responseFocus": "Talk about the food without turning it into evidence of adjustment or recovery."
+            },
+            "continued": {
+              "user": "你还记得我刚才为什么不安吗？",
+              "responseFocus": "Use the available prior dialogue to answer the requested recollection."
+            }
+          }
+        ],
+        "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use available recent dialogue to receive an answer before considering another question and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+        "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+        "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+      },
+      "adviceGuidance": "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
+      "guidance": "Use the shared expression view for response style and questions. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
+      "complexity": "standard",
+      "softTargetCharacters": {
+        "minimum": 96,
+        "ideal": 148,
+        "maximum": 229
+      },
+      "preferredChunkCount": 2,
+      "deliveryPreference": "prefer_sequential",
+      "lengthGuidance": "This is an ordinary conversational turn. A natural soft target is about 96-229 characters in the character's primary language. This is guidance, not a quota: answer completely, stop when the thought is complete, and never pad, repeat, or cut off useful substance merely to hit the range.",
+      "deliveryGuidance": "This character often chats in a message-by-message rhythm (typically around 2 chunks), but may use one coherent block for a connected explanation. Use single_block for one continuous message. Use sequential when the character would naturally send several separate chat bubbles, with each chunk containing one complete short beat or sentence. Delivery is a style decision, not a way to shorten the answer.",
+      "stateGuidance": "emotionally even: keep the response steady. Focus is high, so the character can sustain the current thread coherently. Current capacity supports an ordinary conversational rhythm. Express these authoritative present-moment conditions softly and naturally, but do not claim the opposite current condition. If this turn itself plausibly changes the condition, make that transition natural and propose the causal stateDelta. Never recite metrics, force stock wording, or turn runtime state into permanent personality facts."
+    },
+    "note": "Observed pre-existing planner output, identical between both ablation arms. The response rubric follows the current user request; no new classifier keyword fix was applied during this experiment."
+  },
+  {
+    "scenarioId": "help-presentation-tonight",
+    "userText": "我今晚只剩四十分钟准备，现在有点慌。请给我一个今晚就能照着做的准备顺序，重点是别超时、让他们听懂。",
+    "history": [
+      {
+        "role": "user",
+        "content": "明早我要向不熟悉项目的同事做五分钟汇报，幻灯片已经有八页了。"
+      },
+      {
+        "role": "assistant",
+        "content": "时间很紧，还得让他们听懂项目在做什么。"
+      }
+    ],
+    "replyStrategy": {
+      "conversationIntent": "casual",
+      "supportStyle": "respond_naturally",
+      "adviceRequested": false,
+      "helpTiming": "now",
+      "advicePolicy": "optional_light",
+      "expression": {
+        "questionIntent": "natural_optional",
+        "questionIntentReason": "ordinary",
+        "recentExpression": {
+          "policyVersion": "turn_expression_v1",
+          "windowSize": 5,
+          "repeatedOpenings": [],
+          "protectedPhrases": []
+        },
+        "applicablePractices": [],
+        "practiceGuidance": "These are already verified practices in the current user/topic scope. plain_expression favors direct concrete language; natural_questions welcomes a small opening when appropriate; fewer_questions lowers question prominence. Current explicit closure, invitation, creative request and task needs take precedence. Apply preferences silently and never turn them into question quotas.",
+        "topicGuidance": "Follow the current conversational focus, using available recent dialogue to understand what the latest message responds to. A shift can be a new subject, a social response, or a natural closing; no explicit 'change topic' is required. When the current content stands on its own after such a shift, keep earlier distress in the background instead of reopening it to show care, prove memory, or fill space. An unresolved concern is not an obligation to keep discussing it. Continue or recall it when the user follows up, refers back, asks to remember, or the current answer needs that context. A relevant, agreed follow-up may still fit; do not let it override a new focus or explicit closure. Read the whole message: thanks can introduce a follow-up, and an ambiguous short acknowledgment alone does not prove either closure or recovery. A pleasant new experience or enjoyment of chatting does not establish that earlier distress has improved; acknowledge improvement when the user actually reports it. Let a complete response end naturally. This is a turn-local expression judgment, not a lasting preference or a change to the user's emotional state. Examples below illustrate response focus only, never facts about this user or lines to copy.",
+        "topicExamples": [
+          {
+            "priorContext": "The user shared unease about starting school and received support.",
+            "shifted": {
+              "user": "好呀，很高兴与你聊天。",
+              "responseFocus": "Reciprocate the warmth without reopening school distress."
+            },
+            "continued": {
+              "user": "谢谢，可是我还是不太敢跟同学说话。",
+              "responseFocus": "Receive the continuing concern; thanks did not end this topic."
+            }
+          },
+          {
+            "priorContext": "The user previously discussed feeling out of place at school.",
+            "shifted": {
+              "user": "今天食堂有道菜挺好吃。",
+              "responseFocus": "Talk about the food without turning it into evidence of adjustment or recovery."
+            },
+            "continued": {
+              "user": "你还记得我刚才为什么不安吗？",
+              "responseFocus": "Use the available prior dialogue to answer the requested recollection."
+            }
+          }
+        ],
+        "questionGuidance": "none: answer or acknowledge the present content and let this turn end; do not request more details, say 'keep talking', or move to an unrelated question to keep the turn open. Complete independent requests in the same message. For a closed vent, do not announce that you are following a listening policy. natural_optional: first respond to the content; when useful, offer one concrete, easy opening or question, without requiring a question or a final question mark. When invited to lead, offer a small starting point instead of asking what the user wants to discuss or presenting a menu. necessary_for_explicit_task: use the supplied reliable facts first and ask only for genuinely missing information; if it is already supplied, answer directly. A ban on advice does not forbid a fitting content question, but an action suggestion phrased as a question still follows advicePolicy. Current closure overrides stored preferences. Use available recent dialogue to receive an answer before considering another question and reduce pressure after short responses; do not infer a lasting preference, personality, relationship loss, or an unanswered task. Never ask again for known or skipped details; missing context does not prove the user never told you.",
+        "expressionGuidance": "Respond concretely and plainly to the user's present subject. Warmth, specific observations and light humor are welcome; do not routinely add metaphors, psychological traits or abilities, or a life lesson to ordinary sharing. Honor an explicit request for analogy, poetry or creative style and authored phrase requirements. A current style request does not establish a lasting preference. When a nonessential opening is repeated in recentExpression, lower its prominence without replacing it with another stock template. After a sufficient factual correction, briefly acknowledge and use the correct content; do not ask why it changed, retell the old mistake, invent a cause, or turn it into relationship growth unless history is explicitly requested. Speak naturally without announcing a policy or mode. Use semantic units for chunks; keep a list number with its content and do not force a question into its own bubble.",
+        "analysisGuidance": "For substantive help, distinguish what the user has established, possible explanations, and what would verify them. Multiple causes can coexist; a personal mistake, changing requirements, and fatigue need not exclude one another. A diagnostic clue is not proof that another cause is absent. Do not redefine an actual mistake as requiring irreversible harm, major consequences, or a particular feeling of guilt; compare concrete discrepancies with the agreed requirements. Separate responsibility for those discrepancies from the user's worth. Match certainty to evidence and give useful concrete next checks when requested, without a fixed disclaimer or automatic reassurance."
+      },
+      "adviceGuidance": "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",
+      "guidance": "Use the shared expression view for response style and questions. Current explicit requests override stored default practices. Give concrete help when requested now. For listen_then_help / after_user_finishes, listen first and wait until the user finishes before analysis; do not collapse the ordered request into advice now or indefinite listening. If helpTiming is unspecified, avoid imposing either conflicting style. Maintain the character's own values without reciting them or agreeing merely to please.",
+      "complexity": "standard",
+      "softTargetCharacters": {
+        "minimum": 96,
+        "ideal": 148,
+        "maximum": 229
+      },
+      "preferredChunkCount": 2,
+      "deliveryPreference": "prefer_sequential",
+      "lengthGuidance": "This is an ordinary conversational turn. A natural soft target is about 96-229 characters in the character's primary language. This is guidance, not a quota: answer completely, stop when the thought is complete, and never pad, repeat, or cut off useful substance merely to hit the range.",
+      "deliveryGuidance": "This character often chats in a message-by-message rhythm (typically around 2 chunks), but may use one coherent block for a connected explanation. Use single_block for one continuous message. Use sequential when the character would naturally send several separate chat bubbles, with each chunk containing one complete short beat or sentence. Delivery is a style decision, not a way to shorten the answer.",
+      "stateGuidance": "emotionally even: keep the response steady. Focus is high, so the character can sustain the current thread coherently. Current capacity supports an ordinary conversational rhythm. Express these authoritative present-moment conditions softly and naturally, but do not claim the opposite current condition. If this turn itself plausibly changes the condition, make that transition natural and propose the causal stateDelta. Never recite metrics, force stock wording, or turn runtime state into permanent personality facts."
+    },
+    "note": "Observed pre-existing planner output, identical between both ablation arms. The response rubric follows the current user request; no new classifier keyword fix was applied during this experiment."
+  }
+]

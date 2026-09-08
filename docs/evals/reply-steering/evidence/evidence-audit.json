@@ -1,0 +1,617 @@
+{
+  "observedAtUtc": "2026-09-08T16:40:46.868Z",
+  "chat": {
+    "count": 288,
+    "physicalRequests": 293,
+    "responded": 293,
+    "uniqueSnapshots": 36,
+    "verifiedPromptPairs": 96,
+    "nonTargetHashesIdenticalAcrossModelsModesAndRepeats": true,
+    "nonMessageRequestParametersEqualWithinProfilePairs": true,
+    "responseModelMismatches": [],
+    "firstAttemptInputSavings": [
+      {
+        "profile": "deepseek",
+        "completePairs": 36,
+        "medianInputTokensSaved": 181,
+        "minInputTokensSaved": 181,
+        "maxInputTokensSaved": 185
+      },
+      {
+        "profile": "bigmodel",
+        "completePairs": 36,
+        "medianInputTokensSaved": 174,
+        "minInputTokensSaved": 174,
+        "maxInputTokensSaved": 180
+      },
+      {
+        "profile": "qwen",
+        "completePairs": 36,
+        "medianInputTokensSaved": 180,
+        "minInputTokensSaved": 180,
+        "maxInputTokensSaved": 185
+      },
+      {
+        "profile": "gpt6-astra",
+        "completePairs": 36,
+        "medianInputTokensSaved": 171,
+        "minInputTokensSaved": 171,
+        "maxInputTokensSaved": 175
+      }
+    ],
+    "perProfile": [
+      {
+        "profile": "deepseek",
+        "count": 72,
+        "success": 72,
+        "physicalRequests": 75,
+        "retries": 3,
+        "repairs": 0,
+        "fallbacks": 0,
+        "medianElapsedMs": 35027.5,
+        "inputTokens": 429280,
+        "outputTokens": 332781,
+        "usageComplete": true,
+        "modes": [
+          {
+            "mode": "current",
+            "count": 36,
+            "medianCharacters": 165.5,
+            "medianElapsedMs": 36437.5,
+            "inputTokens": 220981,
+            "outputTokens": 172821
+          },
+          {
+            "mode": "no_length_steering",
+            "count": 36,
+            "medianCharacters": 167.5,
+            "medianElapsedMs": 26836.5,
+            "inputTokens": 208299,
+            "outputTokens": 159960
+          }
+        ]
+      },
+      {
+        "profile": "bigmodel",
+        "count": 72,
+        "success": 72,
+        "physicalRequests": 74,
+        "retries": 2,
+        "repairs": 0,
+        "fallbacks": 0,
+        "medianElapsedMs": 9777,
+        "inputTokens": 404109,
+        "outputTokens": 26481,
+        "usageComplete": true,
+        "modes": [
+          {
+            "mode": "current",
+            "count": 36,
+            "medianCharacters": 145,
+            "medianElapsedMs": 9673.5,
+            "inputTokens": 210749,
+            "outputTokens": 14983
+          },
+          {
+            "mode": "no_length_steering",
+            "count": 36,
+            "medianCharacters": 136.5,
+            "medianElapsedMs": 10050.5,
+            "inputTokens": 193360,
+            "outputTokens": 11498
+          }
+        ]
+      },
+      {
+        "profile": "qwen",
+        "count": 72,
+        "success": 72,
+        "physicalRequests": 72,
+        "retries": 0,
+        "repairs": 0,
+        "fallbacks": 0,
+        "medianElapsedMs": 21545,
+        "inputTokens": 396918,
+        "outputTokens": 114330,
+        "usageComplete": true,
+        "modes": [
+          {
+            "mode": "current",
+            "count": 36,
+            "medianCharacters": 98,
+            "medianElapsedMs": 24008,
+            "inputTokens": 201724,
+            "outputTokens": 61942
+          },
+          {
+            "mode": "no_length_steering",
+            "count": 36,
+            "medianCharacters": 116,
+            "medianElapsedMs": 18021.5,
+            "inputTokens": 195194,
+            "outputTokens": 52388
+          }
+        ]
+      },
+      {
+        "profile": "gpt6-astra",
+        "count": 72,
+        "success": 72,
+        "physicalRequests": 72,
+        "retries": 0,
+        "repairs": 0,
+        "fallbacks": 0,
+        "medianElapsedMs": 11115,
+        "inputTokens": 632996,
+        "outputTokens": 25988,
+        "usageComplete": true,
+        "modes": [
+          {
+            "mode": "current",
+            "count": 36,
+            "medianCharacters": 146.5,
+            "medianElapsedMs": 12257,
+            "inputTokens": 319596,
+            "outputTokens": 12064
+          },
+          {
+            "mode": "no_length_steering",
+            "count": 36,
+            "medianCharacters": 145.5,
+            "medianElapsedMs": 9513.5,
+            "inputTokens": 313400,
+            "outputTokens": 13924
+          }
+        ]
+      }
+    ]
+  },
+  "generationAuthorInputHashesEqualAcrossProfiles": true,
+  "generation": [
+    {
+      "id": "deepseek_lively-expressive",
+      "profile": "deepseek",
+      "personaId": "lively-expressive",
+      "inputSha256": "d4935de1ed8b781f9f491a2bd9bec305ba9c94e94143b59bfd1291e1830dbd7c",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 7089,
+      "outputTokens": 13516,
+      "usageComplete": true,
+      "elapsedMs": 105096,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "deepseek_reserved-direct",
+      "profile": "deepseek",
+      "personaId": "reserved-direct",
+      "inputSha256": "5dd3aedbaeb7afcb3c1fc756e0f4b85f18c6e372cf90626e512a28de9af99de9",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 7080,
+      "outputTokens": 14256,
+      "usageComplete": true,
+      "elapsedMs": 112461,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "deepseek_warm-observant",
+      "profile": "deepseek",
+      "personaId": "warm-observant",
+      "inputSha256": "25cda7d5aac436694e8cc8d485665fdf7e1fcd359e17342998d23b90d37eba15",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 7062,
+      "outputTokens": 17217,
+      "usageComplete": true,
+      "elapsedMs": 135971,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "bigmodel_lively-expressive",
+      "profile": "bigmodel",
+      "personaId": "lively-expressive",
+      "inputSha256": "d4935de1ed8b781f9f491a2bd9bec305ba9c94e94143b59bfd1291e1830dbd7c",
+      "success": true,
+      "physicalRequests": 2,
+      "retries": 1,
+      "inputTokens": 13020,
+      "outputTokens": 5850,
+      "usageComplete": true,
+      "elapsedMs": 128413,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "bigmodel_reserved-direct",
+      "profile": "bigmodel",
+      "personaId": "reserved-direct",
+      "inputSha256": "5dd3aedbaeb7afcb3c1fc756e0f4b85f18c6e372cf90626e512a28de9af99de9",
+      "success": true,
+      "physicalRequests": 2,
+      "retries": 1,
+      "inputTokens": 12988,
+      "outputTokens": 5528,
+      "usageComplete": true,
+      "elapsedMs": 107232,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "bigmodel_warm-observant",
+      "profile": "bigmodel",
+      "personaId": "warm-observant",
+      "inputSha256": "25cda7d5aac436694e8cc8d485665fdf7e1fcd359e17342998d23b90d37eba15",
+      "success": true,
+      "physicalRequests": 2,
+      "retries": 1,
+      "inputTokens": 12946,
+      "outputTokens": 5241,
+      "usageComplete": true,
+      "elapsedMs": 114087,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "qwen_lively-expressive",
+      "profile": "qwen",
+      "personaId": "lively-expressive",
+      "inputSha256": "d4935de1ed8b781f9f491a2bd9bec305ba9c94e94143b59bfd1291e1830dbd7c",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 6754,
+      "outputTokens": 8519,
+      "usageComplete": true,
+      "elapsedMs": 110049,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "qwen_reserved-direct",
+      "profile": "qwen",
+      "personaId": "reserved-direct",
+      "inputSha256": "5dd3aedbaeb7afcb3c1fc756e0f4b85f18c6e372cf90626e512a28de9af99de9",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 6739,
+      "outputTokens": 5626,
+      "usageComplete": true,
+      "elapsedMs": 71012,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "qwen_warm-observant",
+      "profile": "qwen",
+      "personaId": "warm-observant",
+      "inputSha256": "25cda7d5aac436694e8cc8d485665fdf7e1fcd359e17342998d23b90d37eba15",
+      "success": false,
+      "physicalRequests": 2,
+      "retries": 1,
+      "inputTokens": 13574,
+      "outputTokens": 9049,
+      "usageComplete": true,
+      "elapsedMs": 108310,
+      "authorPreservation": null
+    },
+    {
+      "id": "gpt6-astra_lively-expressive",
+      "profile": "gpt6-astra",
+      "personaId": "lively-expressive",
+      "inputSha256": "d4935de1ed8b781f9f491a2bd9bec305ba9c94e94143b59bfd1291e1830dbd7c",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 6799,
+      "outputTokens": 2587,
+      "usageComplete": true,
+      "elapsedMs": 98574,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "gpt6-astra_reserved-direct",
+      "profile": "gpt6-astra",
+      "personaId": "reserved-direct",
+      "inputSha256": "5dd3aedbaeb7afcb3c1fc756e0f4b85f18c6e372cf90626e512a28de9af99de9",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 6779,
+      "outputTokens": 2418,
+      "usageComplete": true,
+      "elapsedMs": 93036,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    },
+    {
+      "id": "gpt6-astra_warm-observant",
+      "profile": "gpt6-astra",
+      "personaId": "warm-observant",
+      "inputSha256": "25cda7d5aac436694e8cc8d485665fdf7e1fcd359e17342998d23b90d37eba15",
+      "success": true,
+      "physicalRequests": 1,
+      "retries": 0,
+      "inputTokens": 6762,
+      "outputTokens": 1976,
+      "usageComplete": true,
+      "elapsedMs": 77888,
+      "authorPreservation": {
+        "nameMatches": true,
+        "workMatches": true,
+        "timezoneMatches": true,
+        "dialogueAuthorGuidanceMatches": true,
+        "explicitTraitNamesPresent": true,
+        "sourceBriefPreserved": true,
+        "hardBoundaryCount": 0,
+        "hardDialogueRuleCount": 0
+      }
+    }
+  ],
+  "generationIssues": [
+    {
+      "id": "bigmodel_lively-expressive",
+      "attempt": 5,
+      "status": 200,
+      "providerErrorCode": "INVALID_STRUCTURED_OUTPUT",
+      "issues": [
+        {
+          "path": [
+            "draft",
+            "persona",
+            "preferences",
+            0,
+            "subject"
+          ],
+          "code": "invalid_type",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": [
+            "draft",
+            "persona",
+            "preferences",
+            0
+          ],
+          "code": "unrecognized_keys",
+          "message": "Unrecognized key: \"name\""
+        },
+        {
+          "path": [
+            "draft",
+            "lockedPaths",
+            4
+          ],
+          "code": "invalid_format",
+          "message": "Invalid string: must match pattern /^[A-Za-z_][A-Za-z0-9_]*(?:\\.(?:[A-Za-z_][A-Za-z0-9_]*|\\d+))*$/"
+        }
+      ]
+    },
+    {
+      "id": "bigmodel_reserved-direct",
+      "attempt": 3,
+      "status": 200,
+      "providerErrorCode": "INVALID_STRUCTURED_OUTPUT",
+      "parseError": "content was not directly parseable JSON; provider failure independently recorded by actual metric"
+    },
+    {
+      "id": "bigmodel_warm-observant",
+      "attempt": 1,
+      "status": 200,
+      "providerErrorCode": "INVALID_STRUCTURED_OUTPUT",
+      "issues": [
+        {
+          "path": [
+            "draft",
+            "persona",
+            "preferences",
+            0,
+            "subject"
+          ],
+          "code": "invalid_type",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": [
+            "draft",
+            "persona",
+            "preferences",
+            0
+          ],
+          "code": "unrecognized_keys",
+          "message": "Unrecognized key: \"name\""
+        },
+        {
+          "path": [
+            "draft",
+            "persona",
+            "preferences",
+            1,
+            "subject"
+          ],
+          "code": "invalid_type",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": [
+            "draft",
+            "persona",
+            "preferences",
+            1
+          ],
+          "code": "unrecognized_keys",
+          "message": "Unrecognized key: \"name\""
+        }
+      ]
+    },
+    {
+      "id": "qwen_warm-observant",
+      "attempt": 1,
+      "status": 200,
+      "providerErrorCode": "INVALID_STRUCTURED_OUTPUT",
+      "issues": [
+        {
+          "path": [
+            "draft",
+            "persona",
+            "goals",
+            0,
+            "milestones"
+          ],
+          "code": "too_small",
+          "message": "Too small: expected array to have >=2 items"
+        },
+        {
+          "path": [
+            "draft",
+            "persona",
+            "goals",
+            0,
+            "milestones",
+            0,
+            "afterDays"
+          ],
+          "code": "custom",
+          "message": "The first goal milestone must start at day 0"
+        },
+        {
+          "path": [
+            "reasonSummary"
+          ],
+          "code": "too_big",
+          "message": "Too big: expected string to have <=240 characters"
+        }
+      ]
+    },
+    {
+      "id": "qwen_warm-observant",
+      "attempt": 2,
+      "status": 200,
+      "providerErrorCode": "INVALID_STRUCTURED_OUTPUT",
+      "issues": [
+        {
+          "path": [
+            "draft",
+            "persona",
+            "contradictions",
+            0
+          ],
+          "code": "unrecognized_keys",
+          "message": "Unrecognized key: \"sourceRefs\""
+        },
+        {
+          "path": [
+            "draft",
+            "persona",
+            "goals",
+            0,
+            "milestones"
+          ],
+          "code": "too_small",
+          "message": "Too small: expected array to have >=2 items"
+        },
+        {
+          "path": [
+            "draft",
+            "persona",
+            "goals",
+            0,
+            "milestones",
+            0,
+            "afterDays"
+          ],
+          "code": "custom",
+          "message": "The first goal milestone must start at day 0"
+        }
+      ]
+    }
+  ]
+}

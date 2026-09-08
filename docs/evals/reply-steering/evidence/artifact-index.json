@@ -1,0 +1,69 @@
+{
+  "chatRuntimeRevision": "23b90e1985a789d321435bff4e99a6a0ce32f49c",
+  "generationSourceRevision": "d4041f4",
+  "files": [
+    {
+      "file": "character-generation-bigmodel-manifest.json",
+      "sha256": "95ba346cab96f7582e7afcd05645c6c2ce2aea8bfa28cebbe644ed623c667b05"
+    },
+    {
+      "file": "character-generation-deepseek-manifest.json",
+      "sha256": "45ee491fb56a15af9ebb417fe249b099eb55b723e4e8e66fa322a9d7d30bd429"
+    },
+    {
+      "file": "character-generation-gpt6-astra-manifest.json",
+      "sha256": "a2f2449203d67cb1530ca0b1709a290b7dcaa5d268b8aa0bff9f0d74fc85e94e"
+    },
+    {
+      "file": "character-generation-qwen-manifest.json",
+      "sha256": "4834497efc72c434530ee962b581103ac8de0d1721bb51120844ed8dc59ddcef"
+    },
+    {
+      "file": "character-generation-results.json",
+      "sha256": "c689d37df6ad4d4ecf0e038f53625d5e6dc35a48754f1e2be0610f4815443216"
+    },
+    {
+      "file": "character-generation-reviews.json",
+      "sha256": "80cdbd03f57a13b12a4ae4d4cb45967665c3b99fef36c34a02c8aa9794c0bf87"
+    },
+    {
+      "file": "character-generation-rubric.md",
+      "sha256": "12319e6884bf2b4e90550752c542af58de8215398d1097c035df2ffd6b294aec"
+    },
+    {
+      "file": "chat-manifest.json",
+      "sha256": "209ff4157442dec967bc01150b117d2777e55409e52ee5541078850907d412fc"
+    },
+    {
+      "file": "chat-results.json",
+      "sha256": "0197c2d2df78f942260f9b3c3cc7391a74c9f7cc577099d661ea21e7ae624d17"
+    },
+    {
+      "file": "chat-semantic-reviews.json",
+      "sha256": "f633ae5ca81468a0e10f5551a40c6ca63635358366a28428ec4e2183e1e17992"
+    },
+    {
+      "file": "evidence-audit.json",
+      "sha256": "4e77b4d5e845b2e3603a201b25249a86b15f692a844458295d7163775384e9ee"
+    },
+    {
+      "file": "planner-diagnostics.json",
+      "sha256": "944f18f80f0b45c2dfe4b5642b10195f993c8643f57c0addb4ba03aa7843abc2"
+    },
+    {
+      "file": "provider-probes.json",
+      "sha256": "c166a0436fcdd81b011d5c49c5d0b3b48bf6a615119151eefeac0407bbff3673"
+    },
+    {
+      "file": "validation.json",
+      "sha256": "0b0347df1012e435d22460fe325e18ae0b2eeb138276c1bcdcf18c3f26c129d7"
+    }
+  ],
+  "rawEvidenceDirectories": {
+    "chat": "tmp/reply-steering-real-equal-20260908",
+    "generation": "tmp/character-generation-real-20260908",
+    "semanticReview": "tmp/reply-steering-semantic-review"
+  },
+  "note": "Raw prompts, ledgers and isolated SQLite files remain in ignored tmp directories. All data is synthetic. JSON evidence preserves failed candidates; review mappings were joined after reviews were written.",
+  "hashSerialization": "UTF-8 text with CRLF normalized to LF; independent of Git checkout newline policy"
+}

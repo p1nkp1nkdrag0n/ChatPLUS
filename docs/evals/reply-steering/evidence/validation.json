@@ -1,0 +1,45 @@
+{
+  "validatedAtUtc": "2026-09-08T16:45:07.205Z",
+  "commands": [
+    {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "filesPassed": 263,
+      "testsPassed": 3136,
+      "durationSeconds": 78.74,
+      "log": "tmp/reply-steering-final-tests.log"
+    },
+    {
+      "command": "pnpm lint",
+      "exitCode": 0,
+      "log": "tmp/reply-steering-final-lint.log"
+    },
+    {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "log": "tmp/reply-steering-final-typecheck.log"
+    }
+  ],
+  "fixtures": {
+    "chat": {
+      "candidates": 288,
+      "failed": 0,
+      "directory": "tmp/reply-steering-fixture-equal-20260908"
+    },
+    "characterGeneration": {
+      "candidates": 12,
+      "failed": 0,
+      "directory": "tmp/character-generation-fixture-20260908-2347"
+    }
+  },
+  "evidenceAudit": {
+    "chatCandidates": 288,
+    "generationCandidates": 12,
+    "pairedReviews": 144,
+    "crossModelReviews": 18,
+    "crossPersonaReviews": 24,
+    "generationReviews": 12,
+    "mode": "limited-blind-anonymous-review",
+    "note": "Provider dispatch timing could reveal later model identities. Complete anonymized grounding was added during batch review and existing factual judgments were rechecked before review records were frozen."
+  }
+}

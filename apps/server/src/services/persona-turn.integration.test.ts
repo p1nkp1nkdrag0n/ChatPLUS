@@ -3,6 +3,7 @@ import {
   type CharacterSpec,
   type PersonaRuntimeMode,
 } from "@personasim/contracts";
+import { turnExpressionPromptView } from "@personasim/features";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
@@ -206,8 +207,8 @@ describe("persona runtime through committed HTTP turns", () => {
     )?.[0];
     for (const prompt of [chat?.prompt, repair?.prompt]) {
       expect(prompt).toContain('"questionIntent":"natural_optional"');
-      expect(prompt).toContain("咖啡店");
-      expect(prompt).toContain("recentDialogue");
+      expect(prompt).toContain("咖啡店。");
+      expect(prompt).toContain("咖啡店啊，灯光舒服确实适合坐一会儿。");
     }
     expect(count("persona_adaptations")).toBe(0);
     const calls = generate.mock.calls.length;
@@ -215,6 +216,77 @@ describe("persona runtime through committed HTTP turns", () => {
     expect(replay.statusCode, replay.body).toBe(200);
     expect(generate.mock.calls).toHaveLength(calls);
     expect(snapshot().relationshipPractices).toEqual([]);
+  });
+
+  it("routes natural topic-shift guidance and original dialogue to initial generation and repair", async () => {
+    await setup("enforced", "off");
+    const sessionId = await newSession();
+    const previousUser =
+      "我这两天刚刚研究生开学，陌生的环境和人令我很不安，很孤独";
+    const previousReply = "刚开学那种不安，我懂。要是难受，随时来找我说说话。";
+    const currentUser = "好呀很高兴与你聊天";
+    const originalGenerate = app.personasim.llm.generateObject.bind(
+      app.personasim.llm,
+    );
+    let breakReply = false;
+    const generate = vi
+      .spyOn(app.personasim.llm, "generateObject")
+      .mockImplementation((input) => {
+        if (input.purpose === "chat_turn" && breakReply)
+          return Promise.resolve({ invalid: true } as never);
+        if (input.purpose === "chat_turn" && input.fixture !== undefined) {
+          const fixture = structuredClone(input.fixture) as {
+            replyDecision?: { text: string; chunks?: string[] };
+          };
+          if (fixture.replyDecision) {
+            fixture.replyDecision.text = previousReply;
+            fixture.replyDecision.chunks = [previousReply];
+          }
+          return Promise.resolve(fixture as never);
+        }
+        return originalGenerate(input);
+      });
+    const first = await send(sessionId, previousUser, "natural-topic-shift-1");
+    expect(first.statusCode, first.body).toBe(201);
+    expect(first.json<ChatTurnResult>().assistantMessage.content).toBe(
+      previousReply,
+    );
+
+    const decisions = app.personasim.kernel.registry.resolve(
+      TURN_DECISION_SERVICE_TOKEN,
+    );
+    const decide = vi.spyOn(decisions, "decide");
+    generate.mockClear();
+    breakReply = true;
+    const response = await send(
+      sessionId,
+      currentUser,
+      "natural-topic-shift-2",
+    );
+    expect(response.statusCode, response.body).toBe(201);
+    const plan = decide.mock.calls[0]?.[0].conversationPlan;
+    expect(plan).toBeDefined();
+    const { topicGuidance } = turnExpressionPromptView(plan!);
+    expect(topicGuidance).toEqual(expect.any(String));
+    expect(topicGuidance.length).toBeGreaterThan(0);
+    const chat = generate.mock.calls.find(
+      ([input]) => input.purpose === "chat_turn",
+    )?.[0];
+    const repairs = generate.mock.calls.filter(
+      ([input]) => input.purpose === "repair_chat_turn",
+    );
+    expect(chat).toBeDefined();
+    expect(repairs).toHaveLength(1);
+
+    // Fixture output proves prompt delivery, not a real model's topic choice.
+    for (const prompt of [chat!.prompt, repairs[0]![0].prompt]) {
+      expect(prompt).toContain(
+        `"topicGuidance":${JSON.stringify(topicGuidance)}`,
+      );
+      expect(prompt).toContain(previousUser);
+      expect(prompt).toContain(previousReply);
+      expect(prompt).toContain(currentUser);
+    }
   });
 
   it("preserves active and ordered requests in generated and repaired HTTP prompts", async () => {

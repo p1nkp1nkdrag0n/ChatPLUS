@@ -1,0 +1,37 @@
+.scene--forest .layer-forest,
+.scene--forest .river-artwork-frame {
+  position: absolute;
+  inset: -3% 0;
+}
+.river-artwork-frame {
+  pointer-events: none;
+}
+.river-geometry {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.river-artwork-frame .layer-river,
+.river-artwork-frame .river-hit-region,
+.river-artwork-frame .layer-bank {
+  inset: 0;
+}
+.river-artwork-frame .layer-river {
+  z-index: 0;
+  opacity: 0.78;
+}
+.river-artwork-frame .river-hit-region {
+  z-index: 1;
+  pointer-events: auto;
+}
+.river-artwork-frame .layer-bank {
+  z-index: 2;
+  right: -26%;
+}
+@media (max-width: 700px) {
+  .scene--forest .layer-forest,
+  .scene--forest .river-artwork-frame {
+    inset: 0 -35% 0 -65%;
+  }
+}

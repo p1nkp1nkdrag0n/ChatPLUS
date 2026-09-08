@@ -1,0 +1,4144 @@
+{
+  "measuredAtUtc": "2026-09-08T08:20:14.587Z",
+  "url": "http://127.0.0.1:43179/about",
+  "browser": "151.0.7922.34",
+  "git": {
+    "head": "bf909bcdbf448c238c47343025c010bb2d2935da",
+    "branch": "codex/early-summer-frontend",
+    "trackedChanges": [
+      ".gitattributes",
+      ".prettierignore",
+      "apps/web/src/marketing/MarketingPage.tsx",
+      "apps/web/src/marketing/Scene.tsx",
+      "apps/web/src/marketing/marketing.css",
+      "apps/web/src/marketing/river.css",
+      "docs/design/early-summer/EXECUTION.md",
+      "docs/design/early-summer/evidence/m4-visual-review.md",
+      "eslint.config.js",
+      "tests/e2e/character-v2-flow.spec.ts",
+      "tests/e2e/correspondence-flow.spec.ts",
+      "tests/e2e/persona-flow.spec.ts"
+    ]
+  },
+  "environment": "Headless Chromium on the current Windows host; fixture Vite development server, not a production Lighthouse run or a physical phone.",
+  "sampleMs": 10000,
+  "limitations": [
+    "rAF intervals measure callback cadence, not GPU frame presentation or field FPS.",
+    "LCP and CLS are buffered lab observations for this navigation, not field percentiles.",
+    "The click-to-DOM and next-rAF timings below are not INP.",
+    "Decoded RGBA bytes = naturalWidth * naturalHeight * 4 is an estimate, not measured GPU texture memory.",
+    "The 720 CSS px case represents desktop 200% reflow at 1440 device pixels; browser zoom and pinch zoom are not simulated.",
+    "Progress endpoints outside scroll bounds are recorded as clamped, never presented as reached."
+  ],
+  "viewports": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "firstViewport": {
+        "lcp": {
+          "startTime": 176,
+          "renderTime": 176,
+          "loadTime": 0,
+          "size": 2760,
+          "url": "",
+          "element": "SPAN"
+        },
+        "cls": 0,
+        "clsTotal": 0,
+        "clsWindow": null,
+        "supported": ["largest-contentful-paint", "layout-shift"]
+      },
+      "firstScreen": {
+        "observedBeforeAnyScriptedScrollOrInteraction": true,
+        "lcp": {
+          "startTime": 572,
+          "renderTime": 572,
+          "loadTime": 471.59999999403954,
+          "size": 936000,
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow.webp",
+          "element": "IMG"
+        },
+        "cls": 0,
+        "artRequestCount": 7,
+        "artEncodedBytes": 1317070,
+        "artTransferBytes": 1319170,
+        "artUrls": [
+          "http://127.0.0.1:43179/art/early-summer/s01/sky.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/cloud.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/branch.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/mountain.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/meadow.webp",
+          "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "http://127.0.0.1:43179/art/early-summer/ui/paper.webp"
+        ],
+        "activeImageCount": 7,
+        "estimatedActiveRGBABytes": 30932992,
+        "artBudgetBytes": 1887436,
+        "artBudgetStatus": "pass",
+        "activeDecodeBudgetBytes": 100663296,
+        "estimatedActiveDecodeBudgetStatus": "pass"
+      },
+      "lcp": {
+        "startTime": 572,
+        "renderTime": 572,
+        "loadTime": 471.59999999403954,
+        "size": 936000,
+        "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow.webp",
+        "element": "IMG"
+      },
+      "cls": 0,
+      "clsTotal": 0,
+      "clsWindow": null,
+      "supported": ["largest-contentful-paint", "layout-shift"],
+      "interaction": {
+        "eventToDOMMs": 10.299999982118607,
+        "eventToNextRAFMs": 12.299999982118607,
+        "description": "Synthetic click event capture to DOM change and next rAF; not INP."
+      },
+      "dpr": 1,
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+      "resources": [
+        {
+          "url": "http://127.0.0.1:43179/@vite/client",
+          "initiatorType": "script",
+          "durationMs": 8,
+          "transferBytes": 178499,
+          "encodedBytes": 178199,
+          "decodedBytes": 178199
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/main.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 8.699999988079071,
+          "transferBytes": 4687,
+          "encodedBytes": 4387,
+          "decodedBytes": 4387
+        },
+        {
+          "url": "http://127.0.0.1:43179/@react-refresh",
+          "initiatorType": "script",
+          "durationMs": 11.5,
+          "transferBytes": 112194,
+          "encodedBytes": 111894,
+          "decodedBytes": 111894
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=9016b3f3",
+          "initiatorType": "script",
+          "durationMs": 4.5,
+          "transferBytes": 12934,
+          "encodedBytes": 12634,
+          "decodedBytes": 12634
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react.js?v=9016b3f3",
+          "initiatorType": "script",
+          "durationMs": 4.199999988079071,
+          "transferBytes": 1324,
+          "encodedBytes": 1024,
+          "decodedBytes": 1024
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react-dom_client.js?v=38b0cff0",
+          "initiatorType": "script",
+          "durationMs": 13.099999994039536,
+          "transferBytes": 1006247,
+          "encodedBytes": 1005947,
+          "decodedBytes": 1005947
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/@tanstack_react-query.js?v=baa16cc4",
+          "initiatorType": "script",
+          "durationMs": 9.300000011920929,
+          "transferBytes": 118043,
+          "encodedBytes": 117743,
+          "decodedBytes": 117743
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/app/App.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 12.400000005960464,
+          "transferBytes": 35599,
+          "encodedBytes": 35299,
+          "decodedBytes": 35299
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react-router-dom.js?v=8eb61fc4",
+          "initiatorType": "script",
+          "durationMs": 14.400000005960464,
+          "transferBytes": 469651,
+          "encodedBytes": 469351,
+          "decodedBytes": 469351
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/app/queryClient.ts",
+          "initiatorType": "script",
+          "durationMs": 12.200000017881393,
+          "transferBytes": 1962,
+          "encodedBytes": 1662,
+          "decodedBytes": 1662
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/tokens.css",
+          "initiatorType": "script",
+          "durationMs": 12.400000005960464,
+          "transferBytes": 1834,
+          "encodedBytes": 1534,
+          "decodedBytes": 1534
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/global.css",
+          "initiatorType": "script",
+          "durationMs": 13.600000023841858,
+          "transferBytes": 6371,
+          "encodedBytes": 6071,
+          "decodedBytes": 6071
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/shell.css",
+          "initiatorType": "script",
+          "durationMs": 14.5,
+          "transferBytes": 3007,
+          "encodedBytes": 2707,
+          "decodedBytes": 2707
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/forms.css",
+          "initiatorType": "script",
+          "durationMs": 15.5,
+          "transferBytes": 15000,
+          "encodedBytes": 14700,
+          "decodedBytes": 14700
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/chat.css",
+          "initiatorType": "script",
+          "durationMs": 15.799999982118607,
+          "transferBytes": 11057,
+          "encodedBytes": 10757,
+          "decodedBytes": 10757
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/editor.css",
+          "initiatorType": "script",
+          "durationMs": 15.899999976158142,
+          "transferBytes": 16727,
+          "encodedBytes": 16427,
+          "decodedBytes": 16427
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/correspondence.css",
+          "initiatorType": "script",
+          "durationMs": 16.099999994039536,
+          "transferBytes": 33951,
+          "encodedBytes": 33651,
+          "decodedBytes": 33651
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/archive.css",
+          "initiatorType": "script",
+          "durationMs": 16.299999982118607,
+          "transferBytes": 28105,
+          "encodedBytes": 27805,
+          "decodedBytes": 27805
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/responsive.css",
+          "initiatorType": "script",
+          "durationMs": 16.599999994039536,
+          "transferBytes": 9020,
+          "encodedBytes": 8720,
+          "decodedBytes": 8720
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/early-summer.css?t=1788850215944",
+          "initiatorType": "script",
+          "durationMs": 17.099999994039536,
+          "transferBytes": 11601,
+          "encodedBytes": 11301,
+          "decodedBytes": 11301
+        },
+        {
+          "url": "http://127.0.0.1:43179/@fs/E:/2026/ChatPLUS/node_modules/.pnpm/vite@7.1.3_@types+node@24.13.3_tsx@4.23.12/node_modules/vite/dist/client/env.mjs",
+          "initiatorType": "script",
+          "durationMs": 16.80000001192093,
+          "transferBytes": 3778,
+          "encodedBytes": 3478,
+          "decodedBytes": 3478
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-RJF7NNNC.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 12.800000011920929,
+          "transferBytes": 46091,
+          "encodedBytes": 45791,
+          "decodedBytes": 45791
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-G3PMV62Z.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 12.700000017881393,
+          "transferBytes": 8268,
+          "encodedBytes": 7968,
+          "decodedBytes": 7968
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-BVTFPZZF.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 1.5,
+          "transferBytes": 13282,
+          "encodedBytes": 12982,
+          "decodedBytes": 12982
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/components/Feedback.tsx",
+          "initiatorType": "script",
+          "durationMs": 1.300000011920929,
+          "transferBytes": 10353,
+          "encodedBytes": 10053,
+          "decodedBytes": 10053
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/experience/ApplicationEntryTracker.tsx",
+          "initiatorType": "script",
+          "durationMs": 1.2999999821186066,
+          "transferBytes": 4013,
+          "encodedBytes": 3713,
+          "decodedBytes": 3713
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/hooks/useMotionPreference.ts",
+          "initiatorType": "script",
+          "durationMs": 1.4000000059604645,
+          "transferBytes": 6800,
+          "encodedBytes": 6500,
+          "decodedBytes": 6500
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-XONYTKUR.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 1.5999999940395355,
+          "transferBytes": 17029,
+          "encodedBytes": 16729,
+          "decodedBytes": 16729
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/lucide-react.js?v=dcdf92d7",
+          "initiatorType": "script",
+          "durationMs": 5.0999999940395355,
+          "transferBytes": 1088805,
+          "encodedBytes": 1088505,
+          "decodedBytes": 1088505
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/api/types.ts",
+          "initiatorType": "script",
+          "durationMs": 3.5,
+          "transferBytes": 14245,
+          "encodedBytes": 13945,
+          "decodedBytes": 13945
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/experience/entryPreferences.ts",
+          "initiatorType": "script",
+          "durationMs": 3.7000000178813934,
+          "transferBytes": 8798,
+          "encodedBytes": 8498,
+          "decodedBytes": 8498
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/MarketingPage.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 2.5,
+          "transferBytes": 62578,
+          "encodedBytes": 62278,
+          "decodedBytes": 62278
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/content.ts",
+          "initiatorType": "script",
+          "durationMs": 2.0999999940395355,
+          "transferBytes": 2035,
+          "encodedBytes": 1735,
+          "decodedBytes": 1735
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/RiverSurface.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 2.5,
+          "transferBytes": 8117,
+          "encodedBytes": 7817,
+          "decodedBytes": 7817
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/DemoEnvelope.tsx",
+          "initiatorType": "script",
+          "durationMs": 2.399999976158142,
+          "transferBytes": 24024,
+          "encodedBytes": 23724,
+          "decodedBytes": 23724
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/Scene.tsx?t=1788855049918",
+          "initiatorType": "script",
+          "durationMs": 2.2999999821186066,
+          "transferBytes": 24235,
+          "encodedBytes": 23935,
+          "decodedBytes": 23935
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/marketing.css?t=1788855382157",
+          "initiatorType": "script",
+          "durationMs": 2.5,
+          "transferBytes": 21005,
+          "encodedBytes": 20705,
+          "decodedBytes": 20705
+        },
+        {
+          "url": "http://127.0.0.1:43179/@fs/E:/2026/ChatPLUS/docs/design/early-summer/copy.zh-CN.json?import",
+          "initiatorType": "script",
+          "durationMs": 1.199999988079071,
+          "transferBytes": 2875,
+          "encodedBytes": 2575,
+          "decodedBytes": 2575
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/riverGeometry.ts?t=1788853933170",
+          "initiatorType": "script",
+          "durationMs": 1.800000011920929,
+          "transferBytes": 3674,
+          "encodedBytes": 3374,
+          "decodedBytes": 3374
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/WaterRipple.tsx?t=1788854182334",
+          "initiatorType": "script",
+          "durationMs": 1.5,
+          "transferBytes": 22304,
+          "encodedBytes": 22004,
+          "decodedBytes": 22004
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/river.css?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 1.800000011920929,
+          "transferBytes": 1545,
+          "encodedBytes": 1245,
+          "decodedBytes": 1245
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/sky.webp",
+          "initiatorType": "img",
+          "durationMs": 4.5,
+          "transferBytes": 20242,
+          "encodedBytes": 19942,
+          "decodedBytes": 19942
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud.webp",
+          "initiatorType": "img",
+          "durationMs": 6.699999988079071,
+          "transferBytes": 204190,
+          "encodedBytes": 203890,
+          "decodedBytes": 203890
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch.webp",
+          "initiatorType": "img",
+          "durationMs": 7.5,
+          "transferBytes": 222506,
+          "encodedBytes": 222206,
+          "decodedBytes": 222206
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/mountain.webp",
+          "initiatorType": "img",
+          "durationMs": 7.5999999940395355,
+          "transferBytes": 285154,
+          "encodedBytes": 284854,
+          "decodedBytes": 284854
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow.webp",
+          "initiatorType": "img",
+          "durationMs": 8.200000017881393,
+          "transferBytes": 499382,
+          "encodedBytes": 499082,
+          "decodedBytes": 499082
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "initiatorType": "img",
+          "durationMs": 5.700000017881393,
+          "transferBytes": 84334,
+          "encodedBytes": 84034,
+          "decodedBytes": 84034
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/paper.webp",
+          "initiatorType": "css",
+          "durationMs": 1.5,
+          "transferBytes": 3362,
+          "encodedBytes": 3062,
+          "decodedBytes": 3062
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/forest.webp",
+          "initiatorType": "img",
+          "durationMs": 9.300000011920929,
+          "transferBytes": 400740,
+          "encodedBytes": 400440,
+          "decodedBytes": 400440
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/water.webp",
+          "initiatorType": "img",
+          "durationMs": 8.799999982118607,
+          "transferBytes": 373250,
+          "encodedBytes": 372950,
+          "decodedBytes": 372950
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/bank.webp",
+          "initiatorType": "img",
+          "durationMs": 8.699999988079071,
+          "transferBytes": 324176,
+          "encodedBytes": 323876,
+          "decodedBytes": 323876
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/table.webp",
+          "initiatorType": "img",
+          "durationMs": 5.0999999940395355,
+          "transferBytes": 113296,
+          "encodedBytes": 112996,
+          "decodedBytes": 112996
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/quill.webp",
+          "initiatorType": "img",
+          "durationMs": 5.299999982118607,
+          "transferBytes": 158212,
+          "encodedBytes": 157912,
+          "decodedBytes": 157912
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/book.webp",
+          "initiatorType": "img",
+          "durationMs": 4.5999999940395355,
+          "transferBytes": 133490,
+          "encodedBytes": 133190,
+          "decodedBytes": 133190
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/sea.webp",
+          "initiatorType": "img",
+          "durationMs": 5.699999988079071,
+          "transferBytes": 335462,
+          "encodedBytes": 335162,
+          "decodedBytes": 335162
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/coast.webp",
+          "initiatorType": "img",
+          "durationMs": 5.5,
+          "transferBytes": 364936,
+          "encodedBytes": 364636,
+          "decodedBytes": 364636
+        }
+      ],
+      "frames": {
+        "count": 601,
+        "elapsedMs": 10016.3,
+        "intervalsMs": [
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.7, 16.7, 16.7, 16.6, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.8, 16.6, 16.6, 16.7,
+          16.7, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.7, 16.7,
+          16.7, 16.6, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.8, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.8, 16.6, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.6, 16.6, 16.8,
+          16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7,
+          16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7,
+          16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.6,
+          16.7, 16.6, 16.8, 16.6, 16.6, 16.8, 16.6, 16.6, 16.7, 16.7, 16.7,
+          16.6, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.7, 16.5, 16.8, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.6,
+          16.8, 16.6, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.5, 16.8, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.8, 16.5, 16.8, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.5, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7,
+          16.6, 16.8, 16.5, 16.8, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.8,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.6, 16.7, 16.7,
+          16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.5, 16.8, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.6, 16.8
+        ],
+        "meanMs": 16.666056572379368,
+        "p50Ms": 16.699999999999818,
+        "p95Ms": 16.799999999999272,
+        "p99Ms": 16.800000000000182,
+        "maximumMs": 16.80000000000109,
+        "above33Ms": 0,
+        "above50Ms": 0
+      },
+      "samples": [
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 0,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": 260,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 250,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 250,
+          "active": "true",
+          "computedProgress": 0.25,
+          "travel": "-12px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": 10,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 500,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-24px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -240,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 750,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 750,
+          "active": "true",
+          "computedProgress": 0.75,
+          "travel": "-36px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -490,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "true",
+          "computedProgress": 1,
+          "travel": "-48px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -740,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 0,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 1161.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 500,
+          "active": "true",
+          "computedProgress": 0.25,
+          "travel": "-12px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 661.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-24px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 161.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 1500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 1500,
+          "active": "true",
+          "computedProgress": 0.75,
+          "travel": "-36px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": -338.8125,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "true",
+          "computedProgress": 1,
+          "travel": "-48px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": -838.8125,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 1190,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 1500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 1500,
+          "active": "true",
+          "computedProgress": 0.25,
+          "travel": "-12px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 690,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-24px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 190,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 2500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 2500,
+          "active": "true",
+          "computedProgress": 0.75,
+          "travel": "-36px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": -310,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 3000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 3000,
+          "active": "true",
+          "computedProgress": 1,
+          "travel": "-48px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": -810,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 1305.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 2500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 2500,
+          "active": "true",
+          "computedProgress": 0.25,
+          "travel": "-12px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 805.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 3000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 3000,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-24px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 305.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 3500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": true,
+          "scrollY": 3108,
+          "active": "true",
+          "computedProgress": 0.554,
+          "travel": "-26.592000000000002px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 197.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 4000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": true,
+          "scrollY": 3108,
+          "active": "true",
+          "computedProgress": 0.554,
+          "travel": "-26.592000000000002px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 197.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 0,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": 260,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 250,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 250,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": 10,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -240,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 750,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 750,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -490,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -740,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 0,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 1161.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 661.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 161.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 1500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 1500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": -338.8125,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": -838.8125,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 1190,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 1500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 1500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 690,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 190,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 2500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 2500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": -310,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 3000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 3000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": -810,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 1305.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 2500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 2500,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 805.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 3000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 3000,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 305.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 3500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": true,
+          "scrollY": 3108,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 197.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 4000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": true,
+          "scrollY": 3108,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 197.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 0,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": 260,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 250,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 250,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": 10,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -240,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 750,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 750,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -490,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 302.390625,
+            "y": -740,
+            "width": 440.90625,
+            "height": 174.9375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 0,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 1161.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 661.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": 161.1875,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 1500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 1500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": -338.8125,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 115.1875,
+            "y": -838.8125,
+            "width": 458.265625,
+            "height": 146.84375
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 1190,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 1500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 1500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 690,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": 190,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 2500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 2500,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": -310,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 3000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 3000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 144,
+            "y": -810,
+            "width": 413.6875,
+            "height": 164.15625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 2000,
+          "maxScrollY": 3108,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 2000,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 1305.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 2500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 2500,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 805.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 3000,
+          "maxScrollY": 3108,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 3000,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 305.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 3500,
+          "maxScrollY": 3108,
+          "targetProgress": 0.75,
+          "clamped": true,
+          "scrollY": 3108,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 197.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 4000,
+          "maxScrollY": 3108,
+          "targetProgress": 1,
+          "clamped": true,
+          "scrollY": 3108,
+          "active": "false",
+          "computedProgress": 0.554,
+          "travel": "0px",
+          "documentWidth": 1440,
+          "viewportWidth": 1440,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 273.59375,
+            "y": 197.1875,
+            "width": 593.0625,
+            "height": 77.765625
+          }
+        }
+      ],
+      "images": [
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/sky.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/mountain.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1024,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 4194304
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/forest.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/water.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/bank.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1024,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 4194304
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/table.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/book.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/quill.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1024,
+          "naturalHeight": 1536,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/sky.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/sea.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/coast.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1536,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 6291456
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 1024,
+          "naturalHeight": 1024,
+          "estimatedDecodedRGBABytes": 4194304
+        }
+      ],
+      "uniqueImageCount": 14,
+      "estimatedUniqueDecodedRGBABytes": 81264640,
+      "resourceTotals": {
+        "transferBytes": 6994399,
+        "encodedBytes": 6977599,
+        "decodedBytes": 6977599
+      },
+      "imageResourceTotals": {
+        "count": 15,
+        "transferBytes": 3522732,
+        "encodedBytes": 3518232
+      },
+      "failedResponses": [],
+      "failedRequests": [],
+      "apiRequests": [],
+      "consoleProblems": []
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "firstViewport": {
+        "lcp": {
+          "startTime": 168,
+          "renderTime": 168,
+          "loadTime": 0,
+          "size": 2760,
+          "url": "",
+          "element": "SPAN"
+        },
+        "cls": 0,
+        "clsTotal": 0,
+        "clsWindow": null,
+        "supported": ["largest-contentful-paint", "layout-shift"]
+      },
+      "firstScreen": {
+        "observedBeforeAnyScriptedScrollOrInteraction": true,
+        "lcp": {
+          "startTime": 524,
+          "renderTime": 524,
+          "loadTime": 454.90000000596046,
+          "size": 151320,
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow-mobile.webp",
+          "element": "IMG"
+        },
+        "cls": 0,
+        "artRequestCount": 7,
+        "artEncodedBytes": 537156,
+        "artTransferBytes": 539256,
+        "artUrls": [
+          "http://127.0.0.1:43179/art/early-summer/s01/sky-mobile.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/cloud-mobile.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/meadow-mobile.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/branch-mobile.webp",
+          "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "http://127.0.0.1:43179/art/early-summer/s01/mountain-mobile.webp",
+          "http://127.0.0.1:43179/art/early-summer/ui/paper.webp"
+        ],
+        "activeImageCount": 7,
+        "estimatedActiveRGBABytes": 10223616,
+        "artBudgetBytes": 921600,
+        "artBudgetStatus": "pass",
+        "activeDecodeBudgetBytes": 50331648,
+        "estimatedActiveDecodeBudgetStatus": "pass"
+      },
+      "lcp": {
+        "startTime": 524,
+        "renderTime": 524,
+        "loadTime": 454.90000000596046,
+        "size": 151320,
+        "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow-mobile.webp",
+        "element": "IMG"
+      },
+      "cls": 0,
+      "clsTotal": 0,
+      "clsWindow": null,
+      "supported": ["largest-contentful-paint", "layout-shift"],
+      "interaction": {
+        "eventToDOMMs": 9.199999988079071,
+        "eventToNextRAFMs": 12.199999988079071,
+        "description": "Synthetic click event capture to DOM change and next rAF; not INP."
+      },
+      "dpr": 1,
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+      "resources": [
+        {
+          "url": "http://127.0.0.1:43179/@vite/client",
+          "initiatorType": "script",
+          "durationMs": 10.100000023841858,
+          "transferBytes": 178499,
+          "encodedBytes": 178199,
+          "decodedBytes": 178199
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/main.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 11,
+          "transferBytes": 4687,
+          "encodedBytes": 4387,
+          "decodedBytes": 4387
+        },
+        {
+          "url": "http://127.0.0.1:43179/@react-refresh",
+          "initiatorType": "script",
+          "durationMs": 14.299999982118607,
+          "transferBytes": 112194,
+          "encodedBytes": 111894,
+          "decodedBytes": 111894
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react.js?v=9016b3f3",
+          "initiatorType": "script",
+          "durationMs": 4.800000011920929,
+          "transferBytes": 1324,
+          "encodedBytes": 1024,
+          "decodedBytes": 1024
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=9016b3f3",
+          "initiatorType": "script",
+          "durationMs": 4.9000000059604645,
+          "transferBytes": 12934,
+          "encodedBytes": 12634,
+          "decodedBytes": 12634
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react-dom_client.js?v=38b0cff0",
+          "initiatorType": "script",
+          "durationMs": 11.200000017881393,
+          "transferBytes": 1006247,
+          "encodedBytes": 1005947,
+          "decodedBytes": 1005947
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/@tanstack_react-query.js?v=baa16cc4",
+          "initiatorType": "script",
+          "durationMs": 9.899999976158142,
+          "transferBytes": 118043,
+          "encodedBytes": 117743,
+          "decodedBytes": 117743
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/react-router-dom.js?v=8eb61fc4",
+          "initiatorType": "script",
+          "durationMs": 16.399999976158142,
+          "transferBytes": 469651,
+          "encodedBytes": 469351,
+          "decodedBytes": 469351
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/app/queryClient.ts",
+          "initiatorType": "script",
+          "durationMs": 12.799999982118607,
+          "transferBytes": 1962,
+          "encodedBytes": 1662,
+          "decodedBytes": 1662
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/app/App.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 12.900000005960464,
+          "transferBytes": 35599,
+          "encodedBytes": 35299,
+          "decodedBytes": 35299
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/global.css",
+          "initiatorType": "script",
+          "durationMs": 13.599999994039536,
+          "transferBytes": 6371,
+          "encodedBytes": 6071,
+          "decodedBytes": 6071
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/tokens.css",
+          "initiatorType": "script",
+          "durationMs": 13,
+          "transferBytes": 1834,
+          "encodedBytes": 1534,
+          "decodedBytes": 1534
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/shell.css",
+          "initiatorType": "script",
+          "durationMs": 13.100000023841858,
+          "transferBytes": 3007,
+          "encodedBytes": 2707,
+          "decodedBytes": 2707
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/chat.css",
+          "initiatorType": "script",
+          "durationMs": 15.800000011920929,
+          "transferBytes": 11057,
+          "encodedBytes": 10757,
+          "decodedBytes": 10757
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/forms.css",
+          "initiatorType": "script",
+          "durationMs": 15.5,
+          "transferBytes": 15000,
+          "encodedBytes": 14700,
+          "decodedBytes": 14700
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/editor.css",
+          "initiatorType": "script",
+          "durationMs": 15.800000011920929,
+          "transferBytes": 16727,
+          "encodedBytes": 16427,
+          "decodedBytes": 16427
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/archive.css",
+          "initiatorType": "script",
+          "durationMs": 15.900000005960464,
+          "transferBytes": 28105,
+          "encodedBytes": 27805,
+          "decodedBytes": 27805
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/correspondence.css",
+          "initiatorType": "script",
+          "durationMs": 15.699999988079071,
+          "transferBytes": 33951,
+          "encodedBytes": 33651,
+          "decodedBytes": 33651
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/responsive.css",
+          "initiatorType": "script",
+          "durationMs": 16.900000005960464,
+          "transferBytes": 9020,
+          "encodedBytes": 8720,
+          "decodedBytes": 8720
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/styles/early-summer.css?t=1788850215944",
+          "initiatorType": "script",
+          "durationMs": 17.099999994039536,
+          "transferBytes": 11601,
+          "encodedBytes": 11301,
+          "decodedBytes": 11301
+        },
+        {
+          "url": "http://127.0.0.1:43179/@fs/E:/2026/ChatPLUS/node_modules/.pnpm/vite@7.1.3_@types+node@24.13.3_tsx@4.23.12/node_modules/vite/dist/client/env.mjs",
+          "initiatorType": "script",
+          "durationMs": 16.69999998807907,
+          "transferBytes": 3778,
+          "encodedBytes": 3478,
+          "decodedBytes": 3478
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-RJF7NNNC.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 12.5,
+          "transferBytes": 46091,
+          "encodedBytes": 45791,
+          "decodedBytes": 45791
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-G3PMV62Z.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 12.400000005960464,
+          "transferBytes": 8268,
+          "encodedBytes": 7968,
+          "decodedBytes": 7968
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-BVTFPZZF.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 1.2999999821186066,
+          "transferBytes": 13282,
+          "encodedBytes": 12982,
+          "decodedBytes": 12982
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/components/Feedback.tsx",
+          "initiatorType": "script",
+          "durationMs": 1.0999999940395355,
+          "transferBytes": 10353,
+          "encodedBytes": 10053,
+          "decodedBytes": 10053
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/experience/ApplicationEntryTracker.tsx",
+          "initiatorType": "script",
+          "durationMs": 1.2999999821186066,
+          "transferBytes": 4013,
+          "encodedBytes": 3713,
+          "decodedBytes": 3713
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/hooks/useMotionPreference.ts",
+          "initiatorType": "script",
+          "durationMs": 1.4000000059604645,
+          "transferBytes": 6800,
+          "encodedBytes": 6500,
+          "decodedBytes": 6500
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/chunk-XONYTKUR.js?v=aaadbc90",
+          "initiatorType": "script",
+          "durationMs": 1.7000000178813934,
+          "transferBytes": 17029,
+          "encodedBytes": 16729,
+          "decodedBytes": 16729
+        },
+        {
+          "url": "http://127.0.0.1:43179/node_modules/.vite/deps/lucide-react.js?v=dcdf92d7",
+          "initiatorType": "script",
+          "durationMs": 5.4000000059604645,
+          "transferBytes": 1088805,
+          "encodedBytes": 1088505,
+          "decodedBytes": 1088505
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/api/types.ts",
+          "initiatorType": "script",
+          "durationMs": 4,
+          "transferBytes": 14245,
+          "encodedBytes": 13945,
+          "decodedBytes": 13945
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/experience/entryPreferences.ts",
+          "initiatorType": "script",
+          "durationMs": 4.0999999940395355,
+          "transferBytes": 8798,
+          "encodedBytes": 8498,
+          "decodedBytes": 8498
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/MarketingPage.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 1.399999976158142,
+          "transferBytes": 62578,
+          "encodedBytes": 62278,
+          "decodedBytes": 62278
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/content.ts",
+          "initiatorType": "script",
+          "durationMs": 1.7999999821186066,
+          "transferBytes": 2035,
+          "encodedBytes": 1735,
+          "decodedBytes": 1735
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/Scene.tsx?t=1788855049918",
+          "initiatorType": "script",
+          "durationMs": 2.0999999940395355,
+          "transferBytes": 24235,
+          "encodedBytes": 23935,
+          "decodedBytes": 23935
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/RiverSurface.tsx?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 2.7999999821186066,
+          "transferBytes": 8117,
+          "encodedBytes": 7817,
+          "decodedBytes": 7817
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/DemoEnvelope.tsx",
+          "initiatorType": "script",
+          "durationMs": 2.4000000059604645,
+          "transferBytes": 24024,
+          "encodedBytes": 23724,
+          "decodedBytes": 23724
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/marketing.css?t=1788855382157",
+          "initiatorType": "script",
+          "durationMs": 2.800000011920929,
+          "transferBytes": 21005,
+          "encodedBytes": 20705,
+          "decodedBytes": 20705
+        },
+        {
+          "url": "http://127.0.0.1:43179/@fs/E:/2026/ChatPLUS/docs/design/early-summer/copy.zh-CN.json?import",
+          "initiatorType": "script",
+          "durationMs": 1.9000000059604645,
+          "transferBytes": 2875,
+          "encodedBytes": 2575,
+          "decodedBytes": 2575
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/WaterRipple.tsx?t=1788854182334",
+          "initiatorType": "script",
+          "durationMs": 1.899999976158142,
+          "transferBytes": 22304,
+          "encodedBytes": 22004,
+          "decodedBytes": 22004
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/riverGeometry.ts?t=1788853933170",
+          "initiatorType": "script",
+          "durationMs": 1.5,
+          "transferBytes": 3674,
+          "encodedBytes": 3374,
+          "decodedBytes": 3374
+        },
+        {
+          "url": "http://127.0.0.1:43179/src/marketing/river.css?t=1788855548724",
+          "initiatorType": "script",
+          "durationMs": 1.800000011920929,
+          "transferBytes": 1545,
+          "encodedBytes": 1245,
+          "decodedBytes": 1245
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/sky-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 4.300000011920929,
+          "transferBytes": 6272,
+          "encodedBytes": 5972,
+          "decodedBytes": 5972
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 5,
+          "transferBytes": 70326,
+          "encodedBytes": 70026,
+          "decodedBytes": 70026
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 5.600000023841858,
+          "transferBytes": 152398,
+          "encodedBytes": 152098,
+          "decodedBytes": 152098
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 5.600000023841858,
+          "transferBytes": 138322,
+          "encodedBytes": 138022,
+          "decodedBytes": 138022
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "initiatorType": "img",
+          "durationMs": 5.5,
+          "transferBytes": 84334,
+          "encodedBytes": 84034,
+          "decodedBytes": 84034
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/mountain-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 5.200000017881393,
+          "transferBytes": 84242,
+          "encodedBytes": 83942,
+          "decodedBytes": 83942
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/paper.webp",
+          "initiatorType": "css",
+          "durationMs": 1.5999999940395355,
+          "transferBytes": 3362,
+          "encodedBytes": 3062,
+          "decodedBytes": 3062
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/forest-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 5.199999988079071,
+          "transferBytes": 130354,
+          "encodedBytes": 130054,
+          "decodedBytes": 130054
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/water-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 5.299999982118607,
+          "transferBytes": 133780,
+          "encodedBytes": 133480,
+          "decodedBytes": 133480
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/bank-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 5.299999982118607,
+          "transferBytes": 96954,
+          "encodedBytes": 96654,
+          "decodedBytes": 96654
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/table-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 3.199999988079071,
+          "transferBytes": 38114,
+          "encodedBytes": 37814,
+          "decodedBytes": 37814
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/quill-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 3.5999999940395355,
+          "transferBytes": 100318,
+          "encodedBytes": 100018,
+          "decodedBytes": 100018
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/book-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 3.300000011920929,
+          "transferBytes": 40816,
+          "encodedBytes": 40516,
+          "decodedBytes": 40516
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/sea-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 2.800000011920929,
+          "transferBytes": 111716,
+          "encodedBytes": 111416,
+          "decodedBytes": 111416
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/coast-mobile.webp",
+          "initiatorType": "img",
+          "durationMs": 2.800000011920929,
+          "transferBytes": 108120,
+          "encodedBytes": 107820,
+          "decodedBytes": 107820
+        }
+      ],
+      "frames": {
+        "count": 601,
+        "elapsedMs": 10016.3,
+        "intervalsMs": [
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.8, 16.6, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.6, 16.7,
+          16.7, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.7, 16.5, 16.8, 16.7, 16.6, 16.7, 16.6, 16.6, 16.7,
+          16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7,
+          16.6, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.8, 16.5, 16.7, 16.7, 16.7, 16.6, 16.8, 16.6, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7, 16.7,
+          16.7, 16.6, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8,
+          16.6, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6, 16.6, 16.7,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.8, 16.6, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.8, 16.6, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.6, 16.7, 16.7, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7,
+          16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.7, 16.5, 16.7,
+          16.7, 16.7, 16.6, 16.7, 16.6, 16.8, 16.7, 16.6, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.7, 16.6, 16.8,
+          16.6, 16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.8,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6, 16.7, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.6, 16.6, 16.8, 16.6, 16.7, 16.6, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.6, 16.8, 16.6,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7, 16.6,
+          16.7, 16.6, 16.8, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7,
+          16.7, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.6, 16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7,
+          16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7,
+          16.6, 16.7, 16.7, 16.7, 16.6, 16.7, 16.7, 16.6, 16.7, 16.7, 16.7,
+          16.6, 16.7, 16.6, 16.7, 16.6, 16.7, 16.7
+        ],
+        "meanMs": 16.666056572379368,
+        "p50Ms": 16.699999999999818,
+        "p95Ms": 16.700000000000728,
+        "p99Ms": 16.800000000000182,
+        "maximumMs": 16.80000000000109,
+        "above33Ms": 0,
+        "above50Ms": 0
+      },
+      "samples": [
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 0,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": 200,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 211,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 211,
+          "active": "true",
+          "computedProgress": 0.25,
+          "travel": "-3px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -11,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 422,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 422,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-6px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -222,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 633,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 633,
+          "active": "true",
+          "computedProgress": 0.75,
+          "travel": "-9px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -433,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "sky-meadow",
+          "wantedScrollY": 844,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 844,
+          "active": "true",
+          "computedProgress": 1,
+          "travel": "-12px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -644,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 0,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 959.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 461,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 461,
+          "active": "true",
+          "computedProgress": 0.25,
+          "travel": "-3px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 498.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 922,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 922,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-6px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 37.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 1383,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 1383,
+          "active": "true",
+          "computedProgress": 0.75,
+          "travel": "-9px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": -423.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "forest-stream",
+          "wantedScrollY": 1844,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 1844,
+          "active": "true",
+          "computedProgress": 1,
+          "travel": "-12px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": -884.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 953.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 1473.5,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 1474,
+          "active": "true",
+          "computedProgress": 0.2502639915522703,
+          "travel": "-3.0031678986272436px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 479.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 1947,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 1947,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-6px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 6.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 2420.5,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 2421,
+          "active": "true",
+          "computedProgress": 0.7502639915522703,
+          "travel": "-9.003167898627243px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": -467.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "writing-desk",
+          "wantedScrollY": 2894,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 2894,
+          "active": "true",
+          "computedProgress": 1,
+          "travel": "-12px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": -940.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 2050,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 2050,
+          "active": "true",
+          "computedProgress": 0,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 993.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 2471,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 2471,
+          "active": "true",
+          "computedProgress": 0.25,
+          "travel": "-3px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 572.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 2892,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 2892,
+          "active": "true",
+          "computedProgress": 0.5,
+          "travel": "-6px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 151.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 3313,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": true,
+          "scrollY": 3046,
+          "active": "true",
+          "computedProgress": 0.5914489311163895,
+          "travel": "-7.097387173396674px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": -2.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "auto",
+          "id": "ocean",
+          "wantedScrollY": 3734,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": true,
+          "scrollY": 3046,
+          "active": "true",
+          "computedProgress": 0.5914489311163895,
+          "travel": "-7.097387173396674px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": -2.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 0,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": 200,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 211,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 211,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -11,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 422,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 422,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -222,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 633,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 633,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -433,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "sky-meadow",
+          "wantedScrollY": 844,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 844,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -644,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 0,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 959.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 461,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 461,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 498.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 922,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 922,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 37.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 1383,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 1383,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": -423.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "forest-stream",
+          "wantedScrollY": 1844,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 1844,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": -884.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 953.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 1473.5,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 1474,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 479.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 1947,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 1947,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 6.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 2420.5,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 2421,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": -467.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "writing-desk",
+          "wantedScrollY": 2894,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 2894,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": -940.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 2050,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 2050,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 993.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 2471,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 2471,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 572.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 2892,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 2892,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 151.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 3313,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": true,
+          "scrollY": 3046,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": -2.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "reduced",
+          "id": "ocean",
+          "wantedScrollY": 3734,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": true,
+          "scrollY": 3046,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": -2.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 0,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": 200,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 211,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 211,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -11,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 422,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 422,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -222,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 633,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 633,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -433,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "sky-meadow",
+          "wantedScrollY": 844,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 844,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "让相遇，慢慢成为故事。",
+          "headingRect": {
+            "x": 26,
+            "y": -644,
+            "width": 320,
+            "height": 117.78125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 0,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 0,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 959.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 461,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 461,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 498.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 922,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 922,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": 37.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 1383,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 1383,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": -423.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "still",
+          "id": "forest-stream",
+          "wantedScrollY": 1844,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 1844,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "不只是回答你，也记住你说过的话。",
+          "headingRect": {
+            "x": 24,
+            "y": -884.5,
+            "width": 342,
+            "height": 90
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 1000,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 1000,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 953.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 1473.5,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 1474,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 479.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 1947,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 1947,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": 6.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 2420.5,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": false,
+          "scrollY": 2421,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": -467.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "still",
+          "id": "writing-desk",
+          "wantedScrollY": 2894,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": false,
+          "scrollY": 2894,
+          "active": "false",
+          "computedProgress": 1,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "有些话，值得慢慢抵达。",
+          "headingRect": {
+            "x": 24,
+            "y": -940.5,
+            "width": 320,
+            "height": 108
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 2050,
+          "maxScrollY": 3046,
+          "targetProgress": 0,
+          "clamped": false,
+          "scrollY": 2050,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 993.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 2471,
+          "maxScrollY": 3046,
+          "targetProgress": 0.25,
+          "clamped": false,
+          "scrollY": 2471,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 572.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 2892,
+          "maxScrollY": 3046,
+          "targetProgress": 0.5,
+          "clamped": false,
+          "scrollY": 2892,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": 151.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 3313,
+          "maxScrollY": 3046,
+          "targetProgress": 0.75,
+          "clamped": true,
+          "scrollY": 3046,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": -2.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        },
+        {
+          "mode": "still",
+          "id": "ocean",
+          "wantedScrollY": 3734,
+          "maxScrollY": 3046,
+          "targetProgress": 1,
+          "clamped": true,
+          "scrollY": 3046,
+          "active": "false",
+          "computedProgress": 0.5914489311163895,
+          "travel": "0px",
+          "documentWidth": 390,
+          "viewportWidth": 390,
+          "heading": "故事不必一开始就完整。",
+          "headingRect": {
+            "x": 24,
+            "y": -2.5,
+            "width": 307.5,
+            "height": 102.28125
+          }
+        }
+      ],
+      "images": [
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/sky-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/mountain-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 2359296
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/forest-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/water-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s02/bank-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 2359296
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/table-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/book-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s03/quill-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 1152,
+          "estimatedDecodedRGBABytes": 3538944
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/ui/botanical-mark.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 512,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/sky-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/cloud-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/sea-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s04/coast-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/meadow-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 512,
+          "estimatedDecodedRGBABytes": 1572864
+        },
+        {
+          "url": "http://127.0.0.1:43179/art/early-summer/s01/branch-mobile.webp",
+          "complete": true,
+          "loaded": true,
+          "naturalWidth": 768,
+          "naturalHeight": 768,
+          "estimatedDecodedRGBABytes": 2359296
+        }
+      ],
+      "uniqueImageCount": 14,
+      "estimatedUniqueDecodedRGBABytes": 24772608,
+      "resourceTotals": {
+        "transferBytes": 4771095,
+        "encodedBytes": 4754295,
+        "decodedBytes": 4754295
+      },
+      "imageResourceTotals": {
+        "count": 15,
+        "transferBytes": 1299428,
+        "encodedBytes": 1294928
+      },
+      "failedResponses": [],
+      "failedRequests": [],
+      "apiRequests": [],
+      "consoleProblems": []
+    }
+  ],
+  "desktop200PercentReflow": {
+    "method": "720 CSS px viewport at DPR2, equivalent horizontal reflow to a 1440px-wide desktop at 200%; not native browser zoom.",
+    "innerWidth": 720,
+    "scrollWidth": 720,
+    "dpr": 2,
+    "horizontalOverflow": false
+  }
+}

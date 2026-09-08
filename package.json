@@ -47,6 +47,8 @@
     "test:continuity:fixture": "tsx apps/server/src/scripts/companion-continuity-real.ts fixture",
     "test:continuity": "tsx apps/server/src/scripts/companion-continuity-real.ts run",
     "test:continuity:resume": "tsx apps/server/src/scripts/companion-continuity-real.ts resume",
+    "test:reply-steering": "tsx apps/server/src/scripts/reply-steering.ts",
+    "test:reply-steering:fixture": "tsx apps/server/src/scripts/reply-steering.ts --fixture",
     "test:companion:long-run:fixture": "tsx apps/server/src/scripts/companion-long-run-v2.ts fixture",
     "test:companion:long-run:pilot": "tsx apps/server/src/scripts/companion-long-run-v2.ts pilot",
     "test:companion:long-run:matrix": "tsx apps/server/src/scripts/companion-long-run-v2.ts matrix",

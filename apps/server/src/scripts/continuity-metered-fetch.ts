@@ -16,6 +16,8 @@ export function createContinuityMeteredFetch(input: {
   fetch?: typeof fetch;
   secrets?: string[];
   context?: () => unknown;
+  /** Optional evidence-only projection; the Provider receives the original body. */
+  projectResponse?: (response: unknown) => unknown;
 }): typeof fetch {
   const budget = { ...input.budget };
   if (
@@ -111,16 +113,22 @@ export function createContinuityMeteredFetch(input: {
       } catch {
         // Gateways can return plain-text or HTML errors. Retain that evidence.
       }
+      const evidenceBody =
+        input.projectResponse === undefined
+          ? body
+          : input.projectResponse(body);
       append({
         stage: "responded",
         attempt,
         context,
         status: response.status,
-        response: body,
+        response: evidenceBody,
         responseFormat,
         usage:
-          body !== null && typeof body === "object" && "usage" in body
-            ? (body.usage ?? "unknown")
+          evidenceBody !== null &&
+          typeof evidenceBody === "object" &&
+          "usage" in evidenceBody
+            ? (evidenceBody.usage ?? "unknown")
             : "unknown",
         latencyMs: performance.now() - start,
       });

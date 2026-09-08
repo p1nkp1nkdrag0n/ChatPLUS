@@ -136,8 +136,10 @@ export interface ServerKernelEvents {
   };
 }
 
+import type { ReplySteeringMode } from "@personasim/features";
+
 export interface ServerPluginOptions {
-  readonly replySteeringMode?: import("@personasim/features").ReplySteeringMode;
+  readonly replySteeringMode?: ReplySteeringMode;
   readonly bundle: ServerSimulationBundle;
   readonly config: ServerConfig;
   readonly logger: FastifyBaseLogger;
@@ -281,7 +283,7 @@ function createInfrastructurePlugin(
 function createDomainPlugin(
   bundlePluginId: string,
   fixtureTurnBehavior?: FixtureTurnBehavior,
-  replySteeringMode?: import("@personasim/features").ReplySteeringMode,
+  replySteeringMode?: ReplySteeringMode,
 ): KernelPlugin<ServerKernelEvents> {
   return {
     manifest: {

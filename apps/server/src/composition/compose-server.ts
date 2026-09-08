@@ -53,8 +53,10 @@ import {
   TEMPORAL_TASK_SCHEDULER_TOKEN,
 } from "./service-tokens.js";
 
+import type { ReplySteeringMode } from "@personasim/features";
+
 export interface ComposeServerOptions {
-  readonly replySteeringMode?: import("@personasim/features").ReplySteeringMode;
+  readonly replySteeringMode?: ReplySteeringMode;
   readonly config: ServerConfig;
   readonly logger: FastifyBaseLogger;
   readonly database?: Database;

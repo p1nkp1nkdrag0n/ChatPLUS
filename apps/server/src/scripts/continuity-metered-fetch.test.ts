@@ -161,6 +161,60 @@ describe("shared continuity request ledger and complete response evidence", () =
     expect(ledger).not.toContain("opaque-credential-value");
   });
 
+  it("projects evidence including usage without changing the provider response", async () => {
+    const original = {
+      choices: [
+        { message: { content: "visible", reasoning_content: "private trace" } },
+      ],
+      usage: {
+        prompt_tokens: 4,
+        completion_tokens: 8,
+        reasoning: "private usage trace",
+      },
+    };
+    const metered = createContinuityMeteredFetch({
+      ledgerPath,
+      budget: { maxPhysicalRequests: 1, maxReservedTokenUnits: 10000 },
+      fetch: () => Promise.resolve(Response.json(original)),
+      projectResponse: () => ({
+        choices: [{ message: { content: "visible" } }],
+        usage: { prompt_tokens: 4, completion_tokens: 8 },
+      }),
+    });
+    const response = await metered("https://test.invalid", {
+      body: JSON.stringify({ max_tokens: 10 }),
+    });
+    expect(await response.json()).toEqual(original);
+    const ledger = await readFile(ledgerPath, "utf8");
+    expect(ledger).toContain("visible");
+    expect(ledger).toContain('"prompt_tokens":4');
+    expect(ledger).not.toContain("private");
+  });
+
+  it.each([null, undefined])(
+    "does not restore raw response when projection returns %s",
+    async (projection) => {
+      const original = {
+        secret: "must stay omitted",
+        usage: { prompt_tokens: 7 },
+      };
+      const metered = createContinuityMeteredFetch({
+        ledgerPath,
+        budget: { maxPhysicalRequests: 1, maxReservedTokenUnits: 10000 },
+        fetch: () => Promise.resolve(Response.json(original)),
+        projectResponse: () => projection,
+      });
+      const response = await metered("https://test.invalid", {
+        body: JSON.stringify({ max_tokens: 10 }),
+      });
+      expect(await response.json()).toEqual(original);
+      const ledger = await readFile(ledgerPath, "utf8");
+      expect(ledger).not.toContain("must stay omitted");
+      expect(ledger).not.toContain("prompt_tokens");
+      expect(ledger).toContain('"usage":"unknown"');
+    },
+  );
+
   it.each([NaN, Infinity, -1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1])(
     "rejects invalid ceilings before dispatch: %s",
     (ceiling) => {

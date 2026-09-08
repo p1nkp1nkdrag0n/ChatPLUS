@@ -175,7 +175,8 @@
 
 .app-shell .chat-conversation {
   position: relative;
-  background: #faf9f3;
+  background: #faf9f3 url("/art/early-summer/ui/paper.webp") repeat;
+  background-size: 512px 512px;
 }
 
 .app-shell .message-list {
@@ -240,7 +241,8 @@
 .app-shell .composer-wrap {
   position: relative;
   padding: 12px clamp(20px, 4vw, 66px) 24px;
-  background: #faf9f3;
+  background: #faf9f3 url("/art/early-summer/ui/paper.webp") repeat;
+  background-size: 512px 512px;
 }
 
 .app-shell .composer {
@@ -346,6 +348,10 @@
   background: var(--surface);
 }
 
+.app-shell .correspondence-header h1 {
+  font-size: 34px;
+}
+
 .app-shell .letter-list {
   background: #f1f1e8;
 }
@@ -380,9 +386,20 @@
   color: #364539;
 }
 
+.app-shell .letter-paper--cotton:not(.letter-paper--clear) {
+  background-image: url("/art/early-summer/ui/paper.webp");
+  background-size: 512px 512px;
+}
+
 .app-shell .letter-paper__subject {
   font-weight: 400;
   letter-spacing: 0.06em;
+}
+
+.app-shell .letter-paper:not(.letter-paper--midnight) .letter-paper__postmark,
+.app-shell .envelope-panel__postmark {
+  border-color: #819177;
+  color: #697e5b;
 }
 
 .app-shell .letter-paper__body {
@@ -499,6 +516,15 @@
   .app-shell .icon-button {
     width: 42px;
     height: 42px;
+    flex-shrink: 0;
+  }
+
+  .app-shell .correspondence-compose-link {
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .app-shell .correspondence-compose-link svg {
     flex-shrink: 0;
   }
 

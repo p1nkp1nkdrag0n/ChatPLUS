@@ -133,9 +133,13 @@ export default function LetterDetailPage() {
 
   useEffect(() => {
     if (phase !== "revealing") return;
+    if (prefersReducedMotion) {
+      setPhase("reading");
+      return;
+    }
     const timer = window.setTimeout(() => setPhase("reading"), 900);
     return () => window.clearTimeout(timer);
-  }, [phase]);
+  }, [phase, prefersReducedMotion]);
 
   useEffect(() => {
     if (phase === "reading" && opened) readingHeadingRef.current?.focus();

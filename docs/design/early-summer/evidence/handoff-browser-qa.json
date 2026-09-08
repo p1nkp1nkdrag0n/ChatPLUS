@@ -1,0 +1,63 @@
+{
+  "status": "pass",
+  "browser": "Chromium 144.0.7559.96",
+  "method": "local Playwright with system Chromium; no live app or production visual parity tested",
+  "checks": [
+    {
+      "case": "S01 five keyframes",
+      "status": "pass"
+    },
+    {
+      "case": "S02 five keyframes",
+      "status": "pass"
+    },
+    {
+      "case": "S03 five keyframes",
+      "status": "pass"
+    },
+    {
+      "case": "S04 five keyframes",
+      "status": "pass"
+    },
+    {
+      "case": "reduced removes scene displacement",
+      "status": "pass"
+    },
+    {
+      "case": "system motion preference immediately applies",
+      "status": "pass"
+    },
+    {
+      "case": "still mode",
+      "status": "pass"
+    },
+    {
+      "case": "independent layer toggle and mobile amplitude",
+      "status": "pass"
+    },
+    {
+      "case": "1440x1000 no horizontal overflow",
+      "status": "pass"
+    },
+    {
+      "case": "1024x900 no horizontal overflow",
+      "status": "pass"
+    },
+    {
+      "case": "390x844 no horizontal overflow",
+      "status": "pass"
+    },
+    {
+      "case": "360x800 no horizontal overflow",
+      "status": "pass"
+    },
+    {
+      "case": "browser console page errors",
+      "status": "pass"
+    },
+    {
+      "case": "9 print sheets content bounds",
+      "status": "pass"
+    }
+  ]
+}

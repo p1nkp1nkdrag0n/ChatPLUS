@@ -1,0 +1,124 @@
+TAP version 13
+# Subtest: progress clamps at both ends
+ok 1 - progress clamps at both ends
+  ---
+  duration_ms: 0.851282
+  type: 'test'
+  ...
+# Subtest: non-finite progress has a safe default
+ok 2 - non-finite progress has a safe default
+  ---
+  duration_ms: 0.185936
+  type: 'test'
+  ...
+# Subtest: scroll progress maps directly without a playback queue
+ok 3 - scroll progress maps directly without a playback queue
+  ---
+  duration_ms: 0.120607
+  type: 'test'
+  ...
+# Subtest: zero/reversed ranges are safe
+ok 4 - zero/reversed ranges are safe
+  ---
+  duration_ms: 0.087206
+  type: 'test'
+  ...
+# Subtest: system reduced motion wins
+ok 5 - system reduced motion wins
+  ---
+  duration_ms: 0.31984
+  type: 'test'
+  ...
+# Subtest: explicit still remains still
+ok 6 - explicit still remains still
+  ---
+  duration_ms: 0.083689
+  type: 'test'
+  ...
+# Subtest: invalid stored preference safely follows normal default
+ok 7 - invalid stored preference safely follows normal default
+  ---
+  duration_ms: 0.154552
+  type: 'test'
+  ...
+# Subtest: offscreen or hidden environments never animate
+ok 8 - offscreen or hidden environments never animate
+  ---
+  duration_ms: 0.105649
+  type: 'test'
+  ...
+# Subtest: paused or reduced environments never animate
+ok 9 - paused or reduced environments never animate
+  ---
+  duration_ms: 0.245633
+  type: 'test'
+  ...
+# Subtest: visible full mode may animate
+ok 10 - visible full mode may animate
+  ---
+  duration_ms: 0.579848
+  type: 'test'
+  ...
+# Subtest: desktop foreground and mountains have different amplitudes
+ok 11 - desktop foreground and mountains have different amplitudes
+  ---
+  duration_ms: 0.306988
+  type: 'test'
+  ...
+# Subtest: mobile parallax has a tighter cap
+ok 12 - mobile parallax has a tighter cap
+  ---
+  duration_ms: 0.086509
+  type: 'test'
+  ...
+# Subtest: reduced and still remove scene displacement
+ok 13 - reduced and still remove scene displacement
+  ---
+  duration_ms: 0.156828
+  type: 'test'
+  ...
+# Subtest: book settles halfway and does not re-open on later progress
+ok 14 - book settles halfway and does not re-open on later progress
+  ---
+  duration_ms: 0.095368
+  type: 'test'
+  ...
+# Subtest: invalid scene fails explicitly
+ok 15 - invalid scene fails explicitly
+  ---
+  duration_ms: 0.326075
+  type: 'test'
+  ...
+# Subtest: envelope cannot open without a click
+ok 16 - envelope cannot open without a click
+  ---
+  duration_ms: 0.101953
+  type: 'test'
+  ...
+# Subtest: envelope stages have deterministic boundaries
+ok 17 - envelope stages have deterministic boundaries
+  ---
+  duration_ms: 0.080331
+  type: 'test'
+  ...
+# Subtest: reduced envelope goes directly to readable after explicit action
+ok 18 - reduced envelope goes directly to readable after explicit action
+  ---
+  duration_ms: 0.052285
+  type: 'test'
+  ...
+# Subtest: ocean foreground remains restrained on desktop
+ok 19 - ocean foreground remains restrained on desktop
+  ---
+  duration_ms: 0.052509
+  type: 'test'
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 90.211424

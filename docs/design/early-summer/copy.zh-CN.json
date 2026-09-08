@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "brand": "ChatPLUS",
+  "internalProductNameUnchanged": "PersonaSim",
+  "navigation": [
+    "产品介绍",
+    "使用文档"
+  ],
+  "hero": {
+    "title": "让相遇，慢慢成为故事。",
+    "description": "与拥有自己生活脉络的虚构角色对话，让记忆、书信与共同经历逐渐积累。",
+    "primaryAction": "开始使用",
+    "secondaryAction": "了解更多"
+  },
+  "memory": {
+    "title": "不只是回答你，也记住你说过的话。",
+    "description": "记住有来历的细节，让下一次交流不必从头开始。",
+    "demoLabel": "对话示例",
+    "initialMessages": [
+      {
+        "role": "user",
+        "text": "今天终于把那张溪流的画画完了。"
+      },
+      {
+        "role": "assistant",
+        "text": "你之前说一直没画好水面的光，最后怎么处理的？"
+      }
+    ],
+    "revealAction": "查看后续对话",
+    "laterMessages": [
+      {
+        "role": "user",
+        "text": "今天想再画一张。"
+      },
+      {
+        "role": "assistant",
+        "text": "还想画溪流，还是换个题材？"
+      }
+    ],
+    "disclaimer": "以上为合成演示，不代表每次回复或全部历史都能被准确记住。"
+  },
+  "letters": {
+    "title": "有些话，值得慢慢抵达。",
+    "description": "把重要的话写成信，让有来历的经历留下可以重读的痕迹。",
+    "action": "查看书信演示",
+    "demoLabel": "书信示例",
+    "demoSubject": "关于那片水光",
+    "demoBody": "今天沿着溪边走了一段路。树叶的影子落在水上，我想起你说终于画完了那张画。\n\n不知道你下一张会画什么。等你愿意讲的时候，再告诉我。",
+    "skip": "跳过动画"
+  },
+  "ocean": {
+    "title": "故事不必一开始就完整。",
+    "description": "从一次对话开始，让往后的日子慢慢写下去。",
+    "primaryAction": "开始使用",
+    "secondaryAction": "查看使用文档"
+  },
+  "welcome": {
+    "title": "欢迎来到 ChatPLUS",
+    "primaryAction": "先聊一会儿",
+    "primaryHint": "使用示例角色",
+    "secondaryActions": [
+      "创建角色",
+      "导入角色"
+    ],
+    "skip": "进入角色列表"
+  },
+  "motion": {
+    "auto": "跟随系统",
+    "reduced": "减少动态",
+    "still": "关闭场景动态"
+  },
+  "constraints": {
+    "doNotUseInMarketingHeadline": [
+      "接住",
+      "接得住"
+    ],
+    "doNotClaim": [
+      "永不遗忘",
+      "关闭服务后仍自主生活",
+      "真实世界自动行动",
+      "数据绝不离开这台设备"
+    ],
+    "noInventedFeatures": [
+      "人物形象生成",
+      "图片消息上传",
+      "签到浇水",
+      "关系积分",
+      "尚不存在的在线注册"
+    ]
+  }
+}

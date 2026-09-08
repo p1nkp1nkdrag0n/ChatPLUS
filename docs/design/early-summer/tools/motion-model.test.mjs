@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { clamp01, sceneProgress, effectiveMotion, shouldAnimate, sampleScene, sampleEnvelope } from './motion-model.mjs';
+test('progress clamps at both ends', () => { assert.equal(clamp01(-5), 0); assert.equal(clamp01(2), 1); });
+test('non-finite progress has a safe default', () => { assert.equal(clamp01(NaN), 0); assert.equal(clamp01(Infinity), 0); });
+test('scroll progress maps directly without a playback queue', () => { assert.equal(sceneProgress(50, 0, 100), .5); assert.equal(sceneProgress(10000, 0, 100), 1); assert.equal(sceneProgress(25, 0, 100), .25); });
+test('zero/reversed ranges are safe', () => { assert.equal(sceneProgress(1, 2, 2), 0); assert.equal(sceneProgress(1, 3, 2), 0); });
+test('system reduced motion wins', () => { assert.equal(effectiveMotion('auto', true), 'reduced'); assert.equal(effectiveMotion('invalid', true), 'reduced'); });
+test('explicit still remains still', () => assert.equal(effectiveMotion('still', true), 'still'));
+test('invalid stored preference safely follows normal default', () => assert.equal(effectiveMotion('bad', false), 'full'));
+test('offscreen or hidden environments never animate', () => { assert.equal(shouldAnimate({mode:'full',documentVisible:false,inViewport:true}), false); assert.equal(shouldAnimate({mode:'full',documentVisible:true,inViewport:false}), false); });
+test('paused or reduced environments never animate', () => { assert.equal(shouldAnimate({mode:'full',documentVisible:true,inViewport:true,paused:true}),false); assert.equal(shouldAnimate({mode:'reduced',documentVisible:true,inViewport:true}),false); });
+test('visible full mode may animate', () => assert.equal(shouldAnimate({mode:'full',documentVisible:true,inViewport:true}),true));
+test('desktop foreground and mountains have different amplitudes', () => { const f=sampleScene('S01',1); assert.equal(f.nearOffset,-48); assert.equal(f.farOffset,-6); assert.equal(f.textExtraOffset,0); });
+test('mobile parallax has a tighter cap', () => assert.equal(sampleScene('S01',1,'full',true).nearOffset,-12));
+test('reduced and still remove scene displacement', () => { for (const mode of ['reduced','still']) { const f=sampleScene('S03',.8,mode); assert.equal(f.nearOffset,0); assert.equal(f.bookAngle,1); assert.equal(f.canDecorate,false); } });
+test('book settles halfway and does not re-open on later progress', () => { assert.equal(sampleScene('S03',0).bookAngle,7); assert.equal(sampleScene('S03',.5).bookAngle,1); assert.equal(sampleScene('S03',1).bookAngle,1); });
+test('invalid scene fails explicitly', () => assert.throws(() => sampleScene('S99',0), RangeError));
+test('envelope cannot open without a click', () => assert.equal(sampleEnvelope({elapsed:10000}).phase,'closed'));
+test('envelope stages have deterministic boundaries', () => { assert.equal(sampleEnvelope({triggered:true,elapsed:0}).phase,'lifting'); assert.equal(sampleEnvelope({triggered:true,elapsed:120}).phase,'unfolding'); assert.equal(sampleEnvelope({triggered:true,elapsed:300}).phase,'revealing'); assert.equal(sampleEnvelope({triggered:true,elapsed:600}).readable,true); });
+test('reduced envelope goes directly to readable after explicit action', () => { assert.equal(sampleEnvelope({triggered:true,mode:'reduced'}).readable,true); assert.equal(sampleEnvelope({triggered:false,mode:'still'}).readable,false); });
+
+test('ocean foreground remains restrained on desktop', () => assert.equal(sampleScene('S04',1).nearOffset,-12));

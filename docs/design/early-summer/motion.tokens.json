@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "status": "design-starting-values-not-benchmarked",
+  "units": {
+    "time": "milliseconds",
+    "distance": "CSS-pixels",
+    "angle": "degrees"
+  },
+  "easing": {
+    "enter": [
+      0.2,
+      0.8,
+      0.2,
+      1
+    ],
+    "exit": [
+      0.4,
+      0,
+      1,
+      1
+    ],
+    "settle": [
+      0.22,
+      0.61,
+      0.36,
+      1
+    ]
+  },
+  "duration": {
+    "feedback": 120,
+    "appRoute": 180,
+    "siteRoute": 220,
+    "onboarding": 240,
+    "objectDetail": 320,
+    "siteToAppSameOrigin": 360,
+    "flowerSettle": 600,
+    "demoEnvelope": 600,
+    "ripple": 900
+  },
+  "ambient": {
+    "cloudCycle": [
+      45000,
+      80000
+    ],
+    "foliageCycle": [
+      6000,
+      10000
+    ],
+    "foliageAngle": [
+      0.5,
+      1.2
+    ],
+    "shadowOpacityMax": 0.08
+  },
+  "parallax": {
+    "desktop": {
+      "mountain": 6,
+      "forest": 12,
+      "branch": 24,
+      "foreground": 48
+    },
+    "mobileMax": 12,
+    "reducedMax": 0,
+    "pointerMax": 5,
+    "sceneOverrides": {
+      "S04": {
+        "foreground": 12
+      }
+    }
+  },
+  "flower": {
+    "radius": 110,
+    "maxExtraAngle": 4,
+    "headLag": 60,
+    "cooldown": 120,
+    "touchPointerMove": false
+  },
+  "ripple": {
+    "radiusMax": 64,
+    "concurrentMax": 3,
+    "cooldown": 200,
+    "requiresWaterHitMask": true
+  },
+  "book": {
+    "scrollAngles": [
+      7,
+      4,
+      1,
+      1,
+      1
+    ],
+    "hoverPageCornerMax": 3
+  },
+  "preferences": {
+    "storageKey": "chatplus.motion.v1",
+    "allowed": [
+      "auto",
+      "reduced",
+      "still"
+    ],
+    "systemReduceWins": true,
+    "reduced": {
+      "parallax": false,
+      "pointerEffects": false,
+      "ambient": false,
+      "pageTurn": false,
+      "smoothScroll": false,
+      "routeTransform": false
+    },
+    "still": {
+      "allSceneAnimation": false,
+      "showFinalReadableState": true
+    },
+    "storageFailure": "in-memory-auto"
+  },
+  "lifecycle": {
+    "pauseWhenHidden": true,
+    "pauseOffscreen": true,
+    "resumeWithoutCatchup": true,
+    "latestNavigationWins": true,
+    "skipMissedScrollAnimations": true
+  },
+  "quality": {
+    "desktopDprCap": 1.5,
+    "mobileDprCap": 1.25,
+    "activeWebglContextsMax": 1,
+    "noApiCallsFromDecoration": true
+  },
+  "testProgress": [
+    0,
+    0.25,
+    0.5,
+    0.75,
+    1
+  ]
+}

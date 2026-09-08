@@ -1,0 +1,1379 @@
+{
+  "version": 1,
+  "referenceRevision": "0a74341c491494f2ccb6bc1c2c41a3bbaabad5b5",
+  "status": "production-assets-planned",
+  "sceneIds": [
+    "S01",
+    "S02",
+    "S03",
+    "S04",
+    "UI"
+  ],
+  "allowedAssetStatuses": [
+    "planned",
+    "generated",
+    "reviewed",
+    "integrated"
+  ],
+  "references": [
+    {
+      "path": "references/direction-01.png",
+      "status": "direction-reference-only",
+      "sha256": "eab9793ae09695403601a4cc8185be0e96d32caff4033ab403751f9b46f53909",
+      "notProductionLayers": true
+    },
+    {
+      "path": "references/direction-02.png",
+      "status": "direction-reference-only",
+      "sha256": "3fdb8a8979ad849f3bbc9bb7c401ca9da3b6e8b7762a7b991706bee7c15fa60b",
+      "notProductionLayers": true
+    },
+    {
+      "path": "references/direction-03.png",
+      "status": "direction-reference-only",
+      "sha256": "82b152185a548c32d70a87b4999894ecb043f8b668ceb4b2dd24758f0c43723c",
+      "notProductionLayers": true
+    }
+  ],
+  "productionAssetCount": 39,
+  "assets": [
+    {
+      "id": "S01-SKY",
+      "scene": "S01",
+      "label": "完整天空",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/sky.webp",
+      "parent": "S01",
+      "z": 0,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-CLOUD-FAR",
+      "scene": "S01",
+      "label": "远云",
+      "kind": "cloud",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/cloud-far.webp",
+      "parent": "S01",
+      "z": 10,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient",
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        768
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        768
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-CLOUD-NEAR",
+      "scene": "S01",
+      "label": "近云",
+      "kind": "cloud",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/cloud-near.webp",
+      "parent": "S01",
+      "z": 20,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient",
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        768
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        768
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-MOUNTAIN",
+      "scene": "S01",
+      "label": "远山",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/mountain.webp",
+      "parent": "S01",
+      "z": 30,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-FOREST",
+      "scene": "S01",
+      "label": "中景树林",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/forest.webp",
+      "parent": "S01",
+      "z": 40,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-BRANCH",
+      "scene": "S01",
+      "label": "近景枝叶组",
+      "kind": "flexible",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/branch.webp",
+      "parent": "S01",
+      "z": 50,
+      "pivot": [
+        0,
+        0.15
+      ],
+      "motionDomains": [
+        "ambient",
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-MEADOW",
+      "scene": "S01",
+      "label": "草坡",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/meadow.webp",
+      "parent": "S01",
+      "z": 60,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-FLOWER-STEM",
+      "scene": "S01",
+      "label": "重点花茎与叶",
+      "kind": "flexible",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/flower-stem.webp",
+      "parent": "S01",
+      "z": 70,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "ambient",
+        "scroll",
+        "pointer"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S01-FLOWER-HEAD",
+      "scene": "S01",
+      "label": "重点花头",
+      "kind": "flexible",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s01/flower-head.webp",
+      "parent": "S01-FLOWER-STEM",
+      "z": 80,
+      "pivot": [
+        0.5,
+        0.9
+      ],
+      "motionDomains": [
+        "ambient",
+        "scroll",
+        "pointer"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "花头延迟跟随，不独立漂浮；锚点在实际资产制作后校准。"
+      ]
+    },
+    {
+      "id": "S02-FOREST-BACK",
+      "scene": "S02",
+      "label": "森林后板",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/forest-back.webp",
+      "parent": "S02",
+      "z": 0,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S02-BANK",
+      "scene": "S02",
+      "label": "河岸",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/bank.webp",
+      "parent": "S02",
+      "z": 10,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S02-WATER",
+      "scene": "S02",
+      "label": "独立水面",
+      "kind": "water",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/water.webp",
+      "parent": "S02",
+      "z": 20,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient",
+        "tap"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S02-ROCKS",
+      "scene": "S02",
+      "label": "前景石头",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/rocks.webp",
+      "parent": "S02",
+      "z": 30,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S02-CANOPY",
+      "scene": "S02",
+      "label": "叶簇",
+      "kind": "flexible",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/canopy.webp",
+      "parent": "S02",
+      "z": 40,
+      "pivot": [
+        0.1,
+        0.1
+      ],
+      "motionDomains": [
+        "ambient",
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S02-SHADOW",
+      "scene": "S02",
+      "label": "柔和树影",
+      "kind": "shadow",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/shadow.webp",
+      "parent": "S02",
+      "z": 50,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S02-FLOW-MAP",
+      "scene": "S02",
+      "label": "水流方向图",
+      "kind": "data",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/flow-map.png",
+      "parent": "S02",
+      "z": 60,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        1024,
+        1024
+      ],
+      "mobileMasterSuggestion": [
+        1024,
+        1024
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": false,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "实际数据制作与验证；不是可直接显示的美术；命中与显示共用UV。"
+      ]
+    },
+    {
+      "id": "S02-HIT-MASK",
+      "scene": "S02",
+      "label": "水域命中遮罩",
+      "kind": "data",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s02/hit-mask.png",
+      "parent": "S02",
+      "z": 70,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        1024,
+        1024
+      ],
+      "mobileMasterSuggestion": [
+        1024,
+        1024
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": false,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "实际数据制作与验证；不是可直接显示的美术；命中与显示共用UV。"
+      ]
+    },
+    {
+      "id": "S03-TABLE",
+      "scene": "S03",
+      "label": "书写场景背景",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/table.webp",
+      "parent": "S03",
+      "z": 0,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S03-BOOK-COVER",
+      "scene": "S03",
+      "label": "书封与书脊",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/book-cover.webp",
+      "parent": "S03",
+      "z": 10,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S03-BOOK-BLOCK",
+      "scene": "S03",
+      "label": "书页厚度",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/book-block.webp",
+      "parent": "S03",
+      "z": 20,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S03-PAGE-LEFT",
+      "scene": "S03",
+      "label": "左书页",
+      "kind": "page",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/page-left.webp",
+      "parent": "S03",
+      "z": 30,
+      "pivot": [
+        1,
+        0.5
+      ],
+      "motionDomains": [
+        "scroll",
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "背面完整；pivot 是建议，按真实折线校准；正文独立DOM。"
+      ]
+    },
+    {
+      "id": "S03-PAGE-RIGHT",
+      "scene": "S03",
+      "label": "右书页",
+      "kind": "page",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/page-right.webp",
+      "parent": "S03",
+      "z": 40,
+      "pivot": [
+        0,
+        0.5
+      ],
+      "motionDomains": [
+        "scroll",
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "背面完整；pivot 是建议，按真实折线校准；正文独立DOM。"
+      ]
+    },
+    {
+      "id": "S03-LETTER",
+      "scene": "S03",
+      "label": "空白信纸",
+      "kind": "page",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/letter.webp",
+      "parent": "S03",
+      "z": 50,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "背面完整；pivot 是建议，按真实折线校准；正文独立DOM。"
+      ]
+    },
+    {
+      "id": "S03-ENVELOPE-BACK",
+      "scene": "S03",
+      "label": "信封后片与内侧",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/envelope-back.webp",
+      "parent": "S03",
+      "z": 60,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S03-ENVELOPE-FRONT",
+      "scene": "S03",
+      "label": "信封前片",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/envelope-front.webp",
+      "parent": "S03",
+      "z": 70,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S03-ENVELOPE-FLAP",
+      "scene": "S03",
+      "label": "信封封口",
+      "kind": "page",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/envelope-flap.webp",
+      "parent": "S03",
+      "z": 80,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "背面完整；pivot 是建议，按真实折线校准；正文独立DOM。"
+      ]
+    },
+    {
+      "id": "S03-QUILL",
+      "scene": "S03",
+      "label": "羽毛笔",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/quill.webp",
+      "parent": "S03",
+      "z": 90,
+      "pivot": [
+        0.15,
+        0.9
+      ],
+      "motionDomains": [
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": [
+        "首版可静止，写字演示为低优先级；不改鼠标光标。"
+      ]
+    },
+    {
+      "id": "S03-SPRIG",
+      "scene": "S03",
+      "label": "鲜花枝",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/sprig.webp",
+      "parent": "S03",
+      "z": 100,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S03-SHADOW",
+      "scene": "S03",
+      "label": "纸面树影",
+      "kind": "shadow",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s03/shadow.webp",
+      "parent": "S03",
+      "z": 110,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S04-SKY",
+      "scene": "S04",
+      "label": "海边天空",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s04/sky.webp",
+      "parent": "S04",
+      "z": 0,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S04-CLOUD",
+      "scene": "S04",
+      "label": "海边云",
+      "kind": "cloud",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s04/cloud.webp",
+      "parent": "S04",
+      "z": 10,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        768
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        768
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S04-COAST",
+      "scene": "S04",
+      "label": "稳定海岸",
+      "kind": "background",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s04/coast.webp",
+      "parent": "S04",
+      "z": 20,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S04-SEA",
+      "scene": "S04",
+      "label": "独立海面",
+      "kind": "water",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s04/sea.webp",
+      "parent": "S04",
+      "z": 30,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient"
+      ],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S04-SHORE",
+      "scene": "S04",
+      "label": "近岸浪线",
+      "kind": "water",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s04/shore.webp",
+      "parent": "S04",
+      "z": 40,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [
+        "ambient"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        2560,
+        1600
+      ],
+      "mobileMasterSuggestion": [
+        1170,
+        2532
+      ],
+      "desktopAndMobileRecompose": true,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "S04-GRASS",
+      "scene": "S04",
+      "label": "前草与花",
+      "kind": "flexible",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/s04/grass.webp",
+      "parent": "S04",
+      "z": 50,
+      "pivot": [
+        0.5,
+        1
+      ],
+      "motionDomains": [
+        "ambient",
+        "scroll"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "UI-PAPER",
+      "scene": "UI",
+      "label": "低对比纸纹",
+      "kind": "texture",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/ui/paper.webp",
+      "parent": "UI",
+      "z": 0,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": false,
+      "masterSizeSuggestion": [
+        1024,
+        1024
+      ],
+      "mobileMasterSuggestion": [
+        1024,
+        1024
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": false,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "UI-PAGE-EDGE",
+      "scene": "UI",
+      "label": "页边",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/ui/page-edge.webp",
+      "parent": "UI",
+      "z": 10,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "UI-BOOKMARK",
+      "scene": "UI",
+      "label": "书签",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/ui/bookmark.webp",
+      "parent": "UI",
+      "z": 20,
+      "pivot": [
+        0.5,
+        0
+      ],
+      "motionDomains": [
+        "click"
+      ],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    },
+    {
+      "id": "UI-BOTANICAL-MARK",
+      "scene": "UI",
+      "label": "植物小印记",
+      "kind": "object",
+      "status": "planned",
+      "actualPath": null,
+      "sha256": null,
+      "suggestedRuntimePath": "apps/web/public/art/early-summer/ui/botanical-mark.webp",
+      "parent": "UI",
+      "z": 30,
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "motionDomains": [],
+      "alpha": true,
+      "masterSizeSuggestion": [
+        1536,
+        1536
+      ],
+      "mobileMasterSuggestion": [
+        1536,
+        1536
+      ],
+      "desktopAndMobileRecompose": false,
+      "overscanRatio": 0.12,
+      "occlusionBackfillRequired": true,
+      "staticFallback": "show complete composed artwork; no scroll or pointer deformation",
+      "required": true,
+      "notes": []
+    }
+  ]
+}

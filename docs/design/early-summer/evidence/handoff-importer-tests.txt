@@ -1,0 +1,14 @@
+test_apply_creates_branch_and_files_but_no_commit (__main__.ImportSafety.test_apply_creates_branch_and_files_but_no_commit) ... ok
+test_dirty_repository_refused (__main__.ImportSafety.test_dirty_repository_refused) ... ok
+test_dry_run_changes_nothing (__main__.ImportSafety.test_dry_run_changes_nothing) ... ok
+test_existing_branch_refused (__main__.ImportSafety.test_existing_branch_refused) ... ok
+test_existing_design_refused (__main__.ImportSafety.test_existing_design_refused) ... ok
+test_missing_package_file_refused (__main__.ImportSafety.test_missing_package_file_refused) ... ok
+test_tampered_package_refused (__main__.ImportSafety.test_tampered_package_refused) ... ok
+test_unsafe_symlink_refused (__main__.ImportSafety.test_unsafe_symlink_refused) ... ok
+test_wrong_repository_refused (__main__.ImportSafety.test_wrong_repository_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 1.422s
+
+OK

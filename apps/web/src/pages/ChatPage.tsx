@@ -1,11 +1,15 @@
 import {
   BookOpen,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
+  Leaf,
   MessageCircleMore,
+  MoreHorizontal,
+  Plus,
+  Search,
   Send,
+  Smile,
   Sparkles,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -14,21 +18,43 @@ import {
   useRef,
   useState,
 } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import {
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { DateTime } from "luxon";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
-import type { ChatMessage, ChatSession, RuntimeState } from "../api/types";
+import type {
+  CharacterSpec,
+  ChatMessage,
+  ChatSession,
+  RuntimeState,
+} from "../api/types";
+import { CharacterAvatar } from "../components/CharacterAvatar";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { LifeContextOverview } from "../components/LifeContextOverview";
 import { StatusMeter } from "../components/StatusMeter";
-import { TierLabel } from "../components/TierLabel";
 import {
   agentOverviewQueryKey,
   primeAgentOverview,
 } from "../hooks/agentEventQueryKeys";
-import { rememberActiveCharacter } from "../lib/activeCharacter";
 import { formatLocalTime } from "../lib/date";
+import { shouldSubmitChatKey } from "../lib/chatInput";
+import {
+  chatHref,
+  findOwnedSession,
+  readLastConversation,
+  rememberLastConversation,
+  selectLegacySession,
+} from "../lib/lastConversation";
 import {
   resolveMessageDelivery,
   sequentialAnimationSignature,
@@ -36,70 +62,453 @@ import {
   shouldAnimateLiveMessage,
 } from "../lib/messageDelivery";
 
+const EMOJI = [
+  "😊",
+  "🌿",
+  "🌼",
+  "☀️",
+  "🌙",
+  "✨",
+  "💚",
+  "💌",
+  "🥰",
+  "😂",
+  "🥹",
+  "🤗",
+  "☕",
+  "🌸",
+  "🍃",
+  "👋",
+];
+const EMPTY_SESSIONS: ChatSession[] = [];
+
 export default function ChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
+  return characterId ? (
+    <CharacterChat key={characterId} characterId={characterId} />
+  ) : null;
+}
+
+function CharacterChat({ characterId }: { characterId: string }) {
   const queryClient = useQueryClient();
-  const [text, setText] = useState("");
-  const [railOpen, setRailOpen] = useState(
-    () => !window.matchMedia("(max-width: 720px)").matches,
-  );
-  const listRef = useRef<HTMLDivElement>(null);
-  const newlyArrivedSequentialIdsRef = useRef(new Set<string>());
-  const animatedSequentialIdsRef = useRef(new Set<string>());
-  const knownMessageIdsAtSendStartRef = useRef<Set<string> | null>(null);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedSessionId = searchParams.get("sessionId");
+  const [search, setSearch] = useState("");
+  const [railOpen, setRailOpen] = useState(false);
+  const draftsRef = useRef(new Map<string, string>());
+  const initialCreationRef = useRef(false);
+  const mountedRef = useRef(true);
+  const historyRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    const closeHistory = (event: PointerEvent) => {
+      const history = historyRef.current;
+      if (history?.open && !history.contains(event.target as Node))
+        history.open = false;
+    };
+    document.addEventListener("pointerdown", closeHistory);
+    return () => document.removeEventListener("pointerdown", closeHistory);
+  }, []);
+
+  const charactersQuery = useQuery({
+    queryKey: ["characters"],
+    queryFn: api.characters.list,
+  });
   const characterQuery = useQuery({
     queryKey: ["character", characterId],
-    queryFn: () => api.characters.get(characterId!),
-    enabled: Boolean(characterId),
+    queryFn: () => api.characters.get(characterId),
   });
   const character = characterQuery.data
     ? unwrapCharacter(characterQuery.data)
     : undefined;
-
+  const published = character?.status === "published";
   const activationQuery = useQuery({
     queryKey: ["agent-activation", characterId],
     queryFn: async () => {
-      const snapshot = await api.agents.activate(characterId!);
-      primeAgentOverview(queryClient, characterId!, snapshot);
+      const snapshot = await api.agents.activate(characterId);
+      primeAgentOverview(queryClient, characterId, snapshot);
       return snapshot;
     },
-    enabled: Boolean(characterId),
+    enabled: published,
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const sessionQuery = useQuery({
-    queryKey: ["agent", characterId, "session"],
-    queryFn: async () => {
-      const result = await api.agents.sessions(characterId!);
-      const sessions = unwrapList<ChatSession>(result, "sessions");
-      return sessions[0] ?? api.agents.createSession(characterId!);
+  const sessionsQuery = useQuery({
+    queryKey: ["agent", characterId, "sessions"],
+    queryFn: async () =>
+      unwrapList<ChatSession>(
+        await api.agents.sessions(characterId),
+        "sessions",
+      ),
+    enabled: published,
+  });
+  const sessions = sessionsQuery.data ?? EMPTY_SESSIONS;
+  const session =
+    requestedSessionId !== null
+      ? findOwnedSession(sessions, characterId, requestedSessionId)
+      : undefined;
+  const createSessionMutation = useMutation({
+    mutationFn: () => api.agents.createSession(characterId),
+    onSuccess: (created) => {
+      queryClient.setQueryData<ChatSession[]>(
+        ["agent", characterId, "sessions"],
+        (current) => [
+          created,
+          ...(current ?? []).filter((item) => item.id !== created.id),
+        ],
+      );
+      if (!mountedRef.current) return;
+      void navigate(chatHref(characterId, created.id), {
+        replace: requestedSessionId === null,
+      });
+      if (historyRef.current) historyRef.current.open = false;
     },
-    enabled: Boolean(characterId),
   });
-  const session = sessionQuery.data;
-  const messagesQuery = useQuery({
-    queryKey: ["messages", characterId, session?.id],
-    queryFn: () => api.sessions.messages(session!.id),
-    enabled: Boolean(session?.id),
-    refetchInterval: false,
-  });
-  const messages = messagesQuery.data
-    ? unwrapList<ChatMessage>(messagesQuery.data, "messages")
-    : [];
+  const { mutate: createSession } = createSessionMutation;
+
+  useEffect(() => {
+    if (requestedSessionId !== null || !sessionsQuery.isSuccess) return;
+    const restored = selectLegacySession(
+      sessions,
+      characterId,
+      readLastConversation(),
+    );
+    if (restored) {
+      void navigate(chatHref(characterId, restored.id), { replace: true });
+    } else if (!initialCreationRef.current) {
+      initialCreationRef.current = true;
+      createSession();
+    }
+  }, [
+    characterId,
+    createSession,
+    navigate,
+    requestedSessionId,
+    sessions,
+    sessionsQuery.isSuccess,
+  ]);
 
   const overviewQuery = useQuery({
-    queryKey: agentOverviewQueryKey(characterId!),
-    queryFn: () => api.agents.overview(characterId!),
-    enabled: Boolean(characterId && activationQuery.data),
+    queryKey: agentOverviewQueryKey(characterId),
+    queryFn: () => api.agents.overview(characterId),
+    enabled: Boolean(activationQuery.data),
     staleTime: Number.POSITIVE_INFINITY,
   });
   const state = overviewQuery.data?.state ?? activationQuery.data?.state;
   const lifeContext =
     overviewQuery.data?.lifeContext ?? activationQuery.data?.lifeContext;
+  const filteredCharacters = (charactersQuery.data?.characters ?? []).filter(
+    (item) =>
+      item.status !== "archived" &&
+      `${item.name} ${item.workOrRole}`
+        .toLocaleLowerCase()
+        .includes(search.toLocaleLowerCase().trim()),
+  );
 
+  const showSession = (id: string) => {
+    void navigate(chatHref(characterId, id));
+    if (historyRef.current) historyRef.current.open = false;
+  };
+  const recover = () => {
+    const latest = selectLegacySession(sessions, characterId, undefined);
+    if (latest) showSession(latest.id);
+    else createSession();
+  };
+
+  let conversation;
+  if (
+    characterQuery.isError ||
+    sessionsQuery.isError ||
+    activationQuery.isError
+  ) {
+    conversation = (
+      <div className="chat-feedback">
+        <ErrorBlock
+          error={
+            characterQuery.error ?? sessionsQuery.error ?? activationQuery.error
+          }
+        />
+      </div>
+    );
+  } else if (character && !published) {
+    conversation = (
+      <div className="conversation-opening chat-feedback">
+        <h2>这个角色还没有准备好</h2>
+        <p>完成角色设定并发布后，就可以开始对话了。</p>
+        <Link
+          className="button button--primary"
+          to={`/characters/${characterId}/edit`}
+        >
+          继续编辑角色
+        </Link>
+      </div>
+    );
+  } else if (
+    requestedSessionId !== null &&
+    sessionsQuery.isSuccess &&
+    !session
+  ) {
+    conversation = (
+      <div className="conversation-opening chat-feedback">
+        <h2>这段对话暂时无法打开</h2>
+        <p>对话可能已被移除，或属于另一个角色。</p>
+        <button
+          className="button button--primary"
+          type="button"
+          onClick={recover}
+          disabled={createSessionMutation.isPending}
+        >
+          打开可用的对话
+        </button>
+        <Link to="/characters">返回角色库</Link>
+      </div>
+    );
+  } else if (!character || !session || activationQuery.isPending) {
+    conversation = createSessionMutation.isError ? (
+      <div className="chat-feedback">
+        <ErrorBlock error={createSessionMutation.error} />
+        <button className="button" onClick={() => createSession()}>
+          重新打开对话
+        </button>
+      </div>
+    ) : (
+      <LoadingBlock label="正在打开这段对话…" />
+    );
+  } else {
+    conversation = (
+      <SessionConversation
+        key={session.id}
+        character={character}
+        session={session}
+        drafts={draftsRef.current}
+      />
+    );
+  }
+
+  return (
+    <div className="dearvale-chat">
+      <aside className="chat-characters" aria-label="对话角色">
+        <Link className="chat-brand" to="/welcome">
+          Dearvale
+        </Link>
+        <label className="chat-character-search">
+          <Search size={19} aria-hidden="true" />
+          <input
+            aria-label="搜索角色"
+            placeholder="搜索角色"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <div className="chat-character-list">
+          {charactersQuery.isPending ? (
+            <p className="chat-list-note">正在寻找熟悉的身影…</p>
+          ) : null}
+          {charactersQuery.isError ? (
+            <ErrorBlock error={charactersQuery.error} />
+          ) : null}
+          {filteredCharacters.map((item) => (
+            <Link
+              key={item.id}
+              className={`chat-character${item.id === characterId ? " is-current" : ""}`}
+              aria-current={item.id === characterId ? "page" : undefined}
+              to={
+                item.status === "published"
+                  ? chatHref(item.id)
+                  : `/characters/${item.id}/edit`
+              }
+            >
+              <CharacterAvatar characterId={item.id} size={56} />
+              <span>
+                {item.name}
+                {item.status === "draft" ? <small>待完成</small> : null}
+              </span>
+            </Link>
+          ))}
+          {charactersQuery.isSuccess && filteredCharacters.length === 0 ? (
+            <p className="chat-list-note">没有找到这个角色。</p>
+          ) : null}
+          <button
+            className="chat-new-conversation"
+            type="button"
+            onClick={() => createSession()}
+            disabled={!published || createSessionMutation.isPending}
+          >
+            <Plus size={20} />
+            {createSessionMutation.isPending ? "正在开启…" : "新建对话"}
+          </button>
+          {requestedSessionId !== null && createSessionMutation.isError ? (
+            <ErrorBlock error={createSessionMutation.error} />
+          ) : null}
+        </div>
+      </aside>
+      <div className={`chat-page${railOpen ? " has-rail" : ""}`}>
+        <header className="chat-header">
+          <div className="chat-header__identity">
+            <CharacterAvatar characterId={characterId} size={76} />
+            <div>
+              <h1>{character?.identity.name ?? "对话"}</h1>
+              <span>
+                {character?.identity.workOrRole || "缓缓听风，慢慢说故事。"}
+              </span>
+            </div>
+          </div>
+          <div className="chat-header__context">
+            {published ? (
+              <button
+                className="chat-context-button"
+                type="button"
+                onClick={() => setRailOpen((open) => !open)}
+                aria-expanded={railOpen}
+                aria-controls="character-context"
+              >
+                <Leaf size={22} />
+                角色近况
+              </button>
+            ) : null}
+            <details
+              className="chat-history"
+              ref={historyRef}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") event.currentTarget.open = false;
+              }}
+            >
+              <summary className="icon-button" aria-label="更多对话操作">
+                <MoreHorizontal size={24} />
+              </summary>
+              <div className="chat-history__popover">
+                <h2>历史对话</h2>
+                <div className="chat-history__list">
+                  {sessions
+                    .filter((item) => item.agentId === characterId)
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        data-session-id={item.id}
+                        type="button"
+                        onClick={() => showSession(item.id)}
+                        className={item.id === session?.id ? "is-current" : ""}
+                      >
+                        <span>
+                          {DateTime.fromISO(item.createdAtUtc)
+                            .setZone(character?.identity.timezone ?? "local")
+                            .toFormat("MM月dd日 HH:mm")}{" "}
+                          的对话
+                        </span>
+                        {item.id === session?.id ? (
+                          <small>正在阅读</small>
+                        ) : null}
+                      </button>
+                    ))}
+                  {sessions.length === 0 ? <p>还没有历史对话。</p> : null}
+                </div>
+                <Link to={`/characters/${characterId}/edit`}>编辑角色</Link>
+              </div>
+            </details>
+          </div>
+        </header>
+        {conversation}
+        {railOpen ? (
+          <aside
+            className="chat-rail"
+            id="character-context"
+            aria-label="角色近况"
+          >
+            <div className="chat-rail__top">
+              <h2>角色近况</h2>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="收起角色近况"
+                onClick={() => setRailOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="chat-local-time">
+              <Clock3 size={15} />
+              <CharacterClock
+                timezone={character?.identity.timezone ?? "local"}
+                referenceUtc={state?.asOfUtc}
+              />
+            </div>
+            {state ? <StateOverview state={state} /> : null}
+            {lifeContext ? (
+              <LifeContextOverview
+                value={lifeContext}
+                timelineHref={`/characters/${characterId}/timeline`}
+              />
+            ) : null}
+            {!lifeContext && character?.tier === "lightweight" ? (
+              <p className="chat-list-note">
+                此角色专注于与你的对话，尚未展开日常生活。
+              </p>
+            ) : null}
+          </aside>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SessionConversation({
+  character,
+  session,
+  drafts,
+}: {
+  character: CharacterSpec;
+  session: ChatSession;
+  drafts: Map<string, string>;
+}) {
+  const characterId = character.id;
+  const queryClient = useQueryClient();
+  const [text, setText] = useState(() => drafts.get(session.id) ?? "");
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
+  const composingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const newlyArrivedSequentialIdsRef = useRef(new Set<string>());
+  const animatedSequentialIdsRef = useRef(new Set<string>());
+  const knownMessageIdsAtSendStartRef = useRef<Set<string> | null>(null);
+  const sendStates = useMutationState({
+    filters: {
+      mutationKey: ["chat-send", characterId, session.id],
+      exact: true,
+    },
+    select: (mutation) => ({
+      status: mutation.state.status,
+      error: mutation.state.error,
+    }),
+  });
+  const latestSend = sendStates.at(-1);
+  const sendPending = latestSend?.status === "pending";
+  const messagesQuery = useQuery({
+    queryKey: ["messages", characterId, session.id],
+    queryFn: () => api.sessions.messages(session.id),
+    refetchInterval: false,
+  });
+  const messages = messagesQuery.data
+    ? unwrapList<ChatMessage>(messagesQuery.data, "messages").filter(
+        (message) =>
+          message.sessionId === session.id && message.agentId === characterId,
+      )
+    : [];
+  const updateText = (next: string) => {
+    setText(next);
+    drafts.set(session.id, next);
+  };
   const sendMutation = useMutation({
+    mutationKey: ["chat-send", characterId, session.id],
     mutationFn: (message: string) =>
-      api.sessions.send(session!.id, {
-        agentId: characterId!,
+      api.sessions.send(session.id, {
+        agentId: characterId,
         clientMessageId: crypto.randomUUID(),
         text: message,
       }),
@@ -109,7 +518,8 @@ export default function ChatPage() {
       );
     },
     onSuccess: (result) => {
-      setText("");
+      drafts.delete(session.id);
+      if (mountedRef.current) setText("");
       const assistantDelivery = resolveMessageDelivery(result.assistantMessage);
       if (
         assistantDelivery.mode === "sequential" &&
@@ -118,7 +528,7 @@ export default function ChatPage() {
         newlyArrivedSequentialIdsRef.current.add(result.assistantMessage.id);
       }
       queryClient.setQueryData<{ messages: ChatMessage[] }>(
-        ["messages", characterId, session?.id],
+        ["messages", characterId, session.id],
         (current) => ({
           messages: appendUniqueMessages(current?.messages ?? [], [
             result.userMessage,
@@ -127,9 +537,14 @@ export default function ChatPage() {
         }),
       );
       void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["messages", characterId] }),
         queryClient.invalidateQueries({
-          queryKey: agentOverviewQueryKey(characterId!),
+          queryKey: ["messages", characterId, session.id],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: agentOverviewQueryKey(characterId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["agent", characterId, "sessions"],
         }),
       ]);
     },
@@ -139,213 +554,199 @@ export default function ChatPage() {
   });
 
   useEffect(() => {
-    if (characterId) rememberActiveCharacter(characterId);
-  }, [characterId]);
-
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
-    newlyArrivedSequentialIdsRef.current.clear();
-    animatedSequentialIdsRef.current.clear();
-    knownMessageIdsAtSendStartRef.current = null;
-  }, [session?.id]);
-
+    rememberLastConversation(characterId, session.id);
+  }, [characterId, session.id]);
+  useEffect(() => {
+    if (!sendPending) setText(drafts.get(session.id) ?? "");
+  }, [drafts, sendPending, session.id]);
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!emojiRef.current?.contains(event.target as Node))
+        setEmojiOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [emojiOpen]);
   const scrollToLatest = useCallback(() => {
     listRef.current?.scrollTo({
       top: listRef.current.scrollHeight,
       behavior: "smooth",
     });
   }, []);
-
   useEffect(() => {
     scrollToLatest();
-  }, [messages.length, scrollToLatest, sendMutation.isPending]);
-
+  }, [messages.length, scrollToLatest, sendPending]);
   const finishSequentialDelivery = useCallback((messageId: string) => {
     newlyArrivedSequentialIdsRef.current.delete(messageId);
   }, []);
-
   const startSequentialDelivery = useCallback((messageId: string) => {
     animatedSequentialIdsRef.current.add(messageId);
   }, []);
-
-  if (
-    characterQuery.isPending ||
-    activationQuery.isPending ||
-    sessionQuery.isPending ||
-    messagesQuery.isPending
-  ) {
-    return <LoadingBlock label="正在同步角色状态与对话…" />;
-  }
-  if (characterQuery.isError)
-    return (
-      <div className="page">
-        <ErrorBlock error={characterQuery.error} />
-      </div>
-    );
-  if (activationQuery.isError)
-    return (
-      <div className="page">
-        <ErrorBlock error={activationQuery.error} />
-      </div>
-    );
-  if (sessionQuery.isError)
-    return (
-      <div className="page">
-        <ErrorBlock error={sessionQuery.error} />
-      </div>
-    );
-  if (messagesQuery.isError)
-    return (
-      <div className="page">
-        <ErrorBlock error={messagesQuery.error} />
-      </div>
-    );
-  if (!character || !session) return null;
-
-  const timezone = character.identity.timezone;
-  const showRail = character.tier !== "lightweight";
   const submit = () => {
     const message = text.trim();
-    if (!message || sendMutation.isPending) return;
+    if (
+      !message ||
+      sendPending ||
+      messagesQuery.isPending ||
+      messagesQuery.isError
+    )
+      return;
+    setEmojiOpen(false);
     sendMutation.mutate(message);
   };
-
+  const insertEmoji = (emoji: string) => {
+    const input = textareaRef.current;
+    const start = input?.selectionStart ?? text.length;
+    const end = input?.selectionEnd ?? start;
+    updateText(`${text.slice(0, start)}${emoji}${text.slice(end)}`);
+    setEmojiOpen(false);
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
+  };
   return (
-    <div className={`chat-page${railOpen && showRail ? " has-rail" : ""}`}>
-      <header className="chat-header">
-        <div className="chat-header__identity">
-          <Link
-            className="icon-button"
-            to="/characters"
-            aria-label="返回角色库"
-          >
-            <ChevronLeft size={19} />
-          </Link>
-          <div>
-            <h1>{character.identity.name}</h1>
-            <span>{character.identity.workOrRole}</span>
+    <section
+      className="chat-conversation"
+      aria-label={`与 ${character.identity.name} 的对话`}
+    >
+      <div className="message-list" ref={listRef}>
+        {messagesQuery.isPending ? (
+          <LoadingBlock label="正在翻开这段对话…" />
+        ) : null}
+        {messagesQuery.isError ? (
+          <ErrorBlock error={messagesQuery.error} />
+        ) : null}
+        {messagesQuery.isSuccess && messages.length === 0 ? (
+          <div className="conversation-opening">
+            <CharacterAvatar characterId={characterId} size={76} />
+            <h2>从此刻开始</h2>
+            <p>和{character.identity.name}聊聊今天，或是刚刚浮上心头的小事。</p>
           </div>
-          <TierLabel tier={character.tier} />
-        </div>
-        <div className="chat-header__context">
-          <Clock3 size={16} aria-hidden="true" />
-          <CharacterClock timezone={timezone} referenceUtc={state?.asOfUtc} />
-          <span className="header-divider" />
-          <span className="status-dot" /> 本地模式
-          {showRail ? (
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setRailOpen((open) => !open)}
-              aria-label={railOpen ? "收起状态栏" : "展开状态栏"}
-            >
-              {railOpen ? (
-                <ChevronRight size={18} />
-              ) : (
-                <ChevronLeft size={18} />
-              )}
-            </button>
-          ) : null}
-        </div>
-      </header>
-
-      <section
-        className="chat-conversation"
-        aria-label={`与 ${character.identity.name} 的对话`}
-      >
-        <div className="message-list" ref={listRef}>
-          {messages.length === 0 ? (
-            <div className="conversation-opening">
-              <span className="thread-node" />
-              <h2>从此刻开始</h2>
-              <p>
-                {character.identity.name}{" "}
-                会按照已发布的人格回应。经历、关系和记忆只会在校验后更新。
-              </p>
-            </div>
-          ) : null}
-          {messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              name={character.identity.name}
-              timezone={timezone}
-              animateSequential={shouldAnimateLiveMessage(message, {
-                sendPending: sendMutation.isPending,
-                knownMessageIdsAtSendStart:
-                  knownMessageIdsAtSendStartRef.current,
-                explicitlyAnimatedIds: newlyArrivedSequentialIdsRef.current,
-                alreadyAnimatedIds: animatedSequentialIdsRef.current,
-              })}
-              onReveal={scrollToLatest}
-              onDeliveryStart={startSequentialDelivery}
-              onDeliveryComplete={finishSequentialDelivery}
-            />
-          ))}
-          {sendMutation.isPending ? (
-            <div className="message-group message-group--assistant is-thinking">
-              <div className="message-meta">
-                <strong>{character.identity.name}</strong>
-                <span>正在权衡…</span>
-              </div>
-              <div className="thinking-dots">
+        ) : null}
+        {messages.map((message) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            characterId={characterId}
+            name={character.identity.name}
+            timezone={character.identity.timezone}
+            animateSequential={shouldAnimateLiveMessage(message, {
+              sendPending: sendPending,
+              knownMessageIdsAtSendStart: knownMessageIdsAtSendStartRef.current,
+              explicitlyAnimatedIds: newlyArrivedSequentialIdsRef.current,
+              alreadyAnimatedIds: animatedSequentialIdsRef.current,
+            })}
+            onReveal={scrollToLatest}
+            onDeliveryStart={startSequentialDelivery}
+            onDeliveryComplete={finishSequentialDelivery}
+          />
+        ))}
+        {sendPending ? (
+          <div className="message-group message-group--assistant is-thinking">
+            <CharacterAvatar characterId={characterId} size={54} />
+            <div className="message-content">
+              <span className="message-meta">正在想一想…</span>
+              <div className="thinking-dots" aria-label="正在回复">
                 <span />
                 <span />
                 <span />
               </div>
             </div>
-          ) : null}
-        </div>
-
-        <div className="composer-wrap">
-          {sendMutation.isError ? (
-            <ErrorBlock error={sendMutation.error} />
-          ) : null}
-          <div className="composer">
-            <textarea
-              value={text}
-              rows={1}
-              placeholder={`给${character.identity.name}发消息…`}
-              aria-label="消息内容"
-              data-testid="chat-input"
-              onChange={(event) => setText(event.target.value)}
+          </div>
+        ) : null}
+      </div>
+      <div className="composer-wrap">
+        {latestSend?.status === "error" ? (
+          <ErrorBlock error={latestSend.error} />
+        ) : null}
+        <div className="composer">
+          <textarea
+            ref={textareaRef}
+            value={text}
+            rows={1}
+            placeholder="输入一条消息…"
+            aria-label="消息内容"
+            data-testid="chat-input"
+            disabled={sendPending || !messagesQuery.isSuccess}
+            onChange={(event) => updateText(event.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+            }}
+            onKeyDown={(event) => {
+              if (
+                shouldSubmitChatKey(event.nativeEvent, composingRef.current)
+              ) {
+                event.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <div className="composer__footer">
+            <div
+              className="emoji-control"
+              ref={emojiRef}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  submit();
-                }
+                if (event.key === "Escape") setEmojiOpen(false);
               }}
-            />
-            <div className="composer__footer">
-              <button className="context-button" type="button">
-                <BookOpen size={15} /> 上下文
-              </button>
-              <span>Enter 发送 · Shift+Enter 换行</span>
+            >
               <button
-                className="send-button"
+                className="icon-button"
                 type="button"
-                onClick={submit}
-                disabled={!text.trim() || sendMutation.isPending}
-                aria-label="发送消息"
+                aria-label="选择表情"
+                aria-expanded={emojiOpen}
+                aria-controls="chat-emoji-picker"
+                onClick={() => setEmojiOpen((open) => !open)}
+                disabled={sendPending || !messagesQuery.isSuccess}
               >
-                <Send size={18} />
+                <Smile size={25} />
               </button>
+              {emojiOpen ? (
+                <div
+                  className="emoji-picker"
+                  id="chat-emoji-picker"
+                  role="group"
+                  aria-label="常用表情"
+                >
+                  {EMOJI.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      aria-label={`插入 ${emoji}`}
+                      onClick={() => insertEmoji(emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
+            <button
+              className="send-button"
+              type="button"
+              onClick={submit}
+              disabled={!text.trim() || sendPending || !messagesQuery.isSuccess}
+              aria-label="发送消息"
+            >
+              <Send size={23} />
+            </button>
           </div>
         </div>
-      </section>
-
-      {railOpen && showRail ? (
-        <aside className="chat-rail">
-          {state ? <StateOverview state={state} /> : null}
-          {lifeContext ? (
-            <LifeContextOverview
-              value={lifeContext}
-              timelineHref={`/characters/${character.id}/timeline`}
-            />
-          ) : null}
-        </aside>
-      ) : null}
-    </div>
+        <span className="composer-key-hint">
+          Enter 发送 · Shift + Enter 换行
+        </span>
+      </div>
+    </section>
   );
 }
 
@@ -386,6 +787,7 @@ function CharacterClock({
 
 export function MessageBubble({
   message,
+  characterId,
   name,
   timezone,
   animateSequential,
@@ -394,6 +796,7 @@ export function MessageBubble({
   onDeliveryComplete,
 }: {
   message: ChatMessage;
+  characterId?: string;
   name: string;
   timezone: string;
   animateSequential: boolean;
@@ -464,37 +867,50 @@ export function MessageBubble({
       className={`message-group message-group--${message.role}`}
       aria-live={shouldSequence ? "polite" : undefined}
     >
-      {proactive ? (
-        <div className="proactive-origin">
-          <span />
-          <Sparkles size={13} /> 主动消息 · 来自近期经历
-          <span />
-        </div>
+      {message.role === "assistant" ? (
+        <CharacterAvatar
+          characterId={characterId ?? message.agentId}
+          name={name}
+          size={54}
+        />
       ) : null}
-      <div className="message-meta">
-        {message.role === "assistant" ? <strong>{name}</strong> : null}
-        <time>{formatLocalTime(message.createdAtUtc, timezone)}</time>
+      <div className="message-content">
+        {proactive ? (
+          <div className="proactive-origin">
+            <span />
+            <Sparkles size={13} /> 主动消息 · 来自近期经历
+            <span />
+          </div>
+        ) : null}
+        {chunks.slice(0, visibleChunkCount).map((chunk, index) => (
+          <div className="message-bubble" key={`${message.id}:${index}`}>
+            {chunk}
+          </div>
+        ))}
+        {shouldSequence && visibleChunkCount < chunkCount ? (
+          <div className="sequential-typing" aria-label="正在输入下一条消息">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : null}
+        <div className="message-meta">
+          <time dateTime={message.createdAtUtc}>
+            {formatLocalTime(message.createdAtUtc, timezone)}
+          </time>
+        </div>
+        {message.role === "assistant" && message.memoryRecall ? (
+          <MemoryContextSummary value={message.memoryRecall} />
+        ) : null}
+        {proactive ? (
+          <Link
+            className="message-origin-link"
+            to={`/characters/${encodeURIComponent(message.agentId)}/timeline`}
+          >
+            <MessageCircleMore size={14} /> 查看触发经历
+          </Link>
+        ) : null}
       </div>
-      {chunks.slice(0, visibleChunkCount).map((chunk, index) => (
-        <div className="message-bubble" key={`${message.id}:${index}`}>
-          {chunk}
-        </div>
-      ))}
-      {shouldSequence && visibleChunkCount < chunkCount ? (
-        <div className="sequential-typing" aria-label="正在输入下一条消息">
-          <span />
-          <span />
-          <span />
-        </div>
-      ) : null}
-      {message.role === "assistant" && message.memoryRecall ? (
-        <MemoryContextSummary value={message.memoryRecall} />
-      ) : null}
-      {proactive ? (
-        <button className="message-origin-link" type="button">
-          <MessageCircleMore size={14} /> 查看触发经历
-        </button>
-      ) : null}
     </div>
   );
 }

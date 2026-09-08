@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ChatMessage } from "../api/types";
 import { MessageBubble } from "./ChatPage";
+import { shouldSubmitChatKey } from "../lib/chatInput";
 
 const message: ChatMessage = {
   id: "assistant-live",
@@ -85,5 +86,24 @@ describe("MessageBubble initial rendering", () => {
 
     expect(markup).toContain("本轮记忆依据 · 1 条证据");
     expect(markup).toContain("已用于回复：对话原文，相关度 86%");
+  });
+});
+
+describe("Chinese input submission", () => {
+  const enter = {
+    key: "Enter",
+    shiftKey: false,
+    isComposing: false,
+    keyCode: 13,
+  };
+  it("sends ordinary Enter and preserves Shift+Enter for line breaks", () => {
+    expect(shouldSubmitChatKey(enter)).toBe(true);
+    expect(shouldSubmitChatKey({ ...enter, shiftKey: true })).toBe(false);
+    expect(shouldSubmitChatKey({ ...enter, key: "Escape" })).toBe(false);
+  });
+  it("never submits while an IME is selecting or confirming a candidate", () => {
+    expect(shouldSubmitChatKey({ ...enter, isComposing: true })).toBe(false);
+    expect(shouldSubmitChatKey(enter, true)).toBe(false);
+    expect(shouldSubmitChatKey({ ...enter, keyCode: 229 })).toBe(false);
   });
 });

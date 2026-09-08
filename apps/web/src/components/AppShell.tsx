@@ -74,7 +74,13 @@ export function AppShell() {
   const [activeCharacterId, setActiveCharacterId] =
     useState(readActiveCharacter);
   const previousActiveCharacterId = useRef(activeCharacterId);
-  useEffect(() => subscribeActiveCharacter(setActiveCharacterId), []);
+  useEffect(() => {
+    const unsubscribe = subscribeActiveCharacter(setActiveCharacterId);
+    // A deep-linked child can remember its character before the shell's
+    // passive effect subscribes. Read once after subscribing to catch it.
+    setActiveCharacterId(readActiveCharacter());
+    return unsubscribe;
+  }, []);
   const activationQuery = useQuery({
     queryKey: ["agent-activation", activeCharacterId],
     queryFn: async () => {

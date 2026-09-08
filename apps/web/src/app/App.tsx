@@ -1,7 +1,18 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { AppShell } from "../components/AppShell";
 import { LoadingBlock } from "../components/Feedback";
+import { ApplicationEntryTracker } from "../experience/ApplicationEntryTracker";
+import { useMotionPreference } from "../hooks/useMotionPreference";
+
+const AppShell = lazy(() =>
+  import("../components/AppShell").then((module) => ({
+    default: module.AppShell,
+  })),
+);
+const MarketingPage = lazy(() => import("../marketing/MarketingPage"));
+const StartPage = lazy(() => import("../experience/StartPage"));
+const WelcomePage = lazy(() => import("../experience/WelcomePage"));
+const EntryPage = lazy(() => import("../experience/EntryPage"));
 
 const CharacterLibraryPage = lazy(
   () => import("../pages/CharacterLibraryPage"),
@@ -45,59 +56,68 @@ export const RELATIONSHIP_ARCHIVE_ROUTE_PATHS = [
 ] as const;
 
 export function App() {
+  useMotionPreference();
   return (
-    <Suspense fallback={<LoadingBlock label="正在打开 PersonaSim…" fullPage />}>
+    <Suspense fallback={<LoadingBlock label="正在打开 ChatPLUS…" fullPage />}>
       <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<Navigate to="/characters" replace />} />
-          <Route path="/characters" element={<CharacterLibraryPage />} />
-          <Route path="/create" element={<CharacterGeneratorPage />} />
-          <Route path="/import" element={<CharacterImportPage />} />
-          <Route
-            path="/characters/:characterId/edit"
-            element={<CharacterEditorPage />}
-          />
-          <Route path="/characters/:characterId/chat" element={<ChatPage />} />
-          <Route
-            path={CORRESPONDENCE_ROUTE_PATHS[0]}
-            element={<CorrespondenceMailboxPage />}
-          />
-          <Route
-            path={CORRESPONDENCE_ROUTE_PATHS[1]}
-            element={<LetterComposePage />}
-          />
-          <Route
-            path={CORRESPONDENCE_ROUTE_PATHS[2]}
-            element={<LetterDetailPage />}
-          />
-          <Route
-            path={CORRESPONDENCE_ROUTE_PATHS[3]}
-            element={<CorrespondenceThreadPage />}
-          />
-          <Route
-            path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[0]}
-            element={<RelationshipArchivePage />}
-          />
-          <Route
-            path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[1]}
-            element={<KeepsakeCabinetPage />}
-          />
-          <Route
-            path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[2]}
-            element={<ArtifactDetailPage />}
-          />
-          <Route
-            path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[3]}
-            element={<ShareComposerPage />}
-          />
-          <Route path="/timeline" element={<TimelinePage />} />
-          <Route
-            path="/characters/:characterId/timeline"
-            element={<TimelinePage />}
-          />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/developer" element={<DeveloperPage />} />
-          <Route path="*" element={<Navigate to="/characters" replace />} />
+        <Route path="/about" element={<MarketingPage />} />
+        <Route path="/start" element={<StartPage />} />
+        <Route path="/welcome" element={<WelcomePage />} />
+        <Route path="/" element={<EntryPage />} />
+        <Route element={<ApplicationEntryTracker />}>
+          <Route element={<AppShell />}>
+            <Route path="/characters" element={<CharacterLibraryPage />} />
+            <Route path="/create" element={<CharacterGeneratorPage />} />
+            <Route path="/import" element={<CharacterImportPage />} />
+            <Route
+              path="/characters/:characterId/edit"
+              element={<CharacterEditorPage />}
+            />
+            <Route
+              path="/characters/:characterId/chat"
+              element={<ChatPage />}
+            />
+            <Route
+              path={CORRESPONDENCE_ROUTE_PATHS[0]}
+              element={<CorrespondenceMailboxPage />}
+            />
+            <Route
+              path={CORRESPONDENCE_ROUTE_PATHS[1]}
+              element={<LetterComposePage />}
+            />
+            <Route
+              path={CORRESPONDENCE_ROUTE_PATHS[2]}
+              element={<LetterDetailPage />}
+            />
+            <Route
+              path={CORRESPONDENCE_ROUTE_PATHS[3]}
+              element={<CorrespondenceThreadPage />}
+            />
+            <Route
+              path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[0]}
+              element={<RelationshipArchivePage />}
+            />
+            <Route
+              path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[1]}
+              element={<KeepsakeCabinetPage />}
+            />
+            <Route
+              path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[2]}
+              element={<ArtifactDetailPage />}
+            />
+            <Route
+              path={RELATIONSHIP_ARCHIVE_ROUTE_PATHS[3]}
+              element={<ShareComposerPage />}
+            />
+            <Route path="/timeline" element={<TimelinePage />} />
+            <Route
+              path="/characters/:characterId/timeline"
+              element={<TimelinePage />}
+            />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/developer" element={<DeveloperPage />} />
+            <Route path="*" element={<Navigate to="/characters" replace />} />
+          </Route>
         </Route>
       </Routes>
     </Suspense>

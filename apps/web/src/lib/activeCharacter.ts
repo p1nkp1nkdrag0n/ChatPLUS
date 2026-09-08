@@ -28,6 +28,15 @@ export function readActiveCharacter(): string | undefined {
   }
 }
 
+export function clearActiveCharacter(): void {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // An unavailable preference store must not prevent navigation.
+  }
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+}
+
 export function subscribeActiveCharacter(
   listener: (characterId: string | undefined) => void,
 ): () => void {

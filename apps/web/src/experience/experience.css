@@ -1,0 +1,451 @@
+.experience-transition {
+  animation: experience-arrive 220ms ease-out both;
+}
+
+body:has(.welcome-page),
+body:has(.start-page) {
+  padding-bottom: 0;
+}
+
+.welcome-page,
+.start-page {
+  position: relative;
+  min-height: 100svh;
+  overflow: clip;
+  background: #f7f4ec;
+  color: #2e3c33;
+}
+
+.welcome-page::before,
+.start-page::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 25%, #fffdf8 0, transparent 55%),
+    repeating-linear-gradient(3deg, #8e785404 0 1px, transparent 1px 4px);
+  pointer-events: none;
+  content: "";
+}
+
+.experience-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px clamp(24px, 5vw, 76px);
+}
+
+.experience-brand {
+  font-family: var(--font-editorial);
+  font-size: 25px;
+  letter-spacing: -0.04em;
+}
+
+.experience-text-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  gap: 7px;
+  color: #627060;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-color: #b8bcae;
+}
+
+.experience-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 49px;
+  padding: 13px 25px;
+  border: 1px solid #d4d2c6;
+  border-radius: 13px;
+  background: #fcfaf570;
+  font-size: 14px;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.experience-button:hover {
+  background: #fffdf8;
+  border-color: #a3b09c;
+}
+
+.experience-button--primary {
+  border-color: #365643;
+  background: #365643;
+  color: #fffdf7;
+}
+
+.experience-button--primary:hover {
+  border-color: #254532;
+  background: #254532;
+  box-shadow: 0 5px 18px #29453217;
+}
+
+.experience-button small {
+  margin-left: 6px;
+  color: #e1e8db;
+  font-size: 12px;
+}
+
+.experience-button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.experience-button > svg {
+  flex-shrink: 0;
+}
+
+.welcome-content {
+  position: relative;
+  z-index: 1;
+  width: min(100% - 48px, 460px);
+  margin: 6vh auto 0;
+  padding-bottom: 56px;
+  text-align: center;
+}
+
+.welcome-letter {
+  position: relative;
+  width: 230px;
+  height: 162px;
+  margin: 0 auto 53px;
+  transform: rotate(-9deg);
+}
+
+.welcome-letter__paper {
+  position: absolute;
+  inset: 11px 0;
+  border: 1px solid #d6cbb6;
+  background: linear-gradient(145deg, #fffcf4, #f1e9d9);
+  box-shadow:
+    0 10px 25px #796d4817,
+    0 1px 3px #796d4812;
+}
+
+.welcome-letter__fold {
+  position: absolute;
+  top: 11px;
+  left: 0;
+  width: 230px;
+  height: 100px;
+  background: linear-gradient(165deg, #fffdf5 45%, #e5dac4);
+  clip-path: polygon(0 0, 100% 0, 52% 87%, 48% 87%);
+  filter: drop-shadow(0 1px 0 #c9b99c);
+}
+
+.welcome-letter__flower {
+  position: absolute;
+  right: -46px;
+  bottom: -28px;
+  width: 160px;
+  height: 160px;
+  background: url("/art/early-summer/ui/botanical-mark.webp") center / contain
+    no-repeat;
+  transform: rotate(29deg);
+}
+
+.welcome-content h1 {
+  margin-top: 13px;
+  font-family: var(--font-editorial);
+  font-size: clamp(26px, 4.6vw, 36px);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+.welcome-content h1:focus,
+.start-guide h1:focus {
+  outline: none;
+}
+
+.welcome-description {
+  margin-top: 17px;
+  color: #737b6a;
+  font-family: var(--font-editorial);
+  font-size: 15px;
+  line-height: 1.9;
+  letter-spacing: 0.07em;
+}
+
+.welcome-actions {
+  max-width: 364px;
+  margin: 31px auto 0;
+}
+
+.welcome-actions > .experience-button {
+  width: 100%;
+}
+
+.welcome-actions__secondary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.welcome-status {
+  min-height: 40px;
+  padding-top: 13px;
+  color: #737b6a;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.welcome-skip {
+  margin-top: 1px;
+  font-size: 12px;
+}
+
+.welcome-closing {
+  margin-top: 29px;
+  color: #92937f;
+  font-family: var(--font-editorial);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+}
+
+.welcome-botanical {
+  position: absolute;
+  width: clamp(210px, 29vw, 450px);
+  aspect-ratio: 1;
+  background: url("/art/early-summer/ui/botanical-mark.webp") center / contain
+    no-repeat;
+  pointer-events: none;
+}
+
+.welcome-botanical--left {
+  left: -90px;
+  bottom: -85px;
+  opacity: 0.72;
+  transform: rotate(34deg);
+}
+
+.welcome-botanical--right {
+  right: -135px;
+  top: 55px;
+  opacity: 0.53;
+  transform: rotate(203deg);
+}
+
+.start-guide {
+  position: relative;
+  max-width: 830px;
+  margin: 48px auto 0;
+  padding: 0 30px 45px;
+}
+
+.start-guide > h1 {
+  margin-top: 18px;
+  font-family: var(--font-editorial);
+  font-size: clamp(34px, 6vw, 52px);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+.start-lead {
+  max-width: 620px;
+  margin-top: 23px;
+  color: #697360;
+  font-family: var(--font-editorial);
+  font-size: 17px;
+  line-height: 1.9;
+}
+
+.start-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin: 37px 0 5px;
+  padding: 26px;
+  border: 1px solid #d7ddcc;
+  border-radius: 13px;
+  background: #edf0e5;
+}
+
+.start-entry h2,
+.start-section h2 {
+  font-family: var(--font-editorial);
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.start-entry p {
+  margin-top: 8px;
+  color: #6f7969;
+  font-size: 12px;
+}
+
+.start-entry .experience-button {
+  flex-shrink: 0;
+}
+
+.start-section {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 20px;
+  padding: 33px 0;
+  border-bottom: 1px solid #dcdccf;
+}
+
+.start-section__number {
+  color: #9a9e88;
+  font-family: var(--font-editorial);
+  font-size: 24px;
+}
+
+.start-section p {
+  margin-top: 13px;
+  color: #697360;
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.start-section pre {
+  overflow-x: auto;
+  margin: 20px 0;
+  padding: 19px 23px;
+  border: 1px solid #dbddcf;
+  border-radius: 8px;
+  background: #eeeee3;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.start-section .experience-text-link {
+  margin-top: 9px;
+}
+
+.start-data-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 17px;
+  margin-top: 30px;
+  color: #737b6a;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.start-data-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.start-guide__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 32px;
+}
+
+@keyframes experience-arrive {
+  from {
+    opacity: 0.4;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .experience-header {
+    padding: 20px 24px;
+  }
+  .experience-brand {
+    font-size: 22px;
+  }
+  .welcome-content {
+    margin-top: 24px;
+    padding-bottom: 28px;
+  }
+  .welcome-letter {
+    height: 125px;
+    margin-bottom: 32px;
+    transform: rotate(-9deg) scale(0.9);
+  }
+  .welcome-botanical--right {
+    right: -150px;
+    top: 0;
+    opacity: 0.35;
+  }
+  .welcome-botanical--left {
+    left: -100px;
+    bottom: -80px;
+    opacity: 0.48;
+  }
+  .welcome-content h1 {
+    font-size: 27px;
+  }
+  .welcome-description {
+    margin-top: 12px;
+  }
+  .welcome-actions {
+    margin-top: 25px;
+  }
+  .welcome-closing {
+    margin-top: 23px;
+  }
+  .start-guide {
+    margin-top: 31px;
+    padding-inline: 24px;
+  }
+  .start-entry {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 19px;
+    padding: 23px;
+  }
+  .start-entry .experience-button {
+    width: 100%;
+  }
+  .start-section {
+    grid-template-columns: 28px 1fr;
+    gap: 12px;
+  }
+  .start-guide__footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 601px) {
+  .welcome-content {
+    margin-top: 12px;
+  }
+  .welcome-letter {
+    height: 135px;
+    margin-bottom: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .experience-transition {
+    animation: none;
+  }
+  .experience-button {
+    transition: none;
+  }
+}
+
+html[data-motion="still"] .experience-transition,
+html[data-motion="reduced"] .experience-transition,
+html[data-motion="still"] .experience-button,
+html[data-motion="reduced"] .experience-button {
+  animation: none;
+  transition: none;
+}

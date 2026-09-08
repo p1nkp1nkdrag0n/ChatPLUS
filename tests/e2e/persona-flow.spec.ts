@@ -4,7 +4,7 @@ import type { APIRequestContext, Page } from "@playwright/test";
 test.describe("PersonaSim fixture flow", () => {
   test("app renders a usable character library", async ({ page }) => {
     await page.goto("/characters");
-    await expect(page).toHaveTitle("PersonaSim");
+    await expect(page).toHaveTitle("ChatPLUS");
     await expect(
       page.getByRole("heading", { name: "角色", exact: true }),
     ).toBeVisible();

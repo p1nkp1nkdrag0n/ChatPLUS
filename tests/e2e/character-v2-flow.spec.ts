@@ -17,7 +17,7 @@ test("creates and publishes a character with optional concerns left blank", asyn
       errors.push(message.text());
   });
   await page.goto("/create");
-  await expect(page).toHaveTitle("PersonaSim");
+  await expect(page).toHaveTitle("ChatPLUS");
   await page.getByLabel("角色名称").fill(`阿澄-${test.info().project.name}`);
   await page.getByLabel("社会身份或职业").fill("书店店员");
   await page.getByLabel("核心性格 1").fill("习惯先听别人说完");
@@ -168,7 +168,7 @@ test("reviews an exact quarantined constraint and saves the author's confirmatio
     .character;
   expect(before.persona.boundaries).toEqual([]);
   await page.goto(`/characters/${character.id}/edit`);
-  await expect(page).toHaveTitle("PersonaSim");
+  await expect(page).toHaveTitle("ChatPLUS");
   await page.getByRole("button", { name: "约束来源", exact: true }).click();
   const review = page.getByRole("region", { name: "约束来源复核" });
   await expect(
@@ -217,6 +217,8 @@ test("reviews an exact quarantined constraint and saves the author's confirmatio
   const candidateSummary = await rejectedCandidate
     .locator("summary")
     .textContent();
+  if (candidateSummary === null)
+    throw new Error("Expected a review candidate summary");
   await rejectedCandidate.getByRole("button", { name: "不采用此候选" }).click();
   await expect(
     review

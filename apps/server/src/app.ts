@@ -6,6 +6,7 @@ import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
+import type { ReplySteeringMode } from "@personasim/features";
 
 import { composeServer, type ServerKernelHandle } from "./composition/index.js";
 import { readConfig, type ServerConfig } from "./config.js";
@@ -28,6 +29,8 @@ export type BuildAppOptions = {
   logger?: boolean;
   llmObservation?: LlmServiceObservationOptions;
   fixtureTurnBehavior?: FixtureTurnBehavior;
+  /** Development/evaluation only; not an HTTP or persisted user setting. */
+  replySteeringMode?: ReplySteeringMode;
 };
 
 export type PersonaSimApp = FastifyInstance & {
@@ -56,6 +59,9 @@ export async function buildApp(
   const composition = await composeServer({
     config,
     logger: app.log,
+    ...(options.replySteeringMode === undefined
+      ? {}
+      : { replySteeringMode: options.replySteeringMode }),
     ...(options.database === undefined ? {} : { database: options.database }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.llmObservation === undefined

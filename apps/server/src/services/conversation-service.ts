@@ -13,6 +13,7 @@ import {
   selectLifeContextForTurn,
   selectConversationRetention,
   type ConversationRetentionPolicy,
+  type ReplySteeringMode,
 } from "@personasim/features";
 
 import type {
@@ -79,6 +80,7 @@ export interface ConversationServiceOptions {
   companionContextMode?: "off" | "shadow" | "enforced";
   personaRuntimeMode?: "off" | "shadow" | "enforced";
   conversationRetention?: ConversationRetentionPolicy;
+  replySteeringMode?: ReplySteeringMode;
 }
 
 export interface ConversationTurnCollaborators {
@@ -496,6 +498,9 @@ export class ConversationService {
         ? {}
         : { additionalPromptSegments }),
       maxInputTokens: calculateLlmPromptTokenBudget(this.llm.capabilities),
+      ...(this.options.replySteeringMode === undefined
+        ? {}
+        : { replySteeringMode: this.options.replySteeringMode }),
       schedule: toFeatureScheduleItems(schedule),
       memories,
       ...(memoryEvidence === undefined ? {} : { memoryEvidence }),

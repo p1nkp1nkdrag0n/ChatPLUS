@@ -597,6 +597,255 @@ describe("complete turn-control delivery", () => {
   });
 });
 
+describe("reply length steering ablation", () => {
+  const removedFields = [
+    "softTargetCharacters",
+    "preferredChunkCount",
+    "deliveryPreference",
+    "lengthGuidance",
+    "deliveryGuidance",
+  ];
+
+  function withoutLengthSteering(value: unknown) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).filter(
+        ([key]) => !removedFields.includes(key),
+      ),
+    );
+  }
+
+  function expectOnlySteeringRemoved(input: AssemblePromptInput) {
+    const current = assembleChatPrompt(input);
+    const experimental = assembleChatPrompt({
+      ...input,
+      replySteeringMode: "no_length_steering",
+    });
+    const currentStrategy = promptSegmentJson(
+      current.prompt,
+      "REPLY_STRATEGY_JSON",
+    );
+    const expectedStrategy = withoutLengthSteering(currentStrategy);
+    // Compare every final byte outside the one JSON payload, including
+    // compacted required context, optional context and the output protocol.
+    expect(experimental.prompt).toBe(
+      current.prompt.replace(
+        "REPLY_STRATEGY_JSON\n" + JSON.stringify(currentStrategy),
+        "REPLY_STRATEGY_JSON\n" + JSON.stringify(expectedStrategy),
+      ),
+    );
+    expect(experimental.system).toBe(current.system);
+    expect(experimental.replyGrounding).toBe(current.replyGrounding);
+    expect(experimental.replyStrategy).toEqual(current.replyStrategy);
+    expect(experimental.messages).toEqual([
+      { role: "system", content: experimental.system },
+      { role: "user", content: experimental.prompt },
+    ]);
+    expect(
+      experimental.segmentTrace.segments.filter(
+        (segment) => segment.id !== "15_reply_strategy",
+      ),
+    ).toEqual(
+      current.segmentTrace.segments.filter(
+        (segment) => segment.id !== "15_reply_strategy",
+      ),
+    );
+    expect(experimental.segmentTrace.droppedSegmentIds).toEqual(
+      current.segmentTrace.droppedSegmentIds,
+    );
+    const strategyTrace = current.segmentTrace.segments.find(
+      (segment) => segment.id === "15_reply_strategy",
+    )!;
+    const renderedStrategy =
+      "REPLY_STRATEGY_JSON\n" + JSON.stringify(expectedStrategy);
+    expect(
+      experimental.segmentTrace.segments.find(
+        (segment) => segment.id === "15_reply_strategy",
+      ),
+    ).toEqual({
+      ...strategyTrace,
+      estimatedTokens: estimatePromptTokens(renderedStrategy),
+      renderedCharacters: renderedStrategy.length,
+    });
+    expect(strategyTrace).toMatchObject({ included: true, required: true });
+    expect(experimental.segmentTrace.estimatedInputTokens).toBe(
+      estimatePromptTokens(experimental.system) +
+        estimatePromptTokens(experimental.prompt),
+    );
+    return { current, experimental };
+  }
+
+  it.each([undefined, 512, 3_000])(
+    "keeps omitted mode identical to explicit current at %s tokens",
+    (maxInputTokens) => {
+      const input = baseInput({
+        ...(maxInputTokens === undefined ? {} : { maxInputTokens }),
+      });
+      expect(assembleChatPrompt(input)).toEqual(
+        assembleChatPrompt({ ...input, replySteeringMode: "current" }),
+      );
+    },
+  );
+
+  it("removes exactly five model-visible fields and retains derived strategy", () => {
+    const { current, experimental } = expectOnlySteeringRemoved(baseInput());
+    const original = promptSegmentJson(
+      current.prompt,
+      "REPLY_STRATEGY_JSON",
+    ) as Record<string, unknown>;
+    const strategy = promptSegmentJson(
+      experimental.prompt,
+      "REPLY_STRATEGY_JSON",
+    ) as Record<string, unknown>;
+    expect(Object.keys(original).filter((key) => !(key in strategy))).toEqual(
+      removedFields,
+    );
+    expect(strategy).toEqual({
+      complexity: original.complexity,
+      stateGuidance: original.stateGuidance,
+    });
+    expect(current.replyStrategy.targetChars).toBeGreaterThan(0);
+    expect(experimental.segmentTrace.estimatedInputTokens).toBeLessThan(
+      current.segmentTrace.estimatedInputTokens,
+    );
+  });
+
+  it.each([512, 1_000, 3_000])(
+    "preserves final admission and compaction at a tight %s-token budget",
+    (maxInputTokens) => {
+      const { current, experimental } = expectOnlySteeringRemoved(
+        baseInput({
+          maxInputTokens,
+          memoryEvidence: MEMORY_EVIDENCE,
+          recentMessages: Array.from({ length: 30 }, (_, index) => ({
+            role: "assistant" as const,
+            content: `历史 ${index}。${"这是一段较长的历史对话。".repeat(80)}`,
+          })),
+        }),
+      );
+      expect(
+        current.segmentTrace.segments.some(
+          (segment) => segment.truncated || segment.reason === "global_budget",
+        ),
+      ).toBe(true);
+      expect(
+        experimental.segmentTrace.estimatedInputTokens,
+      ).toBeLessThanOrEqual(maxInputTokens);
+    },
+  );
+
+  it.each([
+    "reply_only",
+    "legacy_effects",
+    "schedule_negotiation",
+    "schedule_negotiation_shadow",
+  ] as const)(
+    "preserves complete controls and output protocol under pressure (%s)",
+    (decisionMode) => {
+      const userMessage = "先让我说完，再帮我详细分析。";
+      const conversationPlan = buildConversationContextPlan({
+        originalQuery: userMessage,
+        agentId: "agent-test",
+        sessionId: "session-test",
+        recentMessages: [],
+      });
+      const input = baseInput({ userMessage, conversationPlan, decisionMode });
+      const unconstrained = assembleChatPrompt(input);
+      const maxInputTokens = unconstrained.segmentTrace.segments
+        .filter((segment) => segment.required)
+        .reduce((total, segment) => total + segment.estimatedTokens + 1, 30);
+      const { current, experimental } = expectOnlySteeringRemoved({
+        ...input,
+        maxInputTokens,
+      });
+      expect(
+        promptSegmentJson(experimental.prompt, "REPLY_STRATEGY_JSON"),
+      ).toMatchObject({
+        helpTiming: "after_user_finishes",
+        expression: turnExpressionPromptView(conversationPlan, [], {
+          includeRecentDialogue: false,
+        }),
+      });
+      expect(
+        current.segmentTrace.segments.some(
+          (segment) => !segment.required && segment.reason === "global_budget",
+        ),
+      ).toBe(true);
+      expect(() =>
+        assembleChatPrompt({
+          ...input,
+          maxInputTokens: 512,
+          replySteeringMode: "no_length_steering",
+        }),
+      ).toThrow(PromptSegmentRegistryError);
+    },
+  );
+
+  it("does not target a matching label in another segment", () => {
+    const input = baseInput({
+      additionalPromptSegments: [
+        {
+          id: "14a_ablation_probe",
+          placement: "prompt",
+          renderOrder: -2,
+          priority: -100,
+          tokenBudget: 1_000,
+          required: false,
+          cacheable: false,
+          globalOverflowPolicy: "drop",
+          render: () =>
+            'REPLY_STRATEGY_JSON\n{"lengthGuidance":"Unrelated segment, keep verbatim."}',
+        },
+      ],
+    });
+    const experimental = assembleChatPrompt({
+      ...input,
+      replySteeringMode: "no_length_steering",
+    });
+    expect(experimental.prompt).toContain(
+      'REPLY_STRATEGY_JSON\n{"lengthGuidance":"Unrelated segment, keep verbatim."}',
+    );
+    expect(experimental.prompt).not.toContain('"softTargetCharacters"');
+  });
+
+  it("does not reinvest saved steering space in excluded optional context", () => {
+    const input = baseInput({
+      conversationPlan: buildConversationContextPlan({
+        originalQuery: "How was your day?",
+        agentId: "agent-test",
+        sessionId: "session-test",
+        recentMessages: [],
+      }),
+      additionalPromptSegments: [
+        {
+          id: "14a_ablation_probe",
+          placement: "prompt",
+          priority: -100,
+          tokenBudget: 1_000,
+          required: false,
+          cacheable: false,
+          globalOverflowPolicy: "drop",
+          render: () => "ABLATION_PROBE\n" + "Optional context. ".repeat(8),
+        },
+      ],
+    });
+    const current = assembleChatPrompt(input);
+    const probe = current.segmentTrace.segments.find(
+      (segment) => segment.id === "14a_ablation_probe",
+    )!;
+    const maxInputTokens = current.segmentTrace.segments
+      .filter((segment) => segment.required)
+      .reduce((total, segment) => total + segment.estimatedTokens + 1, 0);
+    const constrained = expectOnlySteeringRemoved({ ...input, maxInputTokens });
+    expect(constrained.experimental.segmentTrace.droppedSegmentIds).toContain(
+      probe.id,
+    );
+    expect(
+      maxInputTokens -
+        constrained.experimental.segmentTrace.estimatedInputTokens,
+    ).toBeGreaterThan(probe.estimatedTokens);
+  });
+});
+
 describe("assembleChatPrompt registry integration", () => {
   it.each(["reply_only", "schedule_negotiation", "legacy_effects"] as const)(
     "keeps the system stable when authoritative memory evidence appears and disappears (%s)",

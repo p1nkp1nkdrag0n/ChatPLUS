@@ -137,6 +137,7 @@ export interface ServerKernelEvents {
 }
 
 export interface ServerPluginOptions {
+  readonly replySteeringMode?: import("@personasim/features").ReplySteeringMode;
   readonly bundle: ServerSimulationBundle;
   readonly config: ServerConfig;
   readonly logger: FastifyBaseLogger;
@@ -152,7 +153,11 @@ export function createServerPlugins(
   return [
     createBundlePlugin(options.bundle),
     createInfrastructurePlugin(options),
-    createDomainPlugin(options.bundle.pluginId, options.fixtureTurnBehavior),
+    createDomainPlugin(
+      options.bundle.pluginId,
+      options.fixtureTurnBehavior,
+      options.replySteeringMode,
+    ),
     createSchedulerPlugin(),
   ];
 }
@@ -276,6 +281,7 @@ function createInfrastructurePlugin(
 function createDomainPlugin(
   bundlePluginId: string,
   fixtureTurnBehavior?: FixtureTurnBehavior,
+  replySteeringMode?: import("@personasim/features").ReplySteeringMode,
 ): KernelPlugin<ServerKernelEvents> {
   return {
     manifest: {
@@ -584,6 +590,7 @@ function createDomainPlugin(
       );
       proactiveDeliveryRef.current = proactiveDelivery;
       const conversationOptions = {
+        ...(replySteeringMode === undefined ? {} : { replySteeringMode }),
         chatEffectsMode: config.chatEffectsMode,
         lifePlanningMode: config.lifePlanningMode,
         liveWorldEffectsMode: config.liveWorldEffectsMode,

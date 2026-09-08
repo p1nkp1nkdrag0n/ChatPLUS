@@ -40,6 +40,7 @@ import {
   PromptSegmentRegistry,
   PromptSegmentRegistryError,
   type DefaultPromptContext,
+  type PromptAssemblyResult,
   type PromptAssemblyTrace,
   type PromptSegment,
 } from "./prompt-segments/index.js";
@@ -86,6 +87,9 @@ export interface PromptMessageLike {
   createdAtUtc?: string;
 }
 
+/** Development/evaluation ablation; ordinary chat retains current steering. */
+export type ReplySteeringMode = "current" | "no_length_steering";
+
 export interface AssemblePromptInput {
   character: CharacterForPrompt;
   effectivePersona?: EffectivePersonaSnapshot;
@@ -109,6 +113,7 @@ export interface AssemblePromptInput {
   maxRecentMessages?: number;
   maxMemories?: number;
   maxInputTokens?: number;
+  replySteeringMode?: ReplySteeringMode;
   liveWorldEffectsMode?: "off" | "shadow" | "enforced";
   lifePlanningMode?: "fuzzy" | "legacy_exact";
   decisionMode?:
@@ -1084,7 +1089,7 @@ export function assembleChatPrompt(
         }),
     });
   }
-  const assembled = registry.render(
+  const admitted = registry.render(
     promptSafeContext,
     input.maxInputTokens === undefined
       ? {}
@@ -1093,12 +1098,13 @@ export function assembleChatPrompt(
   if (turnControl !== undefined) {
     const expected = promptSafeContext.replyStrategy as Record<string, unknown>;
     assertTurnControlDelivered(
-      assembled.prompt,
+      admitted.prompt,
       Object.fromEntries(
         Object.keys(turnControl).map((key) => [key, expected[key]]),
       ),
     );
   }
+  const assembled = applyReplySteeringMode(admitted, input.replySteeringMode);
 
   return {
     system: assembled.system,
@@ -1112,6 +1118,84 @@ export function assembleChatPrompt(
     // Reuse complete, admitted grounding records in any existing repair. Never
     // recall again or resurrect a segment dropped by the initial token budget.
     replyGrounding: retainedReplyGrounding(assembled),
+  };
+}
+
+/**
+ * Reserve and admit the current prompt first. Removing steering before registry
+ * admission would spend its saved tokens on other context, confounding the
+ * ablation (and changing required-segment compaction at tight budgets).
+ */
+function applyReplySteeringMode(
+  admitted: PromptAssemblyResult,
+  mode: ReplySteeringMode = "current",
+): PromptAssemblyResult {
+  if (mode === "current") return admitted;
+  const strategy = admitted.trace.segments.find(
+    (segment) => segment.id === "15_reply_strategy",
+  );
+  if (
+    strategy?.included !== true ||
+    strategy.renderedIndex === undefined ||
+    strategy.renderedCharacters === undefined
+  ) {
+    throw new PromptSegmentRegistryError(
+      "required_segments_exceed_budget",
+      "The prompt budget cannot retain the required reply strategy.",
+    );
+  }
+  // Locate by the retained segment trace so label-like text in unrelated
+  // segments cannot become an accidental target of the experiment.
+  const start = admitted.trace.segments
+    .filter(
+      (segment) =>
+        segment.placement === "prompt" &&
+        segment.included &&
+        segment.renderedIndex! < strategy.renderedIndex!,
+    )
+    .reduce((offset, segment) => offset + segment.renderedCharacters! + 1, 0);
+  const end = start + strategy.renderedCharacters;
+  const original = admitted.prompt.slice(start, end);
+  const prefix = "REPLY_STRATEGY_JSON\n";
+  const payload = JSON.parse(original.slice(prefix.length)) as Record<
+    string,
+    unknown
+  >;
+  const removedFields = new Set([
+    "softTargetCharacters",
+    "preferredChunkCount",
+    "deliveryPreference",
+    "lengthGuidance",
+    "deliveryGuidance",
+  ]);
+  const content =
+    prefix +
+    JSON.stringify(
+      Object.fromEntries(
+        Object.entries(payload).filter(([key]) => !removedFields.has(key)),
+      ),
+    );
+  const prompt =
+    admitted.prompt.slice(0, start) + content + admitted.prompt.slice(end);
+  return {
+    ...admitted,
+    prompt,
+    trace: {
+      ...admitted.trace,
+      // These counts describe the text actually sent, while tokenBudget and
+      // all admission/truncation decisions still describe the current arm.
+      estimatedInputTokens:
+        estimatePromptTokens(admitted.system) + estimatePromptTokens(prompt),
+      segments: admitted.trace.segments.map((segment) =>
+        segment.id === strategy.id
+          ? {
+              ...segment,
+              estimatedTokens: estimatePromptTokens(content),
+              renderedCharacters: content.length,
+            }
+          : segment,
+      ),
+    },
   };
 }
 

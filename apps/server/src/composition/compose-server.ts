@@ -54,6 +54,7 @@ import {
 } from "./service-tokens.js";
 
 export interface ComposeServerOptions {
+  readonly replySteeringMode?: import("@personasim/features").ReplySteeringMode;
   readonly config: ServerConfig;
   readonly logger: FastifyBaseLogger;
   readonly database?: Database;
@@ -91,6 +92,9 @@ export async function composeServer(
   });
   const plugins = createServerPlugins({
     bundle,
+    ...(options.replySteeringMode === undefined
+      ? {}
+      : { replySteeringMode: options.replySteeringMode }),
     config: options.config,
     logger: options.logger,
     ...(options.database === undefined ? {} : { database: options.database }),

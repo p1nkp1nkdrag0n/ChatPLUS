@@ -58,8 +58,11 @@ function practiceContext(effective: EffectivePersonaSnapshot | undefined) {
 function requestContext(
   plan: ConversationContextPlan | undefined,
   effective?: EffectivePersonaSnapshot,
+  includeRecentDialogue = true,
 ) {
   if (plan === undefined) return undefined;
+  // Callers with grounding (even "") must not restore history omitted by the
+  // original prompt window, budget, or projection. Undefined keeps old callers.
   return {
     intent: plan.intent,
     supportStyle: plan.supportStyle,
@@ -69,6 +72,7 @@ function requestContext(
     expression: turnExpressionPromptView(
       plan,
       effective?.relationshipPractices,
+      { includeRecentDialogue },
     ),
     guidance:
       "Current explicit requests override stored defaults. For after_user_finishes, listen now and provide the requested help only after the user finishes. none_now permits no action instructions; optional_light permits at most one light optional suggestion, not a task list. If timing is unspecified, do not impose either conflicting style.",
@@ -124,6 +128,7 @@ export class ReplyRepairService {
             currentRequest: requestContext(
               input.conversationPlan,
               input.effectivePersona,
+              input.replyGrounding === undefined,
             ),
             interactionEvidence:
               input.interactionEvidence === undefined
@@ -184,6 +189,7 @@ export class ReplyRepairService {
             currentRequest: requestContext(
               input.conversationPlan,
               input.effectivePersona,
+              input.replyGrounding === undefined,
             ),
             interactionEvidence:
               input.interactionEvidence === undefined

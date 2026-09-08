@@ -320,6 +320,157 @@ function promptSegmentJson(prompt: string, label: string): unknown {
   return JSON.parse(serialized) as unknown;
 }
 
+describe("one admitted conversation history", () => {
+  const current = "好呀很高兴与你聊天";
+  function planFor(text: string) {
+    return buildConversationContextPlan({
+      originalQuery: current,
+      agentId: "agent-private-id",
+      sessionId: "history-test",
+      recentMessages: [
+        {
+          id: "history-source",
+          agentId: "agent-private-id",
+          sessionId: "history-test",
+          role: "user",
+          text,
+        },
+      ],
+      protectedPhrases: ["作者指定的表达"],
+    });
+  }
+
+  it("uses the selected history once without restoring a different planner view", () => {
+    const selected = "选入原文：刚来学校时我有些不安。";
+    const excluded = "计划旧视图：未经本轮选择的旧消息。";
+    const plan = planFor(excluded);
+    const before = structuredClone(plan);
+    const result = assembleChatPrompt(
+      baseInput({
+        userMessage: current,
+        conversationPlan: plan,
+        recentMessages: [{ role: "user", content: selected }],
+      }),
+    );
+    for (const prompt of [result.prompt, result.replyGrounding]) {
+      expect(prompt.split(selected)).toHaveLength(2);
+      expect(prompt).not.toContain(excluded);
+    }
+    const strategy = promptSegmentJson(
+      result.prompt,
+      "REPLY_STRATEGY_JSON",
+    ) as {
+      expression: ReturnType<typeof turnExpressionPromptView>;
+    };
+    expect(strategy.expression.recentExpression).toMatchObject({
+      protectedPhrases: ["作者指定的表达"],
+      repeatedOpenings: [],
+    });
+    expect(strategy.expression.recentExpression).not.toHaveProperty(
+      "recentDialogue",
+    );
+    expect(plan).toEqual(before);
+  });
+
+  it("honors an explicitly empty history window even when the planner retains it", () => {
+    const previous = "已关闭历史窗口的原文不能通过表达策略重新出现。";
+    const result = assembleChatPrompt(
+      baseInput({
+        userMessage: current,
+        conversationPlan: planFor(previous),
+        recentMessages: [{ role: "user", content: previous }],
+        maxRecentMessages: 0,
+      }),
+    );
+    expect(result.prompt).not.toContain(previous);
+    expect(result.replyGrounding).not.toContain(previous);
+  });
+
+  it("does not restore budget-omitted history inside required expression controls", () => {
+    const previous = "历史预算标记。" + "一段完整的旧对话。".repeat(100);
+    const input = baseInput({
+      userMessage: current,
+      conversationPlan: planFor(previous),
+      recentMessages: [{ role: "user", content: previous }],
+    });
+    const full = assembleChatPrompt(input);
+    expect(full.prompt).toContain(previous);
+    const budget = full.segmentTrace.segments
+      .filter((segment) => segment.required)
+      .reduce((total, segment) => total + segment.estimatedTokens + 1, 100);
+    const constrained = assembleChatPrompt({
+      ...input,
+      maxInputTokens: budget,
+    });
+    expect(constrained.prompt).not.toContain("历史预算标记");
+    expect(constrained.replyGrounding).not.toContain("历史预算标记");
+    expect(constrained.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(
+      budget,
+    );
+    expect(
+      promptSegmentJson(constrained.prompt, "REPLY_STRATEGY_JSON"),
+    ).toEqual(promptSegmentJson(full.prompt, "REPLY_STRATEGY_JSON"));
+  });
+
+  it("shares whole admitted messages with repairs after history compaction", () => {
+    const history = Array.from({ length: 20 }, (_, index) => ({
+      role: "user" as const,
+      content: `完整消息${index}。${"过去的一段具体对话。".repeat(100)}`,
+    }));
+    const result = assembleChatPrompt(
+      baseInput({
+        userMessage: current,
+        conversationPlan: planFor(history[0]!.content),
+        recentMessages: history,
+      }),
+    );
+    const admitted = promptSegmentJson(
+      result.prompt,
+      "RECENT_VERBATIM_JSON",
+    ) as typeof history;
+    expect(admitted.length).toBeGreaterThan(0);
+    expect(admitted.length).toBeLessThan(history.length);
+    expect(admitted).toEqual(history.slice(-admitted.length));
+    expect(
+      promptSegmentJson(result.replyGrounding, "RECENT_VERBATIM_JSON"),
+    ).toEqual(admitted);
+    expect(result.prompt).not.toContain(history[0]!.content);
+  });
+
+  it("keeps the admitted story-time projection in generation and repair history", () => {
+    const previous = "书店门前刚才下了一阵雨。";
+    const input = baseInput({
+      userMessage: current,
+      conversationPlan: planFor(previous),
+      recentMessages: [{ role: "user", content: previous, createdAtUtc: NOW }],
+    });
+    input.character.identity.temporalFrame = {
+      mode: "anchored_story",
+      eraLabel: "1951年",
+      storyAnchorLocalDate: "1951-09-01",
+      systemAnchorUtc: NOW,
+      anchorPrecision: "day",
+    };
+    const result = assembleChatPrompt(input);
+    for (const prompt of [result.prompt, result.replyGrounding]) {
+      const history = promptSegmentJson(
+        prompt,
+        "RECENT_VERBATIM_JSON",
+      ) as Array<Record<string, unknown>>;
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({
+        role: "user",
+        content: previous,
+      });
+      expect(history[0]?.createdAtCharacterLocal).toEqual(
+        expect.stringContaining("1951-09-01"),
+      );
+      expect(history[0]).not.toHaveProperty("createdAtUtc");
+      expect(prompt.split(previous)).toHaveLength(2);
+    }
+  });
+});
+
 describe("complete turn-control delivery", () => {
   it("reuses only complete admitted grounding in repairs", () => {
     const result = assembleChatPrompt(
@@ -356,7 +507,9 @@ describe("complete turn-control delivery", () => {
       expression: ReturnType<typeof turnExpressionPromptView>;
       guidance: string;
     };
-    expect(strategy.expression).toEqual(turnExpressionPromptView(before));
+    expect(strategy.expression).toEqual(
+      turnExpressionPromptView(before, [], { includeRecentDialogue: false }),
+    );
     expect(strategy.expression.questionGuidance).toContain(
       "For a closed vent, do not announce that you are following a listening policy",
     );
@@ -404,7 +557,11 @@ describe("complete turn-control delivery", () => {
           helpTiming: unknown;
         }
       ).expression,
-    ).toEqual(turnExpressionPromptView(conversationPlan));
+    ).toEqual(
+      turnExpressionPromptView(conversationPlan, [], {
+        includeRecentDialogue: false,
+      }),
+    );
     expect(
       promptSegmentJson(constrained.prompt, "REPLY_STRATEGY_JSON"),
     ).toMatchObject({ helpTiming: "after_user_finishes" });

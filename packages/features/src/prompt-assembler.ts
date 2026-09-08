@@ -859,6 +859,7 @@ export function assembleChatPrompt(
           expression: turnExpressionPromptView(
             input.conversationPlan,
             input.effectivePersona?.relationshipPractices,
+            { includeRecentDialogue: false },
           ),
           adviceGuidance:
             "requested permits concrete help; none_now means no user action instructions this turn; optional_light permits at most one light optional suggestion, never a task list. Do not ask the user to choose a support mode on every turn.",

@@ -244,11 +244,20 @@ const NEGATED_REQUEST =
 export function turnExpressionPromptView(
   plan: ConversationContextPlan,
   practices: readonly Pick<PersonaAdaptation, "proposal">[] = [],
+  options: { includeRecentDialogue?: boolean } = {},
 ) {
+  const recentExpression =
+    plan.expressionContext === undefined
+      ? undefined
+      : { ...plan.expressionContext };
+  // Generation and grounded repairs already carry their admitted history.
+  // Keep the legacy inline view only for callers without that context contract.
+  if (options.includeRecentDialogue === false && recentExpression !== undefined)
+    delete recentExpression.recentDialogue;
   return {
     questionIntent: plan.questionIntent ?? "natural_optional",
     questionIntentReason: plan.questionIntentReason,
-    recentExpression: plan.expressionContext,
+    recentExpression,
     applicablePractices: practices.map(({ proposal }) => ({
       practice: proposal.practice,
       scope: proposal.scope,

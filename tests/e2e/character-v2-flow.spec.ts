@@ -17,7 +17,7 @@ test("creates and publishes a character with optional concerns left blank", asyn
       errors.push(message.text());
   });
   await page.goto("/create");
-  await expect(page).toHaveTitle("PersonaSim");
+  await expect(page).toHaveTitle("Dearvale");
   await page.getByLabel("角色名称").fill(`阿澄-${test.info().project.name}`);
   await page.getByLabel("社会身份或职业").fill("书店店员");
   await page.getByLabel("核心性格 1").fill("习惯先听别人说完");
@@ -96,7 +96,9 @@ test("removes every goal and tension and persists the empty editor state", async
   await page.getByRole("button", { name: "删除张力 1", exact: true }).click();
   await page.getByRole("button", { name: "删除目标 1", exact: true }).click();
   await page.getByTestId("publish-character").click();
-  await expect(page).toHaveURL(`/characters/${character.id}/chat`);
+  await expect(page).toHaveURL(
+    new RegExp(`/characters/${character.id}/chat\\?sessionId=[^&]+$`),
+  );
   await page.goto(`/characters/${character.id}/edit`);
   await expect(
     page.getByText(
@@ -168,7 +170,7 @@ test("reviews an exact quarantined constraint and saves the author's confirmatio
     .character;
   expect(before.persona.boundaries).toEqual([]);
   await page.goto(`/characters/${character.id}/edit`);
-  await expect(page).toHaveTitle("PersonaSim");
+  await expect(page).toHaveTitle("Dearvale");
   await page.getByRole("button", { name: "约束来源", exact: true }).click();
   const review = page.getByRole("region", { name: "约束来源复核" });
   await expect(

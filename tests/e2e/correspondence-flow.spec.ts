@@ -183,7 +183,10 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     await page.goto(`/characters/${agentId}/correspondence`);
     await page.getByRole("tab", { name: "档案" }).click();
     await expect(
-      page.getByText("已归档", { exact: true }).first(),
+      page
+        .getByRole("tabpanel", { name: "档案" })
+        .getByText("已启封", { exact: true })
+        .first(),
     ).toBeVisible();
 
     const archiveResponse = await request.get(
@@ -444,7 +447,9 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
 
     await page.goto(`/characters/${agentId}/correspondence`);
     await expect(
-      page.getByText("这封回信暂时没有写成", { exact: true }),
+      page
+        .getByRole("region", { name: "书信导航与列表" })
+        .getByText("这封回信暂时没有写成", { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "回信待处理" }),

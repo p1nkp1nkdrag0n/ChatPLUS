@@ -4,7 +4,7 @@ import type { APIRequestContext, Page } from "@playwright/test";
 test.describe("PersonaSim fixture flow", () => {
   test("app renders a usable character library", async ({ page }) => {
     await page.goto("/characters");
-    await expect(page).toHaveTitle("PersonaSim");
+    await expect(page).toHaveTitle("Dearvale");
     await expect(
       page.getByRole("heading", { name: "角色", exact: true }),
     ).toBeVisible();
@@ -98,8 +98,13 @@ test.describe("PersonaSim fixture flow", () => {
     await expect(
       page.getByText(/本轮没有引用记忆|本轮记忆依据/).last(),
     ).toBeVisible();
-    const expandRail = page.getByRole("button", { name: "展开状态栏" });
-    if (await expandRail.isVisible()) await expandRail.click();
+    const expandRail = page.getByRole("button", {
+      name: "角色近况",
+      exact: true,
+    });
+    await expect(expandRail).toHaveAttribute("aria-expanded", "false");
+    await expandRail.click();
+    await expect(expandRail).toHaveAttribute("aria-expanded", "true");
     const rail = page.locator(".chat-rail");
     await expect(rail.getByText("状态概览")).toBeVisible();
     await expect(rail.getByText("压力", { exact: true })).toBeVisible();
@@ -159,9 +164,12 @@ test.describe("PersonaSim fixture flow", () => {
     );
     await page.getByTestId("publish-character").click();
     expect((await saved).ok()).toBe(true);
-    await expect(page).toHaveURL(`/characters/${draft.id}/chat`, {
-      timeout: 30_000,
-    });
+    await expect(page).toHaveURL(
+      new RegExp(`/characters/${draft.id}/chat\\?sessionId=[^&]+$`),
+      {
+        timeout: 30_000,
+      },
+    );
 
     await page.goto(`/characters/${draft.id}/edit`);
     await page.getByRole("button", { name: "语言风格", exact: true }).click();

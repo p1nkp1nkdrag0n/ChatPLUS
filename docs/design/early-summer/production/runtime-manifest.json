@@ -1,0 +1,1050 @@
+{
+  "schemaVersion": 1,
+  "provenance": "Original generated PNG files supplied for this implementation; this pipeline stores pixel-identical lossless WebP masters and performs proportional runtime WebP conversion only. It does not make a copyright or licensing determination.",
+  "exclusions": [
+    {
+      "sourceFile": "exec-d5bac22c-f60e-4bf5-9200-85f59268fde4.png",
+      "reason": "Rejected by implementation design review as a baked checkerboard candidate; no project master or runtime was imported."
+    },
+    {
+      "sourceFile": "exec-dc037d8c-fdfc-4163-b017-3abbfe86d023.png",
+      "reason": "Rejected by implementation design review as a baked checkerboard candidate; no project master or runtime was imported."
+    },
+    {
+      "sourceFile": "exec-9eb7648a-8c11-40f7-971a-bed10a5d2608.png",
+      "reason": "Rejected by implementation design review as a baked checkerboard candidate; no project master or runtime was imported."
+    }
+  ],
+  "conversion": {
+    "pipeline": "scripts/build-early-summer-assets.mjs",
+    "configuration": "docs/design/early-summer/production/source-assets.json",
+    "sharpVersion": "0.35.4",
+    "webpVersion": "1.6.0",
+    "masterEncoding": "Lossless WebP with exact=true; decoded RGBA8 bytes must match the source PNG, including RGB under zero alpha.",
+    "quality": 82,
+    "alphaQuality": 100,
+    "effort": 6,
+    "resize": "Proportional width resize, no enlargement, no crop, no flattening, no retouching.",
+    "metadataPolicy": "Source PNG filenames, byte hashes, dimensions and decoded pixel hashes are retained in the source manifest. Lossless WebP masters and runtime WebP outputs use sharp default metadata handling."
+  },
+  "assets": [
+    {
+      "id": "s01-sky",
+      "sourceFile": "exec-239be42c-160f-46df-bd32-4ef13aade0ad.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1732367,
+        "sha256": "e101cbac2a78555434d218276db3c2603b0ee2259e95005c7488f8be20b7725e",
+        "rgbaPixelSha256": "23b034b9b9a752815c0eab5672bd1bb2975f464bc031bd42c99e19bc2a77ff4c",
+        "hasAlpha": false
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s01-sky.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1220668,
+        "sha256": "0f52232f733efd0a549e1cbe8c6530ffab327c1b565e125a36808bc74790c29c",
+        "rgbaPixelSha256": "23b034b9b9a752815c0eab5672bd1bb2975f464bc031bd42c99e19bc2a77ff4c",
+        "hasAlpha": false
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s01/sky.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 19942,
+          "sha256": "c7ecf5f43dd9326f9dd4511f0144d35f36be9ce5b19bb4768ffddfc3c6ac34bf",
+          "rgbaPixelSha256": "c9bc43fb6ae96510a2e7563888c768db6a8fe561cce451dca930d356abda9aeb",
+          "hasAlpha": false
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s01/sky-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 5972,
+          "sha256": "e8836417ea30cd9193df1a6830561dedfc5e4d35914f99c084a9231e2511d9c6",
+          "rgbaPixelSha256": "65b7ce7955e5a095d5b8df99f5d4cfc1f6e89ca8723608f8378374fe9f815562",
+          "hasAlpha": false
+        }
+      ]
+    },
+    {
+      "id": "s01-mountain",
+      "sourceFile": "exec-7695356e-1423-44ff-83e7-859246856409.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2077676,
+        "sha256": "80b459575ed57f2f0391c9480960b7c7853c24d2e6a5a05979a60343c8adda1f",
+        "rgbaPixelSha256": "6058d2f0f199958dd5a2db673aea3d1c6faed2b43e65cdadd9d0251939c7b350",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.513119,
+          "translucentPixelFraction": 0.486881
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s01-mountain.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1527806,
+        "sha256": "2d6b74a70729c48999bcc8e04f3398f06af7d84e5988ebe2db692d8adfe7df43",
+        "rgbaPixelSha256": "6058d2f0f199958dd5a2db673aea3d1c6faed2b43e65cdadd9d0251939c7b350",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.513119,
+          "translucentPixelFraction": 0.486881
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s01/mountain.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 284854,
+          "sha256": "6b146d866510f608e8ad1f99a1f07e2b35e44f0115eaed6760a0d6a1b222e7ca",
+          "rgbaPixelSha256": "ba8df7be9e0429acff2000a854fa877f1f66cd35edb80a3f698a9213e95d0189",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.513119,
+            "translucentPixelFraction": 0.486881
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s01/mountain-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 83942,
+          "sha256": "a134f234373e1e05334b1f8607b6310939ca1a428887a7d347deed9ed5a9bcc7",
+          "rgbaPixelSha256": "b6ef6b541cf67ded452c02c97d023aec6a60e3bc17bfffe0b21b2caf62540cb5",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 253,
+            "transparentPixelFraction": 0.513931,
+            "translucentPixelFraction": 0.486069
+          }
+        }
+      ]
+    },
+    {
+      "id": "s01-branch",
+      "sourceFile": "exec-ff3874ad-bb94-4de9-9619-9351038f67ca.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1324110,
+        "sha256": "34bd0a9a54596590a38ade1b98b0c10323ee78465be0e4e005e8ba9d47572ea7",
+        "rgbaPixelSha256": "7a153e95673219b5aab6cda43edf12c19aef05ad00075d28cd51ec0018a90428",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 255,
+          "transparentPixelFraction": 0.65618,
+          "translucentPixelFraction": 0.343692
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s01-branch.webp",
+        "format": "webp",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1054708,
+        "sha256": "8c2244bf83adf88292c41fdf505180ced89f83e4fbac27eb5c759021c6011820",
+        "rgbaPixelSha256": "7a153e95673219b5aab6cda43edf12c19aef05ad00075d28cd51ec0018a90428",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 255,
+          "transparentPixelFraction": 0.65618,
+          "translucentPixelFraction": 0.343692
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s01/branch.webp",
+          "format": "webp",
+          "width": 1024,
+          "height": 1024,
+          "bytes": 222206,
+          "sha256": "12d7fafcbbe9226624e584904dc6e71dd0d1cdfeae718f1d07ca212d958c8872",
+          "rgbaPixelSha256": "d42f5de583e0855da69fe3180b4b04dc318905c42afe6da386423d7d79554499",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.65473,
+            "translucentPixelFraction": 0.34527
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s01/branch-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 768,
+          "bytes": 138022,
+          "sha256": "ac23aa16bc49923bf7f133e0e2c15f58c3d2e4e7cc5f52d03de51924977f6b35",
+          "rgbaPixelSha256": "7f09dab54215d3a5e623742b2deb64bd1a452bbbbd89e4f8a378646814663f1c",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 253,
+            "transparentPixelFraction": 0.65499,
+            "translucentPixelFraction": 0.34501
+          }
+        }
+      ]
+    },
+    {
+      "id": "s01-cloud",
+      "sourceFile": "exec-07d537cb-ec8e-4144-b8af-e1c86d7f937c.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1652008,
+        "sha256": "9fda3d67ab7210a72490a73f7123e6bf1df6185a41f4466ef3f400f8c9356546",
+        "rgbaPixelSha256": "ace236789217419c270808d16fb30cd92db59714d18eb230325eacea68b53585",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.610523,
+          "translucentPixelFraction": 0.389477
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s01-cloud.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1147242,
+        "sha256": "393c74cdab5be81ed8441866bf57ae9f6c499c9819d13fe5af115737f7b2e4b5",
+        "rgbaPixelSha256": "ace236789217419c270808d16fb30cd92db59714d18eb230325eacea68b53585",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.610523,
+          "translucentPixelFraction": 0.389477
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s01/cloud.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 203890,
+          "sha256": "c3a424cd66b2e7f1dc537165bef81e3638da43652b51e2c573de91fd3d843ba9",
+          "rgbaPixelSha256": "58589503113825d6a15f39d3dbb689648310df1d330680d83cb6f5be7c736ac6",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.610523,
+            "translucentPixelFraction": 0.389477
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s01/cloud-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 70026,
+          "sha256": "5ab1fd7d50b2cea0c0fa7655300b338e39345c000907101c2ed138c55f7744e6",
+          "rgbaPixelSha256": "1d9b1de6798a1a97a1097607af8f44db3b32fb9df215667160acf66f5ad7f684",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 253,
+            "transparentPixelFraction": 0.611811,
+            "translucentPixelFraction": 0.388189
+          }
+        }
+      ]
+    },
+    {
+      "id": "s01-meadow",
+      "sourceFile": "exec-892ec401-69d0-4e72-82a1-ed1796a19622.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2757818,
+        "sha256": "7b05656ed7bc06586a94576a07cb3ea5ef649ff113b29b68a26ad7bcdacc4e1f",
+        "rgbaPixelSha256": "c71da800f6f18c0eabcc2aa3405a97c33c3192302c15a5e0573e5eec00266dee",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.456685,
+          "translucentPixelFraction": 0.543315
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s01-meadow.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1976126,
+        "sha256": "1049f4ca8dcacda1fce786b34bc6b0616107bf73b0b49e4a09542696682fa09f",
+        "rgbaPixelSha256": "c71da800f6f18c0eabcc2aa3405a97c33c3192302c15a5e0573e5eec00266dee",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.456685,
+          "translucentPixelFraction": 0.543315
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s01/meadow.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 499082,
+          "sha256": "25637bea3b001185af9090d3a41dac4eac58a71da04a59768e699cc09dfbb252",
+          "rgbaPixelSha256": "54350837f8f6901b3f52ad6b4d5aa399e6286cc8117f3923bee84d20e4400fa1",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.456685,
+            "translucentPixelFraction": 0.543315
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s01/meadow-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 152098,
+          "sha256": "fc8fafa2ac289145b36ddaedf05691da45cec8bd4c24796aa8cb5454e65b703e",
+          "rgbaPixelSha256": "479fe5a9f2b919bc451310949aa12c297d88df1f9c21c06e55527851f52736eb",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 253,
+            "transparentPixelFraction": 0.457929,
+            "translucentPixelFraction": 0.542071
+          }
+        }
+      ]
+    },
+    {
+      "id": "s02-forest",
+      "sourceFile": "exec-83f24a6e-bd08-48ed-8981-b5570af51527.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 3333767,
+        "sha256": "650479bf2d7b408319ec0ddc5feee0af3cd557b847d899eb25e4f7ed9d3b0251",
+        "rgbaPixelSha256": "7cdaa6a4f9d516576a3c9d1d0b5220c18954a643f05dfd6aedc8b087a860885d",
+        "hasAlpha": false
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s02-forest.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2381534,
+        "sha256": "d21e13d5a99194b8559307585040db5fcb524ba95740db3e4bab5367df8d2b69",
+        "rgbaPixelSha256": "7cdaa6a4f9d516576a3c9d1d0b5220c18954a643f05dfd6aedc8b087a860885d",
+        "hasAlpha": false
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s02/forest.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 400440,
+          "sha256": "911532b7c98e1335eed49fd15b014c5759b8c08c42b335812146b7dd2545d9c9",
+          "rgbaPixelSha256": "d9d3ce8e2eaaf114ed9dc16ac8c914629c5577ff863714457c7a99a503a0976e",
+          "hasAlpha": false
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s02/forest-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 130054,
+          "sha256": "9fd177ce038ab47df2c9660b2cdc542c66366e430d7f6a2824f10e3318e83694",
+          "rgbaPixelSha256": "87ad6a39a574b91367d9abaeb07b28ffcbfc85f8f01b0170c8a48189cba1887e",
+          "hasAlpha": false
+        }
+      ]
+    },
+    {
+      "id": "s02-water",
+      "sourceFile": "exec-617cb8d7-d9df-463f-af55-f5e54b431605.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 3293060,
+        "sha256": "c7e78133acd7da4e75de00d7c87c45acfbfbb19045a4ad9c8f987749000bfceb",
+        "rgbaPixelSha256": "bf072aa37054af2a0e502d8754bf01a9214085b09919c7b8f92aa49e3df7957c",
+        "hasAlpha": false
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s02-water.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2372062,
+        "sha256": "1b65a66149c47bb889beeb978dcd7b745af4bab7a1db986307a46d7356fadae2",
+        "rgbaPixelSha256": "bf072aa37054af2a0e502d8754bf01a9214085b09919c7b8f92aa49e3df7957c",
+        "hasAlpha": false
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s02/water.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 372950,
+          "sha256": "3ba6079e4cc27eb6ffc9fede58c71b430191f4b4328edef5e9cb9c583d9cf6ee",
+          "rgbaPixelSha256": "276fa15ab17810b59d3879abf56ce5d4124ba0843d01a0a3b8ace35daaa335e0",
+          "hasAlpha": false
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s02/water-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 133480,
+          "sha256": "fe46a22af2d8ce33c317bf59e6257602f55cfb5e30aeb8f154f54bfb55c42555",
+          "rgbaPixelSha256": "678918af79fa82096f647ff904a67023d91c2b1f6697b715ca7c59f010bb1c9b",
+          "hasAlpha": false
+        }
+      ]
+    },
+    {
+      "id": "s02-bank",
+      "sourceFile": "exec-78ede899-6a78-49a0-8046-18c7207f6dd6.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2204774,
+        "sha256": "a2581b0a17d673e05961ca4d7d2ffae7b256e2191a9d6f4622c757891db7fcd7",
+        "rgbaPixelSha256": "48374c9455a54d7e893b4cb73831120d543768087fa496e4daa81b4e3d1a07aa",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.624846,
+          "translucentPixelFraction": 0.375154
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s02-bank.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1525272,
+        "sha256": "a4608d9eb4ae8eafdce727f9015c8f8f844eb352f99ca6c2b6e15b0f096a2529",
+        "rgbaPixelSha256": "48374c9455a54d7e893b4cb73831120d543768087fa496e4daa81b4e3d1a07aa",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.624846,
+          "translucentPixelFraction": 0.375154
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s02/bank.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 323876,
+          "sha256": "f4c9316ee723ea5d9be7da3f622631085b34445159695fb65806560a6239d78e",
+          "rgbaPixelSha256": "1ba90f84565b045bf7b1a6ac79c1853741b75eac7ecc1c038dbe64f88e602969",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.624846,
+            "translucentPixelFraction": 0.375154
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s02/bank-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 96654,
+          "sha256": "17da2d8b3ee1626b13f6a91d1ee47d832932ed17b0ae934dd762dbe262e6e061",
+          "rgbaPixelSha256": "07e22e0a555c09a16751079d5fa19bd6bd3466ef22ee67664b86c11c4705c007",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.625687,
+            "translucentPixelFraction": 0.374313
+          }
+        }
+      ]
+    },
+    {
+      "id": "s03-table",
+      "sourceFile": "exec-fa3a9a13-8977-47ac-b403-37b9b5fedd19.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2162909,
+        "sha256": "3fdc05d7e687e5af013405e544feb0a799d8342a0964bf65b31a5bbea47d003d",
+        "rgbaPixelSha256": "884c958fdf69281d4a1320caf00f60846e5460a4bcf1d7f5c2979455d80cf578",
+        "hasAlpha": false
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s03-table.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1503232,
+        "sha256": "5727019d1acb13d1a7d037149c29e2dc54f6cfd8905c57f94e05dfc2116466ed",
+        "rgbaPixelSha256": "884c958fdf69281d4a1320caf00f60846e5460a4bcf1d7f5c2979455d80cf578",
+        "hasAlpha": false
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s03/table.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 112996,
+          "sha256": "acf3057483a70764859fddd0ba3d800d5aa09019479c35e2f10430b53f19e17c",
+          "rgbaPixelSha256": "2f4a0e8cb07cf34a66dafd788d09bde88b80737871f8343584c507b8e9f9cc9b",
+          "hasAlpha": false
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s03/table-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 37814,
+          "sha256": "6296d2a056db4fd884c1df4b7c54b9aa138a3d9b7cc44f14969b47f58b4d6562",
+          "rgbaPixelSha256": "e00653a2ec87ca554d48f0c81e0df3e5fcf890b3a7188924396b68549ae2f589",
+          "hasAlpha": false
+        }
+      ]
+    },
+    {
+      "id": "s03-book",
+      "sourceFile": "exec-1b76ae84-9ef6-4843-9b81-ad9b8f813ff4.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2172810,
+        "sha256": "ddbb76d7b87f18e171433ba0b919a6f01b178ad426ec823f1c6625258bc1d7f4",
+        "rgbaPixelSha256": "09b512f1bb6c4f81ed6157a1a7e8d980cc20dcd12585b33e83b0dfa5ec5ba524",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.432646,
+          "translucentPixelFraction": 0.567354
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s03-book.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1443704,
+        "sha256": "ade3bfba9d23e8eb6f6d283d7a23f753e01f279995d051d29d13b0b0aee6a9b4",
+        "rgbaPixelSha256": "09b512f1bb6c4f81ed6157a1a7e8d980cc20dcd12585b33e83b0dfa5ec5ba524",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.432646,
+          "translucentPixelFraction": 0.567354
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s03/book.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 133190,
+          "sha256": "3fa399e076fc4be4c772df855401cef67779fd39f33aa583b47619c56a70d57d",
+          "rgbaPixelSha256": "71a25328b32b97358d0905ee3da22e26e165067b4218d7db8eae415c375dce69",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.432646,
+            "translucentPixelFraction": 0.567354
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s03/book-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 40516,
+          "sha256": "6d2afffe1f9a38da3b707678c9a1fdfc5c961be548f953d25b5d75ab3d152bb8",
+          "rgbaPixelSha256": "00ea1f72c071d19cada21bd7442f82ce193c862d1da7108ec95527e954dafca8",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.432442,
+            "translucentPixelFraction": 0.567558
+          }
+        }
+      ]
+    },
+    {
+      "id": "s03-quill",
+      "sourceFile": "exec-34cc31b0-1cc0-43a6-8ceb-3ea512e709db.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1697367,
+        "sha256": "9003d51ac461db430fb97eff5ea3ec7ec799646ab2237fdef3ac5a9749c29c33",
+        "rgbaPixelSha256": "3f2531f1eedc30dbe4134fac8282bc8b6f6df49df6375f1ccadbbde37298446a",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.749242,
+          "translucentPixelFraction": 0.250758
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s03-quill.webp",
+        "format": "webp",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1067872,
+        "sha256": "1e47a951f0552fe7d174261f52c0ed1c95a8a10fb6db52e302c4c6638ee1c794",
+        "rgbaPixelSha256": "3f2531f1eedc30dbe4134fac8282bc8b6f6df49df6375f1ccadbbde37298446a",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.749242,
+          "translucentPixelFraction": 0.250758
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s03/quill.webp",
+          "format": "webp",
+          "width": 1024,
+          "height": 1536,
+          "bytes": 157912,
+          "sha256": "31cee476a260940d7b94cf97e507c08d9cfe0b8227e1d3154e8b12362502d3ef",
+          "rgbaPixelSha256": "4738f5b151f9c8243c22fbdc8c76a0747bffa830fdbb4955c6b4bc247486d011",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.749242,
+            "translucentPixelFraction": 0.250758
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s03/quill-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 1152,
+          "bytes": 100018,
+          "sha256": "9b4d9fb5947c74bd283d64f28b45ba94ed2abca85ba0d1b8edef2a10eb414a93",
+          "rgbaPixelSha256": "b4d553dcf9985be74e304d51ab48f8e68c8945af280ccf47f5f02c3021211a91",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.748592,
+            "translucentPixelFraction": 0.251408
+          }
+        }
+      ]
+    },
+    {
+      "id": "s04-sea",
+      "sourceFile": "exec-10ae9f4b-f32c-4f13-9dad-d3276dcdc484.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 3127118,
+        "sha256": "174d0bb509b029c8de18a12c3c78e80e174ada929762e263cd08a8364ded0a75",
+        "rgbaPixelSha256": "ce3aed99327b74d12178096525ec23bc05b507fc7da5b8f3e87f116fab2b0c90",
+        "hasAlpha": false
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s04-sea.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2313520,
+        "sha256": "f84a844fdbf9d93db516c794d38b7f5e690dec58a397b18493a21d6c11f5234a",
+        "rgbaPixelSha256": "ce3aed99327b74d12178096525ec23bc05b507fc7da5b8f3e87f116fab2b0c90",
+        "hasAlpha": false
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s04/sea.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 335162,
+          "sha256": "3af725a7de8f8d68e7a58b002468140d3dbeecee08d7d906a8e51f1156951556",
+          "rgbaPixelSha256": "907c9098a0e1c17be9041f343ed04b1a343a364d2c30902b7e990b43ae5e1dbe",
+          "hasAlpha": false
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s04/sea-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 111416,
+          "sha256": "85290f66d92eb17598c36ad5638552ebcca827be235fe5567fc6d0803720744c",
+          "rgbaPixelSha256": "5781f379d9f7c14ed8c569c0fe80d2059f445e0c9539cdfe1293f7010aeb01ee",
+          "hasAlpha": false
+        }
+      ]
+    },
+    {
+      "id": "s04-coast",
+      "sourceFile": "exec-9250887d-08ae-47cf-a569-be311b5ed521.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2582244,
+        "sha256": "627a70dbde4ecd24ad1e390e17d4a0a7f40cf033b4bb65ca0606e6f2ca4aa548",
+        "rgbaPixelSha256": "5139e23e383b676d9b1fbd649f8903e97f9f98fe8ea36e7fc6cd728b2b58ce36",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.532167,
+          "translucentPixelFraction": 0.467833
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/s04-coast.webp",
+        "format": "webp",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1812168,
+        "sha256": "42daf50d966784f25c12b97d81b886edfe156510708a43b0acd53a7b54511cff",
+        "rgbaPixelSha256": "5139e23e383b676d9b1fbd649f8903e97f9f98fe8ea36e7fc6cd728b2b58ce36",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.532167,
+          "translucentPixelFraction": 0.467833
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/s04/coast.webp",
+          "format": "webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 364636,
+          "sha256": "5a38c5fb76c490239d8e917ee409b068d40e2efebb5307189950bbf78723797d",
+          "rgbaPixelSha256": "d99f0851a6ece9fd496da8be08da8539847323b94bfb7aee2bdb08cf058cae59",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.532167,
+            "translucentPixelFraction": 0.467833
+          }
+        },
+        {
+          "variant": "mobile",
+          "path": "apps/web/public/art/early-summer/s04/coast-mobile.webp",
+          "format": "webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 107820,
+          "sha256": "aa61b591abd925a78adaf69e792cafc92730f2b0632e3e60c9e3b37c50dd36d3",
+          "rgbaPixelSha256": "a3fc2ecd03c51192c7507198dc589c19f0b5360efdf2adb997b9d1441313ca85",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 253,
+            "transparentPixelFraction": 0.532333,
+            "translucentPixelFraction": 0.467667
+          }
+        }
+      ]
+    },
+    {
+      "id": "ui-paper",
+      "sourceFile": "exec-5b483e71-acbf-41cc-b930-6bb9e4f813fc.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 2055230,
+        "sha256": "cfb4e540abb5417458758bc05279e38580490da0b3c351920c2f348fd8a02a80",
+        "rgbaPixelSha256": "f358d647c25b586df1c7c76a6c5658aa375318868d9a307126b4700cbca2f485",
+        "hasAlpha": false
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/ui-paper.webp",
+        "format": "webp",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1532094,
+        "sha256": "523a3964ad4853cebd1b3352bf6b7dba40fbcb3b2c09d407fd7ca8555d343839",
+        "rgbaPixelSha256": "f358d647c25b586df1c7c76a6c5658aa375318868d9a307126b4700cbca2f485",
+        "hasAlpha": false
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/ui/paper.webp",
+          "format": "webp",
+          "width": 512,
+          "height": 512,
+          "bytes": 3062,
+          "sha256": "5541de86d16c71ad9a12565ca02910fab92787c8f6816e4bface1cee8deed1d5",
+          "rgbaPixelSha256": "7b39921c6ce74014c51509059615e6c2094095800f5af423db1e7519cc139d5c",
+          "hasAlpha": false
+        }
+      ]
+    },
+    {
+      "id": "ui-botanical-mark",
+      "sourceFile": "exec-8adcb4c5-3d31-45ed-ab89-01a5f91b5999.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1895693,
+        "sha256": "41e53247a396a232834c8537b9afc196b0a62d75ae4b641f88c9d642cff29604",
+        "rgbaPixelSha256": "9e3d23521fc9d3627dbdea9be8fe140e5fcc9c0243fe8e0df6d947594e2436c1",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.698587,
+          "translucentPixelFraction": 0.301413
+        }
+      },
+      "losslessPixelEquality": true,
+      "master": {
+        "path": "docs/design/early-summer/production/masters/ui-botanical-mark.webp",
+        "format": "webp",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1240318,
+        "sha256": "518367fd9ec92e3d29c4944fcb731b7f08524c1091a0c476ae37a0c08a1dddb4",
+        "rgbaPixelSha256": "9e3d23521fc9d3627dbdea9be8fe140e5fcc9c0243fe8e0df6d947594e2436c1",
+        "hasAlpha": true,
+        "alpha": {
+          "minimum": 0,
+          "maximum": 254,
+          "transparentPixelFraction": 0.698587,
+          "translucentPixelFraction": 0.301413
+        }
+      },
+      "outputs": [
+        {
+          "variant": "standard",
+          "path": "apps/web/public/art/early-summer/ui/botanical-mark.webp",
+          "format": "webp",
+          "width": 512,
+          "height": 768,
+          "bytes": 84034,
+          "sha256": "9fc1f56dfa7213de69827566f7985379c0c34f0ef87a1c62500d41a56fcb620d",
+          "rgbaPixelSha256": "09f695e1e4b1f9ae67dbec13f95cc5954248cf1a1c66e447a3257093bb4e668c",
+          "hasAlpha": true,
+          "alpha": {
+            "minimum": 0,
+            "maximum": 254,
+            "transparentPixelFraction": 0.694824,
+            "translucentPixelFraction": 0.305176
+          }
+        }
+      ]
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept-s01",
+      "sourceFile": "exec-158bb159-882a-40da-8651-3776c41c3c42.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1504,
+        "height": 1046,
+        "bytes": 2509132,
+        "sha256": "07babad05d28ddbee7a443ffc53814efbcb169932ac1ef55f0752d784572f914",
+        "rgbaPixelSha256": "f3bc09cb369f1ec71058699cbc20c391144f8d029ebc0f142ad5f71acb8eb7ee",
+        "hasAlpha": false
+      },
+      "quality": 85,
+      "operation": "Full dimensions retained; WebP encoding only. Concept reference is not a runtime scene asset.",
+      "output": {
+        "path": "docs/design/early-summer/references/concepts/s01.webp",
+        "format": "webp",
+        "width": 1504,
+        "height": 1046,
+        "bytes": 281958,
+        "sha256": "4920918e0ae0a5d75af768e30ffb1014a2fb666d3bbbacd0c60ec86bda60bded",
+        "rgbaPixelSha256": "9c1268f43493084b873e18e804b28595000c23ca278ca0cb37cb9dc78fd54cc7",
+        "hasAlpha": false
+      }
+    },
+    {
+      "id": "concept-s02",
+      "sourceFile": "exec-6eb1f03f-7fe3-4b6b-8ae7-9937bbba4efc.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1505,
+        "height": 1045,
+        "bytes": 3004031,
+        "sha256": "1c75ed6deeebb919a782f7eb905af88a480323bb96530704aca7d33c88a07ced",
+        "rgbaPixelSha256": "ebd0b8f537205fa8326771b16f4633aa7be628ea35454105346c55a2678e7a14",
+        "hasAlpha": false
+      },
+      "quality": 85,
+      "operation": "Full dimensions retained; WebP encoding only. Concept reference is not a runtime scene asset.",
+      "output": {
+        "path": "docs/design/early-summer/references/concepts/s02.webp",
+        "format": "webp",
+        "width": 1505,
+        "height": 1045,
+        "bytes": 395034,
+        "sha256": "1cca4c0a7b19775533d41ab3ba82b06fc74815e6a1278e6b23dea89bf4c62005",
+        "rgbaPixelSha256": "5db9a467d4ba88d27900cd5e1cc773cbfd2605cc57a3ea7e3e6e5607c51ad88d",
+        "hasAlpha": false
+      }
+    },
+    {
+      "id": "concept-s03",
+      "sourceFile": "exec-48106ac2-f9b7-41aa-907b-7db989ac060f.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1505,
+        "height": 1045,
+        "bytes": 2273435,
+        "sha256": "5fe8c6971e0fde6e506f0e901b7bbec10707f38f693ae8246a79321a71f203e6",
+        "rgbaPixelSha256": "64543a2db6c59aa3a4371cf38c4e0a817f95babcd266742fb05abeb7bd68d48a",
+        "hasAlpha": false
+      },
+      "quality": 85,
+      "operation": "Full dimensions retained; WebP encoding only. Concept reference is not a runtime scene asset.",
+      "output": {
+        "path": "docs/design/early-summer/references/concepts/s03.webp",
+        "format": "webp",
+        "width": 1505,
+        "height": 1045,
+        "bytes": 176576,
+        "sha256": "dc5ea27c52f61534730e3ed0d1dbbc93dced94ba610b6a0c0ab5b6e8ed547244",
+        "rgbaPixelSha256": "5a237467f6ea2804f43282314eb19008d2026443133f85757ce77ccdbe012fe7",
+        "hasAlpha": false
+      }
+    },
+    {
+      "id": "concept-s04",
+      "sourceFile": "exec-0e579bd2-c0ea-4eb4-9f0c-1b100973036b.png",
+      "sourceMetadata": {
+        "format": "png",
+        "width": 1505,
+        "height": 1045,
+        "bytes": 2409324,
+        "sha256": "db505211a83844ae702756113b4604d939709a9a8454e5db464ea1a65ae6ab26",
+        "rgbaPixelSha256": "ffd890ae631160e9aeec4c2d268acc0275da7a22525761a33c1b19db777f4bee",
+        "hasAlpha": false
+      },
+      "quality": 85,
+      "operation": "Full dimensions retained; WebP encoding only. Concept reference is not a runtime scene asset.",
+      "output": {
+        "path": "docs/design/early-summer/references/concepts/s04.webp",
+        "format": "webp",
+        "width": 1505,
+        "height": 1045,
+        "bytes": 255568,
+        "sha256": "105a2bd75874fb469118525601947a591741e50baa6d2ca4ee4114499dfde9f8",
+        "rgbaPixelSha256": "63a2d668fa008a4ab1f771dc0bee59114b108425cdfbe5d1306a5aa1973787e1",
+        "hasAlpha": false
+      }
+    }
+  ],
+  "totals": {
+    "masterBytes": 24118326,
+    "runtimeBytes": 4726064,
+    "masterCount": 15,
+    "runtimeCount": 28,
+    "conceptCount": 4,
+    "conceptBytes": 1109136
+  }
+}

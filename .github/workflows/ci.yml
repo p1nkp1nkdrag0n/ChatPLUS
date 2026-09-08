@@ -68,7 +68,7 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run deterministic browser tests
+      - name: Run deterministic desktop browser tests (1440 and 1920)
         run: pnpm test:e2e
 
       - name: Upload browser report on failure

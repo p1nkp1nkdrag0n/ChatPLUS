@@ -240,9 +240,9 @@ pnpm test:state:unit  # 状态闭环单元测试
 pnpm test:state:integration # 状态闭环 HTTP/持久化测试
 pnpm test:state:simulation  # 状态闭环 FakeClock 模拟
 pnpm exec playwright install chromium  # 首次运行 E2E 前安装测试浏览器
-pnpm test:e2e         # Playwright 桌面与移动端流程
+pnpm test:e2e         # Playwright 1440×900 与 1920×1080 两种桌面流程
 pnpm test:correspondence:focused  # 书信/纪念物/档案的单元、集成与 Web 门禁
-pnpm test:correspondence:stages1-8 # 上述门禁 + 桌面/移动端完整 E2E
+pnpm test:correspondence:stages1-8 # 上述门禁 + 两种桌面尺寸的完整 E2E
 pnpm test:llm:smoke   # 显式真实 Provider 测试
 pnpm test:llm:smoke:claude   # 显式测试 Claude 档案
 pnpm test:llm:smoke:grok     # 显式测试 Grok 档案

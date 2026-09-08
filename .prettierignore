@@ -14,3 +14,10 @@ docs/design/*.png
 docs/plans/ChatPLUS_PersonaSim_Integrated_Upgrade_Plan_v2.md
 # Reviewed experiment artifacts retain their exported bytes and manifest hashes.
 docs/plans/Qwen_Three_Run_120_Turn_Evidence/
+# Imported handoff documents and probes retain the reviewed source bytes.
+docs/design/early-summer/*.md
+!docs/design/early-summer/EXECUTION.md
+docs/design/early-summer/storyboard.html
+docs/design/early-summer/*.json
+docs/design/early-summer/tools/
+docs/design/early-summer/evidence/handoff-*

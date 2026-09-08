@@ -24,7 +24,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["*.js", "*.ts", "tests/e2e/*.ts"],
+          allowDefaultProject: ["*.js", "*.ts"],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -52,7 +52,13 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    files: ["docs/plans/Qwen_Three_Run_120_Turn_Evidence/verify-package.mjs"],
+    files: [
+      "docs/plans/Qwen_Three_Run_120_Turn_Evidence/verify-package.mjs",
+      // Imported handoff probes are standalone JavaScript, outside TS projects.
+      "docs/design/early-summer/tools/*.mjs",
+      "scripts/build-early-summer-assets.mjs",
+      "scripts/measure-early-summer.mjs",
+    ],
     ...tseslint.configs.disableTypeChecked,
   },
 );

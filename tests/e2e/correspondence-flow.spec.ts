@@ -132,6 +132,7 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
       canOpen: false,
     });
     expect(reply).not.toHaveProperty("previewText");
+    if (!reply) throw new Error("Fixture did not produce an incoming reply");
     const replyLetterId = reply.id;
     expect(await countLetterReplyCalls(request, agentId)).toBe(
       replyCallsBeforeSeal + 1,
@@ -220,6 +221,8 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
       incomingLetterId,
     );
     expect(sourcedKeepsake).toBeDefined();
+    if (!sourcedKeepsake)
+      throw new Error("Fixture did not produce the expected sourced keepsake");
     expect(
       sourcedKeepsake?.sources.find(
         (source) => source.type === "letter" && source.id === incomingLetterId,

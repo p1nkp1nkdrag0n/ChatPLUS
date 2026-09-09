@@ -3698,7 +3698,7 @@ describe("fuzzy-life conversation integration", () => {
     });
     injectCharacterDilemma(app, character.id, sessionId);
 
-    Object.defineProperty(app.personasim.llm, "providerName", {
+    Object.defineProperty(app.personasim.llm.captureDefault(), "providerName", {
       value: "openai-compatible",
       configurable: true,
     });

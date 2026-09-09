@@ -163,7 +163,7 @@ describe("requested life projects through HTTP generation and repair", () => {
       const repairFixture = vi.spyOn(repairs, "repairFixtureDecision");
       const repairPersona = vi.spyOn(repairs, "repairPersonaReply");
       if (path === "persona")
-        Object.defineProperty(app.personasim.llm, "providerName", {
+        Object.defineProperty(app.personasim.llm.captureDefault(), "providerName", {
           value: "openai-compatible",
           configurable: true,
         });

@@ -64,7 +64,7 @@ describe("live-model prompt contracts", () => {
     const created = await createTestApp();
     app = created.app;
     const provider = (
-      app.personasim.llm as unknown as { provider: LlmProvider }
+      app.personasim.llm.captureDefault() as unknown as { provider: LlmProvider }
     ).provider;
     const providerCall = vi.spyOn(provider, "generateObject");
 

@@ -442,7 +442,14 @@ export function registerRoutes(
 
   app.get("/api/agents/:id/sessions", (request) => {
     const { id } = idParamsSchema.parse(request.params);
-    return { sessions: conversations.listSessions(id) };
+    return {
+      sessions: conversations
+        .listSessions(id)
+        .map((session) => ({
+          ...session,
+          model: llm.settings?.sessionModel(session.id),
+        })),
+    };
   });
 
   app.post("/api/agents/:id/sessions", async (request, reply) => {
@@ -451,7 +458,11 @@ export function registerRoutes(
       .object({ title: z.string().max(200).optional() })
       .parse(request.body ?? {});
     const session = conversations.createSession(id, body.title);
-    return reply.code(201).send({ session });
+    return reply
+      .code(201)
+      .send({
+        session: { ...session, model: llm.settings?.sessionModel(session.id) },
+      });
   });
 
   app.get("/api/sessions/:sessionId/messages", (request) => {
@@ -670,14 +681,15 @@ export function registerRoutes(
       llmProvider: llm.providerName,
       llmProfile: llm.profileName,
       llmModel: llm.modelName,
-      llmBaseUrl: config.llm.baseUrl,
+      llmBaseUrl: activeProviderView(llm)?.baseUrl || config.llm.baseUrl,
       ...(llm.reasoningEffort === undefined
         ? {}
         : { llmReasoningEffort: llm.reasoningEffort }),
       ...(llm.reasoningRequestFormat === undefined
         ? {}
         : { llmReasoningRequestFormat: llm.reasoningRequestFormat }),
-      hasApiKey: Boolean(config.llm.apiKey),
+      hasApiKey:
+        activeProviderView(llm)?.hasApiKey ?? Boolean(config.llm.apiKey),
       clockMode: isMutableClock(clock) ? "fake" : "system",
       profile: config.profile,
       correspondenceMode: config.correspondenceMode,
@@ -959,6 +971,13 @@ function normalizeChatBody(body: unknown): Record<string, unknown> {
     text: input.text ?? input.content,
     clientMessageId: input.clientMessageId ?? input.idempotencyKey,
   };
+}
+
+function activeProviderView(llm: LlmService) {
+  const catalog = llm.settings?.catalog();
+  return catalog?.providers.find(
+    (provider) => provider.id === catalog.defaultSelection.providerId,
+  );
 }
 
 async function correspondenceApi<T>(

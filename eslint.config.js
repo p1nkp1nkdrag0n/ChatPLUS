@@ -25,6 +25,8 @@ export default tseslint.config(
       parserOptions: {
         projectService: {
           allowDefaultProject: ["*.js", "*.ts", "tests/e2e/*.ts"],
+          // E2E specs live outside workspace tsconfigs; keep their typed linting bounded.
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 12,
         },
         tsconfigRootDir: import.meta.dirname,
       },

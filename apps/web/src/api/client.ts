@@ -12,6 +12,7 @@ import {
   type CreateLetterDraftRequest,
   type KeepsakeListQuery,
   type MemoryRecallPreviewResponse,
+  type LlmExecutionSelection,
   type RelationshipArchiveEntryId,
   type RelationshipArchiveFilter,
   type RetryLetterReplyGenerationRequest,
@@ -465,7 +466,7 @@ export const api = {
     },
     send: async (
       sessionId: string,
-      input: { agentId: string; clientMessageId: string; text: string },
+      input: { agentId: string; clientMessageId: string; text: string; modelSelection?: LlmExecutionSelection },
     ) => {
       const value = await request<
         {

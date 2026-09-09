@@ -31,7 +31,10 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { DateTime } from "luxon";
+import type { LlmExecutionSelection } from "@personasim/contracts";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
+import { llmApi, sessionModelKey } from "../api/llm";
+import { ChatModelToolbar } from "../components/llm/ChatModelToolbar";
 import type {
   CharacterSpec,
   ChatMessage,
@@ -469,6 +472,15 @@ function SessionConversation({
   const queryClient = useQueryClient();
   const [text, setText] = useState(() => drafts.get(session.id) ?? "");
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [modelNotice, setModelNotice] = useState("");
+  const modelQuery = useQuery({ queryKey: sessionModelKey(session.id), queryFn: () => llmApi.session(session.id) });
+  const modelMutation = useMutation({
+    mutationFn: (selection: Parameters<typeof llmApi.setSession>[1]) => llmApi.setSession(session.id, selection),
+    onSuccess: (value) => {
+      queryClient.setQueryData(sessionModelKey(session.id), value);
+      setModelNotice("已切换，下一条消息使用该模型。");
+    },
+  });
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
@@ -506,11 +518,10 @@ function SessionConversation({
   };
   const sendMutation = useMutation({
     mutationKey: ["chat-send", characterId, session.id],
-    mutationFn: (message: string) =>
+    mutationFn: (input: { text: string; clientMessageId: string; modelSelection: LlmExecutionSelection }) =>
       api.sessions.send(session.id, {
         agentId: characterId,
-        clientMessageId: crypto.randomUUID(),
-        text: message,
+        ...input,
       }),
     onMutate: () => {
       knownMessageIdsAtSendStartRef.current = new Set(
@@ -594,12 +605,15 @@ function SessionConversation({
     if (
       !message ||
       sendPending ||
+      modelMutation.isPending ||
+      modelQuery.isError ||
+      !modelQuery.data?.effective ||
       messagesQuery.isPending ||
       messagesQuery.isError
     )
       return;
     setEmojiOpen(false);
-    sendMutation.mutate(message);
+    sendMutation.mutate({ text: message, clientMessageId: crypto.randomUUID(), modelSelection: { ...modelQuery.data.effective } });
   };
   const insertEmoji = (emoji: string) => {
     const input = textareaRef.current;
@@ -664,6 +678,7 @@ function SessionConversation({
         ) : null}
       </div>
       <div className="composer-wrap">
+        <ChatModelToolbar model={modelQuery.data} disabled={sendPending || modelMutation.isPending || modelQuery.isPending} onChange={(selection) => { setModelNotice(""); modelMutation.mutate(selection); }} notice={modelNotice} error={modelMutation.error ?? modelQuery.error} />
         {latestSend?.status === "error" ? (
           <ErrorBlock error={latestSend.error} />
         ) : null}
@@ -735,7 +750,7 @@ function SessionConversation({
               className="send-button"
               type="button"
               onClick={submit}
-              disabled={!text.trim() || sendPending || !messagesQuery.isSuccess}
+              disabled={!text.trim() || sendPending || modelMutation.isPending || modelQuery.isError || !modelQuery.data?.effective || !messagesQuery.isSuccess}
               aria-label="发送消息"
             >
               <Send size={23} />

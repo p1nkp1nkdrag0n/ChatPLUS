@@ -541,7 +541,7 @@ export class LlmSettingsService {
       protocol: config.provider,
       baseUrl: config.baseUrl,
       timeoutMs: config.timeoutMs,
-      revision: randomInt(1, 2147483647),
+      revision: fixture ? 1 : randomInt(1, 2147483647),
       models: [model],
       source: fixture ? "fixture" : "environment",
       hasApiKey: Boolean(config.apiKey),

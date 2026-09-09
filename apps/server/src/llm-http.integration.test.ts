@@ -884,16 +884,22 @@ describe("runtime execution selection", () => {
     expect(capturedA.modelName).toBe("model-a");
     const audit = app.personasim.store.database
       .prepare(
-        "SELECT provider_profile AS profile,model,purpose FROM llm_calls ORDER BY rowid",
+        "SELECT provider_profile AS profile,model,purpose,config_revision AS configRevision FROM llm_calls ORDER BY rowid",
       )
       .all();
     expect(audit).toEqual(
       expect.arrayContaining([
-        { profile: a.id, model: "model-a", purpose: "repair_chat_turn" },
+        {
+          profile: a.id,
+          model: "model-a",
+          purpose: "repair_chat_turn",
+          configRevision: 1,
+        },
         {
           profile: b.id,
           model: "model-b",
           purpose: "checkpoint_autobiography",
+          configRevision: 1,
         },
       ]),
     );

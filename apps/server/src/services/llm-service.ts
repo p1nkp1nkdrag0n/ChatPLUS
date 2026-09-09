@@ -384,6 +384,11 @@ export class LlmService {
         provider: this.providerName,
         providerProfile: this.profileName,
         model: this.modelName,
+        ...(this.selection === undefined
+          ? this.providerName === "fixture"
+            ? { configRevision: 1 }
+            : {}
+          : { configRevision: this.selection.revision }),
         ...(this.reasoningEffort === undefined
           ? {}
           : { reasoningEffort: this.reasoningEffort }),

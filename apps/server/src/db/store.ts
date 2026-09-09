@@ -565,6 +565,7 @@ export class DatabaseStore extends LegacyScheduleStore {
     provider: string;
     providerProfile: string;
     model: string;
+    configRevision?: number;
     reasoningEffort?: string;
     reasoningRequestFormat?: string;
     inputTokens: number;
@@ -577,11 +578,11 @@ export class DatabaseStore extends LegacyScheduleStore {
     this.database
       .prepare(
         `INSERT INTO llm_calls(
-          id, agent_id, purpose, provider, provider_profile, model,
+          id, agent_id, purpose, provider, provider_profile, model, config_revision,
           reasoning_effort, reasoning_request_format,
           input_tokens, output_tokens, latency_ms, success, error_code,
           created_at_utc
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         createEntityId("llmcall"),
@@ -590,6 +591,7 @@ export class DatabaseStore extends LegacyScheduleStore {
         input.provider,
         input.providerProfile,
         input.model,
+        input.configRevision ?? null,
         input.reasoningEffort ?? null,
         input.reasoningRequestFormat ?? null,
         input.inputTokens,
@@ -606,6 +608,7 @@ export class DatabaseStore extends LegacyScheduleStore {
       .prepare(
         `SELECT id, agent_id AS agentId, purpose, provider, model,
           provider_profile AS providerProfile,
+          config_revision AS configRevision,
           reasoning_effort AS reasoningEffort,
           reasoning_request_format AS reasoningRequestFormat,
           input_tokens AS inputTokens, output_tokens AS outputTokens,

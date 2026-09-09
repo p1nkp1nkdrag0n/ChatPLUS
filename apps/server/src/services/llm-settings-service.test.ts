@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LlmProviderInputSchema } from "@personasim/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { ServerConfig } from "../config.js";
 import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
@@ -19,6 +20,7 @@ import { backupInstance, restoreInstance } from "../runtime/instance-backup.js";
 import { FakeClock } from "../runtime/clock.js";
 import { llmKeyPath } from "./llm-credential-service.js";
 import { LlmSettingsService } from "./llm-settings-service.js";
+import { LlmService } from "./llm-service.js";
 
 const NOW = "2026-09-09T00:00:00.000Z";
 const KEY = "test-only-private-key-do-not-return";
@@ -73,6 +75,98 @@ afterEach(() => {
 });
 
 describe("managed LLM settings", () => {
+  it("keeps fixture selections and call revisions stable across service reconstruction", async () => {
+    const f = setup();
+    const first = f.service.resolve().selection;
+    const secondService = new LlmSettingsService(f.store, f.config, f.clock);
+    expect(first).toEqual({
+      providerId: "fixture",
+      modelId: "personasim-fixture-v1",
+      revision: 1,
+    });
+    expect(secondService.resolve().selection).toEqual(first);
+    const command = {
+      purpose: "repair_chat_turn" as const,
+      system: "fixture",
+      prompt: "fixture",
+      schema: z.object({ text: z.string() }),
+      fixture: { text: "stable" },
+    };
+    const initial = new LlmService(f.config.llm, f.store, f.clock);
+    initial.settings = f.service;
+    await initial.captureDefault().generateObject(command);
+    const rebuilt = new LlmService(f.config.llm, f.store, f.clock);
+    rebuilt.settings = secondService;
+    await rebuilt.captureDefault().generateObject(command);
+    await new LlmService(f.config.llm, f.store, f.clock).generateObject(
+      command,
+    );
+    expect(
+      f.store.listLlmCalls().map((call) => ({
+        provider: call.provider,
+        model: call.model,
+        configRevision: call.configRevision,
+      })),
+    ).toEqual(
+      Array.from({ length: 3 }, () => ({
+        provider: "fixture",
+        model: "personasim-fixture-v1",
+        configRevision: 1,
+      })),
+    );
+  });
+
+  it("records the managed execution's captured revision rather than the edited provider revision", async () => {
+    const f = setup();
+    const provider = f.service.create(input());
+    f.service.update(
+      provider.id,
+      input({ expectedRevision: 1, name: "Version 2" }),
+    );
+    const fetchOverride = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              { message: { content: '{"reply":"ok"}' }, finish_reason: "stop" },
+            ],
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    const runtime = new LlmService(f.config.llm, f.store, f.clock, {
+      fetch: fetchOverride,
+    });
+    runtime.settings = f.service;
+    const captured = runtime.captureSelection(
+      { providerId: provider.id, modelId: "test-model" },
+      2,
+    );
+    f.service.update(
+      provider.id,
+      input({ expectedRevision: 2, name: "Version 3" }),
+    );
+    await captured.generateObject({
+      purpose: "repair_chat_turn",
+      system: "Return JSON",
+      prompt: "hello",
+      schema: z.strictObject({ reply: z.string() }),
+      maxRetries: 0,
+    });
+    expect(f.store.listLlmCalls()[0]).toMatchObject({
+      provider: "openai-compatible",
+      providerProfile: provider.id,
+      model: "test-model",
+      configRevision: 2,
+      success: true,
+    });
+    expect(
+      f.service.catalog().providers.find((item) => item.id === provider.id)
+        ?.revision,
+    ).toBe(3);
+  });
+
   it("encrypts credentials, persists model choices and never returns secrets", () => {
     const f = setup();
     const provider = f.service.create(input());

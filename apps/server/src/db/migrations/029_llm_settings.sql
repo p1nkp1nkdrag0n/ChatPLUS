@@ -33,3 +33,6 @@ CREATE TABLE llm_key_metadata (
   fingerprint TEXT NOT NULL,
   key_version INTEGER NOT NULL CHECK (key_version = 1)
 );
+-- Historical calls have no recoverable configuration revision.
+ALTER TABLE llm_calls ADD COLUMN config_revision INTEGER
+  CHECK (config_revision IS NULL OR config_revision > 0);

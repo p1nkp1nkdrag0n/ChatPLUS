@@ -1,4 +1,4 @@
-import { Check, KeyRound, Server, ShieldCheck } from "lucide-react";
+import { Check, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import type { AppSettings } from "../api/types";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
+import { ProviderSettings } from "../components/llm/ProviderSettings";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -35,8 +36,9 @@ export default function SettingsPage() {
             开发者工具
           </Link>
         }
-        description="模型凭证只保存在本地后端进程中，不会发送到浏览器存储或角色数据库。"
+        description="配置供应商、选择模型，并用真实回复验证连接。"
       />
+      <ProviderSettings />
       {query.isPending ? <LoadingBlock label="正在读取本地设置…" /> : null}
       {query.isError ? <ErrorBlock error={query.error} /> : null}
       {form ? (
@@ -47,67 +49,6 @@ export default function SettingsPage() {
             mutation.mutate();
           }}
         >
-          <section className="settings-section">
-            <div className="settings-section__title">
-              <Server size={20} />
-              <div>
-                <h2>语言模型</h2>
-                <p>
-                  Fixture 用于零配置演示；兼容 Provider 由本地服务器发起请求。
-                </p>
-              </div>
-            </div>
-            <div className="field-grid field-grid--two">
-              <label className="field">
-                <span>Provider</span>
-                <select value={form.llmProvider} disabled>
-                  <option value="fixture">Fixture（离线、确定性）</option>
-                  <option value="openai-compatible">OpenAI-compatible</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>配置档案</span>
-                <input value={form.llmProfile} readOnly />
-              </label>
-              <label className="field">
-                <span>模型</span>
-                <input value={form.model} readOnly />
-              </label>
-              <label className="field">
-                <span>思考深度</span>
-                <input value={form.reasoningEffort} readOnly />
-              </label>
-              <label className="field">
-                <span>思考参数格式</span>
-                <input value={form.reasoningRequestFormat} readOnly />
-              </label>
-            </div>
-            <label className="field">
-              <span>Base URL</span>
-              <input value={form.baseUrl} readOnly />
-            </label>
-            <div className="settings-readonly">
-              <span>运行时配置</span>
-              <strong>修改根目录 .env 后重启服务生效</strong>
-            </div>
-            <label className="field">
-              <span>API Key</span>
-              <div className="secret-field">
-                <KeyRound size={17} />
-                <input
-                  type="password"
-                  readOnly
-                  value=""
-                  placeholder={
-                    form.hasApiKey
-                      ? "已通过本地环境变量配置"
-                      : "请在根目录 .env 中配置后重启"
-                  }
-                />
-              </div>
-            </label>
-          </section>
-
           <section className="settings-section">
             <div className="settings-section__title">
               <ShieldCheck size={20} />

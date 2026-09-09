@@ -18,6 +18,7 @@ import { CONTINUITY_WORKSPACE_ROOT } from "./continuity-run-identity.js";
 const directories: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await Promise.all(
     directories
       .splice(0)
@@ -158,86 +159,109 @@ describe("independent character generation comparison", () => {
     ).rejects.toThrow();
   }, 30_000);
 
-  it("meters the real provider adapter while retaining visible output and removing hidden reasoning", async () => {
-    const parent = await workspaceDirectory();
-    const directory = join(parent, "candidate");
-    const authorInput =
-      buildCharacterGenerationComparisonInput("reserved-direct");
-    const proposal = {
-      draft: buildOriginalDraft(
-        authorInput,
-        CHARACTER_COMPILATION_POLICY_VERSION,
-      ),
-      reasonCode: "fixture_character_compilation",
-      reasonSummary: "固定角色编译测试。",
-    };
-    let dispatches = 0;
-    const result = await runCharacterGenerationCandidate({
-      directory,
-      config: characterGenerationComparisonConfig(
-        {
-          provider: "openai-compatible",
-          baseUrl: "http://provider.invalid/v1",
-          model: "transport-fixture",
-          apiKey: "test-only-generation-secret",
-          timeoutMs: 1_000,
-          maxRetries: 0,
-        },
+  it.each([8_192, 64_000])(
+    "meters the real provider adapter independently of a %i-token environment default while retaining visible output and removing hidden reasoning",
+    async (environmentMaxTokens) => {
+      vi.stubEnv("LLM_ACTIVE_PROFILE", undefined);
+      vi.stubEnv("LLM_PROVIDER", "fixture");
+      vi.stubEnv(
+        "OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS",
+        String(environmentMaxTokens),
+      );
+      vi.stubEnv("OPENAI_COMPATIBLE_STRUCTURED_OUTPUT_MODE", "json_object");
+      const parent = await workspaceDirectory();
+      const directory = join(parent, "candidate");
+      const authorInput =
+        buildCharacterGenerationComparisonInput("reserved-direct");
+      const proposal = {
+        draft: buildOriginalDraft(
+          authorInput,
+          CHARACTER_COMPILATION_POLICY_VERSION,
+        ),
+        reasonCode: "fixture_character_compilation",
+        reasonSummary: "固定角色编译测试。",
+      };
+      let dispatches = 0;
+      const result = await runCharacterGenerationCandidate({
         directory,
-      ),
-      profile: "offline-transport",
-      personaId: "reserved-direct",
-      ledgerPath: join(parent, "attempts.jsonl"),
-      budget: { maxPhysicalRequests: 2, maxReservedTokenUnits: 1_000_000 },
-      transport: (_url, init) => {
-        dispatches++;
-        if (typeof init?.body !== "string")
-          throw new Error("Expected JSON body");
-        const request = JSON.parse(init.body) as { max_tokens: number };
-        expect(request.max_tokens).toBe(32_000);
-        return Promise.resolve(
-          Response.json({
+        config: characterGenerationComparisonConfig(
+          {
+            provider: "openai-compatible",
+            baseUrl: "http://provider.invalid/v1",
             model: "transport-fixture",
-            choices: [
-              {
-                message: {
-                  role: "assistant",
-                  content: JSON.stringify(proposal),
-                  reasoning_content: "private-reasoning-must-not-be-persisted",
+            apiKey: "test-only-generation-secret",
+            timeoutMs: 1_000,
+            maxRetries: 0,
+            // This synthetic model's capacity must not inherit the developer's
+            // .env: the compiler should request its own 32k per-call budget.
+            maxOutputTokens: 64_000,
+            capabilities: {
+              structuredOutputMode: "json_object",
+              supportsThinkingControl: false,
+              supportsStreaming: false,
+              maxOutputTokens: 64_000,
+            },
+          },
+          directory,
+        ),
+        profile: "offline-transport",
+        personaId: "reserved-direct",
+        ledgerPath: join(parent, "attempts.jsonl"),
+        budget: { maxPhysicalRequests: 2, maxReservedTokenUnits: 1_000_000 },
+        transport: (_url, init) => {
+          dispatches++;
+          if (typeof init?.body !== "string")
+            throw new Error("Expected JSON body");
+          const request = JSON.parse(init.body) as { max_tokens: number };
+          expect(request.max_tokens).toBe(32_000);
+          return Promise.resolve(
+            Response.json({
+              model: "transport-fixture",
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify(proposal),
+                    reasoning_content:
+                      "private-reasoning-must-not-be-persisted",
+                  },
+                  finish_reason: "stop",
                 },
-                finish_reason: "stop",
-              },
-            ],
-            usage: { prompt_tokens: 321, completion_tokens: 654 },
-          }),
-        );
-      },
-    });
-    expect(result.success).toBe(true);
-    expect(dispatches).toBe(1);
-    expect(result).toMatchObject({
-      physicalRequests: 1,
-      retries: 0,
-      logicalCalls: 1,
-      inputTokens: 321,
-      outputTokens: 654,
-      usageComplete: true,
-    });
-    expect(result.rawParsedProposal).not.toBeNull();
-    expect(result.rawVisibleResponses).toHaveLength(1);
-    const artifacts = (
-      await Promise.all(
-        [
-          "attempts.jsonl",
-          "candidate/model-io.jsonl",
-          "candidate/result.json",
-        ].map((file) => readFile(join(parent, file), "utf8")),
-      )
-    ).join("\n");
-    expect(artifacts).not.toContain("private-reasoning-must-not-be-persisted");
-    expect(artifacts).not.toContain("test-only-generation-secret");
-    expect(artifacts).toContain('"maxRetries":1');
-  }, 20_000);
+              ],
+              usage: { prompt_tokens: 321, completion_tokens: 654 },
+            }),
+          );
+        },
+      });
+      expect(result.success).toBe(true);
+      expect(dispatches).toBe(1);
+      expect(result).toMatchObject({
+        physicalRequests: 1,
+        retries: 0,
+        logicalCalls: 1,
+        inputTokens: 321,
+        outputTokens: 654,
+        usageComplete: true,
+      });
+      expect(result.rawParsedProposal).not.toBeNull();
+      expect(result.rawVisibleResponses).toHaveLength(1);
+      const artifacts = (
+        await Promise.all(
+          [
+            "attempts.jsonl",
+            "candidate/model-io.jsonl",
+            "candidate/result.json",
+          ].map((file) => readFile(join(parent, file), "utf8")),
+        )
+      ).join("\n");
+      expect(artifacts).not.toContain(
+        "private-reasoning-must-not-be-persisted",
+      );
+      expect(artifacts).not.toContain("test-only-generation-secret");
+      expect(artifacts).toContain('"maxRetries":1');
+    },
+    20_000,
+  );
 
   it("blocks further physical requests after the shared budget and preserves failure evidence", async () => {
     const parent = await workspaceDirectory();

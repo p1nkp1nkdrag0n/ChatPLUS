@@ -255,7 +255,10 @@ test.describe("Dearvale desktop journeys", () => {
     const firstSessionId = sessionFromUrl(page);
     expect(firstSessionId).toBeTruthy();
     await page.getByTestId("chat-input").fill("留在第一段对话里的草稿");
-    await page.getByRole("button", { name: "新建对话", exact: true }).click();
+    await page
+      .getByRole("complementary", { name: "历史对话", exact: true })
+      .getByRole("button", { name: "新建对话", exact: true })
+      .click();
     await expect.poll(() => sessionFromUrl(page)).not.toBe(firstSessionId);
     const secondSessionId = sessionFromUrl(page);
     await expect(page.getByTestId("chat-input")).toHaveValue("");
@@ -274,9 +277,17 @@ test.describe("Dearvale desktop journeys", () => {
     await expect(
       page.getByRole("complementary", { name: "角色近况" }),
     ).toBeVisible();
-    await page.getByLabel("搜索角色", { exact: true }).fill(searchName);
-    await expect(page.locator(".chat-character")).toHaveCount(1);
-    await page.locator(".chat-character").click();
+    await page.getByLabel("切换角色", { exact: true }).click();
+    const characterSwitcher = page.locator("details").filter({
+      has: page.getByLabel("切换角色", { exact: true }),
+    });
+    await characterSwitcher
+      .getByLabel("搜索角色", { exact: true })
+      .fill(searchName);
+    await expect(characterSwitcher.locator(".chat-character")).toHaveCount(1);
+    await characterSwitcher
+      .getByRole("link", { name: new RegExp(searchName) })
+      .click();
     await expect(page).toHaveURL(
       new RegExp(`/characters/${otherCharacterId}/edit`),
     );
@@ -409,7 +420,10 @@ test.describe("Dearvale desktop journeys", () => {
     await page.getByTestId("chat-input").fill("这是第一段对话的问候");
     await page.getByRole("button", { name: "发送消息" }).click();
     await fetched;
-    await page.getByRole("button", { name: "新建对话", exact: true }).click();
+    await page
+      .getByRole("complementary", { name: "历史对话", exact: true })
+      .getByRole("button", { name: "新建对话", exact: true })
+      .click();
     await expect.poll(() => sessionFromUrl(page)).not.toBe(oldId);
     const newId = sessionFromUrl(page);
     await expect(page.getByTestId("chat-input")).toBeEnabled();
@@ -550,9 +564,9 @@ async function expectChatSession(page: Page, sessionId: string): Promise<void> {
 }
 
 async function selectSession(page: Page, sessionId: string): Promise<void> {
-  await page.getByLabel("更多对话操作", { exact: true }).click();
   await page
-    .locator(`.chat-history__list button[data-session-id="${sessionId}"]`)
+    .getByRole("complementary", { name: "历史对话", exact: true })
+    .locator(`button[data-session-id="${sessionId}"]`)
     .click();
   await expectChatSession(page, sessionId);
 }

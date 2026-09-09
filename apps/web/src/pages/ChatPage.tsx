@@ -102,7 +102,7 @@ function CharacterChat({ characterId }: { characterId: string }) {
   const draftsRef = useRef(new Map<string, string>());
   const initialCreationRef = useRef(false);
   const mountedRef = useRef(true);
-  const historyRef = useRef<HTMLDetailsElement>(null);
+  const characterMenuRef = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -110,13 +110,13 @@ function CharacterChat({ characterId }: { characterId: string }) {
     };
   }, []);
   useEffect(() => {
-    const closeHistory = (event: PointerEvent) => {
-      const history = historyRef.current;
-      if (history?.open && !history.contains(event.target as Node))
-        history.open = false;
+    const closeCharacterMenu = (event: PointerEvent) => {
+      const menu = characterMenuRef.current;
+      if (menu?.open && !menu.contains(event.target as Node)) menu.open = false;
     };
-    document.addEventListener("pointerdown", closeHistory);
-    return () => document.removeEventListener("pointerdown", closeHistory);
+    document.addEventListener("pointerdown", closeCharacterMenu);
+    return () =>
+      document.removeEventListener("pointerdown", closeCharacterMenu);
   }, []);
 
   const charactersQuery = useQuery({
@@ -169,7 +169,6 @@ function CharacterChat({ characterId }: { characterId: string }) {
       void navigate(chatHref(characterId, created.id), {
         replace: requestedSessionId === null,
       });
-      if (historyRef.current) historyRef.current.open = false;
     },
   });
   const { mutate: createSession } = createSessionMutation;
@@ -215,7 +214,6 @@ function CharacterChat({ characterId }: { characterId: string }) {
 
   const showSession = (id: string) => {
     void navigate(chatHref(characterId, id));
-    if (historyRef.current) historyRef.current.open = false;
   };
   const recover = () => {
     const latest = selectLegacySession(sessions, characterId, undefined);
@@ -295,60 +293,57 @@ function CharacterChat({ characterId }: { characterId: string }) {
 
   return (
     <div className="dearvale-chat">
-      <aside className="chat-characters" aria-label="对话角色">
+      <aside className="chat-sessions" aria-label="历史对话">
         <Link className="chat-brand" to="/welcome">
           Dearvale
         </Link>
-        <label className="chat-character-search">
-          <Search size={19} aria-hidden="true" />
-          <input
-            aria-label="搜索角色"
-            placeholder="搜索角色"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-        <div className="chat-character-list">
-          {charactersQuery.isPending ? (
-            <p className="chat-list-note">正在寻找熟悉的身影…</p>
+        <div className="chat-sessions__heading">
+          <h2>历史对话</h2>
+          <p>{character?.identity.name ?? "当前角色"}</p>
+        </div>
+        <div className="chat-session-list">
+          {sessionsQuery.isPending && published ? (
+            <p className="chat-list-note">正在翻开历史对话…</p>
           ) : null}
-          {charactersQuery.isError ? (
-            <ErrorBlock error={charactersQuery.error} />
+          {sessionsQuery.isError ? (
+            <ErrorBlock error={sessionsQuery.error} />
           ) : null}
-          {filteredCharacters.map((item) => (
-            <Link
-              key={item.id}
-              className={`chat-character${item.id === characterId ? " is-current" : ""}`}
-              aria-current={item.id === characterId ? "page" : undefined}
-              to={
-                item.status === "published"
-                  ? chatHref(item.id)
-                  : `/characters/${item.id}/edit`
-              }
-            >
-              <CharacterAvatar characterId={item.id} size={64} />
-              <span>
-                {item.name}
-                {item.status === "draft" ? <small>待完成</small> : null}
-              </span>
-            </Link>
-          ))}
-          {charactersQuery.isSuccess && filteredCharacters.length === 0 ? (
-            <p className="chat-list-note">没有找到这个角色。</p>
-          ) : null}
-          <button
-            className="chat-new-conversation"
-            type="button"
-            onClick={() => createSession()}
-            disabled={!published || createSessionMutation.isPending}
-          >
-            <Plus size={20} />
-            {createSessionMutation.isPending ? "正在开启…" : "新建对话"}
-          </button>
-          {requestedSessionId !== null && createSessionMutation.isError ? (
-            <ErrorBlock error={createSessionMutation.error} />
+          {sessions
+            .filter((item) => item.agentId === characterId)
+            .map((item) => (
+              <button
+                key={item.id}
+                data-session-id={item.id}
+                type="button"
+                onClick={() => showSession(item.id)}
+                className={item.id === session?.id ? "is-current" : ""}
+                aria-current={item.id === session?.id ? "page" : undefined}
+              >
+                <span>
+                  {DateTime.fromISO(item.createdAtUtc)
+                    .setZone(character?.identity.timezone ?? "local")
+                    .toFormat("MM月dd日 HH:mm")}{" "}
+                  的对话
+                </span>
+                {item.id === session?.id ? <small>正在阅读</small> : null}
+              </button>
+            ))}
+          {sessionsQuery.isSuccess && sessions.length === 0 ? (
+            <p className="chat-list-note">还没有历史对话。</p>
           ) : null}
         </div>
+        <button
+          className="chat-new-conversation"
+          type="button"
+          onClick={() => createSession()}
+          disabled={!published || createSessionMutation.isPending}
+        >
+          <Plus size={20} aria-hidden="true" />
+          {createSessionMutation.isPending ? "正在开启…" : "新建对话"}
+        </button>
+        {requestedSessionId !== null && createSessionMutation.isError ? (
+          <ErrorBlock error={createSessionMutation.error} />
+        ) : null}
       </aside>
       <div className={`chat-page${railOpen ? " has-rail" : ""}`}>
         <header className="chat-header">
@@ -375,40 +370,68 @@ function CharacterChat({ characterId }: { characterId: string }) {
               </button>
             ) : null}
             <details
-              className="chat-history"
-              ref={historyRef}
+              className="chat-character-menu"
+              ref={characterMenuRef}
               onKeyDown={(event) => {
-                if (event.key === "Escape") event.currentTarget.open = false;
+                if (event.key === "Escape") {
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector("summary")?.focus();
+                }
               }}
             >
-              <summary className="icon-button" aria-label="更多对话操作">
+              <summary
+                className="icon-button"
+                aria-label="切换角色"
+                title="切换角色"
+              >
                 <MoreHorizontal size={24} />
               </summary>
-              <div className="chat-history__popover">
-                <h2>历史对话</h2>
-                <div className="chat-history__list">
-                  {sessions
-                    .filter((item) => item.agentId === characterId)
-                    .map((item) => (
-                      <button
-                        key={item.id}
-                        data-session-id={item.id}
-                        type="button"
-                        onClick={() => showSession(item.id)}
-                        className={item.id === session?.id ? "is-current" : ""}
-                      >
-                        <span>
-                          {DateTime.fromISO(item.createdAtUtc)
-                            .setZone(character?.identity.timezone ?? "local")
-                            .toFormat("MM月dd日 HH:mm")}{" "}
-                          的对话
-                        </span>
-                        {item.id === session?.id ? (
-                          <small>正在阅读</small>
-                        ) : null}
-                      </button>
-                    ))}
-                  {sessions.length === 0 ? <p>还没有历史对话。</p> : null}
+              <div className="chat-character-menu__popover">
+                <h2>切换角色</h2>
+                <label className="chat-character-search">
+                  <Search size={19} aria-hidden="true" />
+                  <input
+                    aria-label="搜索角色"
+                    placeholder="搜索角色"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </label>
+                <div className="chat-character-list">
+                  {charactersQuery.isPending ? (
+                    <p className="chat-list-note">正在寻找熟悉的身影…</p>
+                  ) : null}
+                  {charactersQuery.isError ? (
+                    <ErrorBlock error={charactersQuery.error} />
+                  ) : null}
+                  {filteredCharacters.map((item) => (
+                    <Link
+                      key={item.id}
+                      className={`chat-character${item.id === characterId ? " is-current" : ""}`}
+                      aria-current={
+                        item.id === characterId ? "page" : undefined
+                      }
+                      to={
+                        item.status === "published"
+                          ? chatHref(item.id)
+                          : `/characters/${item.id}/edit`
+                      }
+                      onClick={() => {
+                        if (characterMenuRef.current)
+                          characterMenuRef.current.open = false;
+                      }}
+                    >
+                      <CharacterAvatar characterId={item.id} size={48} />
+                      <span>
+                        {item.name}
+                        {item.status === "draft" ? <small>待完成</small> : null}
+                      </span>
+                    </Link>
+                  ))}
+                  {charactersQuery.isSuccess &&
+                  filteredCharacters.length === 0 ? (
+                    <p className="chat-list-note">没有找到这个角色。</p>
+                  ) : null}
                 </div>
                 <Link to={`/characters/${characterId}/edit`}>编辑角色</Link>
               </div>

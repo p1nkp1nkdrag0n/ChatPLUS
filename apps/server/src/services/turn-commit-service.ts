@@ -65,7 +65,11 @@ export class TurnCommitService {
     turn: { userMessage: StoredMessage; assistantMessage: StoredMessage };
     command: ChatTurnCommand;
   }): ChatTurnResult {
-    assertIdempotentTurnMatches(input.turn.userMessage, input.command.text);
+    assertIdempotentTurnMatches(
+      input.turn.userMessage,
+      input.command.text,
+      input.command.modelSelection,
+    );
     const state = this.store.getRuntimeState(input.command.agentId);
     if (!state) throw notFound("Character state");
     return replayTurnResult(input.turn, state);
@@ -80,7 +84,14 @@ export class TurnCommitService {
       content: input.command.text,
       messageKind: "user",
       clientMessageId: input.command.clientMessageId,
-      metadata: {},
+      metadata: {
+        ...(input.command.modelSelection === undefined
+          ? {}
+          : { requestedModelSelection: input.command.modelSelection }),
+        ...(input.modelSelection === undefined
+          ? {}
+          : { modelSelection: input.modelSelection }),
+      },
       createdAtUtc: input.nowUtc,
     };
     const assistantMessage: StoredMessage = {
@@ -93,6 +104,9 @@ export class TurnCommitService {
       inReplyToMessageId: userMessage.id,
       metadata: {
         chunks: input.world.decision.reply.chunks,
+        ...(input.modelSelection === undefined
+          ? {}
+          : { modelSelection: input.modelSelection }),
         deliveryMode: deliveryModeForDecision(input.world.decision),
         toneTags: input.world.decision.reply.toneTags,
         reasonCode: input.world.decision.reasonCode,
@@ -354,7 +368,11 @@ export class TurnCommitService {
       if (error instanceof DuplicateTurnError) {
         const stored = error.turn;
         if (!stored.assistantMessage) throw error;
-        assertIdempotentTurnMatches(stored.userMessage, input.command.text);
+        assertIdempotentTurnMatches(
+          stored.userMessage,
+          input.command.text,
+          input.command.modelSelection,
+        );
         return replayTurnResult(
           {
             userMessage: stored.userMessage,

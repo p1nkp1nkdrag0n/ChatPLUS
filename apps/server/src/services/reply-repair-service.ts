@@ -92,6 +92,7 @@ export class ReplyRepairService {
   constructor(private readonly llm: LlmService) {}
 
   async repairFixtureDecision(input: {
+    llmExecution?: LlmService;
     replyGrounding?: string;
     interactionEvidence?: InteractionEvidenceSnapshot;
     repairBudget?: ReplyRepairBudget;
@@ -106,7 +107,7 @@ export class ReplyRepairService {
   }): Promise<AgentTurnDecision> {
     if (!reserveRepair(input.repairBudget)) return input.fallback;
     try {
-      return await this.llm.generateObject({
+      return await (input.llmExecution ?? this.llm).generateObject({
         purpose: "repair_chat_turn",
         agentId: input.spec.id,
         maxRetries: 0,
@@ -149,6 +150,7 @@ export class ReplyRepairService {
   }
 
   async repairPersonaReply(input: {
+    llmExecution?: LlmService;
     replyGrounding?: string;
     interactionEvidence?: InteractionEvidenceSnapshot;
     repairBudget?: ReplyRepairBudget;
@@ -163,12 +165,12 @@ export class ReplyRepairService {
   }): Promise<PersonaChatResponse | undefined> {
     if (!reserveRepair(input.repairBudget)) return undefined;
     try {
-      const repaired = await this.llm.generateObject({
+      const repaired = await (input.llmExecution ?? this.llm).generateObject({
         purpose: "repair_chat_turn",
         agentId: input.spec.id,
         maxRetries: 0,
         maxOutputTokens: resolveChatOutputTokenBudget(
-          this.llm.capabilities,
+          (input.llmExecution ?? this.llm).capabilities,
           REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
           input.replyStrategy.maxOutputTokens,
         ),

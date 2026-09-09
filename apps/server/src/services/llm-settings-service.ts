@@ -1,5 +1,9 @@
 import { randomInt } from "node:crypto";
 import {
+  DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES,
+  createFixtureLlmProvider,
+} from "@personasim/providers";
+import {
   LlmModelSettingsSchema,
   LlmProviderInputSchema,
   LlmSelectionSchema,
@@ -513,9 +517,21 @@ export class LlmSettingsService {
       );
       if (alias) return alias.view;
     }
+    const effectiveCapabilities = fixture
+      ? createFixtureLlmProvider().capabilities
+      : {
+          ...(config.capabilities ?? DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES),
+          maxOutputTokens: Math.min(
+            config.maxOutputTokens ?? 8192,
+            config.capabilities?.maxOutputTokens ??
+              DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES.maxOutputTokens ??
+              64000,
+            64000,
+          ),
+        };
     const model = LlmModelSettingsSchema.parse({
       id: fixture ? "personasim-fixture-v1" : config.model,
-      ...(config.capabilities ? { capabilities: config.capabilities } : {}),
+      capabilities: effectiveCapabilities,
     });
     const view: LlmProviderView = {
       id,

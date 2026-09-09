@@ -198,6 +198,11 @@ export class ConversationService {
       });
     }
 
+    // Freeze one execution for generation and all repairs. Shared background
+    // collaborators retain the system default and never inherit this choice.
+    const llm = this.llm.captureSession(sessionId, input.modelSelection);
+    const decisions = this.decisions;
+    const worldEffects = this.worldEffects;
     const fuzzyLifeEnabled = this.options.lifePlanningMode === "fuzzy";
     if (fuzzyLifeEnabled) {
       if (this.fuzzyLife === undefined) {
@@ -438,13 +443,13 @@ export class ConversationService {
             priorClaims: priorConsentClaims,
           })
         : undefined;
-    const effects = this.worldEffects.prepareDecisionContext({
+    const effects = worldEffects.prepareDecisionContext({
       sessionId,
       nowUtc,
       userText: input.text,
       spec,
       capabilities,
-      providerName: this.llm.providerName,
+      providerName: llm.providerName,
     });
     const turnEffectContext =
       explicitFactReplyContract !== undefined
@@ -497,7 +502,7 @@ export class ConversationService {
       ...(additionalPromptSegments.length === 0
         ? {}
         : { additionalPromptSegments }),
-      maxInputTokens: calculateLlmPromptTokenBudget(this.llm.capabilities),
+      maxInputTokens: calculateLlmPromptTokenBudget(llm.capabilities),
       ...(this.options.replySteeringMode === undefined
         ? {}
         : { replySteeringMode: this.options.replySteeringMode }),
@@ -535,7 +540,7 @@ export class ConversationService {
         ? createExplicitFactReplyTurn({
             contract: explicitFactReplyContract,
             inspectDecision: (decision) =>
-              this.decisions.inspect({
+              decisions.inspect({
                 ...semanticContext,
                 agentId: input.agentId,
                 spec,
@@ -549,7 +554,8 @@ export class ConversationService {
                   : { causalContext: lifeContext }),
               }),
           })
-        : await this.decisions.decide({
+        : await decisions.decide({
+            llmExecution: llm,
             ...semanticContext,
             replyGrounding: assembledPrompt.replyGrounding,
             ...(selectedLifeContext.context === undefined
@@ -591,7 +597,7 @@ export class ConversationService {
               turn: candidateTurn,
               contract: consentModalityGuardContract,
               inspectDecision: (decision) =>
-                this.decisions.inspect({
+                decisions.inspect({
                   ...semanticContext,
                   agentId: input.agentId,
                   spec,
@@ -608,7 +614,8 @@ export class ConversationService {
                 }),
             })
           : candidateTurn;
-    const preparedWorld = await this.worldEffects.resolve({
+    const preparedWorld = await worldEffects.resolve({
+      llmExecution: llm,
       ...semanticContext,
       ...(appliedContextPlan === undefined
         ? {}
@@ -645,7 +652,8 @@ export class ConversationService {
             contract: consentModalityGuardContract,
           });
     if (semanticEnabled) {
-      const last = await this.decisions.finalizeSemanticReply({
+      const last = await decisions.finalizeSemanticReply({
+        llmExecution: llm,
         ...semanticContext,
         replyGrounding: assembledPrompt.replyGrounding,
         spec,
@@ -686,6 +694,7 @@ export class ConversationService {
       };
     }
     return this.commits.commit({
+      ...(llm.selection === undefined ? {} : { modelSelection: llm.selection }),
       memoryRevision,
       sessionId,
       command: input,

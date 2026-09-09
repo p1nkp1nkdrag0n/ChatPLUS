@@ -4,10 +4,15 @@ import type {
   LlmPurpose,
   ReasoningEffort,
   ReasoningRequestFormat,
+  LlmProtocol,
+  LlmSelection,
+  LlmExecutionSelection,
+  LlmProviderView,
 } from "@personasim/contracts";
 import {
   createFixtureLlmProvider,
   createOpenAiCompatibleLlmProvider,
+  createManagedLlmProvider,
   type LlmMetricSink,
   type LlmProvider,
 } from "@personasim/providers";
@@ -16,6 +21,7 @@ import type { ZodType } from "zod";
 import type { ServerConfig } from "../config.js";
 import type { DatabaseStore } from "../db/store.js";
 import type { Clock } from "../runtime/clock.js";
+import type { LlmSettingsService } from "./llm-settings-service.js";
 
 export class LlmServiceError extends Error {
   constructor(
@@ -72,28 +78,39 @@ export interface LlmServiceObservationOptions {
 }
 
 const REDACTED_LETTER_REPLY_OBSERVATION = "[redacted:letter_reply]";
+const CAPTURED_EXECUTION = Symbol("captured-llm-execution");
 
 export class LlmService {
-  readonly providerName: "fixture" | "openai-compatible";
-  readonly profileName: string;
-  readonly modelName: string;
-  readonly capabilities: LlmCapabilityProfile;
-  readonly reasoningEffort: ReasoningEffort | undefined;
-  readonly reasoningRequestFormat: ReasoningRequestFormat | undefined;
+  private readonly initialProviderName: "fixture" | LlmProtocol;
+  private readonly initialProfileName: string;
+  private readonly initialModelName: string;
+  private readonly initialCapabilities: LlmCapabilityProfile;
   private readonly provider: LlmProvider;
   private logicalCallSequence = 0;
+  settings: LlmSettingsService | undefined;
+  readonly selection: LlmExecutionSelection | undefined;
+  private readonly executions = new Map<string, LlmService>();
+  private origin: LlmService | undefined;
 
   constructor(
     config: ServerConfig["llm"],
     private readonly store: DatabaseStore,
     private readonly clock: Clock,
     private readonly observation: LlmServiceObservationOptions = {},
+    execution?: {
+      provider: LlmProvider;
+      protocol: LlmProtocol | "fixture";
+      selection: LlmExecutionSelection;
+    },
   ) {
-    this.providerName = config.provider;
-    this.profileName =
+    this.initialProviderName = execution?.protocol ?? config.provider;
+    this.selection = execution?.selection;
+    this.initialProfileName =
       config.profileName ??
       (config.provider === "openai-compatible" ? "legacy" : "fixture");
-    if (config.provider === "openai-compatible") {
+    if (execution) {
+      this.provider = execution.provider;
+    } else if (config.provider === "openai-compatible") {
       if (!config.apiKey) {
         const credentialEnvironment = config.profileName
           ? `LLM_PROFILE_${config.profileName.replaceAll("-", "_").toUpperCase()}_API_KEY`
@@ -130,13 +147,169 @@ export class LlmService {
     } else {
       this.provider = createFixtureLlmProvider();
     }
-    this.modelName = this.provider.model;
-    this.capabilities = this.provider.capabilities;
-    this.reasoningEffort = this.capabilities.reasoningEffort;
-    this.reasoningRequestFormat = this.capabilities.reasoningRequestFormat;
+    this.initialModelName = this.provider.model;
+    this.initialCapabilities = this.provider.capabilities;
+  }
+
+  private currentView():
+    { provider: LlmProviderView; modelId: string } | undefined {
+    if (!this.settings) return undefined;
+    const catalog = this.settings.catalog();
+    const provider = catalog.providers.find(
+      (item) => item.id === catalog.defaultSelection.providerId,
+    );
+    return provider
+      ? { provider, modelId: catalog.defaultSelection.modelId }
+      : undefined;
+  }
+
+  get providerName(): "fixture" | LlmProtocol {
+    return this.currentView()?.provider.protocol ?? this.initialProviderName;
+  }
+  get profileName(): string {
+    const view = this.currentView();
+    return view
+      ? view.provider.id.replace(/^env:/u, "")
+      : this.initialProfileName;
+  }
+  get modelName(): string {
+    return this.currentView()?.modelId ?? this.initialModelName;
+  }
+  get capabilities(): LlmCapabilityProfile {
+    const view = this.currentView();
+    return (
+      view?.provider.models.find((model) => model.id === view.modelId)
+        ?.capabilities ?? this.initialCapabilities
+    );
+  }
+  get reasoningEffort(): ReasoningEffort | undefined {
+    return this.capabilities.reasoningEffort;
+  }
+  get reasoningRequestFormat(): ReasoningRequestFormat | undefined {
+    return this.capabilities.reasoningRequestFormat;
+  }
+
+  captureDefault(): LlmService {
+    return this.captureSelection();
+  }
+
+  captureSelection(
+    selection?: LlmSelection,
+    expectedRevision?: number,
+  ): LlmService {
+    if (!this.settings) return this;
+    const resolved = this.settings.resolve(selection, expectedRevision);
+    const key = JSON.stringify(resolved.selection);
+    const cached = this.executions.get(key);
+    if (cached) return cached;
+    if (resolved.legacyConfig) {
+      const captured = new LlmService(
+        resolved.legacyConfig,
+        this.store,
+        this.clock,
+        this.observation,
+        {
+          provider:
+            resolved.protocol === "fixture"
+              ? createFixtureLlmProvider()
+              : createOpenAiCompatibleLlmProvider({
+                  ...resolved.legacyConfig,
+                  apiKey: resolved.apiKey,
+                  ...(this.observation.fetch === undefined
+                    ? {}
+                    : { fetch: this.observation.fetch }),
+                  ...(this.observation.onMetric === undefined
+                    ? {}
+                    : { onMetric: this.observation.onMetric }),
+                  ...(this.observation.promptDiagnostics === undefined
+                    ? {}
+                    : {
+                        promptDiagnostics: this.observation.promptDiagnostics,
+                      }),
+                }),
+          protocol: resolved.protocol,
+          selection: resolved.selection,
+        },
+      );
+      captured.origin = this;
+      this.executions.set(key, captured);
+      return captured;
+    }
+    const provider =
+      resolved.protocol === "fixture"
+        ? createFixtureLlmProvider()
+        : createManagedLlmProvider({
+            protocol: resolved.protocol,
+            baseUrl: resolved.baseUrl,
+            apiKey: resolved.apiKey,
+            model: resolved.model,
+            timeoutMs: resolved.timeoutMs,
+            maxRetries: 1,
+            ...(this.observation.fetch === undefined
+              ? {}
+              : { fetch: this.observation.fetch }),
+            ...(this.observation.onMetric === undefined
+              ? {}
+              : { onMetric: this.observation.onMetric }),
+          });
+    const captured = new LlmService(
+      {
+        provider:
+          resolved.protocol === "fixture" ? "fixture" : "openai-compatible",
+        profileName: resolved.profileName,
+        model: resolved.model.id,
+        baseUrl: resolved.baseUrl,
+        apiKey: resolved.apiKey,
+        timeoutMs: resolved.timeoutMs,
+        maxRetries: 1,
+        capabilities: resolved.model.capabilities,
+      },
+      this.store,
+      this.clock,
+      this.observation,
+      { provider, protocol: resolved.protocol, selection: resolved.selection },
+    );
+    if (this.executions.size >= 64)
+      this.executions.delete(this.executions.keys().next().value!);
+    captured.origin = this;
+    this.executions.set(key, captured);
+    return captured;
+  }
+
+  captureSession(
+    sessionId: string,
+    expected?: LlmExecutionSelection,
+  ): LlmService {
+    if (expected)
+      return this.captureSelection(
+        { providerId: expected.providerId, modelId: expected.modelId },
+        expected.revision,
+      );
+    if (!this.settings) return this;
+    const session = this.settings.sessionModel(sessionId);
+    return this.captureSelection(session.selection ?? undefined);
   }
 
   async generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+    const execution = (
+      input as GenerateObjectInput<T> & { [CAPTURED_EXECUTION]?: LlmService }
+    )[CAPTURED_EXECUTION];
+    if (execution) return execution.generateCapturedObject(input);
+    if (this.origin) {
+      const command = { ...input };
+      // Preserve the public generation/observation seam while carrying a
+      // private, non-serializable binding through decorators of that seam.
+      Object.defineProperty(command, CAPTURED_EXECUTION, { value: this });
+      return this.origin.generateObject(command);
+    }
+    if (this.settings)
+      return this.captureDefault().generateCapturedObject(input);
+    return this.generateCapturedObject(input);
+  }
+
+  private async generateCapturedObject<T>(
+    input: GenerateObjectInput<T>,
+  ): Promise<T> {
     const logicalCallIndex = ++this.logicalCallSequence;
     this.emitLogicalCall({
       stage: "started",

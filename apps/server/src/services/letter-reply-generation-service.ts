@@ -70,6 +70,10 @@ export interface LetterReplyModelRequest<T> {
 
 export interface LetterReplyModel {
   generateObject<T>(input: LetterReplyModelRequest<T>): Promise<T>;
+  captureDefault?(): LetterReplyModel & {
+    providerName: string;
+    modelName: string;
+  };
 }
 
 export interface LetterReplyEncryptor {
@@ -152,6 +156,7 @@ export class LetterReplyGenerationError extends Error {
 
 export class LetterReplyGenerationService {
   readonly #providerRepairAttempts: number;
+  readonly #executions = new WeakMap<object, LetterReplyModel>();
   #onReplyCommitted:
     | ((notice: Readonly<CommittedLetterReplyNotice>) => void | Promise<void>)
     | undefined;
@@ -303,6 +308,7 @@ export class LetterReplyGenerationService {
       );
     }
 
+    const execution = this.llm.captureDefault?.();
     const run = this.repository.claimGenerationRun({
       incomingLetterId: incomingLetter.id,
       snapshotId: snapshot.id,
@@ -312,8 +318,8 @@ export class LetterReplyGenerationService {
       claimToken: task.claimToken,
       nowUtc: observedNowUtc,
       leaseExpiresAtUtc: task.leaseExpiresAtUtc,
-      provider: this.options.provider,
-      model: this.options.model,
+      provider: execution?.providerName ?? this.options.provider,
+      model: execution?.modelName ?? this.options.model,
     });
     if (run?.status === "committed") {
       return Object.freeze({
@@ -392,7 +398,7 @@ export class LetterReplyGenerationService {
       strategy,
       referenceScope: randomBytes(8).toString("hex"),
     });
-    return Object.freeze({
+    const prepared = Object.freeze({
       status: "claimed",
       task,
       payload,
@@ -401,7 +407,9 @@ export class LetterReplyGenerationService {
       snapshotHash,
       run,
       prompt,
-    });
+    } as const);
+    this.#executions.set(prepared, execution ?? this.llm);
+    return prepared;
   }
 
   async compose(
@@ -411,7 +419,9 @@ export class LetterReplyGenerationService {
       return { status: "already_committed" };
     }
     try {
-      const generated = await this.llm.generateObject({
+      const generated = await (
+        this.#executions.get(prepared) ?? this.llm
+      ).generateObject({
         purpose: "letter_reply",
         system: prepared.prompt.system,
         prompt: prepared.prompt.prompt,
@@ -599,8 +609,8 @@ export class LetterReplyGenerationService {
         effectiveAuthorTimeUtc,
         arrivalDueAtUtc,
         encryptedBody,
-        provider: this.options.provider,
-        model: this.options.model,
+        provider: prepared.run.provider ?? this.options.provider,
+        model: prepared.run.model ?? this.options.model,
         resultHash: execution.resultHash,
         taskId: stableReturnArrivalTaskId(replyLetterId),
         taskPriority: 30,

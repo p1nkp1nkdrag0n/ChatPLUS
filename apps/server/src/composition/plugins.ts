@@ -44,6 +44,7 @@ import { DateDigestService } from "../services/date-digest-service.js";
 import { FollowUpRepository } from "../services/follow-up-repository.js";
 import { FollowUpService } from "../services/follow-up-service.js";
 import { FuzzyLifeService } from "../services/fuzzy-life-service.js";
+import { LlmSettingsService } from "../services/llm-settings-service.js";
 import {
   LlmService,
   type LlmServiceObservationOptions,
@@ -247,6 +248,7 @@ function createInfrastructurePlugin(
         clock,
         options.llmObservation,
       );
+      llm.settings = new LlmSettingsService(store, options.config, clock);
       const logger = createKernelLogger(options.logger);
       const correspondenceMode = options.config.correspondenceMode ?? "off";
       const correspondenceCrypto = CorrespondenceCryptoService.initialize(

@@ -325,6 +325,7 @@ export class TurnDecisionService {
   ) {}
 
   async decide(input: {
+    llmExecution?: LlmService;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -344,7 +345,7 @@ export class TurnDecisionService {
     causalContext?: unknown;
   }): Promise<ResolvedTurn> {
     input.repairBudget ??= { remaining: 1, attempts: 0 };
-    if (this.llm.providerName === "fixture") {
+    if ((input.llmExecution ?? this.llm).providerName === "fixture") {
       const rawFixture = fixtureDecision(
         input.spec,
         input.schedule,
@@ -425,6 +426,7 @@ export class TurnDecisionService {
   }
 
   private async decideFixtureTurn(input: {
+    llmExecution?: LlmService;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -456,7 +458,7 @@ export class TurnDecisionService {
     );
     try {
       providerEnvelope = StrictPersonaTurnProviderEnvelopeSchema.parse(
-        await this.llm.generateObject({
+        await (input.llmExecution ?? this.llm).generateObject({
           purpose: "chat_turn",
           agentId: input.agentId,
           system: input.system,
@@ -521,6 +523,7 @@ export class TurnDecisionService {
     if (!decision || !inspection || inspection.issues.length > 0) {
       repairAttempted = true;
       const repaired = await this.repairs.repairFixtureDecision({
+        ...(input.llmExecution ? { llmExecution: input.llmExecution } : {}),
         ...sharedSemanticContext(input),
         spec: input.spec,
         ...(input.lifeContext === undefined
@@ -650,6 +653,7 @@ export class TurnDecisionService {
   }
 
   private async decidePersonaReply(input: {
+    llmExecution?: LlmService;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -707,7 +711,7 @@ export class TurnDecisionService {
         : StrictPersonaTurnProviderEnvelopeSchema;
     try {
       envelopeResponse = providerSchema.parse(
-        await this.llm.generateObject({
+        await (input.llmExecution ?? this.llm).generateObject({
           purpose: "chat_turn",
           agentId: input.agentId,
           system: input.system,
@@ -717,7 +721,7 @@ export class TurnDecisionService {
               : `${input.prompt}\n${effectsContract}`,
           schema: providerSchema,
           maxOutputTokens: resolveChatOutputTokenBudget(
-            this.llm.capabilities,
+            (input.llmExecution ?? this.llm).capabilities,
             CHAT_TURN_OUTPUT_TOKEN_TARGET,
             input.replyStrategy.maxOutputTokens +
               (worldEffectsEnabled ||
@@ -828,6 +832,7 @@ export class TurnDecisionService {
     if (!inspection || inspection.issues.length > 0) {
       repairAttempted = true;
       const repaired = await this.repairs.repairPersonaReply({
+        ...(input.llmExecution ? { llmExecution: input.llmExecution } : {}),
         ...sharedSemanticContext(input),
         spec: input.spec,
         ...(input.lifeContext === undefined
@@ -959,6 +964,7 @@ export class TurnDecisionService {
   /** Last textual boundary, after world/causal/fact presentation. Pure checks may
    * repeat; all model repairs consume the same per-turn allowance. */
   async finalizeSemanticReply(input: {
+    llmExecution?: LlmService;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -989,6 +995,9 @@ export class TurnDecisionService {
         input.allowModelRepair === false
           ? undefined
           : await this.repairs.repairPersonaReply({
+              ...(input.llmExecution
+                ? { llmExecution: input.llmExecution }
+                : {}),
               ...input,
               invalidResponse: {
                 text: decision.reply.text,

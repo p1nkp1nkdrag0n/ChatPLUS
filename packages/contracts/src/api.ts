@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  LlmExecutionSelectionSchema,
+  LlmSelectionSchema,
+} from "./llm-settings.js";
 
 import {
   CharacterSpecDraftSchema,
@@ -277,6 +281,13 @@ export const ApiStoredSessionSchema = z
     title: z.string().trim().min(1).max(200),
     createdAtUtc: UtcDateTimeSchema,
     updatedAtUtc: UtcDateTimeSchema,
+    model: z
+      .strictObject({
+        selection: LlmSelectionSchema.nullable(),
+        effective: LlmExecutionSelectionSchema.nullable(),
+        error: z.string().optional(),
+      })
+      .optional(),
   })
   .strict();
 export type ApiStoredSession = z.infer<typeof ApiStoredSessionSchema>;
@@ -416,7 +427,12 @@ export const GetSettingsResponseSchema = z
     settings: z.record(z.string(), z.unknown()),
     runtime: z
       .object({
-        llmProvider: z.enum(["fixture", "openai-compatible"]),
+        llmProvider: z.enum([
+          "fixture",
+          "openai-compatible",
+          "anthropic",
+          "gemini",
+        ]),
         llmProfile: z.string().trim().min(1).max(120),
         llmModel: z.string().trim().min(1).max(160),
         llmBaseUrl: z.url(),
@@ -448,7 +464,12 @@ export const HealthResponseSchema = z
     deploymentMode: z.literal("local_single_user"),
     serverTimeUtc: UtcDateTimeSchema,
     profile: z.string().trim().min(1).max(120),
-    llmProvider: z.enum(["fixture", "openai-compatible"]),
+    llmProvider: z.enum([
+      "fixture",
+      "openai-compatible",
+      "anthropic",
+      "gemini",
+    ]),
     llmProfile: z.string().trim().min(1).max(120),
     llmReasoningEffort: ReasoningEffortSchema.optional(),
     llmReasoningRequestFormat: ReasoningRequestFormatSchema.optional(),

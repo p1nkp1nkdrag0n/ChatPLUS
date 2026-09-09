@@ -1,6 +1,7 @@
 import {
   MemoryRecallRuntimeDiagnosticSchema,
   type MemoryRecallRuntimeDiagnostic,
+  type LlmExecutionSelection,
 } from "@personasim/contracts";
 
 import type { StoredMessage } from "../db/store.js";
@@ -12,8 +13,15 @@ import type { ChatTurnResult } from "./turn-commit-types.js";
 export function assertIdempotentTurnMatches(
   storedUserMessage: StoredMessage,
   requestedText: string,
+  requestedModel?: LlmExecutionSelection,
 ): void {
-  if (storedUserMessage.content === requestedText) return;
+  const storedModel = storedUserMessage.metadata.requestedModelSelection;
+  if (
+    storedUserMessage.content === requestedText &&
+    (storedModel === undefined ||
+      JSON.stringify(storedModel) === JSON.stringify(requestedModel))
+  )
+    return;
   throw new ApiError(
     409,
     "idempotency_key_reused",

@@ -1,5 +1,6 @@
 import type { MemoryRecallRuntimeDiagnostic } from "@personasim/contracts";
 import type { EffectivePersonaSnapshot } from "@personasim/contracts";
+import type { LlmExecutionSelection } from "@personasim/contracts";
 
 import type { StoredMessage } from "../db/store.js";
 import type { SimulationCapabilities } from "../domain/capabilities.js";
@@ -23,9 +24,11 @@ export interface ChatTurnCommand {
   agentId: string;
   clientMessageId: string;
   text: string;
+  modelSelection?: LlmExecutionSelection | undefined;
 }
 
 export interface TurnCommitInput {
+  modelSelection?: LlmExecutionSelection;
   sessionId: string;
   command: ChatTurnCommand;
   spec: CharacterSpec;

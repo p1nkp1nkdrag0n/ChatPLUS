@@ -25,6 +25,7 @@ import type {
   RuntimeState,
 } from "../domain/schemas.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
+import type { LlmService } from "./llm-service.js";
 import {
   sharedSemanticContext,
   type ReplyRepairBudget,
@@ -184,6 +185,7 @@ export class WorldEffectService {
   }
 
   async resolve(input: {
+    llmExecution?: LlmService;
     sessionId: string;
     agentId: string;
     userText: string;
@@ -339,6 +341,7 @@ export class WorldEffectService {
         if (inspection.issues.length > 0 && controlledReply === undefined) {
           repairAttempted = true;
           const repaired = await this.repairs.repairPersonaReply({
+            ...(input.llmExecution ? { llmExecution: input.llmExecution } : {}),
             ...sharedSemanticContext(input),
             spec: input.spec,
             ...(input.effectivePersona === undefined

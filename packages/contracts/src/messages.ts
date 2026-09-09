@@ -7,6 +7,7 @@ import {
   UtcDateTimeSchema,
 } from "./primitives.js";
 import { LOCAL_USER_ID } from "./relationship.js";
+import { LlmExecutionSelectionSchema } from "./llm-settings.js";
 
 export const MessageRoleSchema = z.enum(["user", "assistant"]);
 export type MessageRole = z.infer<typeof MessageRoleSchema>;
@@ -118,6 +119,7 @@ export const ServerChatMessageInputSchema = z
     agentId: EntityIdSchema,
     clientMessageId: EntityIdSchema,
     text: z.string().trim().min(1).max(20_000),
+    modelSelection: LlmExecutionSelectionSchema.optional(),
   })
   .strict();
 export type ServerChatMessageInput = z.infer<

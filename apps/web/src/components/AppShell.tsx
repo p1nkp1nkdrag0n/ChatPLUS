@@ -1,10 +1,4 @@
-import {
-  History,
-  Mail,
-  MessageCircle,
-  Settings,
-  UserRound,
-} from "lucide-react";
+import { Mail, MessageCircle, Settings, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -124,20 +118,7 @@ export function AppShell() {
       icon: Mail,
       activePrefixes: ["/letters/", "/correspondence/threads/"],
     },
-    {
-      to: root ? `${root}/timeline` : "/timeline",
-      label: "记忆",
-      icon: History,
-      activePrefixes: root
-        ? [
-            `${root}/relationship-archive`,
-            `${root}/relationship-share`,
-            `${root}/keepsakes`,
-            "/keepsakes/",
-            "/timeline",
-          ]
-        : ["/keepsakes/"],
-    },
+    // The memory entry stays hidden while its presentation is redesigned.
     {
       to: "/characters",
       label: "角色",

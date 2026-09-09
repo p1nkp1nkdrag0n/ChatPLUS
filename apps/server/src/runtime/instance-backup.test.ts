@@ -56,7 +56,7 @@ describe("instance backup and restore", () => {
 
     expect(manifest).toMatchObject({
       format: "chatplus-instance-backup",
-      formatVersion: 1,
+      formatVersion: 2,
       createdAtUtc: OBSERVED,
       database: {
         file: "database.sqlite",

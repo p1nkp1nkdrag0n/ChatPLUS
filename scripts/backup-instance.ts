@@ -13,6 +13,8 @@ const { values } = parseArgs({
     assets: { type: "string" },
     output: { type: "string" },
     "env-file": { type: "string", default: ".env" },
+    "llm-key-file": { type: "string" },
+    "allow-missing-llm-key": { type: "boolean", default: false },
   },
 });
 
@@ -29,6 +31,10 @@ const manifest = await backupInstance({
   databasePath: values.database,
   outputDirectory: values.output,
   ...(values.assets === undefined ? {} : { assetsPath: values.assets }),
+  ...(values["llm-key-file"] === undefined
+    ? {}
+    : { llmKeyFile: values["llm-key-file"] }),
+  allowMissingLlmKey: values["allow-missing-llm-key"],
   ...(process.env.INSTANCE_SECRET === undefined
     ? {}
     : { instanceSecret: process.env.INSTANCE_SECRET }),
@@ -37,3 +43,9 @@ const manifest = await backupInstance({
 process.stdout.write(
   `Backup complete: ${resolve(values.output)} (${manifest.database.latestSchemaMigration ?? "no migrations"}, ${manifest.assets.fileCount} assets)\n`,
 );
+if (manifest.llmKey)
+  process.stdout.write(
+    values["allow-missing-llm-key"]
+      ? "Provider credentials require the matching LLM key file; without it, refill credentials after restoring.\n"
+      : `Keep the LLM key file separately: ${resolve(values["llm-key-file"] ?? `${values.database}.llm-key`)} (not included in backup)\n`,
+  );

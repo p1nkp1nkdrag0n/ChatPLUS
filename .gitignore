@@ -37,6 +37,7 @@ backups/
 !.env.example
 !.env.selfhosted.example
 *.local
+*.llm-key
 
 # Editor and OS noise
 .DS_Store

@@ -13,6 +13,8 @@ const { values } = parseArgs({
     database: { type: "string" },
     assets: { type: "string" },
     "env-file": { type: "string", default: ".env" },
+    "llm-key-file": { type: "string" },
+    "allow-missing-llm-key": { type: "boolean", default: false },
   },
 });
 
@@ -33,6 +35,10 @@ const manifest = await restoreInstance({
   backupDirectory: values.backup,
   targetDatabasePath: values.database,
   targetAssetsPath: values.assets,
+  ...(values["llm-key-file"] === undefined
+    ? {}
+    : { llmKeyFile: values["llm-key-file"] }),
+  allowMissingLlmKey: values["allow-missing-llm-key"],
   ...(process.env.INSTANCE_SECRET === undefined
     ? {}
     : { instanceSecret: process.env.INSTANCE_SECRET }),
@@ -41,3 +47,11 @@ const manifest = await restoreInstance({
 process.stdout.write(
   `Restore complete: ${resolve(values.database)} (${manifest.database.latestSchemaMigration ?? "no migrations"}, ${manifest.assets.fileCount} assets)\n`,
 );
+if (
+  manifest.llmKey &&
+  values["allow-missing-llm-key"] &&
+  values["llm-key-file"] === undefined
+)
+  process.stdout.write(
+    "Chat data restored. Provider credentials were not restored; recover the original key file or reset and refill credentials.\n",
+  );

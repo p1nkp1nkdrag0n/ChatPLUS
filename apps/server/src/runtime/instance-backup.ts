@@ -23,9 +23,16 @@ import { canonicalCorrespondenceJson } from "@personasim/features";
 import { z } from "zod";
 
 import { deriveCorrespondenceInstanceSecretFingerprint } from "../services/correspondence-instance-secret.js";
+import {
+  LlmKeyMetadataSchema,
+  llmKeyPath,
+  readLlmKeyMetadata,
+  verifyLlmKeyFile,
+  type LlmKeyMetadata,
+} from "../services/llm-credential-service.js";
 
 const BACKUP_FORMAT = "chatplus-instance-backup";
-const BACKUP_FORMAT_VERSION = 1;
+const BACKUP_FORMAT_VERSION = 2;
 const BACKUP_DATABASE_FILE = "database.sqlite";
 const BACKUP_ASSETS_DIRECTORY = "assets";
 const BACKUP_MANIFEST_FILE = "manifest.json";
@@ -61,17 +68,30 @@ const ExcludedAssetManifestSchema = z.strictObject({
   digest: z.null(),
 });
 
-export const InstanceBackupManifestSchema = z.strictObject({
-  format: z.literal(BACKUP_FORMAT),
-  formatVersion: z.literal(BACKUP_FORMAT_VERSION),
-  createdAtUtc: z.iso.datetime(),
-  database: DatabaseManifestSchema,
-  correspondenceKey: CorrespondenceKeyMetadataSchema.nullable(),
-  assets: z.discriminatedUnion("included", [
-    IncludedAssetManifestSchema,
-    ExcludedAssetManifestSchema,
-  ]),
-});
+export const InstanceBackupManifestSchema = z
+  .strictObject({
+    format: z.literal(BACKUP_FORMAT),
+    formatVersion: z.union([z.literal(1), z.literal(BACKUP_FORMAT_VERSION)]),
+    createdAtUtc: z.iso.datetime(),
+    database: DatabaseManifestSchema,
+    correspondenceKey: CorrespondenceKeyMetadataSchema.nullable(),
+    llmKey: LlmKeyMetadataSchema.nullable().optional(),
+    assets: z.discriminatedUnion("included", [
+      IncludedAssetManifestSchema,
+      ExcludedAssetManifestSchema,
+    ]),
+  })
+  .superRefine((manifest, context) => {
+    if (
+      manifest.formatVersion === 2 &&
+      !Object.prototype.hasOwnProperty.call(manifest, "llmKey")
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["llmKey"],
+        message: "Version 2 backups require LLM key metadata",
+      });
+  });
 
 export type InstanceBackupManifest = z.infer<
   typeof InstanceBackupManifestSchema
@@ -82,6 +102,8 @@ export interface BackupInstanceOptions {
   readonly outputDirectory: string;
   readonly assetsPath?: string;
   readonly instanceSecret?: string;
+  readonly llmKeyFile?: string;
+  readonly allowMissingLlmKey?: boolean;
   readonly nowUtc?: string;
 }
 
@@ -90,6 +112,8 @@ export interface RestoreInstanceOptions {
   readonly targetDatabasePath: string;
   readonly targetAssetsPath: string;
   readonly instanceSecret?: string;
+  readonly llmKeyFile?: string;
+  readonly allowMissingLlmKey?: boolean;
 }
 
 interface DatabaseInspection {
@@ -97,6 +121,7 @@ interface DatabaseInspection {
   readonly correspondenceKey: z.infer<
     typeof CorrespondenceKeyMetadataSchema
   > | null;
+  readonly llmKey: LlmKeyMetadata | null;
 }
 
 interface AssetSnapshot {
@@ -162,6 +187,11 @@ export async function backupInstance(
         inspection.correspondenceKey,
         options.instanceSecret,
       );
+      verifyConfiguredLlmKey(
+        inspection.llmKey,
+        options.llmKeyFile ?? llmKeyPath(databasePath),
+        options.allowMissingLlmKey === true,
+      );
 
       await database.backup(
         join(temporaryOutputDirectory, BACKUP_DATABASE_FILE),
@@ -200,6 +230,7 @@ export async function backupInstance(
         latestSchemaMigration: inspection.schemaMigrations.at(-1) ?? null,
       },
       correspondenceKey: inspection.correspondenceKey,
+      llmKey: inspection.llmKey,
       assets: assetsManifest,
     });
     await writeFile(
@@ -267,6 +298,15 @@ export async function restoreInstance(
   assertManifestMatchesInspection(manifest, inspection);
   assertSupportedSchema(inspection.schemaMigrations);
   verifyConfiguredSecret(manifest.correspondenceKey, options.instanceSecret);
+  const targetLlmKeyPath = llmKeyPath(targetDatabasePath);
+  const sourceLlmKeyPath = verifyConfiguredLlmKey(
+    inspection.llmKey,
+    options.llmKeyFile ??
+      (existsSync(targetLlmKeyPath) ? targetLlmKeyPath : undefined),
+    options.allowMissingLlmKey === true,
+  );
+  if (sourceLlmKeyPath !== undefined && existsSync(targetLlmKeyPath))
+    verifyLlmKeyFile(targetLlmKeyPath, inspection.llmKey!);
 
   const backupAssetsPath = join(backupDirectory, BACKUP_ASSETS_DIRECTORY);
   if (manifest.assets.included) {
@@ -296,6 +336,7 @@ export async function restoreInstance(
     dirname(targetAssetsPath),
     `.chatplus-restore-${restoreId}.assets.partial`,
   );
+  const temporaryLlmKeyPath = `${temporaryDatabasePath}.llm-key`;
 
   try {
     await copyFile(
@@ -321,12 +362,29 @@ export async function restoreInstance(
     } else {
       await mkdir(temporaryAssetsPath);
     }
+    if (sourceLlmKeyPath !== undefined && !existsSync(targetLlmKeyPath)) {
+      await copyFile(
+        sourceLlmKeyPath,
+        temporaryLlmKeyPath,
+        fsConstants.COPYFILE_EXCL,
+      );
+      verifyLlmKeyFile(temporaryLlmKeyPath, inspection.llmKey!);
+      if (process.platform !== "win32")
+        await (
+          await import("node:fs/promises")
+        ).chmod(temporaryLlmKeyPath, 0o600);
+    }
 
     // Publish assets first and the database last. A process watching the final
     // database path can therefore never start against a half-restored batch.
     await rename(temporaryAssetsPath, targetAssetsPath);
+    if (existsSync(temporaryLlmKeyPath)) {
+      assertPathDoesNotExist(targetLlmKeyPath, "target LLM key");
+      await rename(temporaryLlmKeyPath, targetLlmKeyPath);
+    }
     await rename(temporaryDatabasePath, targetDatabasePath);
   } finally {
+    await rm(temporaryLlmKeyPath, { force: true }).catch(() => undefined);
     await rm(temporaryDatabasePath, { force: true }).catch(() => undefined);
     await rm(temporaryAssetsPath, { recursive: true, force: true }).catch(
       () => undefined,
@@ -427,6 +485,7 @@ function inspectDatabase(database: BetterSqlite3.Database): DatabaseInspection {
   return {
     schemaMigrations: Object.freeze([...schemaMigrations]),
     correspondenceKey,
+    llmKey: readLlmKeyMetadata(database),
   };
 }
 
@@ -438,7 +497,9 @@ function assertManifestMatchesInspection(
     canonicalCorrespondenceJson(manifest.database.schemaMigrations) !==
       canonicalCorrespondenceJson(inspection.schemaMigrations) ||
     canonicalCorrespondenceJson(manifest.correspondenceKey) !==
-      canonicalCorrespondenceJson(inspection.correspondenceKey)
+      canonicalCorrespondenceJson(inspection.correspondenceKey) ||
+    canonicalCorrespondenceJson(manifest.llmKey ?? null) !==
+      canonicalCorrespondenceJson(inspection.llmKey)
   ) {
     throw new TypeError("backup database metadata does not match manifest");
   }
@@ -495,6 +556,22 @@ function verifyConfiguredSecret(
       "INSTANCE_SECRET does not match the correspondence backup",
     );
   }
+}
+
+function verifyConfiguredLlmKey(
+  metadata: LlmKeyMetadata | null,
+  path: string | undefined,
+  allowMissing: boolean,
+): string | undefined {
+  if (metadata === null) return undefined;
+  if (path === undefined || !existsSync(path)) {
+    if (allowMissing) return undefined;
+    throw new TypeError(
+      "The original LLM key file is required; use --llm-key-file or explicitly restore with --allow-missing-llm-key and refill provider credentials.",
+    );
+  }
+  verifyLlmKeyFile(path, metadata);
+  return path;
 }
 
 async function backupAssets(

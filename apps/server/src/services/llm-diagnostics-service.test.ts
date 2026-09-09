@@ -258,16 +258,14 @@ describe("LLM diagnostics through production adapters", () => {
     [500, "暂时不可用"],
     [503, "暂时不可用"],
   ])("translates HTTP %i and makes no retry", async (status, message) => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        json(
-          {
-            error: { message: "test-only-secret and private provider detail" },
-          },
-          Number(status),
-        ),
-      );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      json(
+        {
+          error: { message: "test-only-secret and private provider detail" },
+        },
+        Number(status),
+      ),
+    );
     const result = await new LlmDiagnosticsService(
       settings(configuration()),
       fetcher,
@@ -323,21 +321,122 @@ describe("LLM diagnostics through production adapters", () => {
     },
   );
 
-  it("rejects an explicit thinking budget that leaves no final-response budget without silently lowering it", async () => {
-    const config = configuration("gemini");
-    config.model.thinkingBudget = 4096;
-    const fetcher = vi.fn<typeof fetch>();
+  it.each(["anthropic", "gemini"] as const)(
+    "rejects a %s thinking budget that leaves no final-response budget without silently lowering it",
+    async (protocol) => {
+      const config = configuration(protocol);
+      config.model.thinkingBudget = 4096;
+      const fetcher = vi.fn<typeof fetch>();
+      const result = await new LlmDiagnosticsService(
+        settings(config),
+        fetcher,
+      ).test(target);
+      expect(result.text).toMatchObject({
+        status: "failed",
+        errorCode: "TEST_BUDGET_EXCEEDED",
+        error: expect.stringContaining("最终回复") as unknown,
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(config.model.thinkingBudget).toBe(4096);
+    },
+  );
+
+  it("preserves Anthropic's explicit thinking budget in both probes", async () => {
+    const config = configuration("anthropic");
+    config.model.thinkingBudget = 1024;
+    config.model.capabilities.maxOutputTokens = 2048;
+    const fetcher = twoReplies("anthropic");
     const result = await new LlmDiagnosticsService(
       settings(config),
       fetcher,
     ).test(target);
-    expect(result.text).toMatchObject({
+    expect(result.status).toBe("success");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetcher.mock.calls)
+      expect(requestBody(init)).toMatchObject({
+        max_tokens: 2048,
+        thinking: { type: "enabled", budget_tokens: 1024 },
+      });
+  });
+
+  it.each([1023, 1024])(
+    "reports invalid Anthropic manual/adaptive thinking configuration as a failed stage (%s)",
+    async (budget) => {
+      const config = configuration("anthropic");
+      config.model.thinkingBudget = budget;
+      if (budget === 1024) {
+        config.model.capabilities.reasoningEffort = "high";
+        config.model.capabilities.reasoningRequestFormat =
+          "anthropic_output_config";
+      }
+      const fetcher = vi.fn<typeof fetch>();
+      const result = await new LlmDiagnosticsService(
+        settings(config),
+        fetcher,
+      ).test(target);
+      expect(result).toMatchObject({
+        status: "failed",
+        text: {
+          status: "failed",
+          errorCode: "INVALID_CONFIGURATION",
+          error: expect.stringContaining("参数无效") as unknown,
+        },
+        structured: { status: "skipped" },
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not mark zero-width plain text as a successful connection", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        json(envelope("openai-compatible", "\u200B\u2060\uFE0F")),
+      );
+    const result = await new LlmDiagnosticsService(
+      settings(configuration()),
+      fetcher,
+    ).test(target);
+    expect(result).toMatchObject({
       status: "failed",
-      errorCode: "TEST_BUDGET_EXCEEDED",
-      error: expect.stringContaining("最终回复") as unknown,
+      text: { status: "failed", errorCode: "EMPTY_RESPONSE" },
+      structured: { status: "skipped" },
     });
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(config.model.thinkingBudget).toBe(4096);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires visible text inside the structured reply, including on the legacy adapter", async () => {
+    const config = configuration();
+    config.legacyConfig = {
+      provider: "openai-compatible",
+      baseUrl: config.baseUrl,
+      model: config.model.id,
+      apiKey: config.apiKey,
+      timeoutMs: 1000,
+      maxRetries: 2,
+    };
+    const visible = "你好 👩‍💻 ❤️";
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json(envelope("openai-compatible", visible)))
+      .mockResolvedValueOnce(
+        json(
+          envelope(
+            "openai-compatible",
+            JSON.stringify({ reply: "\u200D\u202E\u0301" }),
+          ),
+        ),
+      );
+    const result = await new LlmDiagnosticsService(
+      settings(config),
+      fetcher,
+    ).test(target);
+    expect(result).toMatchObject({
+      status: "partial",
+      text: { status: "success", reply: visible },
+      structured: { status: "failed", errorCode: "EMPTY_RESPONSE" },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the explicit 120-second and 4096-token test ceilings", async () => {

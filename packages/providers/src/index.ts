@@ -7,3 +7,4 @@ export * from "./prompt-diagnostics.js";
 export * from "./purpose-schemas.js";
 export * from "./safe-json.js";
 export * from "./types.js";
+export * from "./visible-text.js";

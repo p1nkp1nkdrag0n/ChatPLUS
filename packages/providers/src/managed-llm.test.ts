@@ -235,6 +235,136 @@ describe("managed LLM production and probe transport", () => {
     expect(JSON.stringify(metrics)).not.toContain("HIDDEN_SENTINEL");
   });
 
+  it.each([undefined, 0, 1024])(
+    "sends only the explicitly configured Anthropic thinking budget %s in both response modes",
+    async (thinkingBudget) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json(reply("anthropic", "Ready")))
+        .mockResolvedValueOnce(json(reply("anthropic", '{"text":"Ready"}')));
+      const provider = createManagedLlmProvider({
+        protocol: "anthropic",
+        baseUrl: "http://127.0.0.1:9000/v1",
+        timeoutMs: 1000,
+        model: LlmModelSettingsSchema.parse({
+          id: "claude",
+          thinkingBudget,
+          capabilities: {
+            structuredOutputMode: "prompt_json",
+            supportsThinkingControl: false,
+            supportsStreaming: false,
+            maxOutputTokens: 2048,
+          },
+        }),
+        fetch: fetcher,
+      });
+      await provider.completeText(input);
+      await provider.generateObject({
+        ...input,
+        schema: z.object({ text: z.string() }),
+      });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      for (const [, init] of fetcher.mock.calls) {
+        const request = body(init);
+        expect(request["max_tokens"]).toBe(2048);
+        if (thinkingBudget === undefined)
+          expect(request).not.toHaveProperty("thinking");
+        else
+          expect(request["thinking"]).toEqual(
+            thinkingBudget === 0
+              ? { type: "disabled" }
+              : { type: "enabled", budget_tokens: 1024 },
+          );
+        expect(request).not.toHaveProperty("output_config");
+      }
+    },
+  );
+
+  it.each([
+    { thinkingBudget: -1 },
+    { thinkingBudget: 1 },
+    { thinkingBudget: 1023 },
+    { thinkingBudget: 1024, thinkingLevel: "low" },
+    {
+      thinkingBudget: 1024,
+      capabilities: {
+        structuredOutputMode: "prompt_json",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        reasoningEffort: "high",
+        reasoningRequestFormat: "anthropic_output_config",
+      },
+    },
+    {
+      thinkingBudget: 0,
+      capabilities: {
+        structuredOutputMode: "prompt_json",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        reasoningEffort: "high",
+        reasoningRequestFormat: "anthropic_output_config",
+      },
+    },
+  ])(
+    "rejects an invalid or conflicting Anthropic thinking configuration %j",
+    (controls) => {
+      const fetcher = vi.fn<typeof fetch>();
+      expect(() =>
+        createManagedLlmProvider({
+          protocol: "anthropic",
+          baseUrl: "https://provider.invalid/v1",
+          timeoutMs: 1000,
+          model: LlmModelSettingsSchema.parse({ id: "claude", ...controls }),
+          fetch: fetcher,
+        }),
+      ).toThrow(/Anthropic thinking budget/u);
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it("checks Anthropic thinking against each actual request output limit without changing the budget", async () => {
+    const fetcher = vi.fn<typeof fetch>(() =>
+      fetchJson(reply("anthropic", "Ready")),
+    );
+    const provider = createManagedLlmProvider({
+      protocol: "anthropic",
+      baseUrl: "https://provider.invalid/v1",
+      timeoutMs: 1000,
+      model: LlmModelSettingsSchema.parse({
+        id: "claude",
+        thinkingBudget: 1024,
+        capabilities: {
+          structuredOutputMode: "prompt_json",
+          supportsThinkingControl: false,
+          supportsStreaming: false,
+          maxOutputTokens: 2048,
+        },
+      }),
+      fetch: fetcher,
+    });
+    await expect(
+      provider.completeText({ ...input, maxOutputTokens: 1024 }),
+    ).rejects.toMatchObject({
+      code: "INVALID_CONFIGURATION",
+    });
+    await expect(
+      provider.generateObject({
+        ...input,
+        maxOutputTokens: 512,
+        schema: z.object({ text: z.string() }),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(
+      await provider.completeText({ ...input, maxOutputTokens: 1025 }),
+    ).toBe("Ready");
+    expect(body(fetcher.mock.calls[0]?.[1])).toMatchObject({
+      max_tokens: 1025,
+      thinking: { type: "enabled", budget_tokens: 1024 },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("maps Gemini schema, roles, level and usage, omitting thought parts", async () => {
     const metrics: LlmCallMetric[] = [];
     const fetcher = vi.fn<typeof fetch>(() =>
@@ -479,6 +609,32 @@ describe("managed LLM production and probe transport", () => {
     });
     expect(metrics[0]).not.toHaveProperty("inputTokens");
   });
+
+  it.each(["openai-compatible", "anthropic", "gemini"] as const)(
+    "%s rejects an invisible-only response while preserving normal emoji sequences",
+    async (protocol) => {
+      const invisible =
+        "\u200B\u200D\u2060\u200E\uFE0F\u0301\u00AD\u0000\u2028";
+      const visible = "你好 👨‍👩‍👧‍👦 ❤️ e\u0301";
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json(reply(protocol, invisible)))
+        .mockResolvedValueOnce(json(reply(protocol, visible)));
+      const provider = createManagedLlmProvider({
+        protocol,
+        baseUrl: "http://127.0.0.1:9000/v1",
+        timeoutMs: 1000,
+        model: LlmModelSettingsSchema.parse({ id: "selected" }),
+        fetch: fetcher,
+        maxRetries: 0,
+      });
+      await expect(provider.completeText(input)).rejects.toMatchObject({
+        code: "EMPTY_RESPONSE",
+      });
+      expect(await provider.completeText(input)).toBe(visible);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("cancels a running request without retries", async () => {
     const controller = new AbortController();

@@ -20,6 +20,7 @@ import {
 } from "./purpose-schemas.js";
 import { parseJsonText, StructuredOutputError } from "./safe-json.js";
 import { prepareManagedSchema } from "./managed-schema.js";
+import { hasVisibleText } from "./visible-text.js";
 import type {
   CompletionInput,
   GenerateObjectInput,
@@ -385,7 +386,7 @@ function visibleContent(protocol: LlmProtocol, raw: unknown): string {
       "The model did not finish its reply normally",
       "INCOMPLETE_RESPONSE",
     );
-  if (!content.trim())
+  if (!hasVisibleText(content))
     throw new LlmProviderError(
       reasoning
         ? "The model returned reasoning without a visible final reply"
@@ -395,7 +396,11 @@ function visibleContent(protocol: LlmProtocol, raw: unknown): string {
   return content.trim();
 }
 
-function thinking(protocol: LlmProtocol, model: LlmModelSettings): RecordValue {
+function thinking(
+  protocol: LlmProtocol,
+  model: LlmModelSettings,
+  maxOutputTokens?: number,
+): RecordValue {
   const capability = model.capabilities;
   const effort = capability.reasoningEffort;
   const format = capability.reasoningRequestFormat;
@@ -420,6 +425,30 @@ function thinking(protocol: LlmProtocol, model: LlmModelSettings): RecordValue {
       model.thinkingLevel === undefined
         ? { thinkingBudget: 0 }
         : {}),
+    };
+  }
+  if (protocol === "anthropic" && model.thinkingBudget !== undefined) {
+    const budget = model.thinkingBudget;
+    if (
+      effort !== undefined ||
+      model.thinkingLevel !== undefined ||
+      !Number.isInteger(budget) ||
+      (budget !== 0 && budget < 1024)
+    )
+      throw new LlmProviderError(
+        "Anthropic thinking budget must be zero or at least 1024 tokens, without adaptive effort or a thinking level",
+        "INVALID_CONFIGURATION",
+      );
+    if (maxOutputTokens !== undefined && budget >= maxOutputTokens)
+      throw new LlmProviderError(
+        "Anthropic thinking budget must be smaller than this request's output token limit to leave room for the final reply",
+        "INVALID_CONFIGURATION",
+      );
+    return {
+      thinking:
+        budget === 0
+          ? { type: "disabled" }
+          : { type: "enabled", budget_tokens: budget },
     };
   }
   if (model.thinkingBudget !== undefined || model.thinkingLevel !== undefined)
@@ -465,11 +494,11 @@ function requestBody(
 ): RecordValue {
   const protocol = options.protocol;
   const model = options.model;
-  const controls = thinking(protocol, model);
   const limit = Math.min(
     tokens(input.maxOutputTokens ?? model.capabilities.maxOutputTokens),
     tokens(model.capabilities.maxOutputTokens),
   );
+  const controls = thinking(protocol, model, limit);
   const mode = model.capabilities.structuredOutputMode;
   const structured = schema !== undefined;
   const temperature =

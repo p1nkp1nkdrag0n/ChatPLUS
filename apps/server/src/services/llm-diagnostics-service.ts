@@ -11,6 +11,7 @@ import {
   createOpenAiCompatibleLlmProvider,
   DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES,
   discoverLlmModels,
+  hasVisibleText,
   redactSensitiveText,
 } from "@personasim/providers";
 import { ApiError } from "../domain/errors.js";
@@ -111,7 +112,7 @@ export class LlmDiagnosticsService {
           );
         const reply = (await generate()).trim();
         signal?.throwIfAborted();
-        if (!reply)
+        if (!hasVisibleText(reply))
           throw Object.assign(new Error("No visible reply"), {
             code: "EMPTY_RESPONSE",
           });

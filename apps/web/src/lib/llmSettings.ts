@@ -58,3 +58,61 @@ export function mergeDiscoveredModels(
     if (!models.has(model.id)) models.set(model.id, model);
   return [...models.values()];
 }
+
+export function withThinkingEffort(
+  model: LlmModelSettings,
+  protocol: "openai-compatible" | "anthropic",
+  effort: LlmModelSettings["capabilities"]["reasoningEffort"],
+): LlmModelSettings {
+  const next = {
+    ...model,
+    capabilities: { ...model.capabilities, supportsThinkingControl: false },
+  };
+  if (effort !== undefined) {
+    next.capabilities.reasoningEffort = effort;
+    next.capabilities.reasoningRequestFormat =
+      protocol === "anthropic"
+        ? "anthropic_output_config"
+        : "openai_reasoning_effort";
+    delete next.thinkingBudget;
+    delete next.thinkingLevel;
+  } else {
+    delete next.capabilities.reasoningEffort;
+    delete next.capabilities.reasoningRequestFormat;
+  }
+  return next;
+}
+
+export function withThinkingBudget(
+  model: LlmModelSettings,
+  budget: number | undefined,
+): LlmModelSettings {
+  const next = {
+    ...model,
+    capabilities: { ...model.capabilities, supportsThinkingControl: false },
+  };
+  if (budget !== undefined) {
+    next.thinkingBudget = budget;
+    delete next.thinkingLevel;
+    delete next.capabilities.reasoningEffort;
+    delete next.capabilities.reasoningRequestFormat;
+  } else delete next.thinkingBudget;
+  return next;
+}
+
+export function withThinkingLevel(
+  model: LlmModelSettings,
+  level: LlmModelSettings["thinkingLevel"],
+): LlmModelSettings {
+  const next = {
+    ...model,
+    capabilities: { ...model.capabilities, supportsThinkingControl: false },
+  };
+  if (level !== undefined) {
+    next.thinkingLevel = level;
+    delete next.thinkingBudget;
+    delete next.capabilities.reasoningEffort;
+    delete next.capabilities.reasoningRequestFormat;
+  } else delete next.thinkingLevel;
+  return next;
+}

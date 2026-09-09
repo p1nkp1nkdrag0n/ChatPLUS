@@ -6,6 +6,20 @@ import { ErrorBlock } from "../Feedback";
 import { ModelProbe } from "./ModelProbe";
 import { ModelSelect } from "./ModelSelect";
 
+function modelErrorMessage(code?: string): string {
+  switch (code?.toLowerCase()) {
+    case "credential_unavailable":
+      return "当前供应商的 API Key 无法读取，请在模型设置中恢复或重新配置凭据。";
+    case "not_found":
+      return "所选供应商或模型已不存在，请重新选择模型。";
+    case "revision_conflict":
+    case "configuration_changed":
+      return "模型配置已更新，请重新选择模型以使用最新配置。";
+    default:
+      return "当前模型不可用，请检查供应商配置或重新选择模型。";
+  }
+}
+
 export function ChatModelToolbar({
   model,
   disabled,
@@ -58,12 +72,12 @@ export function ChatModelToolbar({
           {notice}
         </p>
       ) : null}
-      {model?.error ? (
+      {model && !effective ? (
         <p
           className="provider-credential-error chat-model-toolbar__notice"
           role="alert"
         >
-          {model.error} · 请重新选择模型。
+          {modelErrorMessage(model.error)}
         </p>
       ) : null}
       {error || catalog.error ? (

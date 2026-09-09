@@ -473,12 +473,16 @@ function SessionConversation({
   const [text, setText] = useState(() => drafts.get(session.id) ?? "");
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
-  const modelQuery = useQuery({ queryKey: sessionModelKey(session.id), queryFn: () => llmApi.session(session.id) });
+  const modelQuery = useQuery({
+    queryKey: sessionModelKey(session.id),
+    queryFn: () => llmApi.session(session.id),
+  });
   const modelMutation = useMutation({
-    mutationFn: (selection: Parameters<typeof llmApi.setSession>[1]) => llmApi.setSession(session.id, selection),
+    mutationFn: (selection: Parameters<typeof llmApi.setSession>[1]) =>
+      llmApi.setSession(session.id, selection),
     onSuccess: (value) => {
       queryClient.setQueryData(sessionModelKey(session.id), value);
-      setModelNotice("已切换，下一条消息使用该模型。");
+      setModelNotice(value.effective ? "已切换，下一条消息使用该模型。" : "");
     },
   });
   const listRef = useRef<HTMLDivElement>(null);
@@ -518,7 +522,11 @@ function SessionConversation({
   };
   const sendMutation = useMutation({
     mutationKey: ["chat-send", characterId, session.id],
-    mutationFn: (input: { text: string; clientMessageId: string; modelSelection: LlmExecutionSelection }) =>
+    mutationFn: (input: {
+      text: string;
+      clientMessageId: string;
+      modelSelection: LlmExecutionSelection;
+    }) =>
       api.sessions.send(session.id, {
         agentId: characterId,
         ...input,
@@ -613,7 +621,11 @@ function SessionConversation({
     )
       return;
     setEmojiOpen(false);
-    sendMutation.mutate({ text: message, clientMessageId: crypto.randomUUID(), modelSelection: { ...modelQuery.data.effective } });
+    sendMutation.mutate({
+      text: message,
+      clientMessageId: crypto.randomUUID(),
+      modelSelection: { ...modelQuery.data.effective },
+    });
   };
   const insertEmoji = (emoji: string) => {
     const input = textareaRef.current;
@@ -678,7 +690,18 @@ function SessionConversation({
         ) : null}
       </div>
       <div className="composer-wrap">
-        <ChatModelToolbar model={modelQuery.data} disabled={sendPending || modelMutation.isPending || modelQuery.isPending} onChange={(selection) => { setModelNotice(""); modelMutation.mutate(selection); }} notice={modelNotice} error={modelMutation.error ?? modelQuery.error} />
+        <ChatModelToolbar
+          model={modelQuery.data}
+          disabled={
+            sendPending || modelMutation.isPending || modelQuery.isPending
+          }
+          onChange={(selection) => {
+            setModelNotice("");
+            modelMutation.mutate(selection);
+          }}
+          notice={modelNotice}
+          error={modelMutation.error ?? modelQuery.error}
+        />
         {latestSend?.status === "error" ? (
           <ErrorBlock error={latestSend.error} />
         ) : null}
@@ -750,7 +773,14 @@ function SessionConversation({
               className="send-button"
               type="button"
               onClick={submit}
-              disabled={!text.trim() || sendPending || modelMutation.isPending || modelQuery.isError || !modelQuery.data?.effective || !messagesQuery.isSuccess}
+              disabled={
+                !text.trim() ||
+                sendPending ||
+                modelMutation.isPending ||
+                modelQuery.isError ||
+                !modelQuery.data?.effective ||
+                !messagesQuery.isSuccess
+              }
               aria-label="发送消息"
             >
               <Send size={23} />

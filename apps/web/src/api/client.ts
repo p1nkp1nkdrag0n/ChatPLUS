@@ -466,7 +466,12 @@ export const api = {
     },
     send: async (
       sessionId: string,
-      input: { agentId: string; clientMessageId: string; text: string; modelSelection?: LlmExecutionSelection },
+      input: {
+        agentId: string;
+        clientMessageId: string;
+        text: string;
+        modelSelection?: LlmExecutionSelection;
+      },
     ) => {
       const value = await request<
         {

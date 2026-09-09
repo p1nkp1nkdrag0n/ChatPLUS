@@ -32,6 +32,9 @@ import {
   protocolUrls,
   providerDraft,
   sameSelection,
+  withThinkingBudget,
+  withThinkingEffort,
+  withThinkingLevel,
 } from "../../lib/llmSettings";
 import { ModelSelect } from "./ModelSelect";
 import { ModelProbe } from "./ModelProbe";
@@ -941,34 +944,34 @@ function ModelAdvanced({
             </select>
           </label>
         ) : null}
-        <label className="field">
-          <span>思考深度</span>
-          <select
-            value={cap.reasoningEffort ?? ""}
-            onChange={(event) => {
-              const capabilities = { ...cap };
-              if (event.target.value) {
-                capabilities.reasoningEffort = event.target
-                  .value as NonNullable<typeof cap.reasoningEffort>;
-                capabilities.reasoningRequestFormat =
-                  protocol === "anthropic"
-                    ? "anthropic_output_config"
-                    : "openai_reasoning_effort";
-              } else {
-                delete capabilities.reasoningEffort;
-                delete capabilities.reasoningRequestFormat;
-              }
-              onChange({ ...model, capabilities });
-            }}
-          >
-            <option value="">模型默认（不发送参数）</option>
-            {["low", "medium", "high", "xhigh", "max"].map((value) => (
-              <option value={value} key={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
+        {protocol !== "gemini" ? (
+          <label className="field">
+            <span>思考深度</span>
+            <select
+              value={cap.reasoningEffort ?? ""}
+              onChange={(event) => {
+                onChange(
+                  withThinkingEffort(
+                    model,
+                    protocol,
+                    event.target.value
+                      ? (event.target.value as NonNullable<
+                          typeof cap.reasoningEffort
+                        >)
+                      : undefined,
+                  ),
+                );
+              }}
+            >
+              <option value="">模型默认（不发送参数）</option>
+              {["low", "medium", "high", "xhigh", "max"].map((value) => (
+                <option value={value} key={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {protocol === "openai-compatible" && cap.reasoningEffort ? (
           <label className="field">
             <span>思考参数格式</span>
@@ -1006,11 +1009,14 @@ function ModelAdvanced({
               placeholder="模型默认"
               value={model.thinkingBudget ?? ""}
               onChange={(event) => {
-                const next = { ...model };
-                if (event.target.value)
-                  next.thinkingBudget = Number(event.target.value);
-                else delete next.thinkingBudget;
-                onChange(next);
+                onChange(
+                  withThinkingBudget(
+                    model,
+                    event.target.value === ""
+                      ? undefined
+                      : Number(event.target.value),
+                  ),
+                );
               }}
             />
             <small>
@@ -1026,13 +1032,16 @@ function ModelAdvanced({
             <select
               value={model.thinkingLevel ?? ""}
               onChange={(event) => {
-                const next = { ...model };
-                if (event.target.value)
-                  next.thinkingLevel = event.target.value as NonNullable<
-                    LlmModelSettings["thinkingLevel"]
-                  >;
-                else delete next.thinkingLevel;
-                onChange(next);
+                onChange(
+                  withThinkingLevel(
+                    model,
+                    event.target.value
+                      ? (event.target.value as NonNullable<
+                          LlmModelSettings["thinkingLevel"]
+                        >)
+                      : undefined,
+                  ),
+                );
               }}
             >
               <option value="">模型默认</option>

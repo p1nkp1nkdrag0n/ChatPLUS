@@ -1,0 +1,175 @@
+{
+  "kind": "proposed_regression_spec_not_existing_runner_cli",
+  "commit": "db446b8fdeb00b4189a44a72d509336d86405e8c",
+  "note": "Cases describe intended new tests. No claim that these integration tests were executed.",
+  "cases": [
+    {
+      "id": "I01",
+      "group": "interaction",
+      "setup": "T9用户请求角色倾听用户；候选输出使用T14错误原句。",
+      "expected": "检测行为主体反转，最终回复不得含错句。"
+    },
+    {
+      "id": "I02",
+      "group": "interaction",
+      "setup": "角色说“你希望我在工作话题先听你说”。",
+      "expected": "归属与请求层级正确，不应误伤。"
+    },
+    {
+      "id": "I03",
+      "group": "interaction",
+      "setup": "只有请求证据，角色说“这些年我一直先听你说”。",
+      "expected": "请求不得升级为反复履行；检测证据不足。"
+    },
+    {
+      "id": "I04",
+      "group": "interaction",
+      "setup": "用户转述朋友让第三方少追问。",
+      "expected": "不得新增用户偏好、不得把朋友说法改为用户/角色行为。"
+    },
+    {
+      "id": "I05",
+      "group": "interaction",
+      "setup": "用户说“我也愿意先听你说”。",
+      "expected": "保留新反向关系的可能，不把所有用户倾听角色判成错误。"
+    },
+    {
+      "id": "I06",
+      "group": "interaction",
+      "setup": "错句出现在否定或直接引用中。",
+      "expected": "区分引用/否定和角色自身断言。"
+    },
+    {
+      "id": "F01",
+      "group": "follow_up",
+      "setup": "T8用户只请求分析；模型提案期望用户明天做清单。",
+      "expected": "拒绝该候选；聊天分析正常；follow-up不新增。"
+    },
+    {
+      "id": "F02",
+      "group": "follow_up",
+      "setup": "同F01，但引用精确复制T8用户原话。",
+      "expected": "真实引用仍不足以支持未说过的活动。"
+    },
+    {
+      "id": "F03",
+      "group": "follow_up",
+      "setup": "同F01，模型没有给引用。",
+      "expected": "不得用自动补用户摘录使坏提案通过。"
+    },
+    {
+      "id": "F04",
+      "group": "follow_up",
+      "setup": "同F01，subjectType改为shared_commitment。",
+      "expected": "不得通过改标签绕过双方依据要求。"
+    },
+    {
+      "id": "F05",
+      "group": "follow_up",
+      "setup": "用户后续说“明天我试试你说的清单”。",
+      "expected": "允许有来源的有限尝试计划，不当作已执行。"
+    },
+    {
+      "id": "F06",
+      "group": "follow_up",
+      "setup": "用户说“谢谢，我懂了”。",
+      "expected": "不能自动采纳上一轮一个或多个建议。"
+    },
+    {
+      "id": "F07",
+      "group": "follow_up",
+      "setup": "用户说“明天下午有面试”。",
+      "expected": "可自然关心事件，无需强制追加明确提醒要求；不预设成功。"
+    },
+    {
+      "id": "F08",
+      "group": "follow_up",
+      "setup": "用户说“如果不加班，我也许试试”。",
+      "expected": "保留条件与不确定性，不能生成无条件活动预期。"
+    },
+    {
+      "id": "F09",
+      "group": "follow_up",
+      "setup": "用户说“明天问问我有没有做清单”。",
+      "expected": "允许明确跟进请求，期待应为是否发生而非已完成。"
+    },
+    {
+      "id": "F10",
+      "group": "follow_up",
+      "setup": "同一提案由直接服务调用/确定性fallback进入。",
+      "expected": "同样通过公共语义门槛，不允许旁路。"
+    },
+    {
+      "id": "A01",
+      "group": "advice",
+      "setup": "T6原用户输入和四项行动建议原回复。",
+      "expected": "不叠加行动任务，修复或重生成保持自然回应。"
+    },
+    {
+      "id": "A02",
+      "group": "advice",
+      "setup": "T8原明确分析请求。",
+      "expected": "允许具体分析及适量可操作内容，但不等于采纳。"
+    },
+    {
+      "id": "A03",
+      "group": "advice",
+      "setup": "T15“不用先听我说，直接给我建议”。",
+      "expected": "允许具体建议，不误判为只倾听。"
+    },
+    {
+      "id": "A04",
+      "group": "advice",
+      "setup": "T16“不是让你先听我说，是请你帮我分析”。",
+      "expected": "允许分析，不永久撤回旧习惯。"
+    },
+    {
+      "id": "A05",
+      "group": "advice",
+      "setup": "“先让我说完，然后再帮我分析”。",
+      "expected": "保留顺序，不提前分析，也不永远只听。"
+    },
+    {
+      "id": "A06",
+      "group": "advice",
+      "setup": "“不是让你去画画或列清单”。",
+      "expected": "不能按行动关键词数误判为多条建议。"
+    },
+    {
+      "id": "X01",
+      "group": "integration",
+      "setup": "修复删除建议，但原始envelope仍有以该建议为依据的followUp。",
+      "expected": "重验并拒绝失去依据的提案。"
+    },
+    {
+      "id": "X02",
+      "group": "integration",
+      "setup": "修复关系错句，同时本轮含独立真实用户事实。",
+      "expected": "拒绝错误派生，不清空所有合法用户事实。"
+    },
+    {
+      "id": "X03",
+      "group": "integration",
+      "setup": "最终text已修复，但旧chunks仍含错句。",
+      "expected": "必须同步修复/重建气泡，禁止旧句曝光。"
+    },
+    {
+      "id": "X04",
+      "group": "integration",
+      "setup": "重放相同clientMessageId。",
+      "expected": "无重复消息、跟进、人格适应或额外修复调用。"
+    },
+    {
+      "id": "X05",
+      "group": "integration",
+      "setup": "旧T8 pending attemptCount=0进入发送资格检查。",
+      "expected": "在证据无效/待复核时不得发送；不伪造用户取消。"
+    },
+    {
+      "id": "X06",
+      "group": "integration",
+      "setup": "T14旧错句被下一轮或后续checkpoint读取。",
+      "expected": "保留原始审计，但不把错句再作为关系事实自证。"
+    }
+  ]
+}

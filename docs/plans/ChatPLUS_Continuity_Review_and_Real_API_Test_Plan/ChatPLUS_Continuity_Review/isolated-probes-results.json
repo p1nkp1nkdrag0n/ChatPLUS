@@ -1,0 +1,141 @@
+{
+  "commit": "780a7663582e4284202a8643492b7fd8ae37c87e",
+  "level": "isolated source predicate reproduction; not full-module/integration/real-API test",
+  "results": [
+    {
+      "case": "intent",
+      "text": "不用先听我说，直接给我建议。",
+      "expectedIntent": "help",
+      "actual": {
+        "originalQuery": "不用先听我说，直接给我建议。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "venting",
+        "adviceRequested": false,
+        "supportStyle": "listen",
+        "allowCharacterLifeMention": false
+      },
+      "match": false
+    },
+    {
+      "case": "intent",
+      "text": "不是让你先听我说，是请你帮我分析。",
+      "expectedIntent": "help",
+      "actual": {
+        "originalQuery": "不是让你先听我说，是请你帮我分析。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "venting",
+        "adviceRequested": false,
+        "supportStyle": "listen",
+        "allowCharacterLifeMention": false
+      },
+      "match": false
+    },
+    {
+      "case": "intent",
+      "text": "先听我说就好，不用建议。",
+      "expectedIntent": "venting",
+      "actual": {
+        "originalQuery": "先听我说就好，不用建议。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "venting",
+        "adviceRequested": false,
+        "supportStyle": "listen",
+        "allowCharacterLifeMention": false
+      },
+      "match": true
+    },
+    {
+      "case": "intent",
+      "text": "请帮我分析这个问题。",
+      "expectedIntent": "help",
+      "actual": {
+        "originalQuery": "请帮我分析这个问题。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "help",
+        "adviceRequested": true,
+        "supportStyle": "offer_requested_help",
+        "allowCharacterLifeMention": false
+      },
+      "match": true
+    },
+    {
+      "case": "intent",
+      "text": "为什么我总把事情搞砸。",
+      "expectedIntent": "venting",
+      "actual": {
+        "originalQuery": "为什么我总把事情搞砸。",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "venting",
+        "adviceRequested": false,
+        "supportStyle": "listen",
+        "allowCharacterLifeMention": false
+      },
+      "match": true
+    },
+    {
+      "case": "scope_contamination",
+      "text": "她说电影很好看，我也觉得挺有意思。",
+      "expandedQueries": [
+        "以后聊工作时，请先听我说，不要急着给建议。",
+        "换个话题，昨晚和妹妹看了一部电影。"
+      ],
+      "expectedWorkPracticeApplicable": false,
+      "currentOnlyMatch": false,
+      "actualMatchOnSnapshotTopicText": true
+    },
+    {
+      "case": "life_followup",
+      "text": "城市速写画得怎么样了？",
+      "plan": {
+        "originalQuery": "城市速写画得怎么样了？",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "casual",
+        "adviceRequested": false,
+        "supportStyle": "respond_naturally",
+        "allowCharacterLifeMention": false
+      },
+      "selection": {
+        "selected": false,
+        "relevantTitle": true,
+        "relevantSource": false
+      }
+    },
+    {
+      "case": "life_followup",
+      "text": "你最近在忙什么？",
+      "plan": {
+        "originalQuery": "你最近在忙什么？",
+        "expandedQueries": [],
+        "contextMessageIds": [],
+        "unresolvedReferences": [],
+        "intent": "casual",
+        "adviceRequested": false,
+        "supportStyle": "respond_naturally",
+        "allowCharacterLifeMention": true
+      },
+      "selection": {
+        "selected": true,
+        "relevantTitle": false,
+        "relevantSource": false
+      }
+    },
+    {
+      "case": "practice_retraction_blocked",
+      "text": "现在改一下，以后聊工作时可以直接给我建议。",
+      "earlyReturnBecause": true,
+      "note": "deriveExplicitPersonaPracticeRetractions returns [] before scope parsing because 现在 occurs."
+    }
+  ]
+}

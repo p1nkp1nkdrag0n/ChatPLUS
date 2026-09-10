@@ -235,6 +235,10 @@ pnpm test:state:real:deepseek:continuation
 
 ## 常用命令
 
+根据开源对话项目调研落实的共享记忆相关性、细分回复消融、运行配置审计和中文上下文预算改进，见[调研建议实施与机制实验](docs/evals/research-optimization.md)。离线记忆 2×2 实验可用 `pnpm test:memory-relevance:fixture --output tmp/memory-relevance-NEW` 运行。
+
+“复杂架构是否优于简单系统”的整体实验采用三组相反极端人格、真实人格编译与简洁卡片对照、固定历史三系统比较、信息匹配与模块读取消融、跨会话多轮轨迹，以及生成卡的共同运行时迁移。协议和命令见[整体架构实验](docs/evals/architecture-comparison.md)，结果见[GLM 整体架构实验报告](docs/reports/2026-09-10-architecture-comparison-glm.md)。`pnpm test:architecture:fixture --output tmp/architecture-NEW` 可离线验证执行器；真实调用需配置 GLM 并显式设置对应实验的 `RUN_PAID_*` 环境开关，所有运行使用全新的隔离目录。
+
 ```bash
 pnpm dev              # 同时启动 Fastify 与 Vite
 pnpm db:migrate       # 幂等运行顺序 SQL 迁移

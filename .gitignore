@@ -27,6 +27,8 @@ blob-report/
 tmp/
 temp/
 artifacts/
+# Local Dearvale presentation deliverables, source assets, and slide previews.
+/artifacts/presentations/
 instances/
 logs/
 backups/

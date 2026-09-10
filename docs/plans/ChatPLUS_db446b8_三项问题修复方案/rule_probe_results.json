@@ -1,0 +1,72 @@
+{
+  "commit": "db446b8fdeb00b4189a44a72d509336d86405e8c",
+  "scope": "Independent transcription of pure rule branches; not a repository integration run.",
+  "limitations": [
+    "No production CharacterSpec was supplied to the standalone guard.",
+    "No original model-io.jsonl or final.sqlite was inspected.",
+    "No provider, SQLite, Zod, retrieval or full turn pipeline executed.",
+    "PASS means the observations match the current implementation, not that product behavior is acceptable."
+  ],
+  "observations": [
+    {
+      "id": "T06",
+      "input": "工作倒没有出大事，就是改了一天东西，回家以后脑子还是停不下来。",
+      "observed": {
+        "listen": false,
+        "adviceRequested": false,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "respond_naturally",
+        "helpTiming": "now",
+        "intent": "casual"
+      }
+    },
+    {
+      "id": "T08",
+      "input": "我现在想具体想一想了，请帮我分析一下：怎样区分真正做错了，和只是被反复修改弄得烦。",
+      "observed": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now",
+        "intent": "help"
+      }
+    },
+    {
+      "id": "T15",
+      "input": "不用先听我说，直接给我建议：我该怎样跟同事确认修改范围？",
+      "observed": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now",
+        "intent": "help"
+      }
+    },
+    {
+      "id": "T16",
+      "input": "不是让你先听我说，是请你帮我分析：哪些要求值得当场问清楚？",
+      "observed": {
+        "listen": false,
+        "adviceRequested": true,
+        "detailedAnalysisRequested": false,
+        "conflicting": false,
+        "supportStyle": "offer_requested_help",
+        "helpTiming": "now",
+        "intent": "help"
+      }
+    },
+    {
+      "id": "T14_persona_guard",
+      "observed": {
+        "allowed": true,
+        "violations": [],
+        "text": "嗯，明白了，是他对别人说的，跟你没关系。\n那这话就听一耳朵就行，不用往自己身上接。\n他是嫌被追问，不是冲你，更不是要你也别问。\n你之前一直记得先听我说不急着给建议，那份是你主动给的，跟这事是两码事。"
+      }
+    }
+  ]
+}

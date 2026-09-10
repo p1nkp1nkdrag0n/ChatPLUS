@@ -9,7 +9,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import type { ReplySteeringMode } from "@personasim/features";
+import {
+  REPLY_STEERING_REMOVED_FIELDS,
+  type ReplySteeringMode,
+} from "@personasim/features";
 import type { LlmCallMetric } from "@personasim/providers";
 import { buildApp } from "../app.js";
 import {
@@ -49,16 +52,28 @@ import {
   type ReplySteeringResult,
 } from "./reply-steering-report.js";
 
-export const STEERING_FIELDS = [
-  "softTargetCharacters",
-  "preferredChunkCount",
-  "deliveryPreference",
-  "lengthGuidance",
-  "deliveryGuidance",
-] as const;
+export const STEERING_FIELDS = REPLY_STEERING_REMOVED_FIELDS.no_length_steering;
 const SESSION = "session_reply_steering";
 const AT = LONG_RUN_V3_START_UTC;
-const MODES: ReplySteeringMode[] = ["current", "no_length_steering"];
+export const DEFAULT_STEERING_MODES: readonly ReplySteeringMode[] = [
+  "current",
+  "no_length_steering",
+];
+
+export function resolveSteeringModes(
+  modes: readonly string[] = DEFAULT_STEERING_MODES,
+): ReplySteeringMode[] {
+  if (
+    modes.length < 2 ||
+    !modes.includes("current") ||
+    new Set(modes).size !== modes.length ||
+    modes.some((mode) => !Object.hasOwn(REPLY_STEERING_REMOVED_FIELDS, mode))
+  )
+    throw new Error(
+      `Use current and at least one distinct ablation from: ${Object.keys(REPLY_STEERING_REMOVED_FIELDS).join(",")}`,
+    );
+  return [...modes] as ReplySteeringMode[];
+}
 export const PROFILE_MODELS = {
   deepseek: "deepseek-v4-flash",
   bigmodel: "glm-5.3-flash",
@@ -70,6 +85,7 @@ export type SteeringProfile = keyof typeof PROFILE_MODELS;
 export interface ReplySteeringRunOptions {
   output: string;
   profiles: SteeringProfile[];
+  modes?: ReplySteeringMode[];
   fixture?: boolean;
   commonOnly?: boolean;
   repeats?: number;
@@ -81,6 +97,21 @@ export interface ReplySteeringRunOptions {
 }
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
+
+export function steeringModeOrder(
+  modes: readonly ReplySteeringMode[],
+  pairingKey: string,
+): ReplySteeringMode[] {
+  // Preserve historical two-arm ordering. With more arms, reversal alone
+  // would keep the middle mode in the same position for every candidate set.
+  if (modes.length === 2)
+    return parseInt(hash(pairingKey).slice(0, 2), 16) % 2
+      ? [...modes].reverse()
+      : [...modes];
+  return [...modes].sort((left, right) =>
+    hash(`${pairingKey}/${left}`).localeCompare(hash(`${pairingKey}/${right}`)),
+  );
+}
 
 /** Evidence contains visible outputs and usage, never hidden reasoning text. */
 export function visibleEvidence(value: unknown): unknown {
@@ -123,33 +154,64 @@ export function visibleEvidence(value: unknown): unknown {
   );
 }
 
-export function withoutLengthSteering(prompt: string): string {
+function admittedStrategy(prompt: string) {
   const lines = prompt.split("\n");
   const index = lines.indexOf("REPLY_STRATEGY_JSON");
-  if (index < 0 || !lines[index + 1])
-    throw new Error("Missing admitted reply strategy");
+  if (
+    index < 0 ||
+    !lines[index + 1] ||
+    lines.lastIndexOf("REPLY_STRATEGY_JSON") !== index
+  )
+    throw new Error("Missing or ambiguous admitted reply strategy");
   const strategy = JSON.parse(lines[index + 1]!) as Record<string, unknown>;
-  for (const field of STEERING_FIELDS) delete strategy[field];
+  if (
+    strategy === null ||
+    typeof strategy !== "object" ||
+    Array.isArray(strategy)
+  )
+    throw new Error("Invalid admitted reply strategy");
+  return { lines, index, strategy };
+}
+
+export function withoutSteeringFields(
+  prompt: string,
+  mode: ReplySteeringMode,
+): string {
+  const { lines, index, strategy } = admittedStrategy(prompt);
+  for (const field of REPLY_STEERING_REMOVED_FIELDS[mode])
+    delete strategy[field];
   lines[index + 1] = JSON.stringify(strategy);
   return lines.join("\n");
 }
 
+/** Historical combined projection, retained for old artifact consumers. */
+export function withoutLengthSteering(prompt: string): string {
+  return withoutSteeringFields(prompt, "no_length_steering");
+}
+
 export function assertPromptPair(
-  current: { system: string; prompt: string },
-  experimental: { system: string; prompt: string },
+  current: { system: string; prompt: string; maxOutputTokens?: number | null },
+  experimental: {
+    system: string;
+    prompt: string;
+    maxOutputTokens?: number | null;
+  },
+  mode: ReplySteeringMode = "no_length_steering",
 ): void {
-  if (
-    current.system !== experimental.system ||
-    withoutLengthSteering(current.prompt) !== experimental.prompt
-  )
-    throw new Error(
-      "Prompt pair differs outside the five approved steering fields",
-    );
-  const strategy = JSON.parse(
-    current.prompt.split("REPLY_STRATEGY_JSON\n")[1]!.split("\n")[0]!,
-  ) as Record<string, unknown>;
+  const { strategy } = admittedStrategy(current.prompt);
   if (!STEERING_FIELDS.every((field) => Object.hasOwn(strategy, field)))
     throw new Error("Baseline missing targeted steering fields");
+  if (
+    current.system !== experimental.system ||
+    withoutSteeringFields(current.prompt, mode) !== experimental.prompt
+  )
+    throw new Error(
+      `Prompt pair differs outside approved fields for ${mode}: ${REPLY_STEERING_REMOVED_FIELDS[mode].join(", ")}`,
+    );
+  if (
+    (current.maxOutputTokens ?? null) !== (experimental.maxOutputTokens ?? null)
+  )
+    throw new Error("Output budgets differ");
 }
 
 export function resolveSteeringProfile(
@@ -173,11 +235,15 @@ export function resolveSteeringProfile(
   return { ...config, model: PROFILE_MODELS[profile], profileName: profile };
 }
 
-function evaluationConfig(
+export function evaluationConfig(
+  base: ServerConfig,
   llm: ServerConfig["llm"],
   directory: string,
 ): ServerConfig {
-  return readConfig({
+  // Resolve the deployment once. Preflight and real turns must never re-read
+  // process.env after the manifest has frozen the evaluation policy.
+  return {
+    ...structuredClone(base),
     llm,
     nodeEnv: "test",
     profile: "reply-steering-eval-v1",
@@ -200,7 +266,7 @@ function evaluationConfig(
     correspondenceMode: "off",
     keepsakeMode: "off",
     assetStoragePath: join(directory, "assets"),
-  });
+  };
 }
 
 export function createSteeringSnapshot(
@@ -541,6 +607,7 @@ export async function runReplySteering(
     options.profiles.some((profile) => !Object.hasOwn(PROFILE_MODELS, profile))
   )
     throw new Error("Invalid profiles");
+  const modes = resolveSteeringModes(options.modes);
   const personas =
     options.personas ?? REPLY_STEERING_PERSONAS.map((persona) => persona.id);
   if (
@@ -560,6 +627,7 @@ export async function runReplySteering(
     )
   )
     throw new Error("Unknown scenario");
+  const baseDeploymentConfig = readConfig();
   const configs = new Map(
     options.profiles.map((profile) => [
       profile,
@@ -586,9 +654,34 @@ export async function runReplySteering(
   );
   if ([...configs.values()].some((config) => !config.apiKey))
     throw new Error("Missing configured credential");
+  const effectiveEvaluationConfigs = new Map(
+    [...configs].map(([profile, llm]) => [
+      profile,
+      evaluationConfig(baseDeploymentConfig, llm, directory),
+    ]),
+  );
+  const turnConfig = (
+    profile: SteeringProfile,
+    runDir: string,
+    preflight = false,
+  ): ServerConfig => {
+    const frozen = structuredClone(effectiveEvaluationConfigs.get(profile)!);
+    return {
+      ...frozen,
+      databasePath: join(runDir, "turn.sqlite"),
+      assetStoragePath: join(runDir, "assets"),
+      llm: preflight
+        ? { ...frozen.llm, apiKey: "fixture-only", maxRetries: 0 }
+        : frozen.llm,
+    };
+  };
   mkdirSync(directory, { recursive: true });
   mkdirSync(join(directory, "snapshots"));
-  const secrets = [...configs.values()].map((config) => config.apiKey ?? "");
+  const secrets = [
+    baseDeploymentConfig.llm.apiKey ?? "",
+    baseDeploymentConfig.instanceSecret ?? "",
+    ...[...configs.values()].map((config) => config.apiKey ?? ""),
+  ];
   const safe = (value: unknown) =>
     redactLongRunArtifact(visibleEvidence(value), secrets);
   const save = (name: string, value: unknown) =>
@@ -603,11 +696,20 @@ export async function runReplySteering(
   save(
     "manifest.json",
     await captureContinuityRunIdentity({
-      config: evaluationConfig(configs.get(options.profiles[0]!)!, directory),
+      config: effectiveEvaluationConfigs.get(options.profiles[0]!)!,
       explicitSecrets: secrets,
       experiment: {
-        kind: "reply_length_ablation_model_personality_matrix",
-        options,
+        kind: "reply_steering_ablation_model_personality_matrix",
+        options: { ...options, modes },
+        modeRemovedFields: Object.fromEntries(
+          modes.map((mode) => [mode, REPLY_STEERING_REMOVED_FIELDS[mode]]),
+        ),
+        baseDeploymentConfig,
+        effectiveEvaluationConfigs: Object.fromEntries(
+          effectiveEvaluationConfigs,
+        ),
+        configPolicy:
+          "Deployment settings are captured once before evaluation overrides. Effective configs are frozen for the whole run; each isolated turn only replaces database/assets paths, and offline preflight substitutes a fixture credential and disables retries. No config is re-read during turns.",
         budget,
         modelConfigs: Object.fromEntries(configs),
         scenarios: REPLY_STEERING_SCENARIOS,
@@ -616,7 +718,7 @@ export async function runReplySteering(
           spec: buildReplySteeringCharacter(id),
         })),
         repairPolicy:
-          "Production repair is unchanged in both arms; only five main prompt fields are ablated.",
+          "Production repair is unchanged across arms; each mode removes only its declared main-prompt fields. The legacy no_length_steering arm combines length, chunk-count and delivery interventions.",
         interpretation:
           "Synthetic screening only; model identity is provider-reported; profile settings differ across models; no automatic quality ranking.",
       },
@@ -667,15 +769,12 @@ export async function runReplySteering(
         for (const scenario of scenarios) {
           const snapshot = snapshots.get(`${persona}_${scenario.id}`)!;
           const preflight: Record<string, ReturnType<typeof mainPrompt>> = {};
-          for (const mode of MODES) {
+          for (const mode of modes) {
             const runDir = join(
               directory,
               `${profile}_${persona}_${scenario.id}_preflight_${mode}`,
             );
-            const config = evaluationConfig(
-              { ...llm, apiKey: "fixture-only", maxRetries: 0 },
-              runDir,
-            );
+            const config = turnConfig(profile, runDir, true);
             const run = await executeSteeringTurn({
               directory: runDir,
               snapshot: snapshot.path,
@@ -691,34 +790,38 @@ export async function runReplySteering(
               );
             preflight[mode] = mainPrompt(run.events);
           }
-          assertPromptPair(preflight.current!, preflight.no_length_steering!);
-          if (
-            preflight.current!.maxOutputTokens !==
-            preflight.no_length_steering!.maxOutputTokens
-          )
-            throw new Error("Output budgets differ");
+          const proofs = modes
+            .filter((mode) => mode !== "current")
+            .map((mode) => {
+              assertPromptPair(preflight.current!, preflight[mode]!, mode);
+              return {
+                baseline: "current",
+                mode,
+                removedFields: REPLY_STEERING_REMOVED_FIELDS[mode],
+                nonTargetPromptSha256: hash(
+                  preflight.current!.system +
+                    withoutSteeringFields(preflight.current!.prompt, mode),
+                ),
+                outputCap: preflight[mode]!.maxOutputTokens,
+              };
+            });
           save(`${profile}_${persona}_${scenario.id}_prompt-pair.json`, {
             snapshotHash: snapshot.hash,
-            current: preflight.current,
-            no_length_steering: preflight.no_length_steering,
+            ...preflight,
+            modes,
+            proofs,
             proof:
-              "Exact system and non-target prompt equality; only five fields omitted; identical output cap",
+              "Each ablation is compared with current: exact system and non-target prompt equality, only declared fields omitted, identical output cap",
           });
           for (let repeat = 1; repeat <= (short ? 1 : repeats); repeat++) {
-            const orderedModes =
-              parseInt(
-                hash(`${profile}/${persona}/${scenario.id}/${repeat}`).slice(
-                  0,
-                  2,
-                ),
-                16,
-              ) % 2
-                ? [...MODES].reverse()
-                : MODES;
+            const orderedModes = steeringModeOrder(
+              modes,
+              `${profile}/${persona}/${scenario.id}/${repeat}`,
+            );
             for (const mode of orderedModes) {
               const id = `${profile}_${persona}_${scenario.id}_r${repeat}_${mode}`;
               const runDir = join(directory, id);
-              const config = evaluationConfig(llm, runDir);
+              const config = turnConfig(profile, runDir);
               let activeCall:
                 Extract<LlmLogicalCallEvent, { stage: "started" }> | undefined;
               const ledgerPath = join(directory, "attempts.jsonl");

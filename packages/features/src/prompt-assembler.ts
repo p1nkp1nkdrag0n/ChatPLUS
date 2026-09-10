@@ -87,8 +87,24 @@ export interface PromptMessageLike {
   createdAtUtc?: string;
 }
 
-/** Development/evaluation ablation; ordinary chat retains current steering. */
-export type ReplySteeringMode = "current" | "no_length_steering";
+/** Development/evaluation ablations; ordinary chat retains current steering.
+ * The historical no_length_steering arm is a combined intervention, not a
+ * length-only experiment. Preserve it for comparisons with existing evidence.
+ */
+export const REPLY_STEERING_REMOVED_FIELDS = {
+  current: [],
+  no_length_steering: [
+    "softTargetCharacters",
+    "preferredChunkCount",
+    "deliveryPreference",
+    "lengthGuidance",
+    "deliveryGuidance",
+  ],
+  no_length_only_steering: ["softTargetCharacters", "lengthGuidance"],
+  no_chunk_count_steering: ["preferredChunkCount"],
+  no_delivery_steering: ["deliveryPreference", "deliveryGuidance"],
+} as const;
+export type ReplySteeringMode = keyof typeof REPLY_STEERING_REMOVED_FIELDS;
 
 export interface AssemblePromptInput {
   character: CharacterForPrompt;
@@ -1163,13 +1179,7 @@ function applyReplySteeringMode(
     string,
     unknown
   >;
-  const removedFields = new Set([
-    "softTargetCharacters",
-    "preferredChunkCount",
-    "deliveryPreference",
-    "lengthGuidance",
-    "deliveryGuidance",
-  ]);
+  const removedFields = new Set<string>(REPLY_STEERING_REMOVED_FIELDS[mode]);
   const content =
     prefix +
     JSON.stringify(

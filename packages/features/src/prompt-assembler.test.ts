@@ -6,6 +6,7 @@ import { turnExpressionPromptView } from "./turn-expression-policy.js";
 import {
   assembleChatPrompt,
   type AssemblePromptInput,
+  type ReplySteeringMode,
 } from "./prompt-assembler.js";
 import {
   DEFAULT_PROMPT_SEGMENT_IDS,
@@ -606,25 +607,29 @@ describe("reply length steering ablation", () => {
     "deliveryGuidance",
   ];
 
-  function withoutLengthSteering(value: unknown) {
+  function withoutLengthSteering(value: unknown, fields = removedFields) {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).filter(
-        ([key]) => !removedFields.includes(key),
+        ([key]) => !fields.includes(key),
       ),
     );
   }
 
-  function expectOnlySteeringRemoved(input: AssemblePromptInput) {
+  function expectOnlySteeringRemoved(
+    input: AssemblePromptInput,
+    mode: ReplySteeringMode = "no_length_steering",
+    fields = removedFields,
+  ) {
     const current = assembleChatPrompt(input);
     const experimental = assembleChatPrompt({
       ...input,
-      replySteeringMode: "no_length_steering",
+      replySteeringMode: mode,
     });
     const currentStrategy = promptSegmentJson(
       current.prompt,
       "REPLY_STRATEGY_JSON",
     );
-    const expectedStrategy = withoutLengthSteering(currentStrategy);
+    const expectedStrategy = withoutLengthSteering(currentStrategy, fields);
     // Compare every final byte outside the one JSON payload, including
     // compacted required context, optional context and the output protocol.
     expect(experimental.prompt).toBe(
@@ -708,6 +713,52 @@ describe("reply length steering ablation", () => {
       current.segmentTrace.estimatedInputTokens,
     );
   });
+
+  it.each([
+    ["no_length_only_steering", ["softTargetCharacters", "lengthGuidance"]],
+    ["no_chunk_count_steering", ["preferredChunkCount"]],
+    ["no_delivery_steering", ["deliveryPreference", "deliveryGuidance"]],
+  ] as const)(
+    "isolates %s without changing other controls or admission",
+    (mode, fields) => {
+      const userMessage = "先让我说完，再帮我详细分析。";
+      const conversationPlan = buildConversationContextPlan({
+        originalQuery: userMessage,
+        agentId: "agent-test",
+        sessionId: "session-test",
+        recentMessages: [],
+      });
+      const input = baseInput({
+        userMessage,
+        conversationPlan,
+        memoryEvidence: MEMORY_EVIDENCE,
+      });
+      const full = assembleChatPrompt(input);
+      const tightBudget = full.segmentTrace.segments
+        .filter((segment) => segment.required)
+        .reduce((total, segment) => total + segment.estimatedTokens + 1, 30);
+      for (const maxInputTokens of [undefined, tightBudget]) {
+        const { experimental } = expectOnlySteeringRemoved(
+          {
+            ...input,
+            ...(maxInputTokens === undefined ? {} : { maxInputTokens }),
+          },
+          mode,
+          [...fields],
+        );
+        const strategy = promptSegmentJson(
+          experimental.prompt,
+          "REPLY_STRATEGY_JSON",
+        ) as Record<string, unknown>;
+        expect(strategy.helpTiming).toBe("after_user_finishes");
+        for (const field of removedFields) {
+          expect(Object.hasOwn(strategy, field)).toBe(
+            !(fields as readonly string[]).includes(field),
+          );
+        }
+      }
+    },
+  );
 
   it.each([512, 1_000, 3_000])(
     "preserves final admission and compaction at a tight %s-token budget",

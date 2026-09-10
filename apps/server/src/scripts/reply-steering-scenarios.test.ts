@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CharacterSpecSchema } from "@personasim/contracts";
+import {
+  assembleChatPrompt,
+  buildConversationContextPlan,
+} from "@personasim/features";
+import {
+  buildGuLanV3InitialState,
+  LONG_RUN_V3_START_UTC,
+} from "./companion-long-run-v3-baseline.js";
 
 import {
   REPLY_STEERING_CATEGORIES,
@@ -13,6 +21,81 @@ import {
 } from "./reply-steering-scenarios.js";
 
 describe("reply-steering comparison fixtures", () => {
+  it.each([
+    "help-presentation-tonight",
+    "detail-compare-work-options",
+    "listen-switch-to-help",
+  ])(
+    "delivers requested-help policy through the actual prompt for %s",
+    (scenarioId) => {
+      const scene = REPLY_STEERING_SCENARIOS.find(
+        (candidate) => candidate.id === scenarioId,
+      )!;
+      const plan = buildConversationContextPlan({
+        originalQuery: scene.userText,
+        agentId: "agent-test",
+        sessionId: "session-test",
+        recentMessages: [],
+      });
+      expect(plan).toMatchObject({
+        intent: "help",
+        adviceRequested: true,
+        advicePolicy: "requested",
+        supportStyle: "offer_requested_help",
+        helpTiming: "now",
+        requestPolicyVersion: "clause_requests_v3",
+      });
+      if (scenarioId === "detail-compare-work-options")
+        expect(plan.detailedAnalysisRequested).toBe(true);
+      const character = buildReplySteeringCharacter();
+      const state = buildGuLanV3InitialState(character);
+      const assembled = assembleChatPrompt({
+        character,
+        state: {
+          agentId: state.agentId,
+          asOfUtc: state.asOfUtc,
+          revision: state.revision,
+          moodValence: state.moodValence,
+          moodArousal: state.moodArousal,
+          energy: state.energy,
+          stress: state.stress,
+          socialBattery: state.socialBattery,
+          focus: state.focus,
+          sleepDebtMinutes: state.sleepDebtMinutes,
+        },
+        schedule: [],
+        memories: [],
+        recentMessages: scene.history,
+        nowUtc: LONG_RUN_V3_START_UTC,
+        userMessage: scene.userText,
+        conversationPlan: plan,
+        lifePlanningMode: "fuzzy",
+        decisionMode: "reply_only",
+      });
+      const lines = assembled.prompt.split("\n");
+      const delivered = JSON.parse(
+        lines[lines.indexOf("REPLY_STRATEGY_JSON") + 1]!,
+      ) as Record<string, unknown>;
+      expect(delivered).toMatchObject({
+        conversationIntent: "help",
+        adviceRequested: true,
+        advicePolicy: "requested",
+        supportStyle: "offer_requested_help",
+        helpTiming: "now",
+      });
+      if (scenarioId === "help-presentation-tonight") {
+        expect(plan.structuredTaskRequested).toBe(true);
+        expect(delivered).toMatchObject({ complexity: "complex" });
+        expect(delivered.lengthGuidance).not.toContain(
+          "ordinary conversational turn",
+        );
+      }
+      if (scenarioId === "listen-switch-to-help") {
+        expect(plan.structuredTaskRequested).toBe(false);
+        expect(delivered).toMatchObject({ complexity: "standard" });
+      }
+    },
+  );
   it("keeps a balanced twelve-case corpus for every compared model", () => {
     expect(REPLY_STEERING_SCENARIO_VERSION).toBe("reply-steering-scenarios-v1");
     expect(REPLY_STEERING_SCENARIOS).toHaveLength(12);

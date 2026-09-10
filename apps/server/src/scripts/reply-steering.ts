@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import {
   PROFILE_MODELS,
+  resolveSteeringModes,
   runReplySteering,
   type SteeringProfile,
 } from "./reply-steering-runner.js";
@@ -22,6 +23,7 @@ export async function replySteeringMain(
       },
       personas: { type: "string" },
       scenarios: { type: "string" },
+      modes: { type: "string" },
       repeats: { type: "string", default: "2" },
       "common-only": { type: "boolean", default: false },
       requests: { type: "string", default: "760" },
@@ -31,7 +33,7 @@ export async function replySteeringMain(
   });
   if (!values.output)
     throw new Error(
-      "Use --output NEW_IGNORED_DIRECTORY [--fixture] [--profiles deepseek,bigmodel,qwen,gpt6-astra] [--personas warm-observant,reserved-direct,lively-expressive] [--common-only] [--repeats 1|2]",
+      "Use --output NEW_IGNORED_DIRECTORY [--fixture] [--profiles deepseek,bigmodel,qwen,gpt6-astra] [--personas warm-observant,reserved-direct,lively-expressive] [--modes current,no_length_steering,no_length_only_steering,no_chunk_count_steering,no_delivery_steering] [--common-only] [--repeats 1|2]",
     );
   const profiles = values.profiles.split(",");
   if (profiles.some((profile) => !Object.hasOwn(PROFILE_MODELS, profile)))
@@ -39,6 +41,7 @@ export async function replySteeringMain(
   const results = await runReplySteering({
     output: values.output,
     profiles: profiles as SteeringProfile[],
+    modes: resolveSteeringModes(values.modes?.split(",")),
     fixture: values.fixture,
     commonOnly: values["common-only"],
     repeats: Number(values.repeats),

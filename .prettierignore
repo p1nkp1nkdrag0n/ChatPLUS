@@ -14,3 +14,4 @@ docs/design/*.png
 docs/plans/ChatPLUS_PersonaSim_Integrated_Upgrade_Plan_v2.md
 # Reviewed experiment artifacts retain their exported bytes and manifest hashes.
 docs/plans/Qwen_Three_Run_120_Turn_Evidence/
+docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/ChatPLUS_Continuity_Review/

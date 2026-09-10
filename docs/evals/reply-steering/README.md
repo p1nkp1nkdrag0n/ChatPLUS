@@ -1,8 +1,10 @@
-# 回复长度引导、模型与角色性格对照
+# 回复表达引导、模型与角色性格对照
 
-本实验落实 2026-09-08 项目设计评价中的最后一轮建议：先跳过完全由服务器接管的事实核对所产生的无效模型调用，再独立检验五个长度／分段提示字段。默认产品行为仍为 `current`。本次没有增加产品设置、数据库字段、聊天指导词或新的评委平台。
+本实验落实项目设计评价中的建议：先跳过完全由服务器接管的事实核对所产生的无效模型调用，再检验回复表达引导。历史试验同时移除了五个长度／分段／投递提示字段，因此其结果属于联合干预，不能单独归因为长度引导。根据开源项目调研反馈，现增加长度、气泡数量和投递偏好的独立消融。默认产品行为仍为 `current`，评测命令默认仍运行历史的两组对照。
 
 2026-09-08 至 09 的真实测试已完成：[结果与改动结论](RESULTS.md)、[同场景模型与性格回复原文](SCENE_COMPARISONS.md)、[详细量化指标](QUANTITATIVE.md)。正式聊天矩阵 288 个候选，独立角色生成 12 个候选；证据保留失败、重试和有限匿名审阅的限制。
+
+2026-09-10 已按用户授权运行 GLM 五模式真实对照，并根据其中发现的请求识别问题独立修复、复测；结果与失败样本见[开源调研优化与 GLM 真实验证](../../reports/2026-09-10-research-optimization-glm-validation.md)。这是新增模式的单模型筛查，未完成统计质量排名；上述历史报告不能替代这些独立模式的证据。
 
 ## 固定比较范围
 
@@ -21,19 +23,19 @@
 
 ## 消融的精确边界
 
-实验版仅从最终模型可见的 `REPLY_STRATEGY_JSON` 中移除：
+每种实验模式仅从最终模型可见的 `REPLY_STRATEGY_JSON` 中移除指定字段：
 
-```text
-softTargetCharacters
-preferredChunkCount
-deliveryPreference
-lengthGuidance
-deliveryGuidance
-```
+| 模式                      | 干预                               | 移除字段                                                                                                  |
+| ------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `current`                 | 当前基线                           | 无                                                                                                        |
+| `no_length_steering`      | 历史联合消融，保留原名兼容历史证据 | `softTargetCharacters`、`preferredChunkCount`、`deliveryPreference`、`lengthGuidance`、`deliveryGuidance` |
+| `no_length_only_steering` | 仅移除长度目标和长度指导           | `softTargetCharacters`、`lengthGuidance`                                                                  |
+| `no_chunk_count_steering` | 仅移除偏好气泡数量                 | `preferredChunkCount`                                                                                     |
+| `no_delivery_steering`    | 仅移除投递方式偏好和指导           | `deliveryPreference`、`deliveryGuidance`                                                                  |
 
-先按当前策略完成所有片段的预算分配、压缩和准入，再移除五个字段。省下的空间不用于补入其他记忆。`15_reply_strategy`、当轮明确要求、建议权限、帮助时机、表达上下文、复杂度、状态指导、角色、历史、事实权限和输出协议继续保留。
+先按当前策略完成所有片段的预算分配、压缩和准入，再移除该模式声明的字段。省下的空间不用于补入其他记忆。`15_reply_strategy`、当轮明确要求、建议权限、帮助时机、表达上下文、复杂度、状态指导、角色、历史、事实权限和输出协议继续保留。独立模式必须保留另外两个维度的原始字段值；预检严格检查最终字节差异，错误地移除额外字段也会失败。
 
-返回给服务器的原始 `replyStrategy`、输出 token 预算、Provider 参数、气泡处理、语义守卫、修复及持久化行为均保持原样。特别是修复服务原本使用的长度指导仍保留，两组修复的配置一致。因此结论只能回答“主生成提示中的这五个字段是否有净收益”，不能解释为完全移除了系统内所有长度影响。
+返回给服务器的原始 `replyStrategy`、输出 token 预算、Provider 参数、气泡处理、语义守卫、修复及持久化行为均保持原样。特别是修复服务原本使用的长度指导仍保留，各组修复的配置一致。独立消融隔离的是指定主提示字段的干预，并不意味着系统内的长度、气泡和投递行为完全独立。历史结论只能回答“主生成提示中的这五个字段是否有联合净收益”，不能解释为完全移除了系统内所有长度影响。
 
 `replySteeringMode` 只经 `buildApp` 的开发／评测注入入口传递，不接受聊天 HTTP 请求传参，不改日常 `.env`。
 
@@ -41,15 +43,20 @@ deliveryGuidance
 
 ## 执行与隔离
 
-每个场景／角色先创建一份冻结的 SQLite 快照。所有模型、模式和重复分别复制该快照，从固定时钟开始，通过真实的聊天 HTTP 路由生成、校验、修复并落库。生成结果不会回流进其他候选历史。自动调度、书信、纪念物和自传后台调用关闭；上下文、人格和有效记忆机制启用，全部配置写入 manifest。
+每个场景／角色先创建一份冻结的 SQLite 快照。所有模型、模式和重复分别复制该快照，从固定时钟开始，通过真实的聊天 HTTP 路由生成、校验、修复并落库。生成结果不会回流进其他候选历史。自动调度、书信、纪念物和自传后台调用关闭；上下文、人格和有效记忆机制启用。
 
-每一组付费请求前，使用无网络传输跑两次正式路径预检，验证最终系统提示和所有非目标内容逐字节一致、输出预算一致。付费请求在实际传输边界再次核对主提示与预检完全相同。发生差异时阻止发送并记录失败。
+运行开始时读取一次基础部署设置，再生成各模型的有效评测配置。manifest 分别记录 `baseDeploymentConfig` 与 `effectiveEvaluationConfigs`，避免把评测强制开启的人格／记忆机制误认为日常部署已开启。后续回合复用已捕获配置，仅替换隔离数据库和资产路径；无网络预检另替换测试凭据并关闭重试。配置中的密钥与实例密钥均脱敏。`actualConfig` 保留首个模型的有效配置，其他模型以 `effectiveEvaluationConfigs` 为准。
+
+每一组付费请求前，使用无网络传输为每个选定模式运行一次正式路径预检。每个消融模式分别与 `current` 验证最终系统提示和所有非目标内容逐字节一致、输出预算一致。付费请求在实际传输边界再次核对主提示与预检完全相同。发生差异时阻止发送并记录失败。
 
 运行目录必须是工作区中被 Git 忽略的新目录，禁止覆盖已有试验或静默重采样。每个模型内部顺序运行，不同模型可并行；模式顺序按固定哈希打散。此次固定场景重复是筛查，不能给出统计显著或普遍优越的结论。
 
 ```powershell
 # 完整离线矩阵，仅验证实验链路，不评估语言质量。
 pnpm test:reply-steering:fixture --output tmp/reply-steering-fixture-NEW
+
+# 三个独立维度和历史联合模式共用同一基线：一模型、一场景、五个候选，完全离线。
+pnpm test:reply-steering:fixture --output tmp/reply-steering-isolated-NEW --profiles deepseek --personas warm-observant --scenarios sharing-small-delight --repeats 1 --modes current,no_length_steering,no_length_only_steering,no_chunk_count_steering,no_delivery_steering
 
 # 已获用户授权的真实矩阵。默认不包含 Claude。
 $env:RUN_PAID_REPLY_STEERING = '1'
@@ -62,18 +69,20 @@ pnpm test:reply-steering --output tmp/reply-steering-small-NEW --profiles qwen -
 Remove-Item Env:RUN_PAID_REPLY_STEERING
 ```
 
+`--modes` 必须包含 `current` 和至少一个消融模式，不接受重复或未知名称。省略时保持 `current,no_length_steering`。选择全部五种模式会增加候选数，固定预算不会随模式数量自动扩大。上述单场景离线命令只验证传输、预检、证据和报告链路，不能评价自然度或给模式排名。
+
 `--requests` 和 `--token-units` 限制整次运行的物理请求及保守预留单位。默认 760 次请求和 100,000,000 预留单位。后者是序列化请求字节加输出上限的准入估计，**不是实际 token 用量或费用**。每次真实输出预算和思考参数沿用对应 Profile；不同模型的配置差异会保存在 manifest。因此跨模型结论比较的是当前配置下的模型服务组合，而非严格固定推理计算量的基础模型实验。
 
 ## 证据与审阅
 
-- `manifest.json`：Git 提交／未提交内容指纹、实际配置、模型、角色、场景和预算。
+- `manifest.json`：Git 提交／未提交内容指纹、基础部署配置、冻结的各模型有效评测配置、模式与移除字段映射、模型、角色、场景和预算。
 - `snapshots.json` 与 `snapshots/`：冻结快照及其 SHA-256；SQLite 仅包含合成测试数据。
-- `*_prompt-pair.json`：两组实际提示、输出预算和非目标内容一致性证明。
+- `*_prompt-pair.json`：所选各组实际提示，以及每个消融模式相对 `current` 的移除字段、输出预算和非目标内容一致性证明。保留历史文件名和模式顶层键以兼容原有证据读取。
 - `attempts.jsonl`：物理请求、可见原始回复、供应商原始 usage、耗时、失败和预留记录；不保存密钥或隐藏推理文本。
 - 每次候选的 `turn.json`：逻辑调用、协议解析、实际片段追踪、修复和最终入库回复。
-- `results.jsonl` / `results.json`：逐个候选的汇总结果，未知用量为 `null`。
+- `results.jsonl` / `results.json`：逐个候选的汇总结果，未知用量为 `null`。历史 `nonTargetPromptSha256` 继续表示移除全部五个字段后的共同内容；判断独立模式是否仅改变其指定字段应读取 prompt-pair 中逐模式的 `proofs`。
 - `comparison.md`：共同六场景首次重复的可比指标，与全部样本指标分别报告。
-- `blind-review.md` 和独立的 `blind-key.json`：隐藏模型及模式名称、打散候选顺序的比较材料。保留性格描述以便评估角色是否一致；允许平局和不可评分。
+- `blind-review.md` 和独立的 `blind-key.json`：隐藏模型及模式名称、打散候选顺序的比较材料。每个消融模式单独与同输入、同次重复的 `current` 配对；保留性格描述以便评估角色是否一致；允许平局和不可评分。
 
 先评价是否回应当前输入、是否符合角色、是否保留明确要求的帮助、是否便于继续交流或自然结束；再独立记录事实错误、角色矛盾、未经请求的干预与过度阐释。字数、问号、延迟和返回成功不能代替语义评分。比较原始与最终文本时，注意气泡排版也可能改变文本，并非每个变化都来自模型修复。
 

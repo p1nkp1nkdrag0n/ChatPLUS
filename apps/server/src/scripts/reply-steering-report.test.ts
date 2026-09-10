@@ -230,4 +230,37 @@ describe("reply-steering blind review exports", () => {
     expect(review.markdown).not.toContain("sensitive error");
     expect(review.markdown).not.toContain("质量得分");
   });
+
+  it("pairs each isolated intervention with current and labels the combined legacy arm only outside blind review", () => {
+    const modes = [
+      "current",
+      "no_length_steering",
+      "no_length_only_steering",
+      "no_chunk_count_steering",
+      "no_delivery_steering",
+    ] as const;
+    const rows = modes.map((mode) => result({ id: mode, mode }));
+    const review = buildBlindReview(rows, "isolated");
+    expect(review.key.groups).toHaveLength(4);
+    for (const group of review.key.groups) {
+      expect(group.kind).toBe("paired-steering");
+      expect(group.candidates).toHaveLength(2);
+      expect(
+        group.candidates.filter((candidate) => candidate.mode === "current"),
+      ).toHaveLength(1);
+    }
+    for (const mode of modes) expect(review.markdown).not.toContain(mode);
+    expect(review.markdown).not.toContain("配对覆盖不完整");
+    const report = renderReplySteeringReport(rows);
+    expect(report).toContain("不能归因为单独的长度效应");
+    expect(report).toContain(
+      "| no_length_only_steering | softTargetCharacters, lengthGuidance |",
+    );
+    expect(report).toContain(
+      "| no_chunk_count_steering | preferredChunkCount |",
+    );
+    expect(report).toContain(
+      "| no_delivery_steering | deliveryPreference, deliveryGuidance |",
+    );
+  });
 });

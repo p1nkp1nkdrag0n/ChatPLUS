@@ -43,18 +43,15 @@ type WireRequest = Record<string, unknown> & {
   messages: { role: string; content: string }[];
 };
 
-function withoutLengthSteering(prompt: string): string {
+function withoutLengthSteering(
+  prompt: string,
+  fields: readonly string[],
+): string {
   const lines = prompt.split("\n");
   const index = lines.indexOf("REPLY_STRATEGY_JSON");
   if (index < 0) return prompt;
   const strategy = JSON.parse(lines[index + 1]!) as Record<string, unknown>;
-  for (const key of [
-    "softTargetCharacters",
-    "preferredChunkCount",
-    "deliveryPreference",
-    "lengthGuidance",
-    "deliveryGuidance",
-  ]) {
+  for (const key of fields) {
     expect(strategy).toHaveProperty(key);
     delete strategy[key];
   }
@@ -216,42 +213,59 @@ async function runIsolatedTurn(replySteeringMode?: ReplySteeringMode) {
 }
 
 describe("reply steering through HTTP, provider transport and persona repair", () => {
-  it("changes only five main-prompt fields while holding the repair path fixed", async () => {
-    const defaults = await runIsolatedTurn();
-    const current = await runIsolatedTurn("current");
-    const experimental = await runIsolatedTurn("no_length_steering");
-    expect(current.initial).toEqual(defaults.initial);
-    expect(experimental.initial).toEqual(current.initial);
-    expect(current.logical).toEqual(defaults.logical);
-    expect(current.wire).toEqual(defaults.wire);
+  it.each([
+    [
+      "no_length_steering",
+      [
+        "softTargetCharacters",
+        "preferredChunkCount",
+        "deliveryPreference",
+        "lengthGuidance",
+        "deliveryGuidance",
+      ],
+    ],
+    ["no_length_only_steering", ["softTargetCharacters", "lengthGuidance"]],
+    ["no_chunk_count_steering", ["preferredChunkCount"]],
+    ["no_delivery_steering", ["deliveryPreference", "deliveryGuidance"]],
+  ] as const)(
+    "%s changes only its main-prompt fields while holding repair fixed",
+    async (mode, fields) => {
+      const defaults = await runIsolatedTurn();
+      const current = await runIsolatedTurn("current");
+      const experimental = await runIsolatedTurn(mode);
+      expect(current.initial).toEqual(defaults.initial);
+      expect(experimental.initial).toEqual(current.initial);
+      expect(current.logical).toEqual(defaults.logical);
+      expect(current.wire).toEqual(defaults.wire);
 
-    expect(experimental.logical).toEqual([
-      {
-        ...current.logical[0],
-        prompt: withoutLengthSteering(current.logical[0]!.prompt),
-      },
-      current.logical[1],
-    ]);
-    expect(experimental.wire).toEqual([
-      {
-        ...current.wire[0],
-        messages: current.wire[0]!.messages.map((message) => ({
-          ...message,
-          content: withoutLengthSteering(message.content),
-        })),
-      },
-      current.wire[1],
-    ]);
-    expect(experimental.repair.replyStrategy).toEqual(
-      current.repair.replyStrategy,
-    );
-    expect(experimental.repair.replyGrounding).toBe(
-      current.repair.replyGrounding,
-    );
-    expect(experimental.repair.issues).toEqual(current.repair.issues);
-    expect(experimental.result.decision).toEqual(current.result.decision);
-    expect(experimental.result.assistantMessage.content).toBe(
-      current.result.assistantMessage.content,
-    );
-  });
+      expect(experimental.logical).toEqual([
+        {
+          ...current.logical[0],
+          prompt: withoutLengthSteering(current.logical[0]!.prompt, fields),
+        },
+        current.logical[1],
+      ]);
+      expect(experimental.wire).toEqual([
+        {
+          ...current.wire[0],
+          messages: current.wire[0]!.messages.map((message) => ({
+            ...message,
+            content: withoutLengthSteering(message.content, fields),
+          })),
+        },
+        current.wire[1],
+      ]);
+      expect(experimental.repair.replyStrategy).toEqual(
+        current.repair.replyStrategy,
+      );
+      expect(experimental.repair.replyGrounding).toBe(
+        current.repair.replyGrounding,
+      );
+      expect(experimental.repair.issues).toEqual(current.repair.issues);
+      expect(experimental.result.decision).toEqual(current.result.decision);
+      expect(experimental.result.assistantMessage.content).toBe(
+        current.result.assistantMessage.content,
+      );
+    },
+  );
 });

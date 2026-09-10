@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  REPLY_STEERING_REMOVED_FIELDS,
+  type ReplySteeringMode,
+} from "@personasim/features";
 
 import {
   REPLY_STEERING_COMMON_SCENARIO_IDS,
@@ -7,7 +11,7 @@ import {
   REPLY_STEERING_SCENARIOS,
 } from "./reply-steering-scenarios.js";
 
-export type ReplySteeringMode = "current" | "no_length_steering";
+export type { ReplySteeringMode };
 
 export interface ReplySteeringResult {
   id: string;
@@ -133,6 +137,19 @@ export function renderReplySteeringReport(
     "",
     "语义质量尚待盲审。成功返回、字数、延迟和 token 都是观测指标；更短、调用更少或 HTTP 成功不等于回复更好。详细求助必须检查信息是否保留，日常分享也必须检查是否具体接住用户。",
     "",
+    "## 本次模式与干预边界",
+    "",
+    "历史 no_length_steering 同时移除长度、气泡数量与投递偏好，不能归因为单独的长度效应。各独立模式只移除下列字段；其余主提示、输出预算与服务器修复策略保持一致。",
+    "",
+    "| 模式 | 从主生成提示移除的字段 |",
+    "| --- | --- |",
+    ...[...new Set(results.map((row) => row.mode))]
+      .sort()
+      .map(
+        (mode) =>
+          `| ${mode} | ${REPLY_STEERING_REMOVED_FIELDS[mode].join(", ") || "无（基线）"} |`,
+      ),
+    "",
     "## 相同六场景、首次重复的比较集",
     "",
     `预先固定的共同场景：${REPLY_STEERING_COMMON_SCENARIO_IDS.map((id) => `\`${id}\``).join("、")}。所有模型与性格之间的横向比较以此集合为准；不能把预算不同的全量平均值直接排名。`,
@@ -199,7 +216,18 @@ export function buildBlindReview(
     row.personaId,
     row.scenarioId,
     row.repeat,
-  ]).map((rows) => ({ kind: "paired-steering", rows }));
+  ]).flatMap((rows) => {
+    const baseline = rows.filter((row) => row.mode === "current");
+    const ablations = rows.filter((row) => row.mode !== "current");
+    // Each single-factor arm is reviewed against its own identical baseline,
+    // never presented as an incomplete five-candidate historical pair.
+    return ablations.length === 0
+      ? [{ kind: "paired-steering" as const, rows }]
+      : ablations.map((row) => ({
+          kind: "paired-steering" as const,
+          rows: [...baseline, row],
+        }));
+  });
   const common = commonReplySteeringResults(results);
   comparisons.push(
     ...groupBy(common, (row) => [row.personaId, row.scenarioId, row.mode])

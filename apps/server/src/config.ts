@@ -260,7 +260,6 @@ const envSchema = z.object({
     .nonnegative()
     .default(12),
   LOG_LEVEL: z.string().default("info"),
-  SEED_DEMO: booleanFromEnv,
   CHAT_EFFECTS_MODE: z.enum(["off", "gated"]).default("gated"),
   LIFE_PLANNING_MODE: z.enum(["fuzzy", "legacy_exact"]).optional(),
   SCHEDULE_NEGOTIATION_MODE: z
@@ -334,6 +333,7 @@ export type ServerConfig = {
   };
   conversationRetention: ConversationRetentionPolicy;
   logLevel: string;
+  /** @deprecated Retained for callers; always disabled by readConfig. */
   seedDemo: boolean;
   developerRoutes: boolean;
   chatEffectsMode: "off" | "gated";
@@ -444,7 +444,7 @@ export function readConfig(
       minimumRecentTurns: env.CONVERSATION_MINIMUM_RECENT_TURNS,
     },
     logLevel: env.LOG_LEVEL,
-    seedDemo: env.SEED_DEMO,
+    seedDemo: false,
     developerRoutes: env.DEVELOPER_MODE,
     chatEffectsMode: env.CHAT_EFFECTS_MODE,
     // Fuzzy life is the product model in every environment. Tests covering
@@ -489,6 +489,7 @@ export function readConfig(
       : merged;
   const config = {
     ...normalized,
+    seedDemo: false,
     conversationRetention: ConversationRetentionPolicySchema.parse(
       normalized.conversationRetention,
     ),

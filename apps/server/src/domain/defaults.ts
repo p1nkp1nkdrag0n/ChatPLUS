@@ -100,6 +100,17 @@ export function buildOriginalDraft(
     ...(legacy ? {} : { compilationPolicyVersion }),
     identity: {
       name: input.name,
+      ...(input.gender === undefined ? {} : { gender: input.gender }),
+      ...(input.ageText === undefined ? {} : { ageText: input.ageText }),
+      ...(input.appearanceDescription === undefined
+        ? {}
+        : {
+            appearance: {
+              summary: input.appearanceDescription,
+              distinctiveFeatures: [],
+              presentationNotes: [],
+            },
+          }),
       workOrRole: input.workOrRole,
       worldSetting: input.worldSetting,
       selfDescription: `${input.name}是一位${input.workOrRole}。${legacy ? (input.mainGoal ?? "") : ""}`,
@@ -107,6 +118,20 @@ export function buildOriginalDraft(
       ...(temporalFrame === undefined ? {} : { temporalFrame }),
     },
     persona: {
+      ...(input.importantExperience === undefined
+        ? {}
+        : {
+            biography: [
+              {
+                id: "author-experience-1",
+                period: "未注明时期",
+                event: input.importantExperience,
+                importance: 0.7,
+                origin: "user_spec" as const,
+                sourceRefs: ["original-form"],
+              },
+            ],
+          }),
       traits: input.coreTraits.map((name, index) => ({
         id: ruleId("trait", index),
         name,
@@ -305,6 +330,7 @@ export function buildOriginalDraft(
       // boundary, so only fields with a guaranteed fact representation belong
       // in this projection.
       knownFacts: [
+        ...originalInterviewFacts(input),
         input.workOrRole,
         originalDialogueStyleFact(input.dialogueStyle),
       ],
@@ -323,6 +349,26 @@ export function buildOriginalDraft(
     ],
     lockedPaths: [],
   };
+}
+
+/** Lossless bounded facts from explicit interview fields, never model paraphrases. */
+export function originalInterviewFacts(
+  input: OriginalCharacterInput,
+): string[] {
+  return [
+    ["性别", input.gender],
+    ["年龄", input.ageText],
+    ["日常习惯", input.dailyHabits],
+    ["目前在意的事", input.currentFocus],
+  ].flatMap(([label, value]) => {
+    if (!value) return [];
+    // Chat admits 240 characters per fact; retain every author fragment within
+    // that bound rather than silently cutting a late qualification off.
+    return Array.from(
+      { length: Math.ceil(value.length / 220) },
+      (_, index) => `${label}：${value.slice(index * 220, (index + 1) * 220)}`,
+    );
+  });
 }
 
 function originalTemporalFrame(

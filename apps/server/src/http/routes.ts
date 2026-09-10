@@ -62,7 +62,7 @@ import {
 import type { ContinuityIndexService } from "../services/continuity-index-service.js";
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
-import { ensureDemoConversation } from "../services/demo-conversation-service.js";
+import { registerCharacterInterviewRoutes } from "./character-interview-routes.js";
 import type { FollowUpService } from "../services/follow-up-service.js";
 import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { LlmService } from "../services/llm-service.js";
@@ -188,7 +188,15 @@ export function registerRoutes(
     return { characters: items, items };
   });
 
-  app.post("/api/demo/ensure", () => ensureDemoConversation(services));
+  registerCharacterInterviewRoutes(app, services);
+
+  app.post("/api/demo/ensure", () => {
+    throw new ApiError(
+      410,
+      "demo_creation_retired",
+      "系统示例角色入口已停用，请描述你梦中的他/她，或导入角色。",
+    );
+  });
 
   app.post("/api/characters/generate", async (request, reply) => {
     const spec = await characters.generate(request.body);

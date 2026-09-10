@@ -229,6 +229,8 @@ export type CharacterAppearance = z.infer<typeof CharacterAppearanceSchema>;
 export const CharacterIdentitySchema = z
   .object({
     name: z.string().trim().min(1).max(120),
+    gender: z.string().trim().min(1).max(120).optional(),
+    ageText: z.string().trim().min(1).max(120).optional(),
     workOrRole: z.string().trim().min(1).max(240),
     worldSetting: z.string().trim().min(1).max(4_000),
     selfDescription: z.string().trim().min(1).max(2_000),
@@ -574,6 +576,12 @@ export type CharacterSpec = z.infer<typeof CharacterSpecSchema>;
 export const OriginalCharacterInputSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
+    gender: z.string().trim().min(1).max(120).optional(),
+    ageText: z.string().trim().min(1).max(120).optional(),
+    appearanceDescription: z.string().trim().min(1).max(2_000).optional(),
+    dailyHabits: z.string().trim().min(1).max(1_000).optional(),
+    importantExperience: z.string().trim().min(1).max(1_000).optional(),
+    currentFocus: z.string().trim().min(1).max(1_000).optional(),
     worldSetting: z.string().trim().min(1).max(4_000),
     workOrRole: z.string().trim().min(1).max(240),
     coreTraits: z.array(z.string().trim().min(1).max(120)).min(1).max(8),

@@ -56,6 +56,12 @@ describe("server configuration", () => {
     vi.unstubAllEnvs();
   });
 
+  it("ignores retired demo seeding in both environment and caller overrides", () => {
+    vi.stubEnv("SEED_DEMO", "true");
+    expect(readConfig().seedDemo).toBe(false);
+    expect(readConfig({ seedDemo: true }).seedDemo).toBe(false);
+  });
+
   it("uses the canonical conversation retention defaults", () => {
     expect(readConfig().conversationRetention).toEqual({
       fullVerbatimHours: 24,

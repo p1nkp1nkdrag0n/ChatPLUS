@@ -131,7 +131,7 @@ describe("fuzzy life runtime routing", () => {
     });
   });
 
-  it("seeds the demo into a daily fuzzy context rather than a 72-hour plan", async () => {
+  it("keeps fuzzy startup empty even when legacy demo flags are enabled", async () => {
     await app.close();
     app = await buildApp({
       config: readConfig({
@@ -159,7 +159,7 @@ describe("fuzzy life runtime routing", () => {
       logger: false,
     });
 
-    expect(app.personasim.store.countCharacters()).toBe(1);
+    expect(app.personasim.store.countCharacters()).toBe(0);
     expect(
       app.personasim.store.database
         .prepare("SELECT COUNT(*) AS count FROM schedule_items")
@@ -169,7 +169,7 @@ describe("fuzzy life runtime routing", () => {
       app.personasim.store.database
         .prepare("SELECT COUNT(*) AS count FROM daily_life_contexts")
         .get(),
-    ).toEqual({ count: 1 });
+    ).toEqual({ count: 0 });
   });
 
   it("refuses to settle migrated exact rows inside a fuzzy runtime", async () => {

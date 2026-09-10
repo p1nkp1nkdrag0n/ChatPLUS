@@ -19,13 +19,13 @@ import { registerAchievementRoutes } from "./http/achievement-routes.js";
 import type { Clock } from "./runtime/clock.js";
 import type { HourlyScheduler } from "./runtime/hourly-scheduler.js";
 import type { LlmServiceObservationOptions } from "./services/llm-service.js";
-import { ensureDemoConversation } from "./services/demo-conversation-service.js";
 import type { FixtureTurnBehavior } from "./services/turn-decision-service.js";
 
 export type BuildAppOptions = {
   config?: ServerConfig;
   database?: Database;
   clock?: Clock;
+  /** @deprecated Ignored. Product startup never creates system characters. */
   seedDemo?: boolean;
   startScheduler?: boolean;
   logger?: boolean;
@@ -75,7 +75,7 @@ export async function buildApp(
   });
   const services = composition.routeServices;
   const { scheduler, temporalTaskScheduler } = composition;
-  const { store, characters, schedules, life, correspondence } = services;
+  const { characters, correspondence } = services;
 
   try {
     app.addHook("onClose", async () => {
@@ -200,16 +200,6 @@ export async function buildApp(
     registerRoutes(app, services);
     registerLlmRoutes(app, services, options.llmObservation?.fetch);
     registerAchievementRoutes(app, services);
-
-    const shouldSeed = options.seedDemo ?? config.seedDemo;
-    if (shouldSeed && store.countCharacters() === 0) {
-      const demo = ensureDemoConversation(services);
-      if (config.lifePlanningMode === "fuzzy") {
-        life.ensureToday(demo.characterId);
-      } else {
-        await schedules.ensure72Hours(demo.characterId, true);
-      }
-    }
 
     if (
       ((config.correspondenceMode ?? "off") !== "off" ||

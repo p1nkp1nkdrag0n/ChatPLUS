@@ -61,7 +61,7 @@ import {
   characterAuthorityReview,
 } from "./character-authority.js";
 
-type PendingCharacterSource = {
+export type PendingCharacterSource = {
   id: string;
   sourceType: string;
   title: string;
@@ -110,7 +110,19 @@ export class CharacterService {
     };
   }
 
-  async generate(rawInput: unknown): Promise<CharacterSpec> {
+  async generate(
+    rawInput: unknown,
+    options: {
+      source?: PendingCharacterSource;
+      replaceDraft?: { characterId: string; expectedVersion: number };
+    } = {},
+  ): Promise<CharacterSpec> {
+    if (options.replaceDraft)
+      this.assertInterviewDraftEditable(options.replaceDraft);
+    else if (options.source) {
+      const existing = this.findSourceCreation(options.source);
+      if (existing) return existing;
+    }
     const input = originalCharacterInputSchema.parse(rawInput);
     assertTimezone(input.timezone);
     const fallback = buildOriginalDraft(
@@ -136,18 +148,150 @@ export class CharacterService {
       fallback,
       proposal.draft,
     );
-    if (input.characterBrief === undefined) return this.createFromDraft(draft);
-    const sourceHash = createHash("sha256")
-      .update(input.characterBrief)
-      .digest("hex");
-    draft.sources[0] = { ...draft.sources[0]!, checksum: sourceHash };
-    return this.createFromDraft(draft, {
-      id: createEntityId("source"),
-      sourceType: "original_character_brief",
-      title: `${input.name}的详细角色素材`,
-      contentExcerpt: input.characterBrief,
-      sourceHash,
+    let source: PendingCharacterSource | undefined;
+    if (input.characterBrief !== undefined) {
+      const sourceHash = createHash("sha256")
+        .update(input.characterBrief)
+        .digest("hex");
+      draft.sources[0] = { ...draft.sources[0]!, checksum: sourceHash };
+      source = {
+        id: createEntityId("source"),
+        sourceType: "original_character_brief",
+        title: `${input.name}的详细角色素材`,
+        contentExcerpt: input.characterBrief,
+        sourceHash,
+      };
+    }
+    // No model work under a SQLite lock. Recheck the head after compilation so
+    // another connection cannot publish, activate or overwrite this draft first.
+    return this.store.database
+      .transaction(() => {
+        if (options.replaceDraft)
+          return this.replaceInterviewDraft(
+            draft,
+            options.replaceDraft,
+            [source, options.source].filter(
+              (item): item is PendingCharacterSource => item !== undefined,
+            ),
+          );
+        if (options.source) {
+          const existing = this.findSourceCreation(options.source);
+          if (existing) return existing;
+        }
+        return this.createFromDraft(
+          draft,
+          source,
+          "user",
+          options.source ? [options.source] : [],
+        );
+      })
+      .immediate();
+  }
+
+  private findSourceCreation(
+    source: PendingCharacterSource,
+  ): CharacterSpec | undefined {
+    const row = this.store.database
+      .prepare(
+        "SELECT character_id AS characterId, source_hash AS sourceHash FROM character_sources WHERE id = ?",
+      )
+      .get(source.id) as
+      { characterId: string; sourceHash: string } | undefined;
+    if (!row) return undefined;
+    if (row.sourceHash !== source.sourceHash)
+      throw new ApiError(
+        409,
+        "interview_request_conflict",
+        "This creation request already belongs to different answers.",
+      );
+    return this.store.getCharacterSpec(row.characterId);
+  }
+
+  private assertInterviewDraftEditable(input: {
+    characterId: string;
+    expectedVersion: number;
+  }): CharacterSpec {
+    const current = this.store.getCharacterSpec(input.characterId);
+    if (!current) throw notFound("Character");
+    if (current.version !== input.expectedVersion)
+      throw new ApiError(
+        409,
+        "version_conflict",
+        "The character draft has changed.",
+        {
+          expectedVersion: input.expectedVersion,
+          currentVersion: current.version,
+        },
+      );
+    const published = this.store.database
+      .prepare(
+        "SELECT 1 FROM domain_events WHERE agent_id = ? AND event_type = 'character.published' LIMIT 1",
+      )
+      .get(current.id);
+    const interview = this.store.database
+      .prepare(
+        "SELECT 1 FROM character_sources WHERE character_id = ? AND source_type = 'character_interview_v1' LIMIT 1",
+      )
+      .get(current.id);
+    if (
+      current.status !== "draft" ||
+      published ||
+      !interview ||
+      this.getCreationOrigin(current.id) !== "user" ||
+      this.store.listSessions(current.id).length > 0 ||
+      this.store.hasFuzzyLifeState(current.id) ||
+      (this.store.getRuntimeState(current.id)?.revision ?? 0) !== 0
+    ) {
+      throw new ApiError(
+        409,
+        "interview_draft_not_editable",
+        "Only an unactivated interview draft can be recompiled.",
+      );
+    }
+    return current;
+  }
+
+  private replaceInterviewDraft(
+    rawDraft: CharacterDraft,
+    input: { characterId: string; expectedVersion: number },
+    sources: PendingCharacterSource[],
+  ): CharacterSpec {
+    const current = this.assertInterviewDraftEditable(input);
+    const nowUtc = this.clock.nowUtc();
+    const draft = applyLifePlanningAuthority(
+      normalizeTemporalAnchor(ensureTimeBasedGoalMilestones(rawDraft), nowUtc),
+      this.lifePlanningMode,
+    );
+    assertCharacterSourceRefs(draft);
+    assertTimezone(draft.identity.timezone);
+    const spec = characterSpecSchema.parse({
+      ...draft,
+      id: current.id,
+      version: current.version + 1,
+      status: "draft",
+      createdAtUtc: current.createdAtUtc,
+      updatedAtUtc: nowUtc,
     });
+    this.store.insertCharacterVersion(spec);
+    this.store.updateCharacterHead(spec);
+    for (const source of sources)
+      this.store.insertCharacterSource({
+        ...source,
+        characterId: spec.id,
+        createdAtUtc: nowUtc,
+      });
+    // The initial runtime state is already present and must never be reset.
+    this.store.insertDomainEvent({
+      agentId: spec.id,
+      streamType: "character",
+      streamId: spec.id,
+      streamVersion: spec.version,
+      eventType: "character.draft_updated",
+      recordedAtUtc: nowUtc,
+      payload: { version: spec.version, source: "character_interview" },
+      idempotencyKey: `character:${spec.id}:version:${spec.version}:created`,
+    });
+    return spec;
   }
 
   async import(rawInput: unknown): Promise<CharacterSpec> {
@@ -460,6 +604,7 @@ export class CharacterService {
     rawDraft: CharacterDraft,
     source?: PendingCharacterSource,
     creationOrigin: "user" | "demo" = "user",
+    additionalSources: PendingCharacterSource[] = [],
   ): CharacterSpec {
     const nowUtc = this.clock.nowUtc();
     const draft = applyLifePlanningAuthority(
@@ -494,6 +639,13 @@ export class CharacterService {
       if (source) {
         this.store.insertCharacterSource({
           ...source,
+          characterId: id,
+          createdAtUtc: nowUtc,
+        });
+      }
+      for (const additional of additionalSources) {
+        this.store.insertCharacterSource({
+          ...additional,
           characterId: id,
           createdAtUtc: nowUtc,
         });

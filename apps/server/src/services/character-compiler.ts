@@ -22,6 +22,7 @@ export const CHARACTER_COMPILER_SYSTEM = [
   "Preserve author facts and turn them into compact, editable rules that remain useful across long conversations.",
   "Identity, social and historical constraints, formative experiences, values, observable behavior, contradictions, relationship dynamics, and voice outrank decorative appearance or trope labels.",
   "Never invent exact personal identifiers, dates, trauma, relationships, or completed events that the author did not supply.",
+  "Preserve supplied gender and ageText verbatim, including custom genders and approximate or fictional ages. Never infer a birth date from age. currentFocus is a concern or interest, not automatically a goal. dailyHabits describes broad habits, not an exact timetable. importantExperience must not imply a shared past with the application user.",
   "When supplied claims conflict, preserve both claims in knowledge.uncertainFacts and describe the conflict; never silently choose one.",
   "Return only the requested structured object and never reveal hidden reasoning.",
 ].join("\n");
@@ -379,6 +380,11 @@ function applyOriginalFormAuthority(
     identity: {
       ...draft.identity,
       name: input.name,
+      ...(input.gender === undefined ? {} : { gender: input.gender }),
+      ...(input.ageText === undefined ? {} : { ageText: input.ageText }),
+      ...(input.appearanceDescription === undefined
+        ? {}
+        : { appearance: fallback.identity.appearance }),
       workOrRole: input.workOrRole,
       worldSetting: input.worldSetting,
       selfDescription:
@@ -392,6 +398,18 @@ function applyOriginalFormAuthority(
     },
     persona: {
       ...draft.persona,
+      ...(input.importantExperience === undefined
+        ? {}
+        : {
+            biography: [
+              ...(fallback.persona.biography ?? []),
+              ...(draft.persona.biography ?? []).filter(
+                (item) =>
+                  item.event !== input.importantExperience &&
+                  item.id !== "author-experience-1",
+              ),
+            ].slice(0, 40),
+          }),
       traits: [...authorTraits, ...unmatchedTraits],
       values: draft.persona.values,
       contradictions: [

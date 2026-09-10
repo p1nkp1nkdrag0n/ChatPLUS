@@ -52,6 +52,18 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
 };
 
 describe("complete evidence budgets", () => {
+  it("carries custom gender and descriptive age into the real character prompt", () => {
+    const input = baseInput();
+    input.character.identity.gender = "无性别";
+    input.character.identity.ageText = "年龄不详";
+    const result = assembleChatPrompt(input);
+    expect(
+      promptSegmentJson(result.system, "CHARACTER_IDENTITY_JSON"),
+    ).toMatchObject({
+      identity: { gender: "无性别", ageText: "年龄不详" },
+    });
+    expect(result.system).not.toContain("birthDate");
+  });
   it("keeps complete records admitted by whole-record budget compaction in repair grounding", () => {
     const evidence = Array.from({ length: 8 }, (_, index) => {
       const memoryId = `budget-memory-${index}`;

@@ -52,6 +52,8 @@ interface CharacterForPrompt {
   sourceType?: string;
   identity: {
     name: string;
+    gender?: string | undefined;
+    ageText?: string | undefined;
     workOrRole: string;
     worldSetting: string;
     selfDescription: string;
@@ -324,6 +326,12 @@ function compactCharacter(character: CharacterForPrompt) {
       : { sourceType: truncate(character.sourceType, 80) }),
     identity: {
       name: truncate(character.identity.name, 120),
+      ...(character.identity.gender === undefined
+        ? {}
+        : { gender: truncate(character.identity.gender, 120) }),
+      ...(character.identity.ageText === undefined
+        ? {}
+        : { ageText: truncate(character.identity.ageText, 120) }),
       workOrRole: truncate(character.identity.workOrRole, 240),
       worldSetting: truncate(character.identity.worldSetting, 1_000),
       selfDescription: truncate(character.identity.selfDescription, 1_000),

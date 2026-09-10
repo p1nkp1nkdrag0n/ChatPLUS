@@ -90,6 +90,7 @@ export const CharacterSummarySchema = z
     tier: SimulationTierSchema,
     status: CharacterStatusSchema,
     sourceType: CharacterSourceKindSchema,
+    creationOrigin: z.enum(["user", "demo"]).optional(),
     createdAtUtc: UtcDateTimeSchema,
     updatedAtUtc: UtcDateTimeSchema,
   })

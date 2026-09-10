@@ -6,6 +6,7 @@ import type { CharacterSpec } from "../domain/schemas.js";
 import { STRANGER_RELATIONSHIP_TYPE } from "../domain/stranger-relationship.js";
 import { assertCharacterAuthority } from "./character-authority.js";
 import { stripCharacterMetadata } from "./character-draft-editor.js";
+import { ensureDemoConversation } from "./demo-conversation-service.js";
 
 const INPUT = {
   name: "初识测试",
@@ -225,14 +226,12 @@ describe("server-owned stranger relationship", () => {
     );
   });
 
-  it("stores demo origin before publication and retains it after a replacement demo is registered", async () => {
-    const first = await app.inject({ method: "POST", url: "/api/demo/ensure" });
-    const oldDemo = first.json<{ characterId: string }>().characterId;
+  it("stores demo origin before publication and retains it after a replacement demo is registered", () => {
+    const oldDemo = ensureDemoConversation(app.personasim).characterId;
     expect(app.personasim.characters.getCreationOrigin(oldDemo)).toBe("demo");
     expectStranger(app.personasim.store.getCharacterSpec(oldDemo)!);
     app.personasim.characters.archive(oldDemo);
-    const next = await app.inject({ method: "POST", url: "/api/demo/ensure" });
-    const newDemo = next.json<{ characterId: string }>().characterId;
+    const newDemo = ensureDemoConversation(app.personasim).characterId;
     expect(newDemo).not.toBe(oldDemo);
     expect(app.personasim.characters.getCreationOrigin(newDemo)).toBe("demo");
     expect(app.personasim.characters.getCreationOrigin(oldDemo)).toBe("demo");

@@ -928,7 +928,7 @@ function baseServerConfig(databasePath: string): ServerConfig {
       minimumRecentTurns: 12,
     },
     logLevel: "silent",
-    seedDemo: true,
+    seedDemo: false,
     developerRoutes: false,
     chatEffectsMode: "off",
     lifePlanningMode: "legacy_exact",

@@ -25,6 +25,7 @@ export type CharacterSummary = {
   tier: CharacterSpec["tier"];
   name: string;
   sourceType: CharacterSpec["sourceType"];
+  creationOrigin: "user" | "demo";
   createdAtUtc: string;
   updatedAtUtc: string;
 };
@@ -740,6 +741,7 @@ function mapCharacterSummary(row: SqlRow): CharacterSummary {
     tier: String(row.tier) as CharacterSpec["tier"],
     name: String(row.name),
     sourceType: String(row.source_type) as CharacterSpec["sourceType"],
+    creationOrigin: row.creation_origin === "demo" ? "demo" : "user",
     createdAtUtc: String(row.created_at_utc),
     updatedAtUtc: String(row.updated_at_utc),
   };

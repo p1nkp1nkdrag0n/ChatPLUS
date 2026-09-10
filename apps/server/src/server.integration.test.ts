@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SettlementResult } from "./services/settlement-service.js";
 import { seededUnit } from "@personasim/features";
 import {
@@ -69,6 +72,7 @@ describe("PersonaSim server integration", () => {
         "029_llm_settings.sql",
         "031_character_creation_origin.sql",
         "032_achievements.sql",
+        "033_archive_system_demo_characters.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -1422,19 +1426,13 @@ describe("PersonaSim server integration", () => {
   it("disposes the composed kernel and database when app construction fails", async () => {
     const database = openDatabase(":memory:");
     runMigrations(database);
-    database.exec(
-      `CREATE TRIGGER reject_seed_character
-       BEFORE INSERT ON characters
-       BEGIN
-         SELECT RAISE(ABORT, 'seed rejected');
-       END`,
-    );
     const config = readConfig({
       nodeEnv: "test",
       profile: "test",
       databasePath: ":memory:",
       clockMode: "fake",
-      seedDemo: true,
+      serveWeb: true,
+      webDistPath: join(tmpdir(), `dearvale-unbuilt-web-${randomUUID()}`),
       developerRoutes: true,
       lifePlanningMode: "legacy_exact",
       scheduleNegotiationMode: "legacy",
@@ -1452,11 +1450,10 @@ describe("PersonaSim server integration", () => {
         config,
         database,
         clock: new FakeClock(START_UTC),
-        seedDemo: true,
         startScheduler: false,
         logger: false,
       }),
-    ).rejects.toThrow("seed rejected");
+    ).rejects.toThrow("SERVE_WEB requires a built Vite index");
     expect(database.open).toBe(false);
   });
 });

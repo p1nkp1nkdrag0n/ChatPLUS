@@ -168,14 +168,13 @@ async function seedPendingOutbound(
   const seedApp = await buildApp({
     config: config(databasePath, "lazy", T0, "off"),
     clock: new FakeClock(T0),
-    seedDemo: true,
     startScheduler: false,
     logger: false,
   });
   try {
-    const agent = seedApp.personasim.characters.list(true)[0];
-    if (agent === undefined)
-      throw new TypeError("demo character was not seeded");
+    const agent = seedApp.personasim.characters.publish(
+      seedApp.personasim.characters.createDemoCharacter().id,
+    );
     const repository = seedApp.personasim.correspondenceRepository;
     const thread = repository.createThread(agent.id, {
       id: "thread-scheduler-composition",

@@ -812,6 +812,12 @@ function letterReplyFixture(request: LLMRequest): JsonValue {
 
 const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   compile_character: compileFixture,
+  character_interview: () => ({
+    questions: [
+      "在熟悉的人面前，这份性格会有什么不同？",
+      "有没有一个微小的瞬间，能让这个人一下子鲜活起来？",
+    ],
+  }),
   import_character: importFixture,
   plan_schedule: planFixture,
   chat_turn: chatFixture,

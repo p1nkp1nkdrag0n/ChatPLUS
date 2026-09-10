@@ -73,7 +73,7 @@ PERSONA_RUNTIME_MODE=enforced
 
 Fixture 用于验证流程和记录，不能用于判定真实模型的自然度、立场一致性或长期陪伴质量。上下文和人格策略的既有边界见[长期角色陪伴实施记录](docs/plans/Companion_Continuity_Implementation.md)；本轮事实修订、语言修复、迁移及专项结果见[纠错优先实施与验收记录](docs/plans/Correction_First_Implementation.md)。小范围真实模型试跑仍发现修辞惯性和不求建议时给建议的反例，自然度改善尚未验收通过。
 
-默认会提供一个可直接体验的示例角色；设 `SEED_DEMO=false` 可关闭。
+首次进入欢迎页时，从「描述你梦中的他/她」逐题描绘角色，或导入角色；发布成功后才会显示「继续聊天」。系统不再自动创建示例角色，旧 `SEED_DEMO` 配置也不会重新启用此行为。升级时仅将明确标记或登记为系统示例的角色归档，原有版本、来源材料和对话历史仍然保留。
 
 需要浏览器关闭后仍处理到期书信，或给单个朋友部署独立实例时，请按[自托管与备份恢复指南](docs/SELF_HOSTING.md)使用同一镜像、独立数据库、独立 `INSTANCE_SECRET` 和 Caddy HTTPS/Basic Auth。不要把未经反向代理保护的 Fastify 端口直接暴露到公网。
 

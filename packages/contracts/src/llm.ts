@@ -28,6 +28,7 @@ import {
 
 export const LlmPurposeSchema = z.enum([
   "compile_character",
+  "character_interview",
   "import_character",
   "plan_schedule",
   "chat_turn",

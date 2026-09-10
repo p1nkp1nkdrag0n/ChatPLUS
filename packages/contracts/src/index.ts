@@ -3,6 +3,7 @@ export * from "./achievements.js";
 export * from "./autobiography.js";
 export * from "./calendar.js";
 export * from "./character.js";
+export * from "./character-interview.js";
 export * from "./checkpoint.js";
 export * from "./correspondence.js";
 export * from "./conversation-context-plan.js";

@@ -312,6 +312,9 @@ export function authorizeGeneratedCharacter(
       original &&
       ((draft.persona.traits.includes(rule as never) &&
         input.coreTraits.includes(String(record.name))) ||
+        (draft.persona.biography?.includes(rule as never) &&
+          input.importantExperience !== undefined &&
+          record.event === input.importantExperience) ||
         (draft.persona.goals.includes(rule as never) &&
           record.title === input.mainGoal));
     const direct = [
@@ -501,7 +504,16 @@ export function authorizeGeneratedCharacter(
           );
         }
       }
-    set(draft, target, accepted);
+    set(
+      draft,
+      target,
+      target === "knowledge.knownFacts"
+        ? [...new Set([...fallback.knowledge.knownFacts, ...accepted])].slice(
+            0,
+            200,
+          )
+        : accepted,
+    );
   }
   const relation =
     authoring.sharedContext ??

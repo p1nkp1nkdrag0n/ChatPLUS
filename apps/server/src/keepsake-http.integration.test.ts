@@ -661,6 +661,8 @@ describe("keepsake HTTP lifecycle", () => {
     expect(providerInput).toBeDefined();
     const captured = providerInput as ImageGenerationInput;
     expect(captured.visualSpec.version).toBe("keepsake_visual_v1");
+    if (captured.visualSpec.version !== "keepsake_visual_v1")
+      throw new Error("Expected a keepsake visual request");
     expect(captured.visualSpec.semanticSourceHash).toMatch(/^[a-f0-9]{64}$/u);
     expect(captured.idempotencyKey).toBe(before.idempotencyKey);
     expect(JSON.stringify(providerInput)).not.toMatch(

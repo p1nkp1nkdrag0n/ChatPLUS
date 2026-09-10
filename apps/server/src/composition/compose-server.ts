@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   PluginRuntime,
   ServiceRegistry,
@@ -13,6 +14,7 @@ import type { HourlyScheduler } from "../runtime/hourly-scheduler.js";
 import type { TemporalTaskScheduler } from "../runtime/temporal-task-scheduler.js";
 import type { LlmServiceObservationOptions } from "../services/llm-service.js";
 import type { FixtureTurnBehavior } from "../services/turn-decision-service.js";
+import { AchievementService } from "../services/achievement-service.js";
 import { resolveServerBundle, type ServerSimulationBundle } from "./bundles.js";
 import {
   createKernelLogger,
@@ -110,7 +112,22 @@ export async function composeServer(
   });
   await runtime.activatePlugins(plugins);
 
+  const achievements = new AchievementService(
+    registry.resolve(STORE_TOKEN).database,
+    registry.resolve(SERVER_CLOCK_TOKEN),
+    {
+      databasePath: options.config.databasePath,
+      assetRoot: `${resolve(options.config.assetStoragePath ?? "./data/assets")}-achievements`,
+      developerMode: options.config.developerRoutes,
+      ...(options.llmObservation?.fetch
+        ? { fetch: options.llmObservation.fetch }
+        : {}),
+    },
+  );
+  achievements.start();
+
   const routeServices: RouteServices = {
+    achievements,
     config: registry.resolve(SERVER_CONFIG_TOKEN),
     store: registry.resolve(STORE_TOKEN),
     clock: registry.resolve(SERVER_CLOCK_TOKEN),
@@ -161,6 +178,7 @@ export async function composeServer(
       if (disposed) return;
       disposed = true;
       try {
+        await achievements.stop();
         await events.emit("server.stopping", {
           atUtc: routeServices.clock.nowUtc(),
           reason,

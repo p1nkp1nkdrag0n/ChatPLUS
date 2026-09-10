@@ -15,6 +15,7 @@ import { assertLocalDemoNetworkBoundary } from "./deployment-boundary.js";
 import { ApiError } from "./domain/errors.js";
 import { registerRoutes, type RouteServices } from "./http/routes.js";
 import { registerLlmRoutes } from "./http/llm-routes.js";
+import { registerAchievementRoutes } from "./http/achievement-routes.js";
 import type { Clock } from "./runtime/clock.js";
 import type { HourlyScheduler } from "./runtime/hourly-scheduler.js";
 import type { LlmServiceObservationOptions } from "./services/llm-service.js";
@@ -198,6 +199,7 @@ export async function buildApp(
 
     registerRoutes(app, services);
     registerLlmRoutes(app, services, options.llmObservation?.fetch);
+    registerAchievementRoutes(app, services);
 
     const shouldSeed = options.seedDemo ?? config.seedDemo;
     if (shouldSeed && store.countCharacters() === 0) {

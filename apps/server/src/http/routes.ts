@@ -42,6 +42,7 @@ import type { SseHub } from "../sse/hub.js";
 import type { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
 import type { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
 import type { AutobiographyService } from "../services/autobiography-service.js";
+import type { AchievementService } from "../services/achievement-service.js";
 import type { CalendarService } from "../services/calendar-service.js";
 import type { CharacterService } from "../services/character-service.js";
 import type { CheckpointService } from "../services/checkpoint-service.js";
@@ -75,6 +76,7 @@ import {
 } from "../services/relationship-archive-service.js";
 
 export type RouteServices = {
+  achievements: AchievementService;
   config: ServerConfig;
   store: DatabaseStore;
   clock: Clock;

@@ -1,10 +1,12 @@
 import {
   VisualPromptSpecSchema,
+  AchievementBadgeVisualSpecSchema,
+  type AchievementBadgeVisualSpec,
   type VisualPromptSpec,
 } from "@personasim/contracts";
 
 export interface ImageGenerationInput {
-  readonly visualSpec: VisualPromptSpec;
+  readonly visualSpec: VisualPromptSpec | AchievementBadgeVisualSpec;
   readonly width: number;
   readonly height: number;
   readonly idempotencyKey: string;
@@ -12,7 +14,7 @@ export interface ImageGenerationInput {
 
 export interface GeneratedImageAsset {
   readonly bytes: Uint8Array;
-  readonly mimeType: "image/svg+xml" | "image/png" | "image/webp";
+  readonly mimeType: "image/svg+xml" | "image/png" | "image/webp" | "image/jpeg";
   readonly width: number;
   readonly height: number;
 }
@@ -32,7 +34,10 @@ export class FixtureImageGenerationProvider implements ImageGenerationProvider {
     // fixture so validation failures have the same Promise semantics as real
     // network providers.
     await Promise.resolve();
-    const spec = VisualPromptSpecSchema.parse(input.visualSpec);
+    const parsed = input.visualSpec.version === "achievement_badge_v1"
+      ? AchievementBadgeVisualSpecSchema.parse(input.visualSpec)
+      : VisualPromptSpecSchema.parse(input.visualSpec);
+    const spec = { ...parsed, mood: "mood" in parsed ? parsed.mood : parsed.theme };
     const width = boundedDimension(input.width);
     const height = boundedDimension(input.height);
     const [paper, ink, accent] = [

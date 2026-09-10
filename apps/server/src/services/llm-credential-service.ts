@@ -31,6 +31,7 @@ const CredentialSchema = z.strictObject({
   tag: z.string(),
   ciphertext: z.string(),
 });
+const memoryKeys = new WeakMap<Database, Buffer>();
 
 export function llmKeyPath(databasePath: string): string {
   return `${databasePath}.llm-key`;
@@ -50,19 +51,18 @@ export function readLlmKeyMetadata(database: Database): LlmKeyMetadata | null {
       "SELECT fingerprint, key_version AS keyVersion FROM llm_key_metadata WHERE id=1",
     )
     .get();
-  if (
-    row === undefined &&
-    database
-      .prepare(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='llm_providers'",
-      )
-      .get() &&
-    database
-      .prepare(
-        "SELECT 1 FROM llm_providers WHERE credential_json IS NOT NULL AND credential_json <> 'unavailable' LIMIT 1",
-      )
-      .get()
-  ) {
+  const hasCredentials = ["llm_providers", "achievement_image_settings"].some(
+    (table) =>
+      database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
+        .get(table) &&
+      database
+        .prepare(
+          `SELECT 1 FROM ${table} WHERE credential_json IS NOT NULL AND credential_json <> 'unavailable' LIMIT 1`,
+        )
+        .get(),
+  );
+  if (row === undefined && hasCredentials) {
     throw new Error("Encrypted LLM credentials are missing key metadata");
   }
   return row === undefined ? null : LlmKeyMetadataSchema.parse(row);
@@ -99,7 +99,10 @@ export class LlmCredentialService {
     databasePath: string,
   ) {
     this.path = llmKeyPath(databasePath);
-    if (databasePath === ":memory:") this.memoryKey = randomBytes(32);
+    if (databasePath === ":memory:") {
+      this.memoryKey = memoryKeys.get(database) ?? randomBytes(32);
+      memoryKeys.set(database, this.memoryKey);
+    }
   }
 
   encrypt(providerId: string, apiKey: string): string {
@@ -166,15 +169,31 @@ export class LlmCredentialService {
         .run("unavailable");
       this.database.prepare("DELETE FROM llm_key_metadata").run();
       this.database.prepare("DELETE FROM llm_probe_results").run();
+      if (
+        this.database
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE name='achievement_image_settings'",
+          )
+          .get()
+      )
+        this.database
+          .prepare("UPDATE achievement_image_settings SET credential_json=NULL")
+          .run();
     })();
-    if (this.memoryKey !== undefined) this.memoryKey = randomBytes(32);
+    if (this.memoryKey !== undefined) {
+      this.memoryKey = randomBytes(32);
+      memoryKeys.set(this.database, this.memoryKey);
+    }
     this.key(true);
   }
 
   private key(create: boolean): Buffer {
     try {
       const metadata = readLlmKeyMetadata(this.database);
-      let key = this.memoryKey;
+      let key =
+        this.memoryKey === undefined
+          ? undefined
+          : memoryKeys.get(this.database);
       if (key === undefined && existsSync(this.path))
         key = readLlmKeyFile(this.path);
       if (key === undefined) {

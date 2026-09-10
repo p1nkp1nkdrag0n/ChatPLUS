@@ -1,6 +1,7 @@
 export * from "./clock.js";
 export * from "./fixture-llm.js";
 export * from "./image-generation.js";
+export * from "./achievement-images.js";
 export * from "./managed-llm.js";
 export * from "./openai-compatible-llm.js";
 export * from "./prompt-diagnostics.js";

@@ -1,4 +1,5 @@
 export * from "./api.js";
+export * from "./achievements.js";
 export * from "./autobiography.js";
 export * from "./calendar.js";
 export * from "./character.js";

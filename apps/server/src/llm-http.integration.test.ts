@@ -702,13 +702,18 @@ describe("runtime execution selection", () => {
       text: "你好",
       modelSelection: aSelection,
     };
+    const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
     const firstResponse = await app.inject({
       method: "POST",
       url: `/api/sessions/${first.sessionId}/messages`,
       payload: command,
     });
     expect(firstResponse.statusCode, firstResponse.body).toBe(201);
-    const firstTurn = body<ChatTurnResult>(firstResponse);
+    expect(
+      body<ChatTurnResult>(firstResponse).assistantMessage.metadata,
+    ).not.toHaveProperty("modelSelection");
+    const firstTurn = await (turnSpy.mock.results.at(-1)!
+      .value as Promise<ChatTurnResult>);
     expect(firstTurn.assistantMessage.metadata.modelSelection).toEqual(
       aSelection,
     );
@@ -730,8 +735,8 @@ describe("runtime execution selection", () => {
     });
     expect(secondResponse.statusCode, secondResponse.body).toBe(201);
     expect(
-      body<ChatTurnResult>(secondResponse).assistantMessage.metadata
-        .modelSelection,
+      (await (turnSpy.mock.results.at(-1)!.value as Promise<ChatTurnResult>))
+        .assistantMessage.metadata.modelSelection,
     ).toEqual(bSelection);
     expect(body<ChatTurnResult>(secondResponse).assistantMessage.content).toBe(
       normalText,

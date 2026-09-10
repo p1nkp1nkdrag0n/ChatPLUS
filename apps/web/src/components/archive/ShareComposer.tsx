@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type {
   KeepsakeSummaryResponse,
-  RelationshipArchiveEntry,
+  PublicRelationshipArchiveEntry as RelationshipArchiveEntry,
   RelationshipShareProjection,
   ShareComposerSelection,
   ShareRedaction,

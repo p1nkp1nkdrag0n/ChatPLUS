@@ -1,3 +1,7 @@
+import {
+  observeEvaluationTurns,
+  readEvaluationTurn,
+} from "./evaluation-turn-evidence.js";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -7,7 +11,6 @@ import { isDeepStrictEqual } from "node:util";
 
 import {
   CreateSessionResponseSchema,
-  SendMessageResponseSchema,
   characterSpecSchema,
 } from "@personasim/contracts";
 import {
@@ -263,6 +266,7 @@ export async function runProductLifeLongRun(
           }),
       },
     });
+    observeEvaluationTurns(app);
     active = true;
   }
   async function close(): Promise<void> {
@@ -643,7 +647,8 @@ export async function runProductLifeLongRun(
       );
       const evidence = await step(`turn-${turn}`, async () => {
         const before = auditProductLifeDatabase(database, character.id);
-        const response = SendMessageResponseSchema.parse(
+        const response = readEvaluationTurn(
+          app,
           await http("POST", `/api/sessions/${sessionId}/messages`, {
             agentId: character.id,
             clientMessageId: `product-life-turn-${turn}`,
@@ -690,7 +695,8 @@ export async function runProductLifeLongRun(
       );
       if (turn === 1) {
         await step("message-idempotence", async () => {
-          const response = SendMessageResponseSchema.parse(
+          const response = readEvaluationTurn(
+            app,
             await http("POST", `/api/sessions/${sessionId}/messages`, {
               agentId: character.id,
               clientMessageId: "product-life-turn-1",

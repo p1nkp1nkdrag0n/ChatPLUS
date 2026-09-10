@@ -1,3 +1,4 @@
+import type { SettlementResult } from "./settlement-service.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -180,6 +181,11 @@ describe("P0 personal-life long-run acceptance", () => {
 
     await closeTrackedApp(first);
     const restarted = await openTrackedApp(databasePath, clock);
+    const settlementSpy = vi.spyOn(
+      restarted.personasim.settlements,
+      "settleAndExtend",
+    );
+    const turnSpy = vi.spyOn(restarted.personasim.conversations, "chat");
 
     const replay = await sendMessage(
       restarted,
@@ -201,31 +207,23 @@ describe("P0 personal-life long-run acceptance", () => {
       url: `/api/agents/${character.id}/activate`,
     });
     expect(activation.statusCode).toBe(200);
-    const activationBody = jsonBody<{
-      settlement: {
-        fromUtc: string;
-        toUtc: string;
-        alreadySettled: boolean;
-      };
-      proactiveMessage?: {
-        messageKind: string;
-        triggerEventId?: string;
-      };
-      capabilities?: {
-        proactiveDialogue: boolean;
-      };
-    }>(activation);
-    expect(activationBody.settlement).toMatchObject({
+    const activationBody = jsonBody<{ proactiveMessage?: unknown }>(activation);
+    expect(activationBody).not.toHaveProperty("settlement");
+    const settlement = await (settlementSpy.mock.results.at(-1)!
+      .value as Promise<SettlementResult>);
+    const developerOverview = await restarted.inject({
+      method: "GET",
+      url: `/api/developer/agents/${character.id}/overview`,
+    });
+    const capabilities = developerOverview.json<{
+      capabilities: { proactiveDialogue: boolean };
+    }>().capabilities;
+    expect(settlement).toMatchObject({
       fromUtc: START_UTC,
       toUtc: SETTLEMENT_UTC,
       alreadySettled: false,
     });
-    expect(
-      minutesBetween(
-        activationBody.settlement.fromUtc,
-        activationBody.settlement.toUtc,
-      ),
-    ).toBe(29 * 60);
+    expect(minutesBetween(settlement.fromUtc, settlement.toUtc)).toBe(29 * 60);
 
     const completed = restarted.personasim.store
       .listActivityEvents(character.id, 100)
@@ -239,7 +237,7 @@ describe("P0 personal-life long-run acceptance", () => {
       throw new Error("Missing the completed self-initiated activity.");
     }
     expect(completed?.stateDelta.energy).toBe(selfPlan.stateEffects.energy);
-    expect(activationBody.capabilities?.proactiveDialogue).toBe(false);
+    expect(capabilities.proactiveDialogue).toBe(false);
     expect(activationBody.proactiveMessage).toBeUndefined();
     expect(
       restarted.personasim.store.getRuntimeState(character.id)
@@ -321,7 +319,9 @@ describe("P0 personal-life long-run acceptance", () => {
       recallQuery,
     );
     expect(recall.statusCode).toBe(201);
-    const recallBody = jsonBody<ChatTurnResult>(recall);
+    expect(jsonBody<object>(recall)).not.toHaveProperty("memoryRecall");
+    const recallBody = await (turnSpy.mock.results.at(-1)!
+      .value as Promise<ChatTurnResult>);
     expect(recallBody.memoryRecall).toMatchObject({
       rolloutMode: "enforced",
       promptStrategy: "evidence_selected",
@@ -373,7 +373,7 @@ describe("P0 personal-life long-run acceptance", () => {
 
     const timelineResponse = await restarted.inject({
       method: "GET",
-      url: `/api/agents/${character.id}/timeline?limit=100`,
+      url: `/api/developer/agents/${character.id}/timeline?limit=100`,
     });
     expect(timelineResponse.statusCode).toBe(200);
     const timeline = jsonBody<TimelineResponse>(timelineResponse);
@@ -462,8 +462,10 @@ describe("P0 personal-life long-run acceptance", () => {
     });
     expect(drainedActivation.statusCode).toBe(200);
     expect(
-      jsonBody<{ settlement: { alreadySettled: boolean } }>(drainedActivation)
-        .settlement.alreadySettled,
+      (
+        await (settlementSpy.mock.results.at(-1)!
+          .value as Promise<SettlementResult>)
+      ).alreadySettled,
     ).toBe(true);
     const drainedSelfPlans = restarted.personasim.store
       .listSchedule(character.id)
@@ -499,14 +501,20 @@ describe("P0 personal-life long-run acceptance", () => {
 
     await closeTrackedApp(restarted);
     const restartedAgain = await openTrackedApp(databasePath, clock);
+    const repeatedSettlementSpy = vi.spyOn(
+      restartedAgain.personasim.settlements,
+      "settleAndExtend",
+    );
     const repeatedActivation = await restartedAgain.inject({
       method: "POST",
       url: `/api/agents/${character.id}/activate`,
     });
     expect(repeatedActivation.statusCode).toBe(200);
     expect(
-      jsonBody<{ settlement: { alreadySettled: boolean } }>(repeatedActivation)
-        .settlement.alreadySettled,
+      (
+        await (repeatedSettlementSpy.mock.results.at(-1)!
+          .value as Promise<SettlementResult>)
+      ).alreadySettled,
     ).toBe(true);
     expect(
       jsonBody<{ proactiveMessage?: unknown }>(repeatedActivation),

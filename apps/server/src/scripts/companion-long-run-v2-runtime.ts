@@ -1,9 +1,13 @@
+import {
+  observeEvaluationTurns,
+  readEvaluationTurn,
+} from "./evaluation-turn-evidence.js";
 import { performance } from "node:perf_hooks";
 import { request as requestHttp } from "node:http";
 
 import {
   CreateSessionResponseSchema,
-  SendMessageResponseSchema,
+  PublicSendMessageResponseSchema,
   type SendMessageResponse,
 } from "@personasim/contracts";
 
@@ -117,6 +121,7 @@ export class LongRunV2Runtime {
     } finally {
       globalThis.fetch = previousGlobalFetch;
     }
+    observeEvaluationTurns(this.app);
     this.origin = await this.app.listen({ host: "127.0.0.1", port: 0 });
     this.restoreSessionMap();
   }
@@ -324,10 +329,12 @@ export class LongRunV2Runtime {
         text: input.text,
       }),
     });
-    const parsed = SendMessageResponseSchema.safeParse(http.body);
+    const parsed = PublicSendMessageResponseSchema.safeParse(http.body);
     return {
       http,
-      ...(parsed.success ? { parsed: parsed.data } : {}),
+      ...(parsed.success
+        ? { parsed: readEvaluationTurn(this.app!, parsed.data) }
+        : {}),
       observations: this.observer.slice(cursor),
     };
   }

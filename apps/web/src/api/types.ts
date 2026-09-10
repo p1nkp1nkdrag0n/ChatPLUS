@@ -13,6 +13,7 @@ import type {
   MemoryRecallQuery,
   MemoryRecallResult,
   ProactivePolicy,
+  PublicAgentSnapshot,
   RetrievalScoreBreakdown,
   RoutineRule,
   SchedulePolicy,
@@ -37,11 +38,11 @@ export type {
   LetterStatus,
   LetterSummaryResponse,
   OpenLetterResponse,
-  RelationshipArchiveEntry,
+  PublicRelationshipArchiveEntry as RelationshipArchiveEntry,
   RelationshipArchiveEntryId,
   RelationshipArchiveFilter,
   RelationshipArchiveQuery,
-  RelationshipArchivePageResponse,
+  PublicRelationshipArchivePageResponse as RelationshipArchivePageResponse,
   RelationshipShareProjection,
   SealLetterRequest,
   ShareComposerSelection,
@@ -172,20 +173,7 @@ export interface RuntimeState {
 
 export type FuzzyLifeContext = FuzzyLifePromptContext;
 
-export interface AgentSnapshot {
-  capabilities: {
-    fuzzyLife: boolean;
-    legacyExactSchedule: boolean;
-    /** @deprecated Compatibility alias for legacyExactSchedule. */
-    schedule: boolean;
-  };
-  state: RuntimeState;
-  schedule: ScheduleItem[];
-  serverTimeUtc: string;
-  lifeContext?: FuzzyLifeContext;
-  proactiveMessage?: ChatMessage;
-  warnings?: string[];
-}
+export type AgentSnapshot = PublicAgentSnapshot;
 
 export type ScheduleStatus =
   "planned" | "in_progress" | "completed" | "partial" | "skipped" | "cancelled";
@@ -264,6 +252,7 @@ export interface AppSettings {
   reasoningRequestFormat: string;
   hasApiKey: boolean;
   clockMode: "system" | "fake";
+  developerMode: boolean;
   correspondenceMode: "off" | "shadow" | "enforced";
   correspondenceExecution: "lazy" | "resident" | "worker";
   keepsakeMode: "off" | "shadow" | "enforced";

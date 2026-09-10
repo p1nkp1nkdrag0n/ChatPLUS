@@ -1,6 +1,7 @@
 import type { ServerResponse } from "node:http";
 
 import { nanoid } from "nanoid";
+import { projectPublicEventData } from "../http/public-projection.js";
 
 export type SseEvent = {
   type: string;
@@ -38,6 +39,7 @@ export class SseHub {
     const payload = {
       id: `sse-${nanoid()}`,
       ...event,
+      data: projectPublicEventData(event.type, event.data),
       emittedAtUtc: event.occurredAtUtc,
     };
     const encoded = `id: ${payload.id}\nevent: ${event.type}\ndata: ${JSON.stringify(payload)}\n\n`;

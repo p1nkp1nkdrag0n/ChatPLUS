@@ -172,6 +172,7 @@ export async function createArchitectureRuntime(input: {
         },
       },
     });
+    observeEvaluationTurns(app);
     createdApp = app;
     const seeding: unknown[] = [];
     const persona = new PersonaRuntimeService(
@@ -396,7 +397,10 @@ export async function runArchitectureFullTurn(
     { content?: string; metadata?: Record<string, unknown> } | undefined;
   return {
     text: assistant?.content ?? "",
-    metadata: assistant?.metadata ?? {},
+    metadata:
+      response.statusCode < 400
+        ? readEvaluationTurn(runtime.app, body).assistantMessage.metadata
+        : {},
     statusCode: response.statusCode,
     body,
     events: runtime.events.slice(eventStart),
@@ -598,3 +602,7 @@ export const architectureFixtureFetch: typeof fetch = () =>
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
     }),
   );
+import {
+  observeEvaluationTurns,
+  readEvaluationTurn,
+} from "./evaluation-turn-evidence.js";

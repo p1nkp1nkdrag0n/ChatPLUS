@@ -5,13 +5,14 @@ import {
   KeepsakePageResponseSchema,
   LetterDetailResponseSchema,
   OpenLetterResponseSchema,
-  RelationshipArchivePageResponseSchema,
+  PublicRelationshipArchivePageResponseSchema as RelationshipArchivePageResponseSchema,
   RelationshipShareProjectionSchema,
   RetryLetterReplyGenerationResponseSchema,
   type CorrespondenceMailboxQuery,
   type CreateLetterDraftRequest,
   type KeepsakeListQuery,
   type MemoryRecallPreviewResponse,
+  type PublicSendMessageResponse,
   type LlmExecutionSelection,
   type RelationshipArchiveEntryId,
   type RelationshipArchiveFilter,
@@ -473,27 +474,17 @@ export const api = {
         modelSelection?: LlmExecutionSelection;
       },
     ) => {
-      const value = await request<
+      const value = await request<PublicSendMessageResponse>(
+        `/api/sessions/${sessionId}/messages`,
         {
-          userMessage: ChatMessage;
-          assistantMessage: ChatMessage;
-          scheduleEffects?: unknown[];
-          scheduleChanges?: unknown[];
-          state?: RuntimeState;
-          schedule?: ScheduleItem[];
-        } & Record<string, unknown>
-      >(`/api/sessions/${sessionId}/messages`, {
-        method: "POST",
-        body: body(input),
-      });
+          method: "POST",
+          body: body(input),
+        },
+      );
       return {
         ...value,
-        userMessage: normalizeMessage(
-          value.userMessage as unknown as Record<string, unknown>,
-        ),
-        assistantMessage: normalizeMessage(
-          value.assistantMessage as unknown as Record<string, unknown>,
-        ),
+        userMessage: normalizeMessage(value.userMessage),
+        assistantMessage: normalizeMessage(value.assistantMessage),
       };
     },
   },
@@ -503,6 +494,7 @@ export const api = {
       const editable: Record<string, unknown> = { ...settings };
       delete editable.hasApiKey;
       delete editable.clockMode;
+      delete editable.developerMode;
       delete editable.llmProvider;
       delete editable.llmProfile;
       delete editable.model;
@@ -520,14 +512,16 @@ export const api = {
     },
   },
   developer: {
+    achievements: () =>
+      request<Record<string, unknown>>("/api/developer/achievements"),
     snapshot: async (agentId: string) => {
-      const [status, overview, memories, timeline] = await Promise.all([
+      const [status, snapshot] = await Promise.all([
         request<Record<string, unknown>>("/api/developer/status"),
-        request<Record<string, unknown>>(`/api/agents/${agentId}/overview`),
-        request<Record<string, unknown>>(`/api/agents/${agentId}/memories`),
-        request<Record<string, unknown>>(`/api/agents/${agentId}/timeline`),
+        request<Record<string, unknown>>(
+          `/api/developer/agents/${encodeURIComponent(agentId)}/snapshot`,
+        ),
       ]);
-      return { status, overview, memories, timeline };
+      return { status, ...snapshot };
     },
     llmCalls: () =>
       request<{ calls: Array<Record<string, unknown>> }>(
@@ -746,6 +740,7 @@ function normalizeSettings(value: unknown): AppSettings {
         ? runtime.keepsakeMode
         : "off",
     locale: stringValue(settings.locale, "zh-CN"),
+    developerMode: runtime.developerMode === true,
     defaultTimezone: stringValue(settings.defaultTimezone, "Asia/Shanghai"),
     replyGoalReviewEnabled: settings.replyGoalReviewEnabled === true,
   };

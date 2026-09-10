@@ -81,12 +81,17 @@ describe("companion context pipeline", () => {
         });
       await send("同事小林临时取消了约定，我今天只想说说。", "context-first");
       const generate = vi.spyOn(app.personasim.llm, "generateObject");
+      const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
       const response = await send(
         "她今天又那样了，为什么我总是把事情弄糟。",
         "context-next",
       );
       expect(response.statusCode, response.body).toBe(201);
-      const result = response.json<ChatTurnResult>();
+      expect(
+        response.json<ChatTurnResult>().assistantMessage.metadata,
+      ).not.toHaveProperty("companionContext");
+      const result = await (turnSpy.mock.results[0]!
+        .value as Promise<ChatTurnResult>);
       const diagnostic = result.assistantMessage.metadata[
         "companionContext"
       ] as { mode: string; plan: ConversationContextPlan } | undefined;
@@ -114,9 +119,8 @@ describe("companion context pipeline", () => {
       expect(replay.json<ChatTurnResult>().idempotentReplay).toBe(true);
       expect(generate.mock.calls.length).toBe(before);
       expect(
-        replay.json<ChatTurnResult>().assistantMessage.metadata[
-          "companionContext"
-        ],
+        (await (turnSpy.mock.results[1]!.value as Promise<ChatTurnResult>))
+          .assistantMessage.metadata["companionContext"],
       ).toEqual(diagnostic);
       if (mode === "enforced") {
         const contexts = app.personasim.kernel.registry.resolve(

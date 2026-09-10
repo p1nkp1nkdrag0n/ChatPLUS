@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import {
   CharacterSpecSchema,
   type CharacterSpec,
@@ -15,7 +16,6 @@ import {
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
-import type { ChatTurnResult } from "./conversation-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
 
 const NOW = "2026-09-06T04:00:00.000Z";
@@ -119,10 +119,10 @@ describe("persona runtime through committed HTTP turns", () => {
   }
 
   function send(sessionId: string, text: string, clientMessageId: string) {
-    return app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: { agentId: spec.id, text, clientMessageId },
+    return injectInternalChat(app, sessionId, {
+      agentId: spec.id,
+      text,
+      clientMessageId,
     });
   }
 
@@ -130,7 +130,7 @@ describe("persona runtime through committed HTTP turns", () => {
     const sessionId = await newSession();
     const response = await send(sessionId, PREFERENCE, "learn-practice");
     expect(response.statusCode, response.body).toBe(201);
-    return response.json<ChatTurnResult>();
+    return response.internalTurn!;
   }
 
   function runtime() {
@@ -188,9 +188,7 @@ describe("persona runtime through committed HTTP turns", () => {
       "question-grounding-1",
     );
     expect(first.statusCode, first.body).toBe(201);
-    expect(first.json<ChatTurnResult>().assistantMessage.content).toBe(
-      "那是什么店？",
-    );
+    expect(first.internalTurn!.assistantMessage.content).toBe("那是什么店？");
     reply = "咖啡店啊，灯光舒服确实适合坐一会儿。";
     const answer = await send(sessionId, "咖啡店。", "question-grounding-2");
     expect(answer.statusCode, answer.body).toBe(201);
@@ -248,9 +246,7 @@ describe("persona runtime through committed HTTP turns", () => {
       });
     const first = await send(sessionId, previousUser, "natural-topic-shift-1");
     expect(first.statusCode, first.body).toBe(201);
-    expect(first.json<ChatTurnResult>().assistantMessage.content).toBe(
-      previousReply,
-    );
+    expect(first.internalTurn!.assistantMessage.content).toBe(previousReply);
 
     const decisions = app.personasim.kernel.registry.resolve(
       TURN_DECISION_SERVICE_TOKEN,
@@ -328,9 +324,7 @@ describe("persona runtime through committed HTTP turns", () => {
         expect(prompt).toContain(`"helpTiming":"${helpTiming}"`);
       }
       expect(
-        response.json<ChatTurnResult>().assistantMessage.metadata[
-          "companionContext"
-        ],
+        response.internalTurn!.assistantMessage.metadata["companionContext"],
       ).toMatchObject({
         plan: {
           intent: "help",
@@ -413,7 +407,7 @@ describe("persona runtime through committed HTTP turns", () => {
         decide.mock.calls[0]?.[0].conversationPlan?.resolvedCurrentTopic,
       ).toMatchObject({
         basis: "recent_user_continuity",
-        sourceMessageIds: [backToWork.json<ChatTurnResult>().userMessage.id],
+        sourceMessageIds: [backToWork.internalTurn!.userMessage.id],
       });
       expect(
         decide.mock.calls[0]?.[0].effectivePersona?.relationshipPractices,
@@ -601,7 +595,7 @@ describe("persona runtime through committed HTTP turns", () => {
 
       const retried = await send(sessionId, text, clientId);
       expect(retried.statusCode, retried.body).toBe(201);
-      const accepted = retried.json<ChatTurnResult>();
+      const accepted = retried.internalTurn!;
       expect(
         snapshot().relationshipPractices.filter(
           (item) => item.proposal.practice === "fewer_questions",
@@ -613,7 +607,7 @@ describe("persona runtime through committed HTTP turns", () => {
       const generationsAfter = generate.mock.calls.length;
       const replay = await send(sessionId, text, clientId);
       expect(replay.statusCode, replay.body).toBe(200);
-      expect(replay.json<ChatTurnResult>()).toMatchObject({
+      expect(replay.internalTurn!).toMatchObject({
         idempotentReplay: true,
         userMessage: { id: accepted.userMessage.id },
         assistantMessage: { id: accepted.assistantMessage.id },
@@ -754,9 +748,7 @@ describe("persona runtime through committed HTTP turns", () => {
       app.personasim.store.getCharacterSpec(spec.id, beforePublication.version),
     ).toEqual(beforePublication);
     expect(
-      response.json<ChatTurnResult>().assistantMessage.metadata[
-        "personaRuntime"
-      ],
+      response.internalTurn!.assistantMessage.metadata["personaRuntime"],
     ).toMatchObject({ mode: "shadow", revision: 0 });
   });
 
@@ -811,9 +803,7 @@ describe("persona runtime through committed HTTP turns", () => {
       '"observedAdherenceEvidenceIds":[]',
     );
     expect(
-      response.json<ChatTurnResult>().assistantMessage.metadata[
-        "personaRuntime"
-      ],
+      response.internalTurn!.assistantMessage.metadata["personaRuntime"],
     ).toMatchObject({
       revision: effective?.revision,
       adaptationIds: effective?.relationshipPractices.map((item) => item.id),

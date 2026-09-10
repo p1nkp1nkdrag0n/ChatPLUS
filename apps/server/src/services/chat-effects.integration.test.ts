@@ -1,10 +1,10 @@
+import type { ChatTurnResult } from "./conversation-service.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
-import type { ChatTurnResult } from "./conversation-service.js";
 import type { GenerateObjectInput, LlmService } from "./llm-service.js";
 
 const START_UTC = "2026-08-16T02:00:00.000Z"; // 10:00 Asia/Shanghai
@@ -57,6 +57,7 @@ describe("live chat schedule-effect proposals", () => {
 
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
+    const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
     calls.length = 0;
 
     const response = await sendMessage(
@@ -68,7 +69,9 @@ describe("live chat schedule-effect proposals", () => {
     );
 
     expect(response.statusCode).toBe(201);
-    const body = jsonBody<ChatTurnResult>(response);
+    expect(JSON.parse(response.body)).not.toHaveProperty("scheduleChanges");
+    const body = await (turnSpy.mock.results[0]!
+      .value as Promise<ChatTurnResult>);
     expect(body.assistantMessage.content).toBe(
       "好呀，我愿意一起去。\n学习的事我来重新安排。",
     );
@@ -120,6 +123,7 @@ describe("live chat schedule-effect proposals", () => {
 
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
+    const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
     calls.length = 0;
 
     const response = await sendMessage(
@@ -131,7 +135,9 @@ describe("live chat schedule-effect proposals", () => {
     );
 
     expect(response.statusCode).toBe(201);
-    const body = jsonBody<ChatTurnResult>(response);
+    expect(JSON.parse(response.body)).not.toHaveProperty("scheduleChanges");
+    const body = await (turnSpy.mock.results[0]!
+      .value as Promise<ChatTurnResult>);
     expect(body.assistantMessage.content).toBe(
       "我今晚已经有安排了，不过谢谢你想着我。",
     );
@@ -164,6 +170,7 @@ describe("live chat schedule-effect proposals", () => {
 
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
+    const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
     calls.length = 0;
 
     const response = await sendMessage(
@@ -175,7 +182,9 @@ describe("live chat schedule-effect proposals", () => {
     );
 
     expect(response.statusCode).toBe(201);
-    const body = jsonBody<ChatTurnResult>(response);
+    expect(JSON.parse(response.body)).not.toHaveProperty("scheduleChanges");
+    const body = await (turnSpy.mock.results[0]!
+      .value as Promise<ChatTurnResult>);
     expect(body.scheduleChanges).toEqual([]);
     expect(body.assistantMessage.metadata.decisionPath).toBe("reply_only");
     const chatCall = calls.find((input) => input.purpose === "chat_turn");
@@ -210,6 +219,7 @@ describe("live chat schedule-effect proposals", () => {
 
     const character = await createAndPublishHighFidelity(app);
     const sessionId = await createSession(app, character.id);
+    const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
     calls.length = 0;
 
     const response = await sendMessage(
@@ -221,7 +231,9 @@ describe("live chat schedule-effect proposals", () => {
     );
 
     expect(response.statusCode).toBe(201);
-    const body = jsonBody<ChatTurnResult>(response);
+    expect(JSON.parse(response.body)).not.toHaveProperty("scheduleChanges");
+    const body = await (turnSpy.mock.results[0]!
+      .value as Promise<ChatTurnResult>);
     expect(body.scheduleChanges).toEqual([]);
     expect(body.assistantMessage.metadata.decisionPath).toBe("reply_only");
   });

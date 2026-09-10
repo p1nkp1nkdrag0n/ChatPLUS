@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -602,13 +603,13 @@ describe("continuity memory recall hierarchy", () => {
     const modelCallCountBeforeGuard = vi.mocked(app.personasim.llm)
       .generateObject.mock.calls.length;
     publish.mockClear();
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${recallSession.id}/messages`,
-      payload: requestPayload,
-    });
+    const response = await injectInternalChat(
+      app,
+      recallSession.id,
+      requestPayload,
+    );
     expect(response.statusCode).toBe(201);
-    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    const exchange = SendMessageResponseSchema.parse(response.internalTurn);
     expect(exchange.memoryRecall).toMatchObject({
       rolloutMode: "enforced",
       recallMode: "basic_memory",
@@ -772,14 +773,14 @@ describe("continuity memory recall hierarchy", () => {
       app,
       harness.agentId,
     );
-    const replayResponse = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${recallSession.id}/messages`,
-      payload: requestPayload,
-    });
+    const replayResponse = await injectInternalChat(
+      app,
+      recallSession.id,
+      requestPayload,
+    );
     expect(replayResponse.statusCode).toBe(200);
     const replayExchange = SendMessageResponseSchema.parse(
-      JSON.parse(replayResponse.body),
+      replayResponse.internalTurn,
     );
     expect(replayExchange.idempotentReplay).toBe(true);
     expect(replayExchange.assistantMessage).toEqual(exchange.assistantMessage);
@@ -790,11 +791,11 @@ describe("continuity memory recall hierarchy", () => {
     );
     expect(chatTurnModelCallCount(app)).toBe(0);
     expect(publish).toHaveBeenCalledTimes(publishCountAfterFirst);
-    const idempotencyConflict = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${recallSession.id}/messages`,
-      payload: { ...requestPayload, text: `${EXPLICIT_FACT_QUERY}不同文本` },
-    });
+    const idempotencyConflict = await injectInternalChat(
+      app,
+      recallSession.id,
+      { ...requestPayload, text: `${EXPLICIT_FACT_QUERY}不同文本` },
+    );
     expect(idempotencyConflict.statusCode).toBe(409);
     expect(
       (JSON.parse(idempotencyConflict.body) as { error: { code: string } })
@@ -982,18 +983,18 @@ describe("continuity memory recall hierarchy", () => {
       app,
       harness.agentId,
     );
-    const incompleteHttpResponse = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${recallSession.id}/messages`,
-      payload: {
+    const incompleteHttpResponse = await injectInternalChat(
+      app,
+      recallSession.id,
+      {
         agentId: harness.agentId,
         clientMessageId: "explicit-fact-recall-incomplete-http",
         text: "替我核对两件旧事：我喝茶的习惯，和那只木盒的标签。只答事实。",
       },
-    });
+    );
     expect(incompleteHttpResponse.statusCode).toBe(201);
     const incompleteExchange = SendMessageResponseSchema.parse(
-      JSON.parse(incompleteHttpResponse.body),
+      incompleteHttpResponse.internalTurn,
     );
     expect(incompleteExchange.memoryRecall).toMatchObject({
       abstained: true,
@@ -1806,18 +1807,14 @@ describe("continuity memory recall hierarchy", () => {
       .calls.length;
 
     publish.mockClear();
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${recallSession.id}/messages`,
-      payload: {
-        agentId: harness.agentId,
-        clientMessageId: "fact-verification-with-pending-offer",
-        text: EXPLICIT_FACT_QUERY,
-      },
+    const response = await injectInternalChat(app, recallSession.id, {
+      agentId: harness.agentId,
+      clientMessageId: "fact-verification-with-pending-offer",
+      text: EXPLICIT_FACT_QUERY,
     });
 
     expect(response.statusCode).toBe(201);
-    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    const exchange = SendMessageResponseSchema.parse(response.internalTurn);
     expect(exchange.memoryRecall).toMatchObject({
       rolloutMode: "enforced",
       abstained: false,
@@ -1958,14 +1955,10 @@ describe("continuity memory recall hierarchy", () => {
         return prepared;
       });
 
-      const response = await app.inject({
-        method: "POST",
-        url: `/api/sessions/${session.id}/messages`,
-        payload: {
-          agentId: harness.agentId,
-          clientMessageId: `stale-fact-${conflict}`,
-          text: EXPLICIT_FACT_QUERY,
-        },
+      const response = await injectInternalChat(app, session.id, {
+        agentId: harness.agentId,
+        clientMessageId: `stale-fact-${conflict}`,
+        text: EXPLICIT_FACT_QUERY,
       });
 
       expect(response.statusCode, response.body).toBe(409);
@@ -2003,18 +1996,14 @@ describe("continuity memory recall hierarchy", () => {
     const callsBefore = vi.mocked(app.personasim.llm).generateObject.mock.calls
       .length;
 
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${session.id}/messages`,
-      payload: {
-        agentId: harness.agentId,
-        clientMessageId: "ordinary-rain-conversation",
-        text: "今天压力很大，只想聊聊窗外的雨。",
-      },
+    const response = await injectInternalChat(app, session.id, {
+      agentId: harness.agentId,
+      clientMessageId: "ordinary-rain-conversation",
+      text: "今天压力很大，只想聊聊窗外的雨。",
     });
 
     expect(response.statusCode).toBe(201);
-    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    const exchange = SendMessageResponseSchema.parse(response.internalTurn);
     expect(exchange.assistantMessage.content).toBe(
       "你喝不加糖的红茶；\n木盒标签我不知道。",
     );
@@ -2096,18 +2085,14 @@ describe("continuity memory recall hierarchy", () => {
       "Negative preference fact verification",
     );
 
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${recallSession.id}/messages`,
-      payload: {
-        agentId: harness.agentId,
-        clientMessageId: "negative-preference-fact-verification",
-        text: EXPLICIT_FACT_QUERY,
-      },
+    const response = await injectInternalChat(app, recallSession.id, {
+      agentId: harness.agentId,
+      clientMessageId: "negative-preference-fact-verification",
+      text: EXPLICIT_FACT_QUERY,
     });
 
     expect(response.statusCode).toBe(201);
-    const exchange = SendMessageResponseSchema.parse(JSON.parse(response.body));
+    const exchange = SendMessageResponseSchema.parse(response.internalTurn);
     expect(exchange.memoryRecall).toMatchObject({
       rolloutMode: "enforced",
       abstained: false,

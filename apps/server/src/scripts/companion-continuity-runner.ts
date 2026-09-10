@@ -1,3 +1,7 @@
+import {
+  observeEvaluationTurns,
+  readEvaluationTurn,
+} from "./evaluation-turn-evidence.js";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -6,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import {
   CreateSessionResponseSchema,
   CorrespondenceMailboxResponseSchema,
-  SendMessageResponseSchema,
+  type SendMessageResponseSchema,
   characterSpecSchema,
   isCompanionCharacterPolicy,
   type CharacterSpec,
@@ -324,6 +328,7 @@ async function runLockedContinuity(
         append("provider-metrics.jsonl", { turn: activeTurn, ...metric }),
     },
   }).catch(startupFailure);
+  observeEvaluationTurns(app);
   const origin = await app
     .listen({ host: "127.0.0.1", port: 0 })
     .catch(async (error: unknown) => {
@@ -537,7 +542,8 @@ async function runLockedContinuity(
         atUtc: clock.nowUtc(),
       });
       const before = auditProductLifeDatabase(database, character.id);
-      const response = SendMessageResponseSchema.parse(
+      const response = readEvaluationTurn(
+        app,
         await http(
           "POST",
           `/api/sessions/${journal.sessions[step.sessionKey]}/messages`,
@@ -573,7 +579,8 @@ async function runLockedContinuity(
       });
       // A replay goes through the product idempotency path and must not call a model.
       const callsBeforeReplay = replayCounters();
-      const replay = SendMessageResponseSchema.parse(
+      const replay = readEvaluationTurn(
+        app,
         await http(
           "POST",
           `/api/sessions/${journal.sessions[step.sessionKey]}/messages`,

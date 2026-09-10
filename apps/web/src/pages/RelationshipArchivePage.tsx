@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type {
   KeepsakeSummaryResponse,
-  RelationshipArchiveEntry,
+  PublicRelationshipArchiveEntry as RelationshipArchiveEntry,
   RelationshipArchiveFilter,
 } from "@personasim/contracts";
 import { RelationshipArchiveEntryIdSchema } from "@personasim/contracts";
@@ -371,6 +371,5 @@ function archiveEntryId(entry: RelationshipArchiveEntry): string {
   if (entry.sourceType === "relationship_milestone") {
     return `relationship_milestone:${entry.id}`;
   }
-  if (entry.sourceType === "reflection") return `reflection:${entry.id}`;
   return `life_outcome:${entry.id}`;
 }

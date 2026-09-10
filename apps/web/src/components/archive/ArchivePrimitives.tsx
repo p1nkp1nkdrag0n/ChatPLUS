@@ -15,7 +15,7 @@ import type {
   KeepsakeDetailResponse,
   KeepsakeKind,
   KeepsakeSummaryResponse,
-  RelationshipArchiveEntry,
+  PublicRelationshipArchiveEntry as RelationshipArchiveEntry,
   RelationshipShareProjection,
 } from "@personasim/contracts";
 import type { LucideIcon } from "lucide-react";

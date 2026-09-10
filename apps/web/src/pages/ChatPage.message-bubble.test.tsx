@@ -63,7 +63,7 @@ describe("MessageBubble initial rendering", () => {
     expect(markup).not.toContain("正在输入下一条消息");
   });
 
-  it("shows a user-facing explanation for persisted recall evidence", () => {
+  it("does not render internal recall diagnostics even from an older cached message", () => {
     const markup = renderMessage(
       {
         ...message,
@@ -84,8 +84,9 @@ describe("MessageBubble initial rendering", () => {
       false,
     );
 
-    expect(markup).toContain("本轮记忆依据 · 1 条证据");
-    expect(markup).toContain("已用于回复：对话原文，相关度 86%");
+    expect(markup).not.toContain("本轮记忆依据");
+    expect(markup).not.toContain("相关度");
+    expect(markup).not.toContain("86%");
   });
 });
 

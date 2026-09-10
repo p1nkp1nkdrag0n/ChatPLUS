@@ -1,3 +1,5 @@
+import type { SettlementResult } from "./settlement-service.js";
+import type { ChatTurnResult } from "./conversation-service.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +13,6 @@ import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import { FixtureLlmProvider } from "@personasim/providers";
-import type { ChatTurnResult } from "./conversation-service.js";
 import { calculateLlmPromptTokenBudget } from "./llm-prompt-headroom.js";
 import type { GenerateObjectInput, LlmService } from "./llm-service.js";
 
@@ -95,6 +96,7 @@ describe("P1 default-policy 30-day continuity long run", () => {
     const character = await createAndPublish(app);
     const sessionId = await createSession(app, character.id);
     const observations: ChatObservation[] = [];
+    const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
     const promptTokenBudget = calculateLlmPromptTokenBudget(
       app.personasim.llm.capabilities,
     );
@@ -124,7 +126,9 @@ describe("P1 default-policy 30-day continuity long run", () => {
       });
       expect(response.statusCode).toBe(201);
       expect(chatCalls).toHaveLength(callsBefore + 1);
-      const body = jsonBody<ChatTurnResult>(response);
+      expect(JSON.parse(response.body)).not.toHaveProperty("state");
+      const body = await (turnSpy.mock.results.at(-1)!
+        .value as Promise<ChatTurnResult>);
       const persistedTurn = app.personasim.store.findTurnByClientMessageId(
         sessionId,
         `default-run-day-${day}`,
@@ -302,14 +306,21 @@ describe("P1 default-policy 30-day continuity long run", () => {
     await app.close();
     activeApps.delete(app);
     const restarted = await openTrackedApp(databasePath, clock);
+    const settlementSpy = vi.spyOn(
+      restarted.personasim.settlements,
+      "settleAndExtend",
+    );
     const drained = await restarted.inject({
       method: "POST",
       url: `/api/agents/${character.id}/activate`,
     });
     expect(drained.statusCode).toBe(200);
     expect(
-      JSON.parse(drained.body) as { settlement: { alreadySettled: boolean } },
-    ).toMatchObject({ settlement: { alreadySettled: true } });
+      await (settlementSpy.mock.results.at(-1)!
+        .value as Promise<SettlementResult>),
+    ).toMatchObject({
+      alreadySettled: true,
+    });
     expect(
       durableRestartSnapshot(restarted.personasim.store, character.id),
     ).toEqual(restartSnapshot);
@@ -517,10 +528,6 @@ function labeledPromptJson<T>(prompt: string, label: string): T {
     throw new Error(`Prompt label ${label} was not found`);
   }
   return JSON.parse(value) as T;
-}
-
-function jsonBody<T>(response: { body: string }): T {
-  return JSON.parse(response.body) as T;
 }
 
 function isoDayOffset(baseUtc: string, days: number, hour: number): string {

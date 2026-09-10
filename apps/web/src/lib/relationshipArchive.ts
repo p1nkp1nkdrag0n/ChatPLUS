@@ -3,7 +3,7 @@ import type {
   KeepsakeListQuery,
   KeepsakeSourceType,
   KeepsakeSummaryResponse,
-  RelationshipArchiveEntry,
+  PublicRelationshipArchiveEntry as RelationshipArchiveEntry,
   RelationshipArchiveFilter,
   ShareRedaction,
 } from "@personasim/contracts";

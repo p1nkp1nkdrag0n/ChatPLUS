@@ -12,22 +12,29 @@ import {
 } from "./useAgentEvents";
 
 describe("agentEventQueryKeys", () => {
-  it("refreshes both the legacy state query and the user-facing overview", () => {
+  it("refreshes only product queries, keeping developer state caches separate", () => {
     expect(agentEventQueryKeys("agent-1")).toEqual([
-      ["agent", "agent-1", "state"],
       ["agent", "agent-1", "overview"],
       ["agent", "agent-1", "timeline"],
       ["messages", "agent-1"],
       ["correspondence", "agent-1"],
       ["relationship-archive", "agent-1"],
       ["keepsakes", "agent-1"],
-      ["temporal-tasks", "agent-1"],
     ]);
   });
 
   it("primes the exact overview key with the activation snapshot", () => {
     const setQueryData = vi.fn();
-    const snapshot = { state: { agentId: "agent-1" } } as AgentSnapshot;
+    const snapshot: AgentSnapshot = {
+      agentId: "agent-1",
+      capabilities: {
+        fuzzyLife: true,
+        legacyExactSchedule: false,
+        schedule: false,
+      },
+      serverTimeUtc: "2026-09-10T00:00:00.000Z",
+      characterLocalTime: "2026-09-10T08:00:00+08:00",
+    };
 
     primeAgentOverview({ setQueryData }, "agent-1", snapshot);
 

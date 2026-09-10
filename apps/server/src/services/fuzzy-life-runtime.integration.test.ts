@@ -74,7 +74,7 @@ describe("fuzzy life runtime", () => {
       payload: { expectedVersion: character.version },
     });
     expect(published.statusCode).toBe(200);
-    expect(body<{ schedule: unknown[] }>(published).schedule).toEqual([]);
+    expect(body<object>(published)).not.toHaveProperty("schedule");
     expect(count(database, "schedule_items")).toBe(0);
     expect(count(database, "daily_life_contexts")).toBe(1);
     expect(count(database, "daily_life_intents")).toBeGreaterThan(0);

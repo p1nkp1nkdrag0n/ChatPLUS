@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import { CharacterSpecSchema } from "@personasim/contracts";
 import type { ReplySteeringMode } from "@personasim/features";
 import { describe, expect, it, vi } from "vitest";
@@ -8,7 +9,6 @@ import { readConfig } from "../config.js";
 import { buildOriginalDraft, initialRuntimeState } from "../domain/defaults.js";
 import { FakeClock } from "../runtime/clock.js";
 import { CHARACTER_COMPILATION_POLICY_VERSION } from "./character-compiler.js";
-import type { ChatTurnResult } from "./conversation-service.js";
 import type { LlmLogicalCallEvent } from "./llm-service.js";
 
 const NOW = "2026-09-08T12:00:00.000Z";
@@ -163,17 +163,13 @@ async function runIsolatedTurn(replySteeringMode?: ReplySteeringMode) {
       state: store.getRuntimeState(SPEC.id),
       session: store.getSession(SESSION_ID),
     };
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${SESSION_ID}/messages`,
-      payload: {
-        agentId: SPEC.id,
-        text: USER_TEXT,
-        clientMessageId: "reply-steering-turn",
-      },
+    const response = await injectInternalChat(app, SESSION_ID, {
+      agentId: SPEC.id,
+      text: USER_TEXT,
+      clientMessageId: "reply-steering-turn",
     });
     expect(response.statusCode, response.body).toBe(201);
-    const result = response.json<ChatTurnResult>();
+    const result = response.internalTurn!;
     expect(completed).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ purpose: "repair_chat_turn", success: true }),

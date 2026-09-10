@@ -175,6 +175,27 @@ export type RelationshipArchivePageResponse = z.infer<
   typeof RelationshipArchivePageResponseSchema
 >;
 
+export const PublicRelationshipArchiveEntrySchema = z.union([
+  RelationshipArchiveLetterEntrySchema,
+  RelationshipArchiveTurningPointEntrySchema.omit({
+    significance: true,
+  }).extend({
+    sourceType: z.enum(["life_outcome", "relationship_milestone"]),
+  }),
+  RelationshipArchiveLifeEntrySchema,
+  RelationshipArchiveKeepsakeEntrySchema,
+]);
+export type PublicRelationshipArchiveEntry = z.infer<
+  typeof PublicRelationshipArchiveEntrySchema
+>;
+export const PublicRelationshipArchivePageResponseSchema =
+  RelationshipArchivePageResponseSchema.extend({
+    items: z.array(PublicRelationshipArchiveEntrySchema).max(100),
+  });
+export type PublicRelationshipArchivePageResponse = z.infer<
+  typeof PublicRelationshipArchivePageResponseSchema
+>;
+
 export const ShareRedactionSchema = z
   .object({
     start: z.number().int().nonnegative(),

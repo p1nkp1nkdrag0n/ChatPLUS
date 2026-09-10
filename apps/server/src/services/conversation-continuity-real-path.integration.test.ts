@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
@@ -623,11 +624,7 @@ function sendMessage(
   clientMessageId: string,
   text: string,
 ) {
-  return app.inject({
-    method: "POST",
-    url: "/api/sessions/" + sessionId + "/messages",
-    payload: { agentId, clientMessageId, text },
-  });
+  return injectInternalChat(app, sessionId, { agentId, clientMessageId, text });
 }
 
 function latestChatTurnPrompt(
@@ -678,8 +675,8 @@ function activeCareCueCount(app: PersonaSimApp, agentId: string): number {
   return Number(row.count);
 }
 
-function jsonBody<T>(response: { body: string }): T {
-  return JSON.parse(response.body) as T;
+function jsonBody<T>(response: { body: string; internalTurn?: unknown }): T {
+  return (response.internalTurn ?? JSON.parse(response.body)) as T;
 }
 
 interface ChatTurnBody {

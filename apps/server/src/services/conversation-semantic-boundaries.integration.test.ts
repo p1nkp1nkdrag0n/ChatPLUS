@@ -1,3 +1,7 @@
+import {
+  injectInternalChat,
+  internalChatJson,
+} from "../test-fixtures/internal-chat-response.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
@@ -119,12 +123,12 @@ describe("final conversational semantic boundaries through normal HTTP routes", 
   }
 
   async function send(text: string, clientMessageId = `turn-${calls.length}`) {
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: { agentId, text, clientMessageId },
+    const response = await injectInternalChat(app, sessionId, {
+      agentId,
+      text,
+      clientMessageId,
     });
-    const body = response.json<ChatTurnResult>();
+    const body = internalChatJson<ChatTurnResult>(response);
     expect(response.statusCode, response.body.slice(0, 500)).toBe(
       body.idempotentReplay ? 200 : 201,
     );

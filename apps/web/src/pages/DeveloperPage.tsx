@@ -27,6 +27,37 @@ import { readActiveCharacter } from "../lib/activeCharacter";
 
 export default function DeveloperPage() {
   const queryClient = useQueryClient();
+  const settingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings.get,
+  });
+  useEffect(() => {
+    if (settingsQuery.isSuccess && !settingsQuery.data.developerMode) {
+      queryClient.removeQueries({ queryKey: ["developer"] });
+    }
+  }, [queryClient, settingsQuery.isSuccess, settingsQuery.data?.developerMode]);
+  if (settingsQuery.isPending)
+    return <LoadingBlock label="正在读取应用设置…" fullPage />;
+  if (settingsQuery.error) return <ErrorBlock error={settingsQuery.error} />;
+  if (!settingsQuery.data?.developerMode) {
+    return (
+      <div className="page">
+        <PageHeader
+          title="开发者模式未开启"
+          description="角色内部状态仅在服务器启用开发者模式后可查看。"
+        />
+      </div>
+    );
+  }
+  return <DeveloperWorkspace />;
+}
+
+function DeveloperWorkspace() {
+  const queryClient = useQueryClient();
+  const achievementsQuery = useQuery({
+    queryKey: ["developer", "achievements"],
+    queryFn: api.developer.achievements,
+  });
   const charactersQuery = useQuery({
     queryKey: ["characters"],
     queryFn: api.characters.list,
@@ -46,7 +77,7 @@ export default function DeveloperPage() {
     queryFn: api.developer.llmCalls,
   });
   const temporalTasksQuery = useQuery({
-    queryKey: ["temporal-tasks", activeId],
+    queryKey: ["developer", "temporal-tasks", activeId],
     queryFn: () => api.developer.temporalTasks(activeId),
     enabled: Boolean(activeId),
   });
@@ -94,7 +125,7 @@ export default function DeveloperPage() {
       queryClient.invalidateQueries({ queryKey: ["developer"] }),
       queryClient.invalidateQueries({ queryKey: ["agent", activeId] }),
       queryClient.invalidateQueries({
-        queryKey: ["temporal-tasks", activeId],
+        queryKey: ["developer", "temporal-tasks", activeId],
       }),
       queryClient.invalidateQueries({
         queryKey: ["correspondence", activeId],
@@ -155,6 +186,21 @@ export default function DeveloperPage() {
       ) : null}
 
       <div className="developer-grid">
+        <section className="developer-panel developer-panel--snapshot">
+          <div className="developer-panel__heading">
+            <Braces size={19} />
+            <h2>成就规则与徽章任务</h2>
+          </div>
+          {achievementsQuery.isPending ? (
+            <LoadingBlock label="正在读取成就诊断…" />
+          ) : null}
+          {achievementsQuery.error ? (
+            <ErrorBlock error={achievementsQuery.error} />
+          ) : null}
+          {achievementsQuery.data ? (
+            <pre>{JSON.stringify(achievementsQuery.data, null, 2)}</pre>
+          ) : null}
+        </section>
         <section className="developer-panel developer-panel--clock">
           <div className="developer-panel__heading">
             <Clock3 size={19} />

@@ -95,21 +95,14 @@ test.describe("PersonaSim fixture flow", () => {
     await expect(page.getByText(/好啊|晚会|具体时间/).last()).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByText(/本轮没有引用记忆|本轮记忆依据/)).toHaveCount(
+      0,
+    );
     await expect(
-      page.getByText(/本轮没有引用记忆|本轮记忆依据/).last(),
-    ).toBeVisible();
-    const expandRail = page.getByRole("button", {
-      name: "角色近况",
-      exact: true,
-    });
-    await expect(expandRail).toHaveAttribute("aria-expanded", "false");
-    await expandRail.click();
-    await expect(expandRail).toHaveAttribute("aria-expanded", "true");
-    const rail = page.locator(".chat-rail");
-    await expect(rail.getByText("状态概览")).toBeVisible();
-    await expect(rail.getByText("压力", { exact: true })).toBeVisible();
-    await expect(rail.getByRole("heading", { name: "生活脉络" })).toBeVisible();
-    await expect(rail.getByText("正在推进", { exact: true })).toBeVisible();
+      page.getByRole("button", { name: "角色近况", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator(".chat-rail")).toHaveCount(0);
+    await expect(page.getByText("状态概览", { exact: true })).toHaveCount(0);
   });
 
   test("edits structured character settings and persists a schema-valid draft", async ({
@@ -120,13 +113,42 @@ test.describe("PersonaSim fixture flow", () => {
       request,
       `Editor QA ${test.info().project.name}-${Date.now()}`,
     );
+    await page.route("**/api/settings", async (route) => {
+      const response = await route.fetch();
+      const settings = (await response.json()) as {
+        runtime: Record<string, unknown>;
+      };
+      await route.fulfill({
+        response,
+        json: {
+          ...settings,
+          runtime: { ...settings.runtime, developerMode: false },
+        },
+      });
+    });
     await page.goto(`/characters/${draft.id}/edit`);
+    await expect(
+      page.getByRole("button", { name: "高级 JSON", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "复制完整 JSON", exact: true }),
+    ).toHaveCount(0);
 
     await page.getByRole("button", { name: "语言风格", exact: true }).click();
     await page.getByLabel("主要语言").fill("简体中文");
 
     await page.getByRole("button", { name: "关系", exact: true }).click();
-    await page.getByLabel("关系类型").fill("相互信赖的老朋友");
+    await expect(page.getByLabel("关系类型")).toHaveCount(0);
+    await expect(
+      page.getByText("初始关系：陌生人。", { exact: false }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "添加一个称呼", exact: true })
+      .click();
+    await page
+      .getByRole("textbox", { name: /^称呼方式 \d+$/ })
+      .last()
+      .fill("称呼你的名字");
 
     await page.getByRole("button", { name: "知识与边界", exact: true }).click();
     await page.getByRole("button", { name: "添加一条确定事实" }).click();
@@ -175,7 +197,10 @@ test.describe("PersonaSim fixture flow", () => {
     await page.getByRole("button", { name: "语言风格", exact: true }).click();
     await expect(page.getByLabel("主要语言")).toHaveValue("简体中文");
     await page.getByRole("button", { name: "关系", exact: true }).click();
-    await expect(page.getByLabel("关系类型")).toHaveValue("相互信赖的老朋友");
+    await expect(page.getByLabel("关系类型")).toHaveCount(0);
+    await expect(
+      page.getByRole("textbox", { name: /^称呼方式 \d+$/ }).last(),
+    ).toHaveValue("称呼你的名字");
     await page.getByRole("button", { name: "生活策略", exact: true }).click();
     await expect(
       page.getByRole("textbox", { name: /生活规律 \d+ 名称/ }).last(),
@@ -297,12 +322,10 @@ test.describe("PersonaSim fixture flow", () => {
     ).toBeVisible();
     await expect(eventLedger).not.toContainText("ScheduleItem");
     await expect(eventLedger).not.toContainText("schedule.");
-    await expect(
-      eventLedger
-        .locator("details.timeline-lineage summary")
-        .filter({ hasText: "Correlation / causation" })
-        .first(),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(eventLedger.locator("details.timeline-lineage")).toHaveCount(
+      0,
+    );
+    await expect(eventLedger).not.toContainText("Correlation / causation");
     await page.screenshot({
       path: testInfo.outputPath("timeline-lineage.png"),
       fullPage: true,

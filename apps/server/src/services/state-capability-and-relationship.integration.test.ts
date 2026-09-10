@@ -1,3 +1,7 @@
+import {
+  injectInternalChat,
+  internalChatJson,
+} from "../test-fixtures/internal-chat-response.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
@@ -475,11 +479,7 @@ function sendMessage(
   clientMessageId: string,
   text: string,
 ) {
-  return app.inject({
-    method: "POST",
-    url: `/api/sessions/${sessionId}/messages`,
-    payload: { agentId, clientMessageId, text },
-  });
+  return injectInternalChat(app, sessionId, { agentId, clientMessageId, text });
 }
 
 function worldEffectsAudit(
@@ -512,5 +512,5 @@ function nestedValue(value: unknown, ...path: readonly string[]): unknown {
 }
 
 function jsonBody<T>(response: { body: string }): T {
-  return JSON.parse(response.body) as T;
+  return internalChatJson<T>(response);
 }

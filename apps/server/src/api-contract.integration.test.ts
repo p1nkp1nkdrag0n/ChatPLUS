@@ -1,22 +1,24 @@
 import type { ServerResponse } from "node:http";
 
 import {
-  ActivateAgentResponseSchema,
+  PublicAgentSnapshotSchema as ActivateAgentResponseSchema,
   AgentScheduleResponseSchema,
   CharacterMutationResponseSchema,
   CreateSessionResponseSchema,
   GetSettingsResponseSchema,
   HealthResponseSchema,
   ListCharactersResponseSchema,
-  ListMessagesResponseSchema,
+  PublicListMessagesResponseSchema as ListMessagesResponseSchema,
   ListSessionsResponseSchema,
   MemoriesResponseSchema,
-  PublishCharacterResponseSchema,
-  SendMessageResponseSchema,
-  ServerSentEventSchema,
+  PublicPublishCharacterResponseSchema as PublishCharacterResponseSchema,
+  PublicSendMessageResponseSchema as SendMessageResponseSchema,
+  PublicServerSentEventSchema as ServerSentEventSchema,
+  PublicTimelineResponseSchema,
   TimelineResponseSchema,
   UpdateSettingsResponseSchema,
-  type ServerSentEvent,
+  type PublicServerSentEvent as ServerSentEvent,
+  type ScheduleItem,
 } from "@personasim/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ZodType } from "zod";
@@ -181,7 +183,7 @@ describe("shared API transport contracts", () => {
         url: `/api/agents/${agentId}/timeline?limit=100`,
       }),
       200,
-      TimelineResponseSchema,
+      PublicTimelineResponseSchema,
     );
     expect(
       timeline.events.find(
@@ -362,7 +364,7 @@ describe("shared API transport contracts", () => {
     const timeline = parseResponse(
       await app.inject({
         method: "GET",
-        url: `/api/agents/${agentId}/timeline?limit=100`,
+        url: `/api/developer/agents/${agentId}/timeline?limit=100`,
       }),
       200,
       TimelineResponseSchema,
@@ -440,7 +442,10 @@ describe("shared API transport contracts", () => {
         200,
         ActivateAgentResponseSchema,
       );
-      expect(activation.settlement?.activityEvents.length).toBeGreaterThan(0);
+      expect(activation).not.toHaveProperty("settlement");
+      expect(
+        app.personasim.store.listActivityEvents(agentId).length,
+      ).toBeGreaterThan(0);
 
       const events = parseSseEvents(chunks);
       expect(new Set(events.map((event) => event.type))).toEqual(
@@ -475,7 +480,9 @@ function parseResponse<T>(
 
 async function createPublishedAgent(app: PersonaSimApp): Promise<{
   agentId: string;
-  published: ReturnType<typeof PublishCharacterResponseSchema.parse>;
+  published: ReturnType<typeof PublishCharacterResponseSchema.parse> & {
+    schedule: ScheduleItem[];
+  };
 }> {
   const generated = parseResponse(
     await app.inject({
@@ -506,7 +513,13 @@ async function createPublishedAgent(app: PersonaSimApp): Promise<{
     200,
     PublishCharacterResponseSchema,
   );
-  return { agentId: published.character.id, published };
+  return {
+    agentId: published.character.id,
+    published: {
+      ...published,
+      schedule: app.personasim.store.listSchedule(published.character.id),
+    },
+  };
 }
 
 function createSseResponse(chunks: string[]): ServerResponse {

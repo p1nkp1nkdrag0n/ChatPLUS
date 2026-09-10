@@ -1,7 +1,10 @@
 import {
+  observeEvaluationTurns,
+  readEvaluationTurn,
+} from "./evaluation-turn-evidence.js";
+import {
   AgentTurnDecisionSchema,
   ListMessagesResponseSchema,
-  SendMessageResponseSchema,
 } from "@personasim/contracts";
 import { z } from "zod";
 
@@ -96,6 +99,7 @@ export async function runLlmHttpSmoke(
         : { llmObservation: options.observation }),
     });
 
+    observeEvaluationTurns(app);
     const draft = app.personasim.characters.createDemoCharacter();
     const lightweight = app.personasim.characters.updateDraft(draft.id, {
       patch: { tier: "lightweight" },
@@ -112,7 +116,8 @@ export async function runLlmHttpSmoke(
     });
     HealthResponseSchema.parse(await requestJson(origin, "/api/health"));
 
-    const turn = SendMessageResponseSchema.parse(
+    const turn = readEvaluationTurn(
+      app,
       await requestJson(origin, "/api/agents/" + character.id + "/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -143,7 +148,9 @@ export async function runLlmHttpSmoke(
         "The assistant reply was not persisted by the HTTP turn.",
       );
     }
-    const metadata = PersistedDecisionMetadataSchema.parse(stored.metadata);
+    const metadata = PersistedDecisionMetadataSchema.parse(
+      turn.assistantMessage.metadata,
+    );
     if (
       stored.content !== metadata.chunks.join("\n") ||
       stored.content !== turn.assistantMessage.content ||

@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
@@ -5,7 +6,6 @@ import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import qwenRegressions from "../test-fixtures/qwen-fresh-regressions.json";
-import type { ChatTurnResult } from "./conversation-service.js";
 import type { GenerateObjectInput } from "./llm-service.js";
 
 const REQUEST = "以后聊工作时，请先听我说，不要急着给建议。";
@@ -114,12 +114,12 @@ describe("semantic reply effects through actual HTTP submission", () => {
   }
 
   async function send(text: string, clientMessageId: string) {
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: { agentId, text, clientMessageId },
+    const response = await injectInternalChat(app, sessionId, {
+      agentId,
+      text,
+      clientMessageId,
     });
-    const body = response.json<ChatTurnResult>();
+    const body = response.internalTurn!;
     expect(response.statusCode, response.body.slice(0, 800)).toBe(
       body.idempotentReplay ? 200 : 201,
     );

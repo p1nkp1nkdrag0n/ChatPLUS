@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type {
   LetterDetailResponse,
-  RelationshipArchivePageResponse,
+  PublicRelationshipArchivePageResponse as RelationshipArchivePageResponse,
   RelationshipShareProjection,
 } from "@personasim/contracts";
 import { afterEach, describe, expect, it } from "vitest";
@@ -231,7 +231,7 @@ function seedHttpDomainEvents(
        id, agent_id, stream_type, stream_id, stream_version, event_type,
        recorded_at_utc, effective_at_utc, payload_json, correlation_id,
        causation_id, idempotency_key
-     ) VALUES (?, ?, 'life', ?, 1, 'archive.http.fixture', ?, ?, ?, NULL, NULL, ?)`,
+     ) VALUES (?, ?, 'life', ?, 1, 'conversation.turn_committed', ?, ?, ?, NULL, NULL, ?)`,
   );
   target.personasim.store.database.transaction(() => {
     for (let index = 0; index < count; index += 1) {

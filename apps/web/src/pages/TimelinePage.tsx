@@ -18,27 +18,7 @@ import {
   rememberActiveCharacter,
 } from "../lib/activeCharacter";
 import { formatLocalDateTime } from "../lib/date";
-import {
-  buildTimelineLineage,
-  type TimelineLineageInput,
-} from "../lib/timelineLineage";
 import { timelineEventTitle } from "../lib/timelinePresentation";
-
-function LineageDetails({ value }: { value: TimelineLineageInput }) {
-  const nodes = buildTimelineLineage(value);
-  if (nodes.length < 2) return null;
-  return (
-    <details className="timeline-lineage">
-      <summary>{nodes.map((node) => node.label).join(" → ")}</summary>
-      {nodes.map((node, index) => (
-        <span key={node.field}>
-          {index > 0 ? <span aria-hidden="true">{" → "}</span> : null}
-          <code>{node.id}</code>
-        </span>
-      ))}
-    </details>
-  );
-}
 
 export default function TimelinePage() {
   const params = useParams<{ characterId: string }>();
@@ -93,10 +73,7 @@ export default function TimelinePage() {
   if (characters.length === 0) {
     return (
       <div className="page">
-        <PageHeader
-          title="变化记录"
-          description="回顾选择、感受、关系与共同经历如何随时间积累。"
-        />
+        <PageHeader title="变化记录" description="回顾你们一起走过的时光。" />
         <EmptyState
           title="还没有可以回顾的角色"
           description="发布一个角色并开始交流后，这里会保留可追溯的变化与共同经历。"
@@ -114,7 +91,7 @@ export default function TimelinePage() {
     <div className="page page--timeline">
       <PageHeader
         title="变化记录"
-        description="角色经历、人生选择、关系变化与共同转折都在这里留下可追溯证据。"
+        description="你们的对话与共同经历，在这里留下记录。"
         actions={
           <div className="button-row">
             <label className="compact-select">
@@ -177,15 +154,6 @@ export default function TimelinePage() {
                 <time>
                   {formatLocalDateTime(event.occurredAtUtc, timezone)}
                 </time>
-                <LineageDetails value={event} />
-                {event.correlationId || event.causationId ? (
-                  <details className="timeline-lineage">
-                    <summary>{"Correlation / causation"}</summary>
-                    <code>{event.correlationId ?? "-"}</code>
-                    <span>{" / "}</span>
-                    <code>{event.causationId ?? "-"}</code>
-                  </details>
-                ) : null}
               </div>
             </li>
           ))}

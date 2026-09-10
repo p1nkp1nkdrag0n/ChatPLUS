@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -301,14 +302,10 @@ describe("fuzzy-life conversation integration", () => {
       "multi-imagined-conflict",
       "回头看我们吵完架又修补的那次分歧，我后悔了。",
     );
-    const replay = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${walkSession}/messages`,
-      payload: {
-        agentId: character.id,
-        clientMessageId: "multi-outcomes",
-        text: responseText,
-      },
+    const replay = await injectInternalChat(app, walkSession, {
+      agentId: character.id,
+      clientMessageId: "multi-outcomes",
+      text: responseText,
     });
     expect(replay.statusCode).toBe(200);
     expect(replay.json<{ idempotentReplay: boolean }>().idempotentReplay).toBe(
@@ -1565,14 +1562,10 @@ describe("fuzzy-life conversation integration", () => {
       scalarCount(app, "reflection_records"),
       scalarCount(app, "relationship_milestones"),
     ];
-    const replay = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: {
-        agentId: character.id,
-        clientMessageId: "consent-life-outcome",
-        text: outcomeText,
-      },
+    const replay = await injectInternalChat(app, sessionId, {
+      agentId: character.id,
+      clientMessageId: "consent-life-outcome",
+      text: outcomeText,
     });
     expect(replay.statusCode, replay.body).toBe(200);
     expect(jsonBody<ChatTurnResult>(replay).assistantMessage).toEqual(
@@ -1710,11 +1703,7 @@ describe("fuzzy-life conversation integration", () => {
       text: "我到底要不要辞职？我现在正式授权你替我决定，但不要把你的回答当作建议。",
     };
 
-    const first = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: command,
-    });
+    const first = await injectInternalChat(app, sessionId, command);
 
     expect(first.statusCode, first.body).toBe(201);
     const firstBody = jsonBody<ChatTurnResult>(first);
@@ -1768,11 +1757,7 @@ describe("fuzzy-life conversation integration", () => {
     expect(eventPayload.personalIntentIds).toEqual([]);
     expect(eventPayload.scheduleItemIds).toEqual([]);
 
-    const replay = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: command,
-    });
+    const replay = await injectInternalChat(app, sessionId, command);
     expect(replay.statusCode, replay.body).toBe(200);
     expect(jsonBody<ChatTurnResult>(replay).idempotentReplay).toBe(true);
     expect(scalarCount(app, "decision_records")).toBe(1);
@@ -2952,14 +2937,10 @@ describe("fuzzy-life conversation integration", () => {
       currentPressure: 0.6,
       currentClarity: 0.7,
     });
-    const replayedOutcome = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: {
-        agentId: character.id,
-        clientMessageId: "trajectory-outcome",
-        text: outcomeText,
-      },
+    const replayedOutcome = await injectInternalChat(app, sessionId, {
+      agentId: character.id,
+      clientMessageId: "trajectory-outcome",
+      text: outcomeText,
     });
     expect(replayedOutcome.statusCode, replayedOutcome.body).toBe(200);
     expect(
@@ -3889,10 +3870,10 @@ async function sendChat(
   clientMessageId: string,
   text: string,
 ): Promise<ChatTurnResult> {
-  const response = await app.inject({
-    method: "POST",
-    url: `/api/sessions/${sessionId}/messages`,
-    payload: { agentId, clientMessageId, text },
+  const response = await injectInternalChat(app, sessionId, {
+    agentId,
+    clientMessageId,
+    text,
   });
   expect(response.statusCode, response.body).toBe(201);
   return jsonBody<ChatTurnResult>(response);
@@ -4205,8 +4186,8 @@ function injectPressureEpisode(
   );
 }
 
-function jsonBody<T>(response: { body: string }): T {
-  return JSON.parse(response.body) as T;
+function jsonBody<T>(response: { body: string; internalTurn?: unknown }): T {
+  return (response.internalTurn ?? JSON.parse(response.body)) as T;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

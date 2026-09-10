@@ -32,9 +32,11 @@ export default function SettingsPage() {
       <PageHeader
         title="设置"
         actions={
-          <Link className="button button--secondary" to="/developer">
-            开发者工具
-          </Link>
+          query.data?.developerMode ? (
+            <Link className="button button--secondary" to="/developer">
+              开发者工具
+            </Link>
+          ) : null
         }
         description="配置模型、回复体验与本地偏好。"
       />

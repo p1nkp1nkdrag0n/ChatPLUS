@@ -229,6 +229,7 @@ const envSchema = z.object({
   WEB_DIST_PATH: z.string().trim().min(1).default("./apps/web/dist"),
   DATABASE_PATH: z.string().default("./data/persona-sim.sqlite"),
   PERSONASIM_PROFILE: z.string().default("development"),
+  DEVELOPER_MODE: falseByDefaultBooleanFromEnv,
   CLOCK_MODE: z.enum(["system", "fake"]).default("system"),
   FAKE_CLOCK_START: z.iso.datetime().default("2026-08-16T10:00:00.000Z"),
   LLM_PROVIDER: z.enum(["fixture", "openai-compatible"]).default("fixture"),
@@ -444,7 +445,7 @@ export function readConfig(
     },
     logLevel: env.LOG_LEVEL,
     seedDemo: env.SEED_DEMO,
-    developerRoutes: env.NODE_ENV !== "production",
+    developerRoutes: env.DEVELOPER_MODE,
     chatEffectsMode: env.CHAT_EFFECTS_MODE,
     // Fuzzy life is the product model in every environment. Tests covering
     // the historical exact scheduler opt into legacy_exact explicitly, so an

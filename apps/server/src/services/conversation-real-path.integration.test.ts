@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -2293,15 +2294,11 @@ function sendMessage(
   clientMessageId: string,
   text: string,
 ) {
-  return app.inject({
-    method: "POST",
-    url: `/api/sessions/${sessionId}/messages`,
-    payload: { agentId, clientMessageId, text },
-  });
+  return injectInternalChat(app, sessionId, { agentId, clientMessageId, text });
 }
 
-function jsonBody<T>(response: { body: string }): T {
-  return JSON.parse(response.body) as T;
+function jsonBody<T>(response: { body: string; internalTurn?: unknown }): T {
+  return (response.internalTurn ?? JSON.parse(response.body)) as T;
 }
 
 function promptJsonSegment(

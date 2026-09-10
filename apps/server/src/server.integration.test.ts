@@ -1,7 +1,8 @@
+import type { SettlementResult } from "./services/settlement-service.js";
 import { seededUnit } from "@personasim/features";
 import {
-  ActivateAgentResponseSchema,
-  PublishCharacterResponseSchema,
+  PublicAgentSnapshotSchema as ActivateAgentResponseSchema,
+  PublicPublishCharacterResponseSchema as PublishCharacterResponseSchema,
 } from "@personasim/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -264,6 +265,7 @@ describe("PersonaSim server integration", () => {
       text: "今晚要不要和我一起去参加晚会？",
     };
 
+    const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
     const first = await app.inject({
       method: "POST",
       url: `/api/sessions/${sessionId}/messages`,
@@ -271,7 +273,11 @@ describe("PersonaSim server integration", () => {
     });
     expect(first.statusCode).toBe(201);
     const firstBody = jsonBody<ChatTurnResult>(first);
-    expect(firstBody.scheduleChanges).toHaveLength(2);
+    expect(firstBody).not.toHaveProperty("scheduleChanges");
+    expect(
+      (await (turnSpy.mock.results[0]!.value as Promise<ChatTurnResult>))
+        .scheduleChanges,
+    ).toHaveLength(2);
     expect(firstBody.assistantMessage.content).toContain("一起去");
 
     const stored = app.personasim.store.listSchedule(character.id);
@@ -310,7 +316,15 @@ describe("PersonaSim server integration", () => {
       url: `/api/agents/${character.id}/activate`,
     });
     const activationBody = jsonBody<ActivationBody>(activation);
-    expect(activationBody.capabilities?.offlineSettlement).toBe(false);
+    expect(activation.statusCode).toBe(200);
+    expect(activationBody.capabilities).not.toHaveProperty("offlineSettlement");
+    const developerState = await app.inject({
+      method: "GET",
+      url: `/api/agents/${character.id}/state`,
+    });
+    expect(
+      jsonBody<ActivationBody>(developerState).capabilities?.offlineSettlement,
+    ).toBe(false);
     expect(app.personasim.store.getCursor(character.id)).toEqual(beforeCursor);
 
     const sessionId = await createSession(app, character.id);
@@ -432,7 +446,15 @@ describe("PersonaSim server integration", () => {
     const body = jsonBody<ChatTurnResult>(response);
     expect(body.assistantMessage.content).not.toContain("AI语言模型");
     expect(body.assistantMessage.content).toContain("确认一下时间安排");
-    expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+    expect(body.assistantMessage.metadata).not.toHaveProperty(
+      "repairAttempted",
+    );
+    expect(
+      app.personasim.store
+        .listMessages(sessionId)
+        .find((message) => message.id === body.assistantMessage.id)?.metadata
+        .repairAttempted,
+    ).toBe(true);
     expect(
       purposes.filter((purpose) => purpose === "repair_chat_turn"),
     ).toHaveLength(1);
@@ -444,6 +466,10 @@ describe("PersonaSim server integration", () => {
     app = created.app;
     const character = await createAndPublish(app, "daily");
     created.clock.advance({ hours: 14 });
+    const settlementSpy = vi.spyOn(
+      app.personasim.settlements,
+      "settleAndExtend",
+    );
 
     const first = await app.inject({
       method: "POST",
@@ -453,9 +479,12 @@ describe("PersonaSim server integration", () => {
     expect(() =>
       ActivateAgentResponseSchema.parse(jsonBody<unknown>(first)),
     ).not.toThrow();
-    expect(jsonBody<ActivationBody>(first).settlement.alreadySettled).toBe(
-      false,
-    );
+    expect(
+      (
+        await (settlementSpy.mock.results.at(-1)!
+          .value as Promise<SettlementResult>)
+      ).alreadySettled,
+    ).toBe(false);
     const eventCount = app.personasim.store.listActivityEvents(
       character.id,
       500,
@@ -466,9 +495,13 @@ describe("PersonaSim server integration", () => {
       method: "POST",
       url: `/api/agents/${character.id}/activate`,
     });
-    expect(jsonBody<ActivationBody>(duplicate).settlement.alreadySettled).toBe(
-      true,
-    );
+    expect(duplicate.statusCode).toBe(200);
+    expect(
+      (
+        await (settlementSpy.mock.results.at(-1)!
+          .value as Promise<SettlementResult>)
+      ).alreadySettled,
+    ).toBe(true);
     expect(
       app.personasim.store.listActivityEvents(character.id, 500),
     ).toHaveLength(eventCount);
@@ -478,9 +511,13 @@ describe("PersonaSim server integration", () => {
       method: "POST",
       url: `/api/agents/${character.id}/activate`,
     });
-    expect(jsonBody<ActivationBody>(backward).settlement.alreadySettled).toBe(
-      true,
-    );
+    expect(backward.statusCode).toBe(200);
+    expect(
+      (
+        await (settlementSpy.mock.results.at(-1)!
+          .value as Promise<SettlementResult>)
+      ).alreadySettled,
+    ).toBe(true);
     expect(app.personasim.store.getCursor(character.id)?.lastSettledAtUtc).toBe(
       cursorAfterFirst.lastSettledAtUtc,
     );
@@ -516,15 +553,22 @@ describe("PersonaSim server integration", () => {
       app.personasim.store.getRuntimeState(draft.id),
     );
     created.clock.advance({ hours: 8 });
+    const settlementSpy = vi.spyOn(
+      app.personasim.settlements,
+      "settleAndExtend",
+    );
 
     const activation = await app.inject({
       method: "POST",
       url: `/api/agents/${draft.id}/activate`,
     });
     expect(activation.statusCode).toBe(200);
-    expect(jsonBody<ActivationBody>(activation).settlement.alreadySettled).toBe(
-      true,
-    );
+    expect(
+      (
+        await (settlementSpy.mock.results.at(-1)!
+          .value as Promise<SettlementResult>)
+      ).alreadySettled,
+    ).toBe(true);
     expect(app.personasim.store.listSchedule(draft.id)).toHaveLength(0);
     expect(app.personasim.store.getCursor(draft.id)).toEqual(cursorBefore);
     expect(app.personasim.store.getRuntimeState(draft.id)).toEqual(stateBefore);
@@ -587,6 +631,10 @@ describe("PersonaSim server integration", () => {
     const created = await createTestApp();
     app = created.app;
     const character = await createAndPublish(app, "high_fidelity");
+    const settlementSpy = vi.spyOn(
+      app.personasim.settlements,
+      "settleAndExtend",
+    );
     app.personasim.store.database
       .prepare("DELETE FROM schedule_items WHERE agent_id = ?")
       .run(character.id);
@@ -698,9 +746,13 @@ describe("PersonaSim server integration", () => {
       method: "POST",
       url: `/api/agents/${character.id}/activate`,
     });
-    expect(jsonBody<ActivationBody>(replay).settlement.alreadySettled).toBe(
-      true,
-    );
+    expect(replay.statusCode).toBe(200);
+    expect(
+      (
+        await (settlementSpy.mock.results.at(-1)!
+          .value as Promise<SettlementResult>)
+      ).alreadySettled,
+    ).toBe(true);
     expect(app.personasim.store.getRuntimeState(character.id)).toEqual(after);
   });
 
@@ -823,7 +875,14 @@ describe("PersonaSim server integration", () => {
     });
     expect(activation.statusCode).toBe(200);
     const activationBody = jsonBody<ActivationBody>(activation);
-    expect(activationBody.capabilities?.proactiveDialogue).toBe(false);
+    expect(activationBody.capabilities).not.toHaveProperty("proactiveDialogue");
+    const developerState = await app.inject({
+      method: "GET",
+      url: `/api/agents/${character.id}/state`,
+    });
+    expect(
+      jsonBody<ActivationBody>(developerState).capabilities?.proactiveDialogue,
+    ).toBe(false);
     expect(activationBody.proactiveMessage).toBeUndefined();
     const candidates = app.personasim.store.database
       .prepare(

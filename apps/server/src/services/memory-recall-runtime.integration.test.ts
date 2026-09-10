@@ -1,3 +1,4 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import {
   MemoryCandidateSchema,
   MemoryEvidenceSchema,
@@ -323,14 +324,10 @@ describe("memory recall runtime integration", () => {
             : insertDomainEvent(event),
       );
 
-      const response = await app.inject({
-        method: "POST",
-        url: `/api/sessions/${session.id}/messages`,
-        payload: {
-          agentId: character.id,
-          clientMessageId,
-          text: QUERY,
-        },
+      const response = await injectInternalChat(app, session.id, {
+        agentId: character.id,
+        clientMessageId,
+        text: QUERY,
       });
 
       expect(response.statusCode).toBe(500);
@@ -395,14 +392,10 @@ describe("memory recall runtime integration", () => {
       };
     });
 
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${session.id}/messages`,
-      payload: {
-        agentId: character.id,
-        clientMessageId: "recall-mismatched-owner",
-        text: QUERY,
-      },
+    const response = await injectInternalChat(app, session.id, {
+      agentId: character.id,
+      clientMessageId: "recall-mismatched-owner",
+      text: QUERY,
     });
 
     expect(response.statusCode).toBe(500);
@@ -550,17 +543,13 @@ describe("memory recall runtime integration", () => {
       "Composed recall",
     );
     const callStart = calls.length;
-    const chatResponse = await app.inject({
-      method: "POST",
-      url: `/api/sessions/${session.id}/messages`,
-      payload: {
-        agentId: character.id,
-        clientMessageId: "composed-basic-recall",
-        text: BASIC_QUERY,
-      },
+    const chatResponse = await injectInternalChat(app, session.id, {
+      agentId: character.id,
+      clientMessageId: "composed-basic-recall",
+      text: BASIC_QUERY,
     });
     expect(chatResponse.statusCode).toBe(201);
-    const chat = SendMessageResponseSchema.parse(JSON.parse(chatResponse.body));
+    const chat = SendMessageResponseSchema.parse(chatResponse.internalTurn);
     expect(chat.memoryRecall).toMatchObject({
       rolloutMode: "enforced",
       recallMode: "basic_memory",

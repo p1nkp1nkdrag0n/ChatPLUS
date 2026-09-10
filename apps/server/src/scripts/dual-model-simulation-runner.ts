@@ -1,11 +1,12 @@
+import {
+  observeEvaluationTurns,
+  readEvaluationTurn,
+} from "./evaluation-turn-evidence.js";
 import { appendFile, mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
-import {
-  CreateSessionResponseSchema,
-  SendMessageResponseSchema,
-} from "@personasim/contracts";
+import { CreateSessionResponseSchema } from "@personasim/contracts";
 import type { LlmCallMetric, LlmProvider } from "@personasim/providers";
 import { z } from "zod";
 
@@ -236,6 +237,7 @@ export async function runDualModelSimulation(
         },
       },
     });
+    observeEvaluationTurns(app);
     const draft = app.personasim.characters.createDemoCharacter();
     const character = app.personasim.characters.publish(
       draft.id,
@@ -308,7 +310,7 @@ export async function runDualModelSimulation(
           },
         });
         assertHttpSuccess(response.statusCode, "character_message");
-        const parsed = SendMessageResponseSchema.parse(response.json());
+        const parsed = readEvaluationTurn(app, response.json());
         assistantText = parsed.assistantMessage.content;
         userMessageId = parsed.userMessage.id;
         assistantMessageId = parsed.assistantMessage.id;

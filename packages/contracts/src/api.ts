@@ -444,6 +444,7 @@ export const GetSettingsResponseSchema = z
         correspondenceMode: z.enum(["off", "shadow", "enforced"]),
         correspondenceExecution: z.enum(["lazy", "resident", "worker"]),
         keepsakeMode: z.enum(["off", "shadow", "enforced"]),
+        developerMode: z.boolean(),
       })
       .strict(),
   })
@@ -525,3 +526,83 @@ export const ServerSentEventSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 export type ServerSentEvent = z.infer<typeof ServerSentEventSchema>;
+
+/** Product transport DTOs. Internal simulation/diagnostic schemas above remain
+ * available to developer tooling; public HTTP and SSE must use these projections. */
+export const PublicMessageSchema = ApiStoredMessageSchema.omit({
+  triggerEventId: true,
+  metadata: true,
+})
+  .extend({
+    metadata: z
+      .object({
+        chunks: z.array(z.string().min(1).max(4_000)).min(1).max(12).optional(),
+        deliveryMode: PersonaChatDeliveryModeSchema.optional(),
+      })
+      .strict(),
+  })
+  .strict();
+export type PublicMessage = z.infer<typeof PublicMessageSchema>;
+
+export const PublicAgentSnapshotSchema = z
+  .object({
+    agentId: EntityIdSchema,
+    capabilities: AgentCapabilitiesSchema.pick({
+      fuzzyLife: true,
+      legacyExactSchedule: true,
+      schedule: true,
+    }).strict(),
+    serverTimeUtc: UtcDateTimeSchema,
+    characterLocalTime: z.string().trim().min(1).max(64),
+    proactiveMessage: PublicMessageSchema.optional(),
+  })
+  .strict();
+export type PublicAgentSnapshot = z.infer<typeof PublicAgentSnapshotSchema>;
+
+export const PublicPublishCharacterResponseSchema = z
+  .object({
+    character: CharacterSpecSchema,
+  })
+  .strict();
+export const PublicSendMessageResponseSchema = z
+  .object({
+    idempotentReplay: z.boolean(),
+    userMessage: PublicMessageSchema,
+    assistantMessage: PublicMessageSchema,
+  })
+  .strict();
+export type PublicSendMessageResponse = z.infer<
+  typeof PublicSendMessageResponseSchema
+>;
+export const PublicListMessagesResponseSchema = z
+  .object({
+    messages: z.array(PublicMessageSchema).max(500),
+  })
+  .strict();
+export const PublicTimelineResponseSchema = z
+  .object({
+    events: z
+      .array(
+        ApiTimelineEventSchema.pick({
+          id: true,
+          type: true,
+          title: true,
+          summary: true,
+          occurredAtUtc: true,
+          provenance: true,
+        }).strict(),
+      )
+      .max(500),
+  })
+  .strict();
+export type PublicTimelineResponse = z.infer<
+  typeof PublicTimelineResponseSchema
+>;
+export const PublicServerSentEventSchema = z
+  .object({
+    ...SseBaseShape,
+    type: z.string().min(1).max(120),
+    data: z.record(z.string(), EntityIdSchema),
+  })
+  .strict();
+export type PublicServerSentEvent = z.infer<typeof PublicServerSentEventSchema>;

@@ -1,10 +1,10 @@
+import { injectInternalChat } from "../test-fixtures/internal-chat-response.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import { SseHub } from "../sse/hub.js";
-import type { ChatTurnResult } from "./conversation-service.js";
 import type { GenerateObjectInput } from "./llm-service.js";
 import { replyTextHash } from "./semantic-reply-guard.js";
 import { ReplyGoalReviewService } from "./reply-goal-review-service.js";
@@ -158,10 +158,10 @@ describe("reply goal review on the production HTTP chat path", () => {
     text = "今天有点累，先听我说。",
     clientMessageId = "goal-turn",
   ) {
-    return app.inject({
-      method: "POST",
-      url: `/api/sessions/${sessionId}/messages`,
-      payload: { agentId, text, clientMessageId },
+    return injectInternalChat(app, sessionId, {
+      agentId,
+      text,
+      clientMessageId,
     });
   }
   function goalCalls() {
@@ -194,7 +194,7 @@ describe("reply goal review on the production HTTP chat path", () => {
       );
     const response = await send();
     expect(response.statusCode, response.body).toBe(201);
-    const result = response.json<ChatTurnResult>();
+    const result = response.internalTurn!;
     expect(goalCalls()).toHaveLength(1);
     expect(capture).toHaveBeenCalledTimes(1);
     expect(goalGate.mock.calls[0]![0].llm).toBe(capture.mock.results[0]!.value);
@@ -218,7 +218,7 @@ describe("reply goal review on the production HTTP chat path", () => {
     const published = vi.spyOn(SseHub.prototype, "publish");
     const response = await send();
     expect(response.statusCode, response.body).toBe(201);
-    const result = response.json<ChatTurnResult>();
+    const result = response.internalTurn!;
     expect(goalCalls().map((call) => call.purpose)).toEqual([
       "review_reply_goal",
       "rewrite_reply_goal",
@@ -278,7 +278,7 @@ describe("reply goal review on the production HTTP chat path", () => {
       rewrites.length = 0;
       const retry = await send();
       expect(retry.statusCode, retry.body).toBe(201);
-      expect(retry.json<ChatTurnResult>().idempotentReplay).toBe(false);
+      expect(retry.internalTurn!.idempotentReplay).toBe(false);
       expect(app.personasim.store.listMessages(sessionId)).toHaveLength(2);
     },
   );

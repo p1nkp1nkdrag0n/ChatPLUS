@@ -39,6 +39,16 @@ type TimelineProjectionInput = {
 
 export type TimelineProjectionMode = "fuzzy" | "legacy_exact";
 
+export const PUBLIC_TIMELINE_DOMAIN_EVENT_TYPES = [
+  "character.created",
+  "character.published",
+  "conversation.turn_committed",
+  "conversation.proactive_message_sent",
+  "life.support_recorded",
+  "life.delegated_decision_recorded",
+  "life.decision_follow_up_evidenced",
+] as const;
+
 type Lineage = Pick<
   ApiTimelineEvent,
   | "sourceIntentId"
@@ -96,6 +106,7 @@ export function buildTimelineResponse(
   agentId: string,
   limit: number,
   mode: TimelineProjectionMode,
+  publicOnly = false,
 ): TimelineResponse {
   const fuzzyLife = mode === "fuzzy";
   const storedActivityEvents = store.listActivityEvents(agentId, limit);
@@ -113,8 +124,11 @@ export function buildTimelineResponse(
   // matters for migrated databases: a stale exact plan must not become visible
   // again merely because the user opens the shared-experience timeline.
   const scheduleItems = fuzzyLife ? [] : store.listSchedule(agentId);
-  const domainEvents = store
-    .listDomainEvents(agentId, limit)
+  const domainEvents = (
+    publicOnly
+      ? listPublicTimelineDomainEvents(store, agentId, limit)
+      : store.listDomainEvents(agentId, limit)
+  )
     .map((event) => ApiDomainEventSchema.parse(event))
     .filter(
       (event) => !fuzzyLife || !isLegacyExactPlanningEvent(event.eventType),
@@ -191,6 +205,31 @@ export function buildTimelineResponse(
     scheduleItems,
     domainEvents,
   };
+}
+
+function listPublicTimelineDomainEvents(
+  store: DatabaseStore,
+  agentId: string,
+  limit: number,
+): Array<Record<string, unknown>> {
+  // Filter the durable source before LIMIT: private background events must not
+  // consume the user's history window, even when they outnumber public events.
+  return store.database
+    .prepare(
+      `SELECT id, agent_id AS agentId, stream_type AS streamType, stream_id AS streamId,
+      stream_version AS streamVersion, event_type AS eventType,
+      recorded_at_utc AS recordedAtUtc, effective_at_utc AS effectiveAtUtc,
+      payload_json AS payloadJson, correlation_id AS correlationId,
+      causation_id AS causationId, idempotency_key AS idempotencyKey
+     FROM domain_events WHERE agent_id = ?
+       AND event_type IN (${PUBLIC_TIMELINE_DOMAIN_EVENT_TYPES.map(() => "?").join(",")})
+     ORDER BY recorded_at_utc DESC, rowid DESC LIMIT ?`,
+    )
+    .all(agentId, ...PUBLIC_TIMELINE_DOMAIN_EVENT_TYPES, limit)
+    .map((row) => {
+      const { payloadJson, ...event } = row as Record<string, unknown>;
+      return { ...event, payload: JSON.parse(String(payloadJson)) as unknown };
+    });
 }
 
 function withoutScheduleLineage(

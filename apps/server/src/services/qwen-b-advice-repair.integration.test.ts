@@ -113,9 +113,14 @@ describe("Qwen B trial advice through the shared HTTP repair budget", () => {
           clientMessageId: "qwen-b-t6",
         },
       };
+      const turnSpy = vi.spyOn(app.personasim.conversations, "chat");
       const response = await app.inject(request);
       expect(response.statusCode, response.body).toBe(201);
-      const result = response.json<ChatTurnResult>();
+      expect(
+        response.json<ChatTurnResult>().assistantMessage.metadata,
+      ).not.toHaveProperty("semanticReplyGuard");
+      const result = await (turnSpy.mock.results[0]!
+        .value as Promise<ChatTurnResult>);
       expect(
         calls.filter((purpose) => purpose === "repair_chat_turn"),
       ).toHaveLength(explicitBan ? 1 : 0);

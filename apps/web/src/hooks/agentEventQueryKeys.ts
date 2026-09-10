@@ -17,13 +17,11 @@ export function agentEventQueryKeys(
   agentId: string,
 ): ReadonlyArray<readonly string[]> {
   return [
-    ["agent", agentId, "state"],
     agentOverviewQueryKey(agentId),
     ["agent", agentId, "timeline"],
     ["messages", agentId],
     ["correspondence", agentId],
     ["relationship-archive", agentId],
     ["keepsakes", agentId],
-    ["temporal-tasks", agentId],
   ];
 }

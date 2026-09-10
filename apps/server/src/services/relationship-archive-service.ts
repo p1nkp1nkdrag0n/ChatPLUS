@@ -302,6 +302,15 @@ WITH archive AS (
 SELECT *
 FROM archive
 WHERE effective_at_utc IS NOT NULL
+  AND (
+    @publicOnly = 0
+    OR source_kind IN ('letter', 'relationship_milestone', 'life_outcome', 'keepsake')
+    OR (source_kind = 'domain_event' AND title IN (
+      'character.created', 'character.published', 'conversation.turn_committed',
+      'conversation.proactive_message_sent', 'life.support_recorded',
+      'life.delegated_decision_recorded', 'life.decision_follow_up_evidenced'
+    ))
+  )
   AND effective_at_utc <= @throughUtc
   AND (@fromUtc IS NULL OR effective_at_utc >= @fromUtc)
   AND (@entryId IS NULL OR cursor_id = @entryId)
@@ -329,6 +338,7 @@ export class RelationshipArchiveService {
   listPage(
     agentId: string,
     input: Partial<RelationshipArchiveQuery> = {},
+    publicOnly = false,
   ): RelationshipArchivePageResponse {
     assertEntityId(agentId);
     const characterTimezone = this.requireCharacterTimezone(agentId);
@@ -339,6 +349,7 @@ export class RelationshipArchiveService {
         : decodeArchiveCursor(query.cursor, query.filter);
     const rows = this.selectRows({
       agentId,
+      publicOnly,
       characterTimezone,
       filter: query.filter,
       limit: query.entryId === undefined ? query.limit + 1 : 1,
@@ -372,6 +383,7 @@ export class RelationshipArchiveService {
     fromUtc: string;
     toUtc: string;
     limit?: number;
+    publicOnly?: boolean;
   }): RelationshipRecap {
     assertEntityId(input.agentId);
     assertUtc(input.fromUtc);
@@ -393,6 +405,7 @@ export class RelationshipArchiveService {
         : this.clock.nowUtc();
     const rows = this.selectRows({
       agentId: input.agentId,
+      publicOnly: input.publicOnly ?? false,
       characterTimezone,
       filter: "all",
       limit,
@@ -547,6 +560,7 @@ export class RelationshipArchiveService {
     fromUtc?: string;
     cursor?: ArchiveCursor;
     entryId?: string;
+    publicOnly?: boolean;
   }): ArchiveRow[] {
     const include = archiveFilterFlags(input.filter);
     const limit = Math.max(
@@ -555,6 +569,7 @@ export class RelationshipArchiveService {
     );
     return this.database.prepare(ARCHIVE_QUERY).all({
       agentId: input.agentId,
+      publicOnly: input.publicOnly ? 1 : 0,
       characterTimezone: input.characterTimezone,
       ...include,
       throughUtc: input.throughUtc,

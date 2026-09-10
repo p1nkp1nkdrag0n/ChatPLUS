@@ -272,11 +272,10 @@ test.describe("Dearvale desktop journeys", () => {
     await expectChatSession(page, secondSessionId);
     await expect(
       page.getByRole("button", { name: "角色近况", exact: true }),
-    ).toHaveAttribute("aria-expanded", "false");
-    await page.getByRole("button", { name: "角色近况", exact: true }).click();
+    ).toHaveCount(0);
     await expect(
       page.getByRole("complementary", { name: "角色近况" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await page.getByLabel("切换角色", { exact: true }).click();
     const characterSwitcher = page.locator("details").filter({
       has: page.getByLabel("切换角色", { exact: true }),

@@ -272,9 +272,10 @@ describe("web API normalization", () => {
     const timeline = { events: [{ id: "event-1" }] };
     const payloads = new Map<string, Record<string, unknown>>([
       ["/api/developer/status", status],
-      ["/api/agents/agent-1/overview", overview],
-      ["/api/agents/agent-1/memories", memories],
-      ["/api/agents/agent-1/timeline", timeline],
+      [
+        "/api/developer/agents/agent-1/snapshot",
+        { overview, memories, timeline },
+      ],
     ]);
     const fetchMock = vi.fn((input: string): Promise<Response> => {
       const payload = payloads.get(input);
@@ -310,9 +311,7 @@ describe("web API normalization", () => {
     const requestedUrls = fetchMock.mock.calls.map(([input]) => input);
     expect(requestedUrls).toEqual([
       "/api/developer/status",
-      "/api/agents/agent-1/overview",
-      "/api/agents/agent-1/memories",
-      "/api/agents/agent-1/timeline",
+      "/api/developer/agents/agent-1/snapshot",
     ]);
     expect(
       requestedUrls.some((url) => url.includes("/api/developer/snapshot/")),

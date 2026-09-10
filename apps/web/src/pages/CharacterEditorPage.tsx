@@ -80,6 +80,12 @@ export default function CharacterEditorPage() {
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState<string>();
 
+  const settingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings.get,
+  });
+  const developerMode = settingsQuery.data?.developerMode === true;
+
   const query = useQuery({
     queryKey: ["character", characterId],
     queryFn: () => api.characters.get(characterId!),
@@ -265,16 +271,18 @@ export default function CharacterEditorPage() {
       </header>
 
       <nav className="editor-tabs" aria-label="角色编辑章节">
-        {TABS.map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={tab === value ? "is-active" : ""}
-            onClick={() => setTab(value)}
-          >
-            {label}
-          </button>
-        ))}
+        {TABS.filter(([value]) => value !== "json" || developerMode).map(
+          ([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={tab === value ? "is-active" : ""}
+              onClick={() => setTab(value)}
+            >
+              {label}
+            </button>
+          ),
+        )}
       </nav>
 
       <div className="editor-workspace">
@@ -335,7 +343,7 @@ export default function CharacterEditorPage() {
               />
             ) : null}
           </Suspense>
-          {tab === "json" ? (
+          {tab === "json" && developerMode ? (
             <section className="json-editor">
               <div className="editor-section-title">
                 <div>
@@ -370,6 +378,7 @@ export default function CharacterEditorPage() {
         </section>
 
         <ProvenanceInspector
+          developerMode={developerMode}
           selected={selected}
           spec={spec}
           onToggleLock={toggleLock}
@@ -843,10 +852,12 @@ function PersonaEditor({
 }
 
 function ProvenanceInspector({
+  developerMode,
   selected,
   spec,
   onToggleLock,
 }: {
+  developerMode: boolean;
   selected: SelectedField | undefined;
   spec: CharacterSpec;
   onToggleLock: (path: string) => void;
@@ -925,15 +936,19 @@ function ProvenanceInspector({
           </code>
         ))}
       </div>
-      <button
-        className="text-button"
-        type="button"
-        onClick={() =>
-          void navigator.clipboard.writeText(JSON.stringify(spec, null, 2))
-        }
-      >
-        <Copy size={14} /> 复制完整 JSON
-      </button>
+      {developerMode ? (
+        <button
+          className="text-button"
+          type="button"
+          onClick={() =>
+            void navigator.clipboard.writeText(JSON.stringify(spec, null, 2))
+          }
+        >
+          <Copy size={14} /> 复制完整 JSON
+        </button>
+      ) : (
+        <small>完整 JSON 编辑仅在开发者模式中提供。</small>
+      )}
     </aside>
   );
 }

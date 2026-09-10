@@ -57,10 +57,16 @@ describe("fuzzy life runtime routing", () => {
       lifeContext: { authority: string };
     }>();
     expect(publishedBody.character.schedulePolicy.enabled).toBe(false);
-    expect(publishedBody.schedule).toEqual([]);
-    expect(publishedBody.lifeContext.authority).toBe(
-      "server_persisted_fuzzy_life",
-    );
+    expect(publishedBody).not.toHaveProperty("schedule");
+    expect(publishedBody).not.toHaveProperty("lifeContext");
+    const publishedOverview = await app.inject({
+      method: "GET",
+      url: `/api/developer/agents/${draft.id}/overview`,
+    });
+    expect(
+      publishedOverview.json<{ lifeContext: { authority: string } }>()
+        .lifeContext.authority,
+    ).toBe("server_persisted_fuzzy_life");
     expect(app.personasim.store.listSchedule(draft.id)).toEqual([]);
     expect(
       app.personasim.store.database
@@ -75,7 +81,12 @@ describe("fuzzy life runtime routing", () => {
       url: `/api/agents/${draft.id}/activate`,
     });
     expect(activated.statusCode).toBe(200);
-    const snapshot = activated.json<{
+    expect(activated.json()).not.toHaveProperty("lifeContext");
+    const developerOverview = await app.inject({
+      method: "GET",
+      url: `/api/developer/agents/${draft.id}/overview`,
+    });
+    const snapshot = developerOverview.json<{
       capabilities: {
         fuzzyLife: boolean;
         legacyExactSchedule: boolean;
@@ -289,7 +300,7 @@ describe("fuzzy life runtime routing", () => {
 
     const timelineResponse = await app.inject({
       method: "GET",
-      url: `/api/agents/${draft.id}/timeline?limit=100`,
+      url: `/api/developer/agents/${draft.id}/timeline?limit=100`,
     });
     expect(timelineResponse.statusCode).toBe(200);
     expect(listSchedule).not.toHaveBeenCalled();

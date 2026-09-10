@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   KeepsakeSummaryResponse,
-  RelationshipArchiveEntry,
+  PublicRelationshipArchiveEntry as RelationshipArchiveEntry,
 } from "@personasim/contracts";
 import {
   addRedaction,

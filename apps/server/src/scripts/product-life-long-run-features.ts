@@ -7,7 +7,7 @@ import {
   KeepsakePageResponseSchema,
   LetterDetailResponseSchema,
   OpenLetterResponseSchema,
-  RelationshipArchivePageResponseSchema,
+  PublicRelationshipArchivePageResponseSchema,
   RelationshipRecapSchema,
   RelationshipShareProjectionSchema,
   type JsonValue,
@@ -318,7 +318,7 @@ export async function inspectProductLifeArtifacts(
     const archive = await action.json(
       "GET",
       `/api/agents/${agentId}/relationship-archive?limit=100`,
-      RelationshipArchivePageResponseSchema,
+      PublicRelationshipArchivePageResponseSchema,
     );
     action.internalEvidence.keepsakeOutcome =
       cabinet.items.length === 0

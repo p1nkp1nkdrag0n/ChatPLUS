@@ -38,6 +38,14 @@ import type { Clock } from "../runtime/clock.js";
 import { isMutableClock } from "../runtime/clock.js";
 import type { TemporalTaskScheduler } from "../runtime/temporal-task-scheduler.js";
 import { buildTimelineResponse } from "./timeline-projection.js";
+import {
+  projectPublicArchive,
+  projectPublicRecap,
+  projectPublicMessage,
+  projectPublicSnapshot,
+  projectPublicTimeline,
+  projectPublicTurn,
+} from "./public-projection.js";
 import type { SseHub } from "../sse/hub.js";
 import type { RetrievalRunRepository } from "../repositories/retrieval-run-repository.js";
 import type { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
@@ -144,6 +152,10 @@ export function registerRoutes(
     keepsakes,
     relationshipArchive,
   } = services;
+
+  const requireDeveloperMode = () => {
+    if (!config.developerRoutes) throw notFound("Developer endpoint");
+  };
 
   app.get("/api/health", () => ({
     status: "ok",
@@ -268,17 +280,11 @@ export function registerRoutes(
     return actors.runExclusive(id, async () => {
       const character = characters.publish(id, body.expectedVersion);
       if (config.lifePlanningMode === "fuzzy") {
-        return {
-          character,
-          schedule: [],
-          lifeContext: life.promptContext(id),
-        };
+        life.promptContext(id);
+        return { character };
       }
-      const plan = await schedules.ensure72Hours(
-        id,
-        store.listSchedule(id).length === 0,
-      );
-      return { character, schedule: plan.created };
+      await schedules.ensure72Hours(id, store.listSchedule(id).length === 0);
+      return { character };
     });
   });
 
@@ -317,23 +323,27 @@ export function registerRoutes(
       proactiveOutcome?.status === "committed"
         ? proactiveOutcome.message
         : undefined;
-    return buildAgentSnapshot(id, services, {
-      ...activated,
+    return projectPublicSnapshot(
+      buildAgentSnapshot(id, services),
       proactiveMessage,
-    });
+    );
   });
 
-  app.get("/api/agents/:id/state", (request) => {
+  app.get("/api/agents/:id/state", (request, reply) => {
+    requireDeveloperMode();
+    reply.header("cache-control", "no-store");
     const { id } = idParamsSchema.parse(request.params);
     return buildAgentSnapshot(id, services);
   });
 
   app.get("/api/agents/:id/overview", (request) => {
     const { id } = idParamsSchema.parse(request.params);
-    return buildAgentSnapshot(id, services);
+    return projectPublicSnapshot(buildAgentSnapshot(id, services));
   });
 
-  app.get("/api/agents/:id/schedule", (request) => {
+  app.get("/api/agents/:id/schedule", (request, reply) => {
+    requireDeveloperMode();
+    reply.header("cache-control", "no-store");
     const { id } = idParamsSchema.parse(request.params);
     const range = rangeQuerySchema.parse(request.query);
     if (config.lifePlanningMode === "fuzzy") {
@@ -355,6 +365,7 @@ export function registerRoutes(
   });
 
   app.post("/api/agents/:id/schedule/effects", async (request) => {
+    requireDeveloperMode();
     const { id } = idParamsSchema.parse(request.params);
     if (config.lifePlanningMode === "fuzzy") {
       if (!store.getCharacterSummary(id)) throw notFound("Character");
@@ -398,15 +409,20 @@ export function registerRoutes(
     const query = z
       .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
       .parse(request.query);
-    return buildTimelineResponse(
-      store,
-      id,
-      query.limit,
-      config.lifePlanningMode,
+    return projectPublicTimeline(
+      buildTimelineResponse(
+        store,
+        id,
+        query.limit,
+        config.lifePlanningMode,
+        true,
+      ),
     );
   });
 
-  app.get("/api/agents/:id/memories", (request) => {
+  app.get("/api/agents/:id/memories", (request, reply) => {
+    requireDeveloperMode();
+    reply.header("cache-control", "no-store");
     const { id } = idParamsSchema.parse(request.params);
     if (!store.getCharacterSummary(id)) throw notFound("Character");
     const rows = store.database
@@ -469,7 +485,11 @@ export function registerRoutes(
     const query = z
       .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
       .parse(request.query);
-    return { messages: conversations.listMessages(sessionId, query.limit) };
+    return {
+      messages: conversations
+        .listMessages(sessionId, query.limit)
+        .map(projectPublicMessage),
+    };
   });
 
   app.post("/api/sessions/:sessionId/messages", async (request, reply) => {
@@ -492,7 +512,9 @@ export function registerRoutes(
           ? turn
           : { ...turn, state: planning.state };
       });
-      return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+      return reply
+        .code(result.idempotentReplay ? 200 : 201)
+        .send(projectPublicTurn(result));
     } finally {
       lease.end();
     }
@@ -523,7 +545,9 @@ export function registerRoutes(
           ? turn
           : { ...turn, state: planning.state };
       });
-      return reply.code(result.idempotentReplay ? 200 : 201).send(result);
+      return reply
+        .code(result.idempotentReplay ? 200 : 201)
+        .send(projectPublicTurn(result));
     } finally {
       lease.end();
     }
@@ -607,7 +631,9 @@ export function registerRoutes(
       await correspondence.catchUpAgent(agentId);
       reply.header("cache-control", "no-store");
       return relationshipArchiveApi(() =>
-        relationshipArchive.listPage(agentId, query),
+        projectPublicArchive(
+          relationshipArchive.listPage(agentId, query, true),
+        ),
       );
     },
   );
@@ -618,12 +644,15 @@ export function registerRoutes(
     await correspondence.catchUpAgent(agentId);
     reply.header("cache-control", "no-store");
     return relationshipArchiveApi(() =>
-      relationshipArchive.buildRecap({
-        agentId,
-        fromUtc: query.fromUtc,
-        toUtc: query.toUtc,
-        limit: query.limit,
-      }),
+      projectPublicRecap(
+        relationshipArchive.buildRecap({
+          agentId,
+          fromUtc: query.fromUtc,
+          toUtc: query.toUtc,
+          limit: query.limit,
+          publicOnly: true,
+        }),
+      ),
     );
   });
 
@@ -694,11 +723,19 @@ export function registerRoutes(
       correspondenceMode: config.correspondenceMode,
       correspondenceExecution: config.correspondenceExecution,
       keepsakeMode: config.keepsakeMode,
+      developerMode: config.developerRoutes,
     },
   }));
 
   const updateSettings = (request: FastifyRequest) => {
     const values = UpdateSettingsRequestSchema.parse(request.body);
+    if ("developerMode" in values || "developerRoutes" in values) {
+      throw new ApiError(
+        400,
+        "immutable_runtime_setting",
+        "Developer mode is configured on the server.",
+      );
+    }
     const forbidden = Object.keys(values).filter((key) =>
       /(api.?key|secret|password|token|credential)/i.test(key),
     );
@@ -719,6 +756,52 @@ export function registerRoutes(
   app.patch("/api/settings", updateSettings);
 
   if (config.developerRoutes) {
+    app.get("/api/developer/agents/:id/snapshot", (request, reply) => {
+      const { id } = idParamsSchema.parse(request.params);
+      reply.header("cache-control", "no-store");
+      const overview = buildAgentSnapshot(id, services);
+      return {
+        overview,
+        timeline: buildTimelineResponse(
+          store,
+          id,
+          100,
+          config.lifePlanningMode,
+        ),
+        memories: {
+          memories: store.database
+            .prepare(
+              "SELECT * FROM memories WHERE agent_id = ? ORDER BY created_at_utc DESC LIMIT 100",
+            )
+            .all(id),
+        },
+        messages: store
+          .listSessions(id)
+          .flatMap((session) => conversations.listMessages(session.id, 100)),
+      };
+    });
+    app.get("/api/developer/agents/:id/overview", (request, reply) => {
+      const { id } = idParamsSchema.parse(request.params);
+      reply.header("cache-control", "no-store");
+      return buildAgentSnapshot(id, services);
+    });
+    app.get("/api/developer/agents/:id/timeline", (request, reply) => {
+      const { id } = idParamsSchema.parse(request.params);
+      if (!store.getCharacterSummary(id)) throw notFound("Character");
+      const { limit } = z
+        .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
+        .parse(request.query);
+      reply.header("cache-control", "no-store");
+      return buildTimelineResponse(store, id, limit, config.lifePlanningMode);
+    });
+    app.get("/api/developer/sessions/:sessionId/messages", (request, reply) => {
+      const { sessionId } = sessionParamsSchema.parse(request.params);
+      const { limit } = z
+        .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
+        .parse(request.query);
+      reply.header("cache-control", "no-store");
+      return { messages: conversations.listMessages(sessionId, limit) };
+    });
     app.post(
       "/api/developer/agents/:id/keepsakes/generate",
       async (request, reply) => {

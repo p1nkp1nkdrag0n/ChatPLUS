@@ -1,7 +1,4 @@
 import {
-  BookOpen,
-  Clock3,
-  Leaf,
   MessageCircleMore,
   MoreHorizontal,
   Plus,
@@ -9,7 +6,6 @@ import {
   Send,
   Smile,
   Sparkles,
-  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -34,16 +30,9 @@ import { DateTime } from "luxon";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
 import { llmApi, sessionModelKey } from "../api/llm";
 import { ChatModelToolbar } from "../components/llm/ChatModelToolbar";
-import type {
-  CharacterSpec,
-  ChatMessage,
-  ChatSession,
-  RuntimeState,
-} from "../api/types";
+import type { CharacterSpec, ChatMessage, ChatSession } from "../api/types";
 import { CharacterAvatar } from "../components/CharacterAvatar";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
-import { LifeContextOverview } from "../components/LifeContextOverview";
-import { StatusMeter } from "../components/StatusMeter";
 import {
   agentOverviewQueryKey,
   primeAgentOverview,
@@ -103,7 +92,6 @@ function CharacterChat({ characterId }: { characterId: string }) {
   const [searchParams] = useSearchParams();
   const requestedSessionId = searchParams.get("sessionId");
   const [search, setSearch] = useState("");
-  const [railOpen, setRailOpen] = useState(false);
   const draftsRef = useRef(new Map<string, ChatDraft>());
   const initialCreationRef = useRef(false);
   const mountedRef = useRef(true);
@@ -200,15 +188,6 @@ function CharacterChat({ characterId }: { characterId: string }) {
     sessionsQuery.isSuccess,
   ]);
 
-  const overviewQuery = useQuery({
-    queryKey: agentOverviewQueryKey(characterId),
-    queryFn: () => api.agents.overview(characterId),
-    enabled: Boolean(activationQuery.data),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const state = overviewQuery.data?.state ?? activationQuery.data?.state;
-  const lifeContext =
-    overviewQuery.data?.lifeContext ?? activationQuery.data?.lifeContext;
   const filteredCharacters = (charactersQuery.data?.characters ?? []).filter(
     (item) =>
       item.status !== "archived" &&
@@ -350,7 +329,7 @@ function CharacterChat({ characterId }: { characterId: string }) {
           <ErrorBlock error={createSessionMutation.error} />
         ) : null}
       </aside>
-      <div className={`chat-page${railOpen ? " has-rail" : ""}`}>
+      <div className="chat-page">
         <header className="chat-header">
           <div className="chat-header__identity">
             <CharacterAvatar characterId={characterId} size={88} />
@@ -362,18 +341,6 @@ function CharacterChat({ characterId }: { characterId: string }) {
             </div>
           </div>
           <div className="chat-header__context">
-            {published ? (
-              <button
-                className="chat-context-button"
-                type="button"
-                onClick={() => setRailOpen((open) => !open)}
-                aria-expanded={railOpen}
-                aria-controls="character-context"
-              >
-                <Leaf size={22} />
-                角色近况
-              </button>
-            ) : null}
             <details
               className="chat-character-menu"
               ref={characterMenuRef}
@@ -444,44 +411,6 @@ function CharacterChat({ characterId }: { characterId: string }) {
           </div>
         </header>
         {conversation}
-        {railOpen ? (
-          <aside
-            className="chat-rail"
-            id="character-context"
-            aria-label="角色近况"
-          >
-            <div className="chat-rail__top">
-              <h2>角色近况</h2>
-              <button
-                className="icon-button"
-                type="button"
-                aria-label="收起角色近况"
-                onClick={() => setRailOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="chat-local-time">
-              <Clock3 size={15} />
-              <CharacterClock
-                timezone={character?.identity.timezone ?? "local"}
-                referenceUtc={state?.asOfUtc}
-              />
-            </div>
-            {state ? <StateOverview state={state} /> : null}
-            {lifeContext ? (
-              <LifeContextOverview
-                value={lifeContext}
-                timelineHref={`/characters/${characterId}/timeline`}
-              />
-            ) : null}
-            {!lifeContext && character?.tier === "lightweight" ? (
-              <p className="chat-list-note">
-                此角色专注于与你的对话，尚未展开日常生活。
-              </p>
-            ) : null}
-          </aside>
-        ) : null}
       </div>
     </div>
   );
@@ -900,41 +829,6 @@ function SessionConversation({
   );
 }
 
-function CharacterClock({
-  timezone,
-  referenceUtc,
-}: {
-  timezone: string;
-  referenceUtc?: string | undefined;
-}) {
-  const anchor = useRef({
-    simulated: referenceUtc ? DateTime.fromISO(referenceUtc) : DateTime.utc(),
-    observed: DateTime.utc(),
-  });
-  const [now, setNow] = useState(() => anchor.current.simulated);
-
-  useEffect(() => {
-    anchor.current = {
-      simulated: referenceUtc ? DateTime.fromISO(referenceUtc) : DateTime.utc(),
-      observed: DateTime.utc(),
-    };
-    setNow(anchor.current.simulated);
-  }, [referenceUtc]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const elapsed = DateTime.utc().diff(anchor.current.observed).toMillis();
-      setNow(anchor.current.simulated.plus({ milliseconds: elapsed }));
-    }, 30_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return (
-    <time dateTime={now.toISO() ?? undefined}>
-      {now.setZone(timezone).toFormat("HH:mm")}
-    </time>
-  );
-}
-
 export function MessageBubble({
   message,
   characterId,
@@ -1049,9 +943,6 @@ export function MessageBubble({
             {formatLocalTime(message.createdAtUtc, timezone)}
           </time>
         </div>
-        {message.role === "assistant" && message.memoryRecall ? (
-          <MemoryContextSummary value={message.memoryRecall} />
-        ) : null}
         {proactive ? (
           <Link
             className="message-origin-link"
@@ -1062,42 +953,6 @@ export function MessageBubble({
         ) : null}
       </div>
     </div>
-  );
-}
-
-function MemoryContextSummary({
-  value,
-}: {
-  value: NonNullable<ChatMessage["memoryRecall"]>;
-}) {
-  const evidenceCount = value.selectedEvidenceIds.length;
-  const usedForReply = value.promptStrategy === "evidence_selected";
-  return (
-    <details className="message-memory-context">
-      <summary>
-        <BookOpen size={13} aria-hidden="true" />
-        {value.abstained
-          ? "本轮没有引用记忆"
-          : `本轮记忆依据 · ${evidenceCount} 条证据`}
-      </summary>
-      <p>
-        {value.abstained
-          ? "没有找到同时满足相关性和证据要求的记忆，因此回复没有补入未经验证的旧信息。"
-          : `${usedForReply ? "已用于回复" : "仅作对照评估"}：${memoryRecallModeLabel(value.recallMode)}，相关度 ${Math.round(value.score * 100)}%。系统只选择有来源且与当前话题最相关的记忆。`}
-      </p>
-    </details>
-  );
-}
-
-function memoryRecallModeLabel(value: string): string {
-  return (
-    {
-      event_card: "可追溯经历",
-      verbatim_quote: "对话原文",
-      date_digest: "日期摘要",
-      basic_memory: "基础记忆",
-      none: "无可用来源",
-    }[value] ?? "已验证记忆"
   );
 }
 
@@ -1114,27 +969,4 @@ function appendUniqueMessages(
     }
   }
   return next;
-}
-
-function StateOverview({ state }: { state: RuntimeState }) {
-  return (
-    <section className="rail-section">
-      <div className="rail-heading">
-        <h2>状态概览</h2>
-        <span>rev {state.revision}</span>
-      </div>
-      <div className="state-meters">
-        <StatusMeter label="精力" value={state.energy} tone="green" />
-        <StatusMeter
-          label="心情"
-          value={(state.moodValence + 1) / 2}
-          tone="green"
-        />
-        <StatusMeter label="专注" value={state.focus} tone="blue" />
-        <StatusMeter label="社交" value={state.socialBattery} tone="orange" />
-        <StatusMeter label="唤醒" value={state.moodArousal} tone="sky" />
-        <StatusMeter label="压力" value={state.stress} tone="sky" />
-      </div>
-    </section>
-  );
 }

@@ -1,3 +1,11 @@
+import {
+  injectInternalChat,
+  internalChatJson,
+} from "../test-fixtures/internal-chat-response.js";
+import {
+  observeEvaluationTurns,
+  readEvaluationTurn,
+} from "../scripts/evaluation-turn-evidence.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1069,7 +1077,7 @@ describe("server-owned schedule negotiation", () => {
     );
 
     expect(response.status).toBe(201);
-    const body = (await response.json()) as ChatTurnResult;
+    const body = readEvaluationTurn(app, await response.json());
     expect(body.assistantMessage.content).toBe(modelReply);
     expect(body.assistantMessage.content).not.toContain("【未修改日程】");
     expect(body.scheduleChanges).toEqual([]);
@@ -3756,6 +3764,7 @@ async function createNegotiationTestApp(
     startScheduler: false,
     logger: false,
   });
+  observeEvaluationTurns(app);
   return { app, clock };
 }
 
@@ -3812,13 +3821,9 @@ function sendMessage(
   clientMessageId: string,
   text: string,
 ) {
-  return app.inject({
-    method: "POST",
-    url: `/api/sessions/${sessionId}/messages`,
-    payload: { agentId, clientMessageId, text },
-  });
+  return injectInternalChat(app, sessionId, { agentId, clientMessageId, text });
 }
 
 function jsonBody<T>(response: { body: string }): T {
-  return JSON.parse(response.body) as T;
+  return internalChatJson<T>(response);
 }

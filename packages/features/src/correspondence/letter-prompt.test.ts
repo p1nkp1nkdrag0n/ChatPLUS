@@ -117,6 +117,15 @@ describe("buildLetterReplyPrompt", () => {
 
     expect(built.system).toContain(`LETTER_ARRIVAL_EFFECTIVE_TIME=${ARRIVAL}`);
     expect(built.system).toContain("A plan is not an outcome");
+    expect(built.system).toContain(
+      "The application user and character begin as strangers",
+    );
+    expect(built.system).toContain(
+      "canonical third-party relationships do not establish prior intimacy",
+    );
+    expect(built.system).toContain(
+      "never recite scores, thresholds, stages, or diagnostics",
+    );
     expect(built.system).toContain("complete correspondence letter");
     expect(built.prompt).toContain(ARRIVAL);
     expect(built.prompt).not.toContain("evidence-before-arrival");

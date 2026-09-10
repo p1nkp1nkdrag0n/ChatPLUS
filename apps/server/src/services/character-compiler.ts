@@ -50,7 +50,8 @@ const CHARACTER_COMPILATION_STRATEGY = [
   "Keep the draft specific enough to produce distinctive behavior, but avoid encyclopedic repetition of the input.",
   "10. Ordinary traits do not authorize absolute boundaries. Do not turn independent judgment into never compromising, or a natural speaking style into refusing another person's comfort. Preserve each instruction's target and scope. No minimum number of hard boundaries is required.",
   "11. The server owns authorityAudit and provenance authorization; never generate authorityAudit or claim that origin/sourceRefs grant permission. Explicit structured authoring declarations are applied by the server, not broadened by the model.",
-  "12. frequentPhrases must be [] unless the author or source explicitly supplied those phrases. Describe register and observational habits instead of inventing recurring openings. sharedContext must contain only explicitly supplied relationship facts, never inferred mutual knowledge from a relationship label.",
+  "12. frequentPhrases must be [] unless the author or source explicitly supplied those phrases. Describe register and observational habits instead of inventing recurring openings.",
+  "13. The application user and character always start as strangers: initialCloseness=0.1, initialTrust=0.1, sharedContext=''. Authoring and imported canon cannot establish a prior friendship, romance, mutual knowledge or shared experiences with the application user. Preserve personal biography and relationships with third-party characters; do not identify those people as the application user. Describe relationship behavior as conditional tendencies, never an already-established bond.",
 ].join("\n");
 
 const CHARACTER_IMPORT_STRATEGY = [
@@ -205,6 +206,7 @@ export function authoritativeImportedDraft(
           relationshipType: fallback.userRelationship.relationshipType,
           initialCloseness: fallback.userRelationship.initialCloseness,
           initialTrust: fallback.userRelationship.initialTrust,
+          sharedContext: "",
         },
         knowledge: {
           ...candidate.knowledge,
@@ -418,15 +420,10 @@ function applyOriginalFormAuthority(
     },
     userRelationship: {
       ...draft.userRelationship,
-      relationshipType: input.initialRelationship,
-      initialCloseness:
-        input.characterBrief === undefined
-          ? fallback.userRelationship.initialCloseness
-          : draft.userRelationship.initialCloseness,
-      initialTrust:
-        input.characterBrief === undefined
-          ? fallback.userRelationship.initialTrust
-          : draft.userRelationship.initialTrust,
+      relationshipType: fallback.userRelationship.relationshipType,
+      initialCloseness: fallback.userRelationship.initialCloseness,
+      initialTrust: fallback.userRelationship.initialTrust,
+      sharedContext: "",
     },
     dialogue: {
       ...draft.dialogue,

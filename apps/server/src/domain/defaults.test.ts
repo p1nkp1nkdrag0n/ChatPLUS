@@ -71,7 +71,7 @@ describe("initial relationship defaults", () => {
     expect(new Set(milestones.map((milestone) => milestone.id)).size).toBe(5);
   });
 
-  it("starts a new or imported-style contact at an acquaintance baseline", () => {
+  it("starts a new or imported-style contact at the uniform stranger baseline", () => {
     const draft = buildOriginalDraft(BASE_INPUT);
     const state = initialRuntimeState(
       "initial-default-agent",
@@ -80,28 +80,29 @@ describe("initial relationship defaults", () => {
     );
 
     expect(draft.userRelationship).toMatchObject({
-      initialCloseness: 0.18,
-      initialTrust: 0.22,
+      initialCloseness: 0.1,
+      initialTrust: 0.1,
+      sharedContext: "",
     });
     expect(state.relationship).toMatchObject({
-      closeness: 0.18,
-      trust: 0.22,
+      closeness: 0.1,
+      trust: 0.1,
       familiarity: 0.1,
     });
   });
 
-  it("maps explicit relationship descriptions without flattening them", () => {
+  it("does not grant relationship progress from legacy relationship labels", () => {
     expect(initialRelationshipPreset("认识多年的亲密好友")).toEqual({
-      closeness: 0.55,
-      trust: 0.6,
+      closeness: 0.1,
+      trust: 0.1,
     });
     expect(initialRelationshipPreset("熟悉的朋友")).toEqual({
-      closeness: 0.35,
-      trust: 0.4,
+      closeness: 0.1,
+      trust: 0.1,
     });
   });
 
-  it("uses explicit edited numeric configuration at state creation", () => {
+  it("ignores edited initial numeric configuration at state creation", () => {
     const draft = buildOriginalDraft(BASE_INPUT);
     draft.userRelationship.initialCloseness = 0.72;
     draft.userRelationship.initialTrust = 0.81;
@@ -113,9 +114,10 @@ describe("initial relationship defaults", () => {
         draft,
       ).relationship,
     ).toMatchObject({
-      closeness: 0.72,
-      trust: 0.81,
-      familiarity: 0.57,
+      closeness: 0.1,
+      trust: 0.1,
+      familiarity: 0.1,
+      recentInteractionValence: 0,
     });
   });
 });

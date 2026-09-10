@@ -2,11 +2,7 @@ import { Plus, Trash2 } from "lucide-react";
 import type { CharacterSpec } from "../../api/types";
 import { ensureUserEditSource, rebaseEditedRuleToUserSpec } from "./source";
 import type { SelectedField } from "./types";
-import {
-  EditableStringList,
-  EditorSectionHeading,
-  RangeSetting,
-} from "./EditorFields";
+import { EditableStringList, EditorSectionHeading } from "./EditorFields";
 
 type RelationshipMode = NonNullable<
   CharacterSpec["userRelationship"]["behaviorModes"]
@@ -50,66 +46,11 @@ export function RelationshipEditor({
     <section>
       <EditorSectionHeading
         title="关系"
-        description="定义你们如何认识、如何称呼彼此，以及关系在不同情境下如何表现。"
+        description="你们从初次相识开始。这里描述相处方式，亲近、信任与共同经历会在交流中逐渐形成。"
       />
-      <div className="structured-editor-grid">
-        <label className="field editor-field">
-          <span>关系类型</span>
-          <input
-            value={relationship.relationshipType}
-            onFocus={() =>
-              onSelect({
-                path: "userRelationship.relationshipType",
-                label: "关系类型",
-              })
-            }
-            onChange={(event) =>
-              update({ ...relationship, relationshipType: event.target.value })
-            }
-          />
-        </label>
-        <RangeSetting
-          label="初始亲近度"
-          value={relationship.initialCloseness}
-          onFocus={() =>
-            onSelect({
-              path: "userRelationship.initialCloseness",
-              label: "初始亲近度",
-            })
-          }
-          onChange={(initialCloseness) =>
-            update({ ...relationship, initialCloseness })
-          }
-        />
-        <RangeSetting
-          label="初始信任度"
-          value={relationship.initialTrust}
-          onFocus={() =>
-            onSelect({
-              path: "userRelationship.initialTrust",
-              label: "初始信任度",
-            })
-          }
-          onChange={(initialTrust) => update({ ...relationship, initialTrust })}
-        />
-      </div>
-      <label className="field editor-field structured-editor-wide">
-        <span>共同背景</span>
-        <textarea
-          rows={4}
-          value={relationship.sharedContext}
-          placeholder="你们已经共同经历过什么？彼此知道哪些重要背景？"
-          onFocus={() =>
-            onSelect({
-              path: "userRelationship.sharedContext",
-              label: "共同背景",
-            })
-          }
-          onChange={(event) =>
-            update({ ...relationship, sharedContext: event.target.value })
-          }
-        />
-      </label>
+      <p className="structured-empty">
+        初始关系：陌生人。没有预设的共同过去；之后的关系变化会由真实互动记录。
+      </p>
       <div className="structured-list-columns">
         <EditableStringList
           title="称呼方式"

@@ -432,12 +432,12 @@ function validateCharacterBuild(input: {
             .join(" | "),
     ],
     [
-      "friend_relationship_range",
+      "stranger_relationship_baseline",
       relationship !== undefined &&
-        relationship.closeness >= 0.15 &&
-        relationship.closeness <= 0.65 &&
-        relationship.trust >= 0.2 &&
-        relationship.trust <= 0.75,
+        relationship.closeness === 0.1 &&
+        relationship.trust === 0.1 &&
+        relationship.familiarity === 0.1 &&
+        relationship.recentInteractionValence === 0,
       relationship === undefined
         ? "missing"
         : `closeness=${String(relationship.closeness)},trust=${String(relationship.trust)}`,

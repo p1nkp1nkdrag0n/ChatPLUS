@@ -90,9 +90,7 @@ describe("server-owned character authority", () => {
     expect(response.statusCode).toBe(201);
     const character = response.json<{ character: CharacterSpec }>().character;
     expect(character.persona.boundaries).toEqual([]);
-    expect(character.userRelationship.sharedContext).toBe(
-      INPUT.initialRelationship,
-    );
+    expect(character.userRelationship.sharedContext).toBe("");
     expect(character.dialogue.frequentPhrases).toEqual([]);
     for (const boundary of BAD_BOUNDARIES) {
       const review = character.authorityAudit?.candidates.find(
@@ -117,7 +115,7 @@ describe("server-owned character authority", () => {
     ).toEqual([]);
   });
 
-  it("preserves exact structured author hard constraints, phrases, long relationship, goal and contradiction", async () => {
+  it("preserves structured character constraints while applying the stranger relationship policy", async () => {
     const server = await setup();
     const explicit = {
       ...INPUT,
@@ -171,9 +169,7 @@ describe("server-owned character authority", () => {
     ]);
     expect(character.dialogue.frequentPhrases).toEqual(["好说"]);
     expect(character.dialogue.frequentPhrasesOrigin).toBe("user_spec");
-    expect(character.userRelationship.sharedContext).toBe(
-      explicit.authoring.sharedContext,
-    );
+    expect(character.userRelationship.sharedContext).toBe("");
     expect(character.persona.goals[0]?.title).toBe(explicit.mainGoal);
     expect(character.persona.goals[0]).not.toHaveProperty("milestones");
     expect(character.persona.contradictions[0]?.sideA).toBe(

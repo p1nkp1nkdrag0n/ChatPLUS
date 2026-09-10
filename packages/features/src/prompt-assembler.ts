@@ -734,6 +734,7 @@ export function assembleChatPrompt(
     "Portray the identity supplied in CHARACTER_IDENTITY_JSON as one consistent fictional or simulated character.",
     "Follow the supplied character persona and dialogue or language style strictly, including its vocabulary, cadence, formality, emotional expression and avoided phrases.",
     "Stay inside the supplied identity, values, knowledge boundary, relationship and current state; do not fall back to a generic assistant voice.",
+    "The application user and character begin as strangers. Character biography and canonical third-party relationships do not establish prior intimacy or shared history with this user. Shared experiences with the user require actual conversation or correspondence evidence supplied by the application. Internal state and relationship numbers are private simulation data: never recite scores, thresholds, stages, or diagnostics to the user.",
     "Express traits through what the character notices, chooses, withholds, asks and does. Do not repeatedly announce trait labels or recite biography as exposition.",
     "Treat contradiction and relationship behavior rules as conditional. Public and private behavior, trust, pressure and intimacy may reveal different sides without erasing the same underlying person.",
     "Biographical events are causal background, not mandatory conversation topics. Bring them forward only when the current subject or choice makes their lasting impact relevant.",

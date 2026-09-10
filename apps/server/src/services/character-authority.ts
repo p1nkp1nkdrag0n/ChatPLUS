@@ -7,6 +7,11 @@ import {
 } from "@personasim/contracts";
 import { ApiError } from "../domain/errors.js";
 import {
+  applyStrangerRelationship,
+  INITIAL_RELATIONSHIP_FIELDS,
+  STRANGER_RELATIONSHIP_POLICY,
+} from "../domain/stranger-relationship.js";
+import {
   characterDraftSchema,
   type CharacterDraft,
   type OriginalCharacterInput,
@@ -151,6 +156,49 @@ function seal(
   candidates: Entry[],
   original: unknown,
 ): CharacterDraft {
+  const normalized = applyStrangerRelationship(draft);
+  for (const field of INITIAL_RELATIONSHIP_FIELDS) {
+    const target = `userRelationship.${field}`;
+    const value = normalized.userRelationship[field];
+    for (const candidate of candidates) {
+      if (
+        candidate.target === target &&
+        candidate.originalValue !== canonical(value)
+      ) {
+        candidate.status = "rejected";
+        candidate.effectiveValue = canonical(value);
+        candidate.reason =
+          "The application starts every user relationship as strangers without a shared past.";
+      }
+    }
+    if (draft.userRelationship[field] !== value) {
+      candidates.push(
+        entry(
+          target,
+          draft.userRelationship[field],
+          "rejected",
+          "Initial relationship fields are owned by the application.",
+          undefined,
+          value,
+        ),
+      );
+    }
+    candidates.push(
+      entry(
+        target,
+        value,
+        "accepted",
+        "The application starts every user relationship as strangers without a shared past.",
+        source(
+          "application_rule",
+          STRANGER_RELATIONSHIP_POLICY,
+          canonical(value),
+        ),
+        value,
+      ),
+    );
+  }
+  draft = normalized;
   const unique = new Map(
     candidates.map((candidate) => [candidate.candidateId, candidate]),
   );
@@ -168,7 +216,11 @@ function safeLock(path: string): boolean {
       path,
     ) &&
     !/(?:^|\.)(?:__proto__|constructor|prototype)(?:\.|$)/.test(path) &&
-    !path.includes("frequentPhrasesOrigin")
+    !path.includes("frequentPhrasesOrigin") &&
+    path !== "userRelationship" &&
+    !INITIAL_RELATIONSHIP_FIELDS.some(
+      (field) => path === `userRelationship.${field}`,
+    )
   );
 }
 function stripClaims(
@@ -504,6 +556,22 @@ export function authorizeGeneratedCharacter(
       : raw;
     if (providerValue !== undefined)
       item.providerValue = canonical(providerValue);
+  }
+  const initial = applyStrangerRelationship(draft).userRelationship;
+  for (const field of INITIAL_RELATIONSHIP_FIELDS) {
+    const proposed = originalCandidate.userRelationship[field];
+    if (proposed !== initial[field]) {
+      entries.push(
+        entry(
+          `userRelationship.${field}`,
+          proposed,
+          "rejected",
+          "Provider-authored relationship baselines cannot establish a shared past with the application user.",
+          undefined,
+          initial[field],
+        ),
+      );
+    }
   }
   return seal(draft, entries, originalCandidate);
 }

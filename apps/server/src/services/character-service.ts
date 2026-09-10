@@ -11,6 +11,11 @@ import type { LifePlanningMode } from "../domain/capabilities.js";
 import { ApiError, notFound } from "../domain/errors.js";
 import { createEntityId } from "../domain/id.js";
 import {
+  applyStrangerRelationship,
+  hasStrangerRelationship,
+  STRANGER_RELATIONSHIP_TYPE,
+} from "../domain/stranger-relationship.js";
+import {
   characterDraftSchema,
   characterCompilationProposalSchema,
   characterSpecSchema,
@@ -78,6 +83,14 @@ export class CharacterService {
 
   list(includeArchived = false) {
     return this.store.listCharacters(includeArchived);
+  }
+
+  getCreationOrigin(agentId: string): "user" | "demo" {
+    const row = this.store.database
+      .prepare("SELECT creation_origin AS origin FROM characters WHERE id = ?")
+      .get(agentId) as { origin: "user" | "demo" } | undefined;
+    if (!row) throw notFound("Character");
+    return row.origin;
   }
 
   get(agentId: string): {
@@ -225,6 +238,7 @@ export class CharacterService {
       ),
       this.lifePlanningMode,
     );
+    candidate = applyStrangerRelationship(candidate);
     assertCharacterClockIsEditable(
       this.store,
       agentId,
@@ -328,7 +342,7 @@ export class CharacterService {
   }
 
   publish(agentId: string, expectedVersion?: number): CharacterSpec {
-    const head = this.store.getCharacterSpec(agentId);
+    let head = this.store.getCharacterSpec(agentId);
     if (!head) throw notFound("Character");
     if (expectedVersion !== undefined && expectedVersion !== head.version) {
       throw new ApiError(
@@ -347,6 +361,14 @@ export class CharacterService {
         "character_archived",
         "An archived character cannot be published.",
       );
+    }
+    // Keep old versions intact while preventing restore/publish from reviving
+    // author-defined relationship baselines under the current app policy.
+    if (!hasStrangerRelationship(head)) {
+      head = this.updateDraft(agentId, {
+        spec: stripCharacterMetadata(head),
+        expectedVersion: head.version,
+      });
     }
     // Already-published historical versions retain their exact saved content.
     if (head.status === "published") return head;
@@ -418,7 +440,7 @@ export class CharacterService {
       coreTraits: ["认真", "有主见", "对熟人温暖"],
       coreContradiction: "既重视自己的学习计划，也珍惜与重要之人的共同经历",
       mainGoal: "完成毕业作品，同时保留有意义的生活体验",
-      initialRelationship: "认识了一段时间的朋友",
+      initialRelationship: STRANGER_RELATIONSHIP_TYPE,
       dialogueStyle: "自然、简洁、偶尔有一点冷幽默",
       tier: "high_fidelity",
       timezone: "Asia/Shanghai",
@@ -429,12 +451,15 @@ export class CharacterService {
     );
     return this.createFromDraft(
       authorizeGeneratedCharacter(fallback, input, fallback),
+      undefined,
+      "demo",
     );
   }
 
   private createFromDraft(
     rawDraft: CharacterDraft,
     source?: PendingCharacterSource,
+    creationOrigin: "user" | "demo" = "user",
   ): CharacterSpec {
     const nowUtc = this.clock.nowUtc();
     const draft = applyLifePlanningAuthority(
@@ -462,6 +487,9 @@ export class CharacterService {
     const state = initialRuntimeState(id, nowUtc, spec);
     this.store.transaction(() => {
       this.store.insertCharacter(spec);
+      this.store.database
+        .prepare("UPDATE characters SET creation_origin = ? WHERE id = ?")
+        .run(creationOrigin, id);
       this.store.insertInitialState(state, nowUtc);
       if (source) {
         this.store.insertCharacterSource({
@@ -478,6 +506,7 @@ export class CharacterService {
         eventType: "character.created",
         recordedAtUtc: nowUtc,
         payload: {
+          creationOrigin,
           sourceType: spec.sourceType,
           tier: spec.tier,
           compilationPolicyVersion:

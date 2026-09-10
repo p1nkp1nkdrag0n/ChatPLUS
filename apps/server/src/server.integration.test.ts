@@ -66,6 +66,7 @@ describe("PersonaSim server integration", () => {
         "027_stored_item_extraction_repair.sql",
         "028_demo_conversations.sql",
         "029_llm_settings.sql",
+        "031_character_creation_origin.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -948,7 +949,7 @@ describe("PersonaSim server integration", () => {
     );
     expect(character.persona.goals[0]?.title).toBe(input.mainGoal);
     expect(character.userRelationship.relationshipType).toBe(
-      input.initialRelationship,
+      "初次相识的陌生人",
     );
     expect(character.knowledge.knownFacts).toContain(
       `作者指定语言风格：${input.dialogueStyle}`,
@@ -1244,7 +1245,7 @@ describe("PersonaSim server integration", () => {
       sourceRefs: ["original-form"],
     });
     expect(generated.userRelationship.relationshipType).toBe(
-      originalInput.initialRelationship,
+      "初次相识的陌生人",
     );
     expect(generated.knowledge.knownFacts).toContain(
       `作者指定语言风格：${originalInput.dialogueStyle}`,

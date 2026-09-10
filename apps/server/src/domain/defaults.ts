@@ -11,6 +11,10 @@ import type {
   OriginalCharacterInput,
   RuntimeState,
 } from "./schemas.js";
+import {
+  STRANGER_RELATIONSHIP_LEVEL,
+  STRANGER_RELATIONSHIP_TYPE,
+} from "./stranger-relationship.js";
 
 function ruleId(prefix: string, index: number): string {
   return `${prefix}-${index + 1}`;
@@ -238,11 +242,11 @@ export function buildOriginalDraft(
       authorGuidance: input.dialogueStyle,
     },
     userRelationship: {
-      relationshipType: input.initialRelationship,
+      relationshipType: STRANGER_RELATIONSHIP_TYPE,
       initialCloseness: initialRelationship.closeness,
       initialTrust: initialRelationship.trust,
       addressTerms: ["你"],
-      sharedContext: "这是双方共同开始的一段持续对话。",
+      sharedContext: "",
     },
     // Compatibility-only in fuzzy-life mode: the runtime does not expose these
     // exact clock fields to the chat model, while legacy schedule mode still
@@ -352,25 +356,12 @@ export function initialRelationshipPreset(description: string): {
   closeness: number;
   trust: number;
 } {
-  const normalized = description.trim().toLowerCase();
-  if (
-    /初次|初识|刚认识|陌生|第一次|new\s+(?:contact|acquaintance)|first\s+(?:meeting|contact)|stranger/u.test(
-      normalized,
-    )
-  ) {
-    return { closeness: 0.18, trust: 0.22 };
-  }
-  if (
-    /多年|亲密|挚友|好友|密友|恋人|伴侣|家人|close\s+friend|best\s+friend|trusted|long[-\s]?time/u.test(
-      normalized,
-    )
-  ) {
-    return { closeness: 0.55, trust: 0.6 };
-  }
-  if (/朋友|熟悉|同事|friend|familiar|colleague/u.test(normalized)) {
-    return { closeness: 0.35, trust: 0.4 };
-  }
-  return { closeness: 0.18, trust: 0.22 };
+  // Retain the legacy helper signature without granting progress from labels.
+  void description;
+  return {
+    closeness: STRANGER_RELATIONSHIP_LEVEL,
+    trust: STRANGER_RELATIONSHIP_LEVEL,
+  };
 }
 
 export function buildImportedDraft(
@@ -424,6 +415,9 @@ export function initialRuntimeState(
   nowUtc: string,
   draft: CharacterDraft,
 ): RuntimeState {
+  // Persisted specs keep initial fields for compatibility; new runtime state
+  // always starts from the application baseline, even with a legacy spec.
+  void draft;
   return {
     agentId,
     asOfUtc: nowUtc,
@@ -436,12 +430,9 @@ export function initialRuntimeState(
     sleepDebtMinutes: 0,
     relationship: {
       userId: LOCAL_USER_ID,
-      closeness: draft.userRelationship.initialCloseness,
-      trust: draft.userRelationship.initialTrust,
-      familiarity: Math.max(
-        0.1,
-        draft.userRelationship.initialCloseness - 0.15,
-      ),
+      closeness: STRANGER_RELATIONSHIP_LEVEL,
+      trust: STRANGER_RELATIONSHIP_LEVEL,
+      familiarity: STRANGER_RELATIONSHIP_LEVEL,
       recentInteractionValence: 0,
     },
     revision: 0,

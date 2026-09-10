@@ -30,6 +30,7 @@ import {
   type SimulationTier,
 } from "@personasim/contracts";
 import { z } from "zod";
+import { STRANGER_RELATIONSHIP_TYPE } from "./stranger-relationship.js";
 
 // Domain objects are owned by @personasim/contracts. This module only supplies
 // server naming aliases and backwards-compatible HTTP input normalization.
@@ -67,15 +68,39 @@ export type StateDelta = ScheduleStateEffects;
 
 // Accepted form values must fit their authoritative CharacterSpec destinations;
 // the shared request contracts own these limits so every consumer agrees.
-const serverOriginalCharacterInputSchema = OriginalCharacterInputSchema;
-const serverImportedCharacterInputSchema = ImportedCharacterInputSchema;
+const serverOriginalCharacterInputSchema =
+  OriginalCharacterInputSchema.transform((input) => ({
+    ...input,
+    initialRelationship: STRANGER_RELATIONSHIP_TYPE,
+    ...(input.authoring === undefined
+      ? {}
+      : { authoring: withoutInitialSharedContext(input.authoring) }),
+  }));
+const serverImportedCharacterInputSchema =
+  ImportedCharacterInputSchema.transform((input) => ({
+    ...input,
+    ...(input.authoring === undefined
+      ? {}
+      : { authoring: withoutInitialSharedContext(input.authoring) }),
+  }));
+
+function withoutInitialSharedContext<
+  T extends { sharedContext?: string | undefined },
+>(authoring: T): T {
+  const result = { ...authoring };
+  delete result.sharedContext;
+  return result;
+}
 
 export const originalCharacterInputSchema = z.preprocess((raw) => {
   if (!isRecord(raw)) return raw;
   const input = { ...raw };
   input.coreContradiction ??= input.centralContradiction;
   input.mainGoal ??= input.primaryGoal;
-  input.initialRelationship ??= input.relationshipToUser;
+  // Legacy clients may still submit an initial relationship; the application
+  // owns the starting relationship and accepts these inputs without adopting it.
+  input.initialRelationship ??=
+    input.relationshipToUser ?? STRANGER_RELATIONSHIP_TYPE;
   delete input.centralContradiction;
   delete input.primaryGoal;
   delete input.relationshipToUser;

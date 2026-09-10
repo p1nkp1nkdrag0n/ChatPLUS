@@ -20,7 +20,6 @@ interface GeneratorForm {
   traits: [string, string, string];
   coreContradiction: string;
   primaryGoal: string;
-  initialRelationship: string;
   dialogueStyle: string;
   characterBrief: string;
   tier: SimulationTier;
@@ -36,7 +35,6 @@ const INITIAL_FORM: GeneratorForm = {
   traits: ["", "", ""],
   coreContradiction: "",
   primaryGoal: "",
-  initialRelationship: "刚认识、愿意保持礼貌的朋友",
   dialogueStyle: "自然、克制，像即时通讯中的真实对话",
   characterBrief: "",
   tier: "high_fidelity",
@@ -64,7 +62,7 @@ export default function CharacterGeneratorPage() {
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    mutation.mutate(form);
+    mutation.mutate({ ...form, initialRelationship: "初次相识的陌生人" });
   };
 
   return (
@@ -215,20 +213,12 @@ export default function CharacterGeneratorPage() {
               <span>03</span>
               <div>
                 <h2>他如何与你相处</h2>
-                <p>关系和表达方式会比口头禅更直接地影响聊天体验。</p>
+                <p>你们将从初次相识开始，在交流中慢慢了解彼此。</p>
               </div>
             </div>
-            <label className="field">
-              <span>角色与用户的初始关系</span>
-              <input
-                required
-                maxLength={120}
-                value={form.initialRelationship}
-                onChange={(event) =>
-                  update("initialRelationship", event.target.value)
-                }
-              />
-            </label>
+            <p className="field-hint">
+              每一段关系都从陌生开始，共同经历会由之后的对话与书信留下。
+            </p>
             <label className="field">
               <span>语言风格</span>
               <textarea

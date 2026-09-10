@@ -7,6 +7,7 @@ import type { AppSettings } from "../api/types";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
 import { ProviderSettings } from "../components/llm/ProviderSettings";
+import { BadgeImageSettings } from "../components/achievements/BadgeImageSettings";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -41,6 +42,7 @@ export default function SettingsPage() {
         description="配置模型、回复体验与本地偏好。"
       />
       <ProviderSettings />
+      <BadgeImageSettings />
       {query.isPending ? <LoadingBlock label="正在读取本地设置…" /> : null}
       {query.isError ? <ErrorBlock error={query.error} /> : null}
       {form ? (

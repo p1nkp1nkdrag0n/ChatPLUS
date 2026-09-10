@@ -1,4 +1,4 @@
-import { Mail, MessageCircle, Settings, UserRound } from "lucide-react";
+import { Award, Mail, MessageCircle, Settings, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -106,6 +106,7 @@ export function AppShell() {
   useAgentEvents(activationId);
   const root = activationId ? `/characters/${activationId}` : undefined;
   const chat = /\/characters\/[^/]+\/chat$/.test(location.pathname);
+  const achievements = location.pathname === "/achievements";
   const memories =
     /\/(timeline|relationship-archive|relationship-share|keepsakes)(\/|$)/.test(
       location.pathname,
@@ -130,10 +131,13 @@ export function AppShell() {
         ...(location.pathname.endsWith("/edit") ? [location.pathname] : []),
       ],
     },
+    { to: "/achievements", label: "成就", icon: Award },
   ];
 
   return (
-    <div className={`app-shell${chat ? " app-shell--chat" : ""}`}>
+    <div
+      className={`app-shell${chat ? " app-shell--chat" : ""}${achievements ? " app-shell--achievements" : ""}`}
+    >
       <aside className="app-nav" aria-label="主导航">
         <NavLink
           className="app-nav__brand"

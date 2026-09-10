@@ -15,6 +15,7 @@ import "./styles/archive.css";
 import "./styles/responsive.css";
 import "./styles/dearvale.css";
 import "./styles/llm-settings.css";
+import "./styles/achievements.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root mount point");

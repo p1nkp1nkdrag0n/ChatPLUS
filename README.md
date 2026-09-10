@@ -1,46 +1,33 @@
-# PersonaSim
+# Dearvale · ChatPLUS
 
-> **他们的人生不会因为你离开而停止，却会因为你来过而发生改变；你的人生也同样如此。**
+> **让相遇，慢慢成为故事。**
+>
+> 他们的人生不会因为你离开而停止，却会因为你来过而发生改变；你的人生也同样如此。
 
-PersonaSim 是一个本地运行、事件驱动的 AI 虚拟角色对话 Demo。角色可以和你分享小事、接续上次的话题、记住有来源的经历，也能在你明确求助时一起分析或作出选择。角色档案可编辑、可版本化；目标和矛盾可以留空，相处不必围绕预设的人生转折。系统按角色所在的自然日生成模糊生活背景，近期目标的变化由关联事件记录支持。
+Dearvale 是一个以长期相处为核心的 AI 虚拟角色应用：从逐题描绘一个角色开始，和对方聊天、交换书信，在有来源的记忆、生活变化与关系积累中留下共同经历。
 
-核心准则是：**时间会推进，互动有后果，关系会积累，变化可追溯。**
+项目采用本地优先、事件驱动的实现，支持无 API Key 的确定性演示、接入真实模型，以及独立实例自托管。仓库名仍为 **ChatPLUS**，内部 workspace 包名沿用 `persona-sim` / `@personasim/*`；页面品牌为 **Dearvale**。
 
-> 这是单用户、只与合成测试用户交流的虚构角色功能验证 Demo。默认 `lazy` 模式在服务关闭期间不运行；显式启用的本地常驻或自托管 worker 只处理本实例数据库中的书信时间任务。应用不会代表用户或角色调用外部工具、发送邮件、操作日历或执行现实动作。
+核心准则是：**时间会推进，互动有后果，关系会积累，变化可追溯。** 目前仍处于单用户实验阶段，真实模型的自然度、长期连续性和完整纠错保持尚未完成整体验收。本文按当前仓库实现整理（2026-09-11）；历史发布记录见 [v0.1.6-Beta](docs/releases/v0.1.6-Beta.md)，workspace 的 `0.1.0` 不是发布标签版本。
 
-## 已实现能力
+## 当前体验
 
-- 原创角色最低限度表单生成，一至八项特质，目标和矛盾可留空
-- `.txt`、`.md`、`.srt` 或粘贴文本导入作品角色（500 KB 上限）
-- 来源、推断和合成补全分级的人格字段
-- 十个章节的角色编辑器、高级 JSON、字段锁定和版本历史
-- 按角色当地日期生成“今天大概做什么、最近在做什么”的模糊生活背景
-- 有证据记录支持的跨日生活主线；新角色不预排固定日期里程碑
-- 完整原文和来源语义校验，纠正会使依赖旧解释的当前自传及事件卡失效，保留历史
-- 可选上下文检索与记忆使用权限，普通分享无需自动变成分析或回忆复述
-- 有来源的姓名、项目编号、常用饮品等有限事实修订，多事实查询优先覆盖当前正确值，历史变化单独读取
-- 可选、可撤回的倾听、少追问、平实表达和自然接话偏好学习，限定用户与话题范围，保留人格版本和来源审计
-- 记录困境、支持方式、决定、实际行动、结果和复盘之间的因果链
-- 轻量、日常和拟真三种 capability profile
-- Fixture LLM：不需要 API Key 的确定性完整演示
-- 支持命名配置档案的 OpenAI-compatible Chat Completions Provider
-- 普通聊天、人格约束、状态/关系/记忆提案
-- `listen_only`、`deliberate`、`recommend`、`delegated_decision` 四种支持方式
-- 打开应用时按自然日和已推进阶段批量追赶生活进程，并使用幂等游标防止重复
-- 主动消息当前暂时停用；兼容数据与底层两阶段提交实现仍保留，修复主题归属和过期生命周期后再重新启用
-- SQLite WAL 持久化、领域审计事件和 LLM 调用计量
-- FakeClock 与开发者快照
-- 五日历日数字书信、离线补算、不可变抵达快照、加密回信与启封
-- 由已发生/已确认经历派生的低频数字纪念物、内容寻址 WebP 资产与可追溯来源链
-- 分页关系档案、纪念物陈列柜，以及默认隐藏正文的本地 PNG 分享导出
-- [成就收藏](docs/ACHIEVEMENTS.md)：11 枚全局纪念、每角色 5 枚关系纪念、前台自然日记录及独立模型生成的专属徽章
-- 默认关闭的 `DEVELOPER_MODE`，统一隔离内部运行状态、诊断接口和开发者页面
-- 共用领域内核的 lazy / resident / worker 驱动，以及单实例 Docker 自托管、备份恢复
-- 单元、集成、模拟和 Playwright E2E 测试
+| 模块           | 当前实现                                                                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 欢迎与角色创建 | 插画叙事首页、欢迎页与书桌问答。十二个主问题中六项必答，其余可跳过；最多两个可选追问，支持中断恢复、修改答案、小传预览与确认发布。     |
+| 角色管理       | 原创角色、作品文本导入、详细编辑器、高级 JSON、字段锁定、来源审核和版本历史。目标与矛盾可以留空，已发布版本保持不可变。                |
+| 日常对话       | 多会话、按会话切换模型、发送状态与输入中提示；支持倾听、共同分析、明确推荐和有授权的委托决定。可选开启回复目标复核。                   |
+| 记忆与相处     | 基于来源的召回、当前事实修订、自传与事件证据；纠正会使依赖旧解释的派生内容失效并保留历史。可选学习有适用范围、可撤回的相处偏好。       |
+| 角色生活       | 按角色当地自然日生成“今天大概做什么、最近在做什么”的模糊背景；生活主线、状态和关系变化需要证据，讨论、决定、行动、结果分别记录。       |
+| 数字书信       | 可选启用五日历日运输、离线补算、不可变抵达快照、加密回信与启封；支持本地常驻和自托管时间任务。                                         |
+| 纪念物与收藏   | 可选生成有来源的关系纪念物，提供档案、陈列柜和本地 PNG 分享；成就页记录全局足迹与角色纪念，高阶角色徽章可使用独立图片模型。            |
+| 模型与诊断     | 页面管理多供应商、模型和加密凭据；支持 Fixture、OpenAI 兼容、Anthropic Messages、Gemini 原生协议。内部状态与诊断由开发者模式单独开放。 |
+
+当前主导航为“对话、书信、角色、成就、设置”。记忆主导航暂时隐藏，时间线、关系档案、纪念物及分享页面的路由仍保留。**主动消息当前统一停用**，兼容数据和底层实现保留，不应把角色生活补算理解为主动聊天或系统推送。
 
 ## 快速开始
 
-要求 Node.js 22–24 与 pnpm 11。
+需要 **Node.js 22–24** 和 **pnpm 11.19.0**（以 [package.json](package.json) 的 `engines`、`packageManager` 为准）。在仓库根目录执行：
 
 ```bash
 pnpm install
@@ -48,287 +35,235 @@ pnpm db:migrate
 pnpm dev
 ```
 
-打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)。默认 `fixture` Provider 不需要联网或凭证。
+打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)。开发模式同时启动 Vite 前端和 `127.0.0.1:3001` 上的 Fastify 后端，前端将 `/api` 请求代理到后端。
 
-本地 Demo 默认使用 `LIFE_PLANNING_MODE=fuzzy`，不再运行旧的精确自主排程和聊天日程协商；`MEMORY_RECALL_MODE=enforced` 与 `AUTOBIOGRAPHY_MODE=enforced` 默认启用已验证证据召回、retention checkpoint 和自传连续性，`LIVE_WORLD_EFFECTS=enforced` 则把通过校验和限幅的模型状态/关系 proposal 事务化落库。Fixture 与真实 Provider 共用同一条服务端校验、提交和追溯路径。`legacy_exact` 与旧 planning flags 只用于显式迁移回归。
+新实例无需创建 `.env` 即可运行，默认使用 `fixture` 模型，不需要 API Key 或外部模型请求。Fixture 用于验证创建、聊天和数据流程，回复是确定性的演示内容；体验真实对话请在“设置”中添加模型。
 
-要体验本轮普通陪伴和局部学习策略，在本地 `.env` 增加以下配置后重启服务。两项默认 `off`，可先改成 `shadow` 记录诊断；只有 `enforced` 会应用新策略。记忆真实性、完整证据预算和纠正失效不受这两个体验开关控制。
+首次使用：
+
+1. 从欢迎页点击“描述你梦中的他/她”，依次填写性别、姓名、文字年龄、世界、身份和性格，再按需补充其他设定。默认使用“拟真模拟”，可在更多设定中选择轻量、日常或拟真模式。
+2. 完成可选追问，阅读生成的小传。可以返回修改答案；需要核对完整设定与来源时，也可暂存离开，从“角色”列表的编辑入口打开详细编辑器。
+3. 确认必要的设定后，点击“与他/她相遇”发布角色并进入聊天。未完成的问答与未确认小传支持恢复；发布成功后欢迎页才会显示“继续聊天”。
+4. 也可以从“角色”导入 `.txt`、`.md`、`.srt` 或粘贴文本，检查草稿后发布。单次作品导入上限为 500 KB。
+
+应用不再自动创建示例角色，旧 `SEED_DEMO` 配置也不会恢复播种。升级迁移仅归档来源或登记记录明确识别的系统示例，并保留角色版本、来源材料和聊天历史。新角色统一以初识关系开始；轻量模式不增长关系，日常与拟真模式按已有规则逐步积累。
+
+## 模型配置
+
+### 在页面中设置
+
+打开“设置”，添加供应商，选择协议并填写 API 根地址、密钥和模型。可以检测模型列表，也可以手动填写模型 ID；无需鉴权的本机或局域网 HTTP 模型服务允许留空密钥。
+
+- **全局默认模型**用于跟随默认的会话、角色生成与后台模型任务。
+- **会话模型**在聊天输入框上方选择，从下一条消息生效，保留历史和输入内容。
+- **检测模型**只读取模型列表。**测试连接与回复**最多执行两次真实短请求，分别检查可见正文与结构化 JSON；两项通过才显示绿色成功。
+- **保存或切换**不会自动测试；页面配置保存后即时生效，无需重启。
+- **回复目标复核**位于“回复体验”，默认关闭。开启后由当前会话模型结合上下文复核，必要时重新生成，会增加等待时间和模型用量。
+
+页面保存的 API Key 由后端加密写入 SQLite，主密钥存放在 `${DATABASE_PATH}.llm-key`，读取接口不返回密钥原文。浏览器不持久保存密钥，也不直接调用模型供应商。协议参数、连接状态及凭据恢复详见[模型设置说明](docs/MODEL_SETTINGS.md)。
+
+### 使用环境变量
+
+需要用文件管理配置或运行模型实验时，参考 [.env.example](.env.example) 创建本地 `.env`。已有 `.env` 应按需合并，保留实际使用的 `DATABASE_PATH`；修改环境变量后重启服务。
+
+命名档案使用以下格式，示例地址、模型和密钥需替换为自己的供应商配置：
+
+```dotenv
+LLM_PROVIDER=openai-compatible
+LLM_ACTIVE_PROFILE=main
+
+LLM_PROFILE_MAIN_BASE_URL=https://your-provider.example/v1
+LLM_PROFILE_MAIN_MODEL=your-model-id
+LLM_PROFILE_MAIN_API_KEY=your-api-key
+LLM_PROFILE_MAIN_STRUCTURED_OUTPUT_MODE=prompt_json
+```
+
+档案名会规范化为小写，连字符映射到环境变量中的下划线，例如 `gpt56-sol` 读取 `LLM_PROFILE_GPT56_SOL_*`。环境变量命名档案走 OpenAI 兼容 Chat Completions 接口并要求 HTTPS；原生 Anthropic / Gemini 和本地 HTTP 服务请通过页面配置。未选择命名档案时，旧 `OPENAI_COMPATIBLE_*` 配置仍兼容。
+
+环境来源在设置页只读展示，可复制为可编辑配置；页面不会反写 `.env`。未设置页面全局默认时，应用继续使用环境变量选择的模型。超时、结构化输出、思考参数、上下文和输出上限见配置模板；其中的模型 ID 与网关示例不代表供应商当前可用性，接入时应以自己的账户和连接测试结果为准。
+
+## 功能开关与运行方式
+
+以下是新实例未覆盖配置时的默认行为；角色自身的轻量、日常、拟真能力档也会影响具体功能。完整参数见 [.env.example](.env.example)，模式说明见[功能开关与灰度指南](docs/ROLLOUT.md)。
+
+| 配置                       | 默认值     | 作用                                                            |
+| -------------------------- | ---------- | --------------------------------------------------------------- |
+| `LLM_PROVIDER`             | `fixture`  | 无凭证演示；真实环境档案使用 `openai-compatible`。              |
+| `CLOCK_MODE`               | `system`   | 使用系统时间；`fake` 用于可控时间实验。                         |
+| `LIFE_PLANNING_MODE`       | `fuzzy`    | 模糊自然日生活；`legacy_exact` 仅保留给旧排程回归。             |
+| `MEMORY_RECALL_MODE`       | `enforced` | 校验证据后召回记忆。                                            |
+| `AUTOBIOGRAPHY_MODE`       | `enforced` | 自传连续性与来源验证。                                          |
+| `LIVE_WORLD_EFFECTS`       | `enforced` | 校验并限幅状态、关系等模型提案，再事务化提交。                  |
+| `COMPANION_CONTEXT_MODE`   | `off`      | 可选的陪伴上下文选择与记忆使用策略。                            |
+| `PERSONA_RUNTIME_MODE`     | `off`      | 可选的、有来源且可撤回的局部相处偏好学习。                      |
+| `CORRESPONDENCE_MODE`      | `off`      | 数字书信生成与时间任务。                                        |
+| `CORRESPONDENCE_EXECUTION` | `lazy`     | 书信与纪念物的 `lazy` 补算，或 `resident` / `worker` 常驻处理。 |
+| `KEEPSAKE_MODE`            | `off`      | 由已发生或已确认经历派生纪念物。                                |
+| `DEVELOPER_MODE`           | `false`    | 开放开发者页面和内部诊断接口。                                  |
+
+体验陪伴上下文与局部偏好学习，可在 `.env` 设置后重启：
 
 ```dotenv
 COMPANION_CONTEXT_MODE=enforced
 PERSONA_RUNTIME_MODE=enforced
 ```
 
-`companionContext` 和 `personaRuntime` 会记录在助手消息 metadata 中。生成、校验、修复使用同一个人格版本，偏好学习从后续回合生效；启用人格策略后版本变化返回 `409 stale_effective_persona`，其他模式下的来源变化返回 `409 stale_memory_sources`，同一消息可重试。已发布的角色档案保持不变。自动学习支持明确、持续且有适用范围的“先听我说／不急着建议”“少追问”“少打比方、直接说”和“可以主动问一点”。当轮明确结束优先于长期接话偏好；短答、跳过问题和临时例外不会自动改变长期偏好。
+两项也支持 `shadow`，用于记录诊断而不应用新策略。基础记忆真实性、完整来源验证和纠正失效不依赖这两个开关。可以用“聊工作烦恼时，先听我说，不急着建议”建立限定话题的偏好，再在后续会话验证或撤回；当轮明确结束、临时例外和长期偏好分别处理。实施与已知质量边界见[长期陪伴实施记录](docs/plans/Companion_Continuity_Implementation.md)和[纠错优先实施记录](docs/plans/Correction_First_Implementation.md)。
 
-推荐演示顺序：
+### 书信、纪念物与成就
 
-1. 在“创建”填写姓名、世界、身份和少量特质，目标与矛盾留空，选择“拟真模拟”。
-2. 在编辑器检查人格、来源和生活节奏，点击“发布并激活”。
-3. 分享“今天买到一杯好喝的咖啡”，随后接着说“下次还想去”；再试“为什么我总把事情弄糟”和明确的“请帮我分析这次哪里处理错了”，比较分享、情绪表达和求助的处理。
-4. 说“我谈工作烦恼时，先听我说，不急着建议”，新建会话后聊工作，再聊家庭问题，检查习惯只在适用范围出现。之后说“以后聊工作烦恼不用总先听，直接给建议”，检查后续会话撤回旧习惯。
-5. 先说“我计划每周四晚上画画”，再更正“画画的时间改到每周二晚上，不是周四”。打开开发者记录，核对旧记忆、当前自传和检索证据的变化，原始聊天仍保留。
-6. 记录同事姓名和项目编号，再说“同事叫林桥，不是林乔”“项目编号是 BGW-7429”。新建会话后同时核对两项，检查当前证据使用正确值；普通纠正不要求说明原因。再试“以后少打比方，直接说”和“今晚不想展开”，观察表达偏好与当前收束是否分别生效。
-7. 有需要时再测试共同分析、明确推荐和“请你替我决定”。若角色有目标，推进 FakeClock 并查看已记录的近期投入、暂缓或后续事件；时间本身不证明人生目标已经完成。
-
-Fixture 用于验证流程和记录，不能用于判定真实模型的自然度、立场一致性或长期陪伴质量。上下文和人格策略的既有边界见[长期角色陪伴实施记录](docs/plans/Companion_Continuity_Implementation.md)；本轮事实修订、语言修复、迁移及专项结果见[纠错优先实施与验收记录](docs/plans/Correction_First_Implementation.md)。小范围真实模型试跑仍发现修辞惯性和不求建议时给建议的反例，自然度改善尚未验收通过。
-
-首次进入欢迎页时，从「描述你梦中的他/她」逐题描绘角色，或导入角色；发布成功后才会显示「继续聊天」。系统不再自动创建示例角色，旧 `SEED_DEMO` 配置也不会重新启用此行为。升级时仅将明确标记或登记为系统示例的角色归档，原有版本、来源材料和对话历史仍然保留。
-
-需要浏览器关闭后仍处理到期书信，或给单个朋友部署独立实例时，请按[自托管与备份恢复指南](docs/SELF_HOSTING.md)使用同一镜像、独立数据库、独立 `INSTANCE_SECRET` 和 Caddy HTTPS/Basic Auth。不要把未经反向代理保护的 Fastify 端口直接暴露到公网。
-
-书信与纪念物默认仍关闭。体验完整闭环时，需要在隔离的本地或自托管实例中设置 `CORRESPONDENCE_MODE=enforced`、`KEEPSAKE_MODE=enforced`，并为该实例配置至少 32 个随机字节的规范 Base64 `INSTANCE_SECRET`。纪念物的 fixture 图像/模板路径不需要第三方凭证；替换为真实图片 Provider 时，Provider 只接收受限的 `VisualPromptSpec`，不会收到整封信、完整角色材料或聊天记录。
-
-## 配置多供应商模型
-
-打开“设置”即可管理多家供应商，配置 API 地址和 API Key，检测模型列表、手动添加模型，并选择全局默认模型。支持 OpenAI 兼容 Chat Completions、Anthropic Messages、Gemini 原生接口，以及无密钥的本机/局域网 HTTP 模型服务。保存后立即可用，无需重启；对话输入框上方的模型选择仅影响当前会话。
-
-“检测模型”只获取列表。“测试连接与回复”最多执行两次真实短请求，分别检查可见正文和结构化 JSON；只有两项都通过才显示绿色成功。测试不会写入聊天或记忆，保存和切换不会自动发起测试。详细操作、状态说明及密钥恢复见[模型设置使用说明](docs/MODEL_SETTINGS.md)。
-
-从页面保存的 API Key 由 Fastify 后端加密写入 SQLite，主密钥单独保存在数据库旁的 `.llm-key` 文件中；读取接口只返回是否已配置密钥，不返回密钥原文。浏览器只在输入和提交新密钥时短暂持有它，不写入浏览器持久存储或日志。
-
-也可以复制 `.env.example` 为本地 `.env`，继续使用以下环境变量配置。已有配置在页面中显示为只读环境来源，可复制为可编辑配置；复制不反写 `.env`。环境变量档案仍通过 `LLM_ACTIVE_PROFILE` 选择，修改环境变量后需要重启服务；未设置页面全局默认时继续采用该档案。
+启用书信与纪念物时，在实例配置中设置：
 
 ```dotenv
-LLM_PROVIDER=openai-compatible
-LLM_ACTIVE_PROFILE=claude
-
-LLM_PROFILE_CLAUDE_BASE_URL=https://sub.wanzhao.top/v1
-LLM_PROFILE_CLAUDE_MODEL=claude-opus-4-6
-LLM_PROFILE_CLAUDE_API_KEY=在本机填写晚照云签发的密钥
-LLM_PROFILE_CLAUDE_STRUCTURED_OUTPUT_MODE=prompt_json
-LLM_PROFILE_CLAUDE_REASONING_EFFORT=medium
-LLM_PROFILE_CLAUDE_REASONING_FORMAT=anthropic_output_config
-LLM_PROFILE_CLAUDE_SUPPORTS_THINKING_CONTROL=false
-LLM_PROFILE_CLAUDE_MAX_OUTPUT_TOKENS=32768
-
-LLM_PROFILE_GROK_BASE_URL=https://sub.wanzhao.top/v1
-LLM_PROFILE_GROK_MODEL=grok-4.6
-LLM_PROFILE_GROK_API_KEY=在本机填写独立的晚照云 Grok 密钥
-LLM_PROFILE_GROK_REASONING_EFFORT=medium
-LLM_PROFILE_GROK_REASONING_FORMAT=openai_reasoning_effort
-LLM_PROFILE_GROK_MAX_OUTPUT_TOKENS=32768
-
-LLM_PROFILE_GEMINI_BASE_URL=https://sub.wanzhao.top/v1
-LLM_PROFILE_GEMINI_MODEL=gemini-3.7-flash
-LLM_PROFILE_GEMINI_API_KEY=在本机填写独立的晚照云 Gemini 密钥
-LLM_PROFILE_GEMINI_REASONING_EFFORT=medium
-LLM_PROFILE_GEMINI_REASONING_FORMAT=openai_reasoning_effort
-LLM_PROFILE_GEMINI_MAX_OUTPUT_TOKENS=32768
-
-LLM_PROFILE_GPT56_SOL_BASE_URL=https://sub.wanzhao.top/v1
-LLM_PROFILE_GPT56_SOL_MODEL=gpt-5.6-sol
-LLM_PROFILE_GPT56_SOL_API_KEY=在本机填写独立的晚照云 GPT 密钥
-LLM_PROFILE_GPT56_SOL_REASONING_EFFORT=medium
-LLM_PROFILE_GPT56_SOL_REASONING_FORMAT=openai_reasoning_effort
-LLM_PROFILE_GPT56_SOL_MAX_OUTPUT_TOKENS=32768
-
-LLM_PROFILE_BIGMODEL_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-LLM_PROFILE_BIGMODEL_MODEL=glm-5.3-flash
-LLM_PROFILE_BIGMODEL_API_KEY=在本机填写智谱密钥
-LLM_PROFILE_BIGMODEL_STRUCTURED_OUTPUT_MODE=json_object
-LLM_PROFILE_BIGMODEL_REASONING_EFFORT=low
-LLM_PROFILE_BIGMODEL_REASONING_FORMAT=openai_reasoning_effort_with_thinking
-LLM_PROFILE_BIGMODEL_SUPPORTS_THINKING_CONTROL=false
-LLM_PROFILE_BIGMODEL_MAX_OUTPUT_TOKENS=32768
-
-LLM_PROFILE_QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_PROFILE_QWEN_MODEL=qwen3.8-flash
-LLM_PROFILE_QWEN_API_KEY=在本机填写阿里云百炼北京地域的密钥
-LLM_PROFILE_QWEN_STRUCTURED_OUTPUT_MODE=json_object
-LLM_PROFILE_QWEN_REASONING_EFFORT=medium
-LLM_PROFILE_QWEN_REASONING_FORMAT=openai_reasoning_effort
-LLM_PROFILE_QWEN_SUPPORTS_THINKING_CONTROL=false
-LLM_PROFILE_QWEN_MAX_OUTPUT_TOKENS=32768
+CORRESPONDENCE_MODE=enforced
+KEEPSAKE_MODE=enforced
+CORRESPONDENCE_EXECUTION=lazy
+INSTANCE_SECRET=replace-with-your-generated-base64-secret
 ```
 
-将 `LLM_ACTIVE_PROFILE` 设为 `claude`、`grok`、`gemini`、`gpt56-sol`、`bigmodel` 或 `qwen` 即可切换；档案名会规范化为小写，连字符映射为环境变量中的下划线。例如 `gpt56-sol` 会读取 `LLM_PROFILE_GPT56_SOL_*`。未设置 `LLM_ACTIVE_PROFILE` 时，原有 `OPENAI_COMPATIBLE_*` 配置仍然有效。
-
-Qwen 档案直连阿里云百炼，模型 ID 为 `qwen3.8-flash`，沿用现有 Chat Completions Provider。按[官方 Chat API 文档](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)，该模型默认开启思考，支持 `reasoning_effort=low|medium|xhigh`；示例使用 `medium`，并通过 [JSON Object 模式](https://help.aliyun.com/zh/model-studio/json-mode)约束输出。`SUPPORTS_THINKING_CONTROL=false` 是为了避免发送旧式 `thinking.type` 扩展，不代表关闭 Qwen 思考。默认地址使用仍可用的北京公共域名，也可替换为控制台提供的同地域业务空间地址 `https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；API Key 与地址的地域必须匹配。
-
-真实连通性测试是显式付费命令，会验证一次中文角色对话回合及结构化落库；普通测试不会调用网络：
+`INSTANCE_SECRET` 必须替换为至少 32 个随机字节的规范 Base64；占位符不能直接启动。可以运行以下命令生成值，再写入本实例配置并独立保管：
 
 ```bash
-pnpm test:llm:smoke:claude
-pnpm test:llm:smoke:grok
-pnpm test:llm:smoke:gemini
-pnpm test:llm:smoke:gpt56-sol
-pnpm test:llm:smoke:bigmodel
-pnpm test:llm:smoke:qwen
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
-每次 LLM 调用会同时记录通用 Provider、当前档案、模型、思考深度和请求格式，方便按档案隔离长程结果。Claude 档案使用 Prompt JSON，因为 [Anthropic 的 OpenAI SDK 兼容层](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk)会忽略 `response_format`；智谱档案按其 [OpenAI SDK 兼容接口](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)使用 `json_object`。模型输出仍需通过 Zod 与领域规则，不能直接写数据库。晚照云是第三方网关，请只填写它签发的密钥，不要复用官方 Anthropic 密钥；首次测试后还应依据[晚照云文档](https://sub.wanzhao.top/docs/?v=20260714-new)在控制台核对实际路由的上游模型。
+| 执行方式   | 行为                                                       |
+| ---------- | ---------------------------------------------------------- |
+| `lazy`     | 启动和相关角色入口执行补算，不启动书信与纪念物常驻计时器。 |
+| `resident` | 本机进程常驻时扫描到期任务，与浏览器是否打开无关。         |
+| `worker`   | 自托管使用相同任务循环，通过 SQLite claim/lease 协调执行。 |
 
-另外三套晚照云档案固定使用 [`grok-4.6`](https://docs.x.ai/developers/models/grok-4.6)、[`gemini-3.7-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash) 和 [`gpt-5.6-sol`](https://developers.openai.com/api/docs/models/gpt-5.6-sol)。网关会按密钥分组开放模型，因此最终可用 ID 仍以每个密钥调用 `/v1/models` 的结果为准。
+原信和回信的运输时间各为五个角色时区日历日。服务停机期间不会运行模型，重新启动后按时间与幂等游标补算。书信处于 `off` 时暂停任务；已有密文仍需要匹配的实例密钥。纪念物默认图片/模板路径不需要第三方图片凭证。
 
-每套档案都通过 `LLM_PROFILE_<NAME>_REASONING_EFFORT` 独立调节思考深度。Claude Opus 4.6、Grok 4.6、Gemini 3.7 Flash 与 GPT-5.6 Sol 均设为 `medium`；当前真实长程验收使用的 [GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash) 档案设为 `low`，兼容旧配置的 [DeepSeek V4 Flash](https://api-docs.deepseek.com/guides/thinking_mode/) 仍设为 `max`。`REASONING_FORMAT` 是请求适配方式：Claude 使用 `output_config.effort`，Grok/Gemini/GPT 使用 `reasoning_effort`，GLM/DeepSeek 还会显式发送 `thinking: { type: "enabled" }`；GLM-5.3-Flash 不支持关闭思考。通常只需修改 `REASONING_EFFORT`，不要改动格式字段。
+“成就”不依赖书信功能整体开启：目前有 **11 项全局纪念、每角色 5 项关系纪念**，满足相应行为后记录；寄信和启封类纪念自然需要书信功能。前台使用日期按 `Asia/Shanghai` 自然日记录，无需签到按钮。设置中的“徽章生图模型”独立于聊天模型，固定徽章无需图片服务，高阶专属徽章按保存的配置排队生成。徽章任务使用独立后台队列，不受 `CORRESPONDENCE_EXECUTION` 控制；失败不撤回成就，可手动重试。详见[成就收藏说明](docs/ACHIEVEMENTS.md)。
 
-聊天主决策会申请最多 24,576 个输出 token，回复修复会申请最多 16,384 个；这些预算同时覆盖隐藏思考与最终结构化 JSON。每次请求仍会被对应 Profile 的 `MAX_OUTPUT_TOKENS` 和 Provider 的 64K 传输硬上限共同截断。示例配置将各套 Profile 的能力上限设为 32,768，以避免 `high`/`max` 思考在原 2,000–2,800 token 预算内耗尽；如果供应商明确声明更低上限，应把该 Profile 改为真实上限。提高输出上限会占用上下文窗口，因此旧式 DeepSeek 配置同时显式声明 `OPENAI_COMPATIBLE_MAX_CONTEXT_TOKENS=131072`，不得把输出上限配置为大于或等于上下文上限。
+### 开发者模式
 
-示例配置同时把各 Profile 的 `TIMEOUT_MS` 提高到 `300000`，即 Provider 当前允许的每次物理 attempt 五分钟上限，避免开启较深思考后仍按 120 秒提前中止。每次重试都会重新计算五分钟；DeepSeek 当前最多重试两次，因此单个逻辑调用在供应商持续无响应时理论上可能等待约十五分钟。该设置只延长尚未返回的请求；HTTP 200 但正文为空仍会记为 `EMPTY_RESPONSE` 并按重试规则处理，不会被误记为超时。
+在 `.env` 中设置 `DEVELOPER_MODE=true` 并重启，设置页才会开放开发者入口。可查看完整角色状态、关系、记忆、生活推演、来源审计、LLM 调用记录与成就任务；使用 `CLOCK_MODE=fake` 时可推进测试时间。
 
-`SUPPORTS_THINKING_CONTROL` 仅保留给没有配置新字段的旧档案：值为 `true` 时会强制发送 `thinking: { type: "disabled" }`。一旦配置了 `REASONING_EFFORT` 和 `REASONING_FORMAT`，新的思考深度设置优先。晚照云是否完整透传 Claude 的 `output_config` 属于第三方网关行为，填入密钥后应先运行 Claude smoke test 验证。
+普通 HTTP 和 SSE 始终使用公开字段投影，即使开启开发者模式也不夹带原始状态或内部诊断。旧说明中助手消息的 `companionContext`、`personaRuntime` 等 metadata 应通过开发者记录检查。
 
-长程对比时，不要在同一个 SQLite 数据库中途切换档案。先冻结一份已发布角色的基线数据库，再为每个档案各复制一份并设置不同的 `DATABASE_PATH`；这样所有轨迹拥有相同 `CharacterSpec` 和起点，又不会互相污染历史、记忆与关系状态。
+## 自托管、数据与备份
 
-## 双模型动态对话测试
+开发模式默认只允许回环地址。项目也支持显式的单实例生产部署：同一镜像提供 Web 和 Fastify，由 Caddy 处理 HTTPS 与 Basic Auth，应用端口只在 Compose 私网内开放。
 
-独立测试入口支持一个模型扮演合成测试用户，另一个模型通过项目真实消息路由扮演示例角色“林夏”。用户模型根据实际对话生成下一句；角色仍使用模糊生活、状态、关系、记忆与自传流程。每次运行新建隔离数据库，逐轮导出对话与状态证据，质量审阅留给人或当前 Codex 任务完成。
-
-```powershell
-# 无网络、无凭证的流程演示；台词是 fixture，不用于判断真实模型质量。
-pnpm test:dual-model:fixture --turns 3
-
-# 在 .env 填好两套独立 Key 后，显式启动真实模型测试。
-$env:RUN_PAID_DUAL_MODEL = "1"
-pnpm test:dual-model --user-profile qwen --character-profile bigmodel --turns 6
-Remove-Item Env:RUN_PAID_DUAL_MODEL
-```
-
-默认测试用户是 Qwen，项目角色是 BigModel；两端均可指定任意已配置的命名档案，也可互换。CLI 独立读取两套配置，不修改日常应用的 `LLM_ACTIVE_PROFILE`。这是测试脚本入口，聊天界面暂未加入双模型控制面板。产物保存在 `tmp/dual-model-simulation/<run-id>/`，执行完成不代表质量评审通过。定制测试用户人设、场景与审阅方式见[双模型测试说明](docs/DUAL_MODEL_TESTING.md)。旧 V2/V3 固定剧本及其评审矩阵保留原有模型名单。
-
-产品人生长测使用 `pnpm test:product-life <run-id>`，固定 42 轮、45 个模拟日，让 Qwen 扮演林舟、GLM 扮演经真实生成和发布流程建立的顾澜。它覆盖跨日生活、选择与后续、关系和记忆、自传整理、关闭重启、新会话、数字书信往返，以及自然达到条件后的纪念物和关系档案；同样需要 `RUN_PAID_DUAL_MODEL=1`。先用 `pnpm test:product-life:fixture <run-id>` 离线验证流程，失败后可用 `pnpm test:product-life:resume <run-id>` 恢复。该实验使用独立数据目录和较小的可配置上下文阈值，完整范围与结果限制见[产品人生长程实验](docs/DUAL_MODEL_TESTING.md#产品人生长程实验)。
-
-## 五模型人生选择长程验证 v3
-
-当前产品验收不再把精确日程、邀约写入或分钟级活动结算作为 README 硬门。新的“顾澜”长程场景比较 `deepseek`、`claude`、`grok`、`gpt56-sol`、`bigmodel`，围绕日常陪伴、双向压力缓解和人生选择展开。Gemini 仍可单独 smoke test，但已知晚照云密钥分组对该模型返回 403，因此默认矩阵不选择 Gemini。
-
-每次长程运行应覆盖以下连续链路：
-
-1. 普通日常聊天建立共同语言、关怀偏好和关系基线；
-2. 用户与角色各自出现工作、创作、迁居或关系困境；
-3. 在 `listen_only`、`deliberate`、`recommend`、`delegated_decision` 间切换；
-4. 保存被讨论的选项、价值冲突、决定者、理由和授权消息；
-5. 推进数个自然日，注入行动、未行动和好坏混合结果；
-6. 新会话和重启后召回当初为什么这样决定，并复盘结果；
-7. 从同一决定前快照产生不同选择分支，验证两条人生轨迹不会串线。
-
-工程硬门只验证实验正确性：结构化输出和持久化成功、时间单调、重启/replay 幂等、证据链完整、分支隔离，以及“讨论 ≠ 决定 ≠ 行动 ≠ 结果”。没有后续证据时不得虚构用户已经行动或某个结果已经发生；计划中的事情不得冒充长期记忆。职业、迁居、关系等重大选择不再触发拒答或“最终决定只能由用户作出”的硬门，明确授权后应允许角色给出唯一建议或直接代为决定。
-
-语义评分重点为：被倾听感、压力缓解与认知清晰度、价值冲突理解、建议质量、人生主线连续性、双向影响、关系积累和语言自然度。公开部署级危机响应、依赖性和用户自主权矩阵不属于这个本地合成测试 Demo 的验收范围。
-
-旧 `companion-long-run-v2` 命令及其约会/精确日程证据只保留作历史回归，不代表当前产品通过。v3 的详细场景、因果状态机、硬门和迁移口径见[纯模糊生活与人生选择长程验证方案](docs/plans/ChatPLUS_Fuzzy_Life_Decision_Long_Run_Plan_v3.md)。新产物写入 `tmp/companion-long-run-v3/<matrix-id>/`；每次运行仍必须分别保存 `conversation.md` 与 `model-io.jsonl`：前者只包含最终对话，后者保留脱敏后的完整请求、原始返回、解析、usage、延迟、重试和错误。
-
-## 状态闭环验证
-
-状态闭环测试按责任拆分，普通命令全部离线运行：
+按[自托管与恢复指南](docs/SELF_HOSTING.md)从 [.env.selfhosted.example](.env.selfhosted.example) 准备域名、认证、独立密钥和可写目录，再启动：
 
 ```bash
-pnpm test:state:unit         # 状态描述、Prompt、关系与 proposal 规则
-pnpm test:state:integration  # HTTP 提交、事务、幂等、重启与 capability
-pnpm test:state:simulation   # FakeClock、自然日推进、压力与结果幂等
+docker compose --env-file .env.friend-a --project-name chatplus-friend-a --file docker-compose.selfhosted.yml up --detach --build
 ```
 
-真实 DeepSeek 状态验收是显式付费命令，不会被 `pnpm test`、CI 或开发启动间接触发。运行前必须同时提供项目现有的 OpenAI-compatible DeepSeek 配置并显式设置 `REAL_DEEPSEEK_STATE_ACCEPTANCE=1`：
+自托管边界通过 `SELFHOSTED_REVERSE_PROXY=true` 显式启用，同时要求生产环境、容器内监听地址及 HTTPS origin。它依赖反向代理认证，应用本身仍没有多用户账户、权限和租户隔离；不同使用者部署为独立实例。仅修改 `HOST=0.0.0.0` 不能替代这套配置。
+
+数据位置以实际配置为准：
+
+| 内容           | 默认位置或规则                                                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| SQLite 数据库  | 无 `.env` 时为 `data/persona-sim.sqlite`；复制 `.env.example` 后示例为 `data/personasim.db`；Compose 内为 `/app/data/chatplus.sqlite`。 |
+| 纪念物资产     | `ASSET_STORAGE_PATH`，默认 `data/assets/`。                                                                                             |
+| 成就徽章资产   | `${resolve(ASSET_STORAGE_PATH)}-achievements`，默认 `data/assets-achievements/`；Compose 使用独立卷。                                   |
+| 模型凭据主密钥 | `${DATABASE_PATH}.llm-key`，聊天与徽章供应商共用；与书信的 `INSTANCE_SECRET` 独立。                                                     |
+| 测试及实验产物 | `tmp/`、`artifacts/`、`test-results/`、`playwright-report/` 等。                                                                        |
+
+**首次启动后再复制环境模板时，请保留原数据库路径**，否则应用会打开另一份数据库，看起来像没有历史数据。升级已有实例前先备份，再运行迁移或更新镜像。
+
+`pnpm selfhost:backup -- ...` 和 `pnpm selfhost:restore -- ...` 提供一致性备份及恢复到全新路径的工具。当前备份格式 v3 包含数据库、纪念物和独立徽章资产，兼容恢复 v1/v2；**备份不包含 `INSTANCE_SECRET` 或 `.llm-key`**，需同批次单独保管。完整参数、密钥缺失处理和 Compose 徽章卷恢复步骤见[恢复指南](docs/SELF_HOSTING.md)。
+
+`.env`、数据库、密钥、日志、备份和运行产物均应留在 Git 忽略目录。正式源码、配置模板、测试样例、设计资产和经审查的报告纳入版本控制；新增实验不要把原始数据库或模型调用记录直接写进 `docs/`。
+
+## 开发与测试
+
+项目采用 pnpm workspace、TypeScript、React 19 / Vite 7、Fastify 5、SQLite WAL 与 Zod。测试按职责分布：源码旁的 Vitest 单元和集成测试，以及 `tests/e2e/` 的 Playwright 浏览器流程。
+
+| 命令                                                                                  | 用途                                                               |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `pnpm dev`                                                                            | 同时启动后端与前端开发服务。                                       |
+| `pnpm db:migrate`                                                                     | 幂等运行顺序数据库迁移。                                           |
+| `pnpm typecheck`                                                                      | 各 workspace 类型检查。                                            |
+| `pnpm lint`                                                                           | ESLint 检查。                                                      |
+| `pnpm build`                                                                          | 各包类型检查与 Web 生产构建；后端仍通过 `tsx` 运行。               |
+| `pnpm test`                                                                           | Vitest 单元、集成与模拟测试。                                      |
+| `pnpm test:e2e`                                                                       | Playwright 浏览器验收，主项目覆盖 1440×900 与 1920×1080 桌面尺寸。 |
+| `pnpm test:state:unit` / `pnpm test:state:integration` / `pnpm test:state:simulation` | 状态、关系、持久化与时间推进的专项检查。                           |
+| `pnpm test:correspondence:focused`                                                    | 书信、纪念物和档案的单元、集成与 Web 测试。                        |
+| `pnpm test:correspondence:stages1-8`                                                  | 上述检查及书信完整 E2E。                                           |
+| `pnpm test:companion:long-run:v3:fixture`                                             | 120 轮确定性长程回归。                                             |
+
+首次运行浏览器测试前安装 Chromium：
 
 ```bash
-pnpm test:state:real:deepseek
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
-该命令固定运行六个单一意图场景，保存脱敏后的完整输入、原始 Provider 输出、解析 envelope、状态前后值、提交 trace 与下一轮 Prompt。语义不理想不会自动重采样；自动 `PASS` 只表示证据链结构完整，语言自然度和因果合理性仍需人工复核。
+[CI](.github/workflows/ci.yml) 分别运行代码质量与构建、浏览器验收、120 轮确定性长测。普通测试和 fixture 实验不请求外部模型；真实模型实验需显式运行，并产生供应商用量。
 
-如需对某次通过运行追加一次真实的跨会话/重启延续验证，还需设置 `REAL_DEEPSEEK_STATE_CONTINUATION_DATABASE_PATH`、`REAL_DEEPSEEK_STATE_CONTINUATION_AGENT_ID`，可选设置 `REAL_DEEPSEEK_STATE_CONTINUATION_SOURCE_RUN_ID`，然后运行：
+### 模型实验
 
-```bash
-pnpm test:state:real:deepseek:continuation
-```
+首页只列常用入口，具体场景、恢复方式、评审协议和历史结论见对应文档。长程实验应使用独立数据库与新产物目录，避免不同模型混用同一历史。
 
-延续 runner 会先复制源 SQLite 到隔离路径，再用同一角色新建会话；源验收数据库不会被改写。
+| 实验           | 离线入口                                                               | 说明                                                                                                            |
+| -------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 双模型动态对话 | `pnpm test:dual-model:fixture --turns 3`                               | 一个模型扮演合成用户，另一个走项目真实角色消息流程；见[双模型测试](docs/DUAL_MODEL_TESTING.md)。                |
+| 产品人生长测   | `pnpm test:product-life:fixture <run-id>`                              | 42 轮、45 个模拟日，覆盖生活、记忆、重启与书信；见[产品人生实验](docs/DUAL_MODEL_TESTING.md#产品人生长程实验)。 |
+| 记忆相关性     | `pnpm test:memory-relevance:fixture --output tmp/memory-relevance-NEW` | 召回、回复消融与上下文预算实验；见[调研建议实施](docs/evals/research-optimization.md)。                         |
+| 整体架构比较   | `pnpm test:architecture:fixture --output tmp/architecture-NEW`         | 对照系统、固定历史、人格与模块消融；见[实验协议](docs/evals/architecture-comparison.md)。                       |
+| 角色生成比较   | `pnpm test:character-generation:comparison:fixture`                    | 比较角色生成及约束路径；见[生成对比方案](docs/plans/reply-steering-character-generation-comparison.md)。        |
+| 回复策略       | `pnpm test:reply-steering:fixture`                                     | 回复意图与表达策略实验；见[回复策略评测](docs/evals/reply-steering/README.md)。                                 |
 
-## 常用命令
+`pnpm test:llm:smoke` 检查所选环境模型档案的真实业务路径，另有 `:claude`、`:grok`、`:gemini`、`:gpt56-sol`、`:bigmodel`、`:qwen` 命名快捷命令。真实双模型及产品人生实验要求 `RUN_PAID_DUAL_MODEL=1`；其他实验按各自文档设置对应的显式运行开关。不要把 smoke、fixture 或执行器的 `completed` 当作真实语言质量通过。
 
-根据开源对话项目调研落实的共享记忆相关性、细分回复消融、运行配置审计和中文上下文预算改进，见[调研建议实施与机制实验](docs/evals/research-optimization.md)。离线记忆 2×2 实验可用 `pnpm test:memory-relevance:fixture --output tmp/memory-relevance-NEW` 运行。
-
-“复杂架构是否优于简单系统”的整体实验采用三组相反极端人格、真实人格编译与简洁卡片对照、固定历史三系统比较、信息匹配与模块读取消融、跨会话多轮轨迹，以及生成卡的共同运行时迁移。协议和命令见[整体架构实验](docs/evals/architecture-comparison.md)，结果见[GLM 整体架构实验报告](docs/reports/2026-09-10-architecture-comparison-glm.md)。`pnpm test:architecture:fixture --output tmp/architecture-NEW` 可离线验证执行器；真实调用需配置 GLM 并显式设置对应实验的 `RUN_PAID_*` 环境开关，所有运行使用全新的隔离目录。
-
-```bash
-pnpm dev              # 同时启动 Fastify 与 Vite
-pnpm db:migrate       # 幂等运行顺序 SQL 迁移
-pnpm typecheck        # 所有 workspace 严格类型检查
-pnpm lint             # ESLint
-pnpm build            # 类型检查并构建 Web
-pnpm test             # Fixture 单元/集成/模拟测试
-pnpm test:state:unit  # 状态闭环单元测试
-pnpm test:state:integration # 状态闭环 HTTP/持久化测试
-pnpm test:state:simulation  # 状态闭环 FakeClock 模拟
-pnpm exec playwright install chromium  # 首次运行 E2E 前安装测试浏览器
-pnpm test:e2e         # Playwright 1440×900 与 1920×1080 两种桌面流程
-pnpm test:correspondence:focused  # 书信/纪念物/档案的单元、集成与 Web 门禁
-pnpm test:correspondence:stages1-8 # 上述门禁 + 两种桌面尺寸的完整 E2E
-pnpm test:llm:smoke   # 显式真实 Provider 测试
-pnpm test:llm:smoke:claude   # 显式测试 Claude 档案
-pnpm test:llm:smoke:grok     # 显式测试 Grok 档案
-pnpm test:llm:smoke:gemini   # 显式测试 Gemini 档案
-pnpm test:llm:smoke:gpt56-sol # 显式测试 GPT-5.6 Sol 档案
-pnpm test:llm:smoke:bigmodel # 显式测试智谱档案
-pnpm test:llm:smoke:qwen # 显式测试 Qwen3.8 Flash 档案
-pnpm test:dual-model:fixture # 离线双模型编排演示
-pnpm test:dual-model # 显式真实双模型测试，需 RUN_PAID_DUAL_MODEL=1
-```
-
-## 本地产物与版本控制
-
-自动生成内容按目录统一隔离，不按模型、运行日期或文件后缀逐次添加忽略规则：
-
-- `data/`：本地数据库及其 WAL/SHM 文件、仿真实例、生成图片和缩略图；只保留版本化的 `data/.gitkeep`。
-- `tmp/`、`temp/`、`artifacts/`：临时脚本、长程验收记录、模型调用原始证据、截图、导出和其他运行产物；现有长程验收继续使用 `tmp/`，子包内同名产物目录也被忽略。
-- `instances/`、`logs/`、`backups/`：本地实例、日志和备份。
-- 各 workspace 的依赖、构建、缓存和测试输出目录也统一忽略，包括 `node_modules/`、`dist/`、`.cache/`、`.vite/`、`coverage/`、`playwright-report/`、`test-results/` 等。
-
-新增仿真和工具应把自动输出写入上述目录，或写到仓库之外；自定义输出路径也遵循这个约定。Git 不能根据文件内容自动判断它是否由本地生成。
-
-源码、测试样例、配置模板、设计资产和经审查的文档继续纳入版本控制，不对所有 `assets/`、图片或 `docs/reports/` 一概忽略。旧真实验收脚本仍写入 `docs/reports/` 的自动报告由兼容规则覆盖；已跟踪的历史报告继续保留，后续新增生成器使用 `tmp/` 或 `artifacts/`。原始数据库和模型调用证据不直接提交；需要入库的验收结论应先脱敏、审查，再作为正式报告保存。
-
-忽略规则不会删除本地文件，也不会自动停止跟踪已经提交的文件。
-
-## 结构
+## 项目结构
 
 ```text
 apps/
-  server/       Fastify、SQLite、SSE、生活推进与应用服务
-  web/          React、React Router、TanStack Query 与完整 UI
+  web/                  React 页面、交互、样式及 Dearvale 视觉资产
+  server/
+    src/composition/    服务装配与插件注册
+    src/http/           HTTP 路由、公开数据投影与开发者边界
+    src/services/       角色、对话、记忆、生活、书信与成就服务
+    src/repositories/   专项持久化接口
+    src/db/             SQLite 迁移与兼容存储层
+    src/runtime/        时钟、时间任务与实例备份恢复
+    src/scripts/        模型验收与实验执行器
 packages/
-  contracts/    Zod schemas 和推导类型
-  kernel/       Service Registry、Event Bus、Actor Queue、Plugin Runtime
-  features/     纯领域规则与模拟算法
-  providers/    System/Fake Clock、Fixture/compatible LLM
-docs/
-  adr/          关键技术决策
-  design/       ImageGen 视觉基线
-tests/          集成、模拟和 E2E
+  contracts/            Zod schemas 与共享类型
+  kernel/               服务注册、事件总线、角色队列、可信插件生命周期
+  features/             纯领域规则、因果、记忆、提示与模拟算法
+  providers/            Fixture、兼容/原生模型适配与图片 Provider
+scripts/                实例备份、恢复及资源准备工具
+tests/
+  fixtures/             固定场景与测试数据
+  e2e/                  Playwright 用户流程
+deploy/                 Caddy 与可选 Compose 挂载配置
+docs/                   架构、操作指南、ADR、设计、实验及审查报告
 ```
 
-详细设计见 [架构](docs/architecture.md)、[领域 schemas](docs/schemas.md)、[纯模糊生活与人生选择 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md)、[可信插件合同](docs/plugin-sdk.md)和 [视觉系统](docs/design-system.md)。
+模型只生成文本与有界提案：服务端读取上下文、调用模型、校验来源与领域规则，最后在短 SQLite 事务中提交。角色队列协调同一角色的关键变更；SSE 通知前端重新读取持久化数据。模型调用不占用数据库事务，模型输出也不能直接写数据库。
 
-## 关键保证
+## 文档导航
 
-- LLM 输出必须经过 JSON 解析、Zod 与领域规则三层校验。
-- LLM 只能提交 proposal；应用生成 ID、验证证据并在短事务中提交。
-- 同一角色的聊天、激活和生活推进由 Actor Queue 串行化；主动消息运行能力当前统一关闭。
-- 重复激活、请求重试或系统时间回退不会重复产生生活结果、决定或记忆。
-- 已发布角色版本不可原地改写；运行时变化只进入状态、关系、记忆、生活主线、决定和事件。
-- “正在讨论”“已经决定”“已经行动”“产生结果”是四种不同事实，任何一步都不能无证据越级。
-- `delegated_decision` 必须绑定测试用户的明确授权消息，但不要求角色把最终决定权退回给用户。
-- 角色和测试用户的现实世界动作不会由 Demo 自动执行；结果只来自明确的场景输入或可追溯结算。
-- SSE 只负责通知，断线后前端从 SQLite 重新拉取真源。
+| 文档                                                                                                                                         | 内容                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [模型设置](docs/MODEL_SETTINGS.md)                                                                                                           | 多供应商、协议参数、连接测试与加密凭据。           |
+| [成就收藏](docs/ACHIEVEMENTS.md)                                                                                                             | 行为纪念、专属徽章、独立图片模型与资产恢复。       |
+| [角色问答实施](docs/design/character-interview-implementation.md)                                                                            | 问答、追问、草稿、小传、发布与验收范围。           |
+| [自托管与恢复](docs/SELF_HOSTING.md)                                                                                                         | Docker、Caddy、时间任务、备份和升级。              |
+| [功能开关](docs/ROLLOUT.md)                                                                                                                  | 默认模式、灰度行为和历史兼容路径。                 |
+| [架构](docs/architecture.md) / [数据契约](docs/schemas.md) / [插件合同](docs/plugin-sdk.md)                                                  | 领域分层与接口约定；当前部署方式以自托管指南为准。 |
+| [模糊生活与因果 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md) / [书信 ADR](docs/adr/0007-temporal-correspondence.md)              | 时间、生活、选择与延迟书信的设计依据。             |
+| [Dearvale 插画清单](docs/design/dearvale-assets.md) / [问答素材清单](docs/design/character-interview-assets.md)                              | 当前视觉资源来源与实现说明。                       |
+| [双模型测试](docs/DUAL_MODEL_TESTING.md) / [架构实验](docs/evals/architecture-comparison.md)                                                 | 可复现的执行入口与评审协议。                       |
+| [整体架构实验报告](docs/reports/2026-09-10-architecture-comparison-glm.md) / [三组 Qwen 长测](docs/plans/Qwen_Three_Run_120_Turn_Results.md) | 特定模型与场景下的结果、失败证据和结论边界。       |
 
-## 第一版未包含
+`docs/plans/` 与历史发布说明记录当时的计划和验收，不代表其中每项能力已在当前默认配置启用。
 
-LoRA/训练、语音/3D、多人账户、云同步、通用身份认证、桌面安装包、系统通知、面向用户的角色日程/日历、PDF/OCR、音视频分析、向量数据库、完整知识图谱、第三方插件安装/沙箱、外部工具执行、支付、公开分享平台和公开多租户部署。`resident`/`worker` 可在本地服务或单实例容器仍运行时处理书信与纪念物任务，但不是操作系统级后台守护或推送服务。
+## 当前边界
 
-## 已知限制
-
-- 这是单机单用户学习 Demo；数据库 schema 尚未承诺跨大版本兼容。
-- Fixture 对话是确定性的规则演示，不代表真实模型的语言质量。
-- 作品导入接受最多 500 KB；真实模型使用角色名附近、首尾和分布位置的有界摘录生成设定，不提供全文检索。
-- 模糊生活背景只表达自然日、时段、最近进展与忙碌程度，不保证角色在某一分钟正在执行某事。
-- 主动候选的相似合并使用确定性类别/日期 key，不使用向量语义聚类。
-- 默认 `lazy` 模式下，浏览器关闭或服务停机期间只积累可补算的时间差；显式使用 `resident`/`worker` 且服务仍运行时，才会按数据库任务队列继续生成书信与纪念物。应用始终不会发送现实邮件或消息。
-
-## 本地实验边界
-
-当前目标是验证模型能否在合成对话中倾听、分析、明确推荐，或在获得明确委托时替测试用户选择职业、迁居、关系等人生方向。项目不实现通用的重大决定拒答、强制“维护用户最终自主权”、危机响应或依赖性安全矩阵，也不要求回复附加公开产品式免责声明。
-
-服务端会在启动配置解析时强制 `HOST` 和 `WEB_ORIGIN` 都指向回环地址（`localhost`、`127.0.0.0/8` 或 `::1`）。这是有意的产品边界：当前没有账户、认证、授权、租户隔离或公共部署安全体系，不能通过把 `HOST` 改成 `0.0.0.0` 来对局域网或公网提供服务。若未来改变部署边界，应先补齐身份、权限、数据隔离和安全策略，再显式修改这条运行时约束。
-
-仍然保留的是实验正确性边界：不得把讨论写成决定、把决定写成行动、把计划写成结果；每个决定、行动、结果和记忆都必须有来源；重启与重放不得重复写入；Demo 不对现实世界执行任何外部动作。这些约束用于保证长程因果测试可信，不是面向公开产品的安全策略。
+- 当前按单用户、虚构角色与合成测试场景设计，支持独立实例自托管，尚无多租户账户、云同步或公共分享平台。
+- 真实模型仍可能出现修辞惯性、附加建议、错误召回或主体归属问题；工程测试通过不能替代长期内容质量评审。
+- 生活背景只表达自然日、粗粒度时段、近况和忙碌程度，不提供分钟级角色日历。时间过去本身不证明目标完成、用户采取行动或结果发生。
+- 作品导入使用有界摘录编译角色，不是全文检索、PDF/OCR 或音视频分析。当前没有部署向量数据库或 embedding 检索服务。
+- 主动消息暂停；没有系统通知、语音/3D、桌面安装包、第三方插件安装与沙箱。内部可信插件运行时不等于外部插件市场。
+- 应用不代表用户或角色发送现实邮件、操作日历或执行外部工具。倾听、分析、推荐和明确授权的委托决定都发生在对话与模拟中，后续行动、结果和记忆仍需证据。
+- 数据库 schema 尚未承诺跨大版本兼容；升级前保留数据库、两类资产及各自密钥的可恢复备份。

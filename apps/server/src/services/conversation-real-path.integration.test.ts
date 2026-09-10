@@ -254,6 +254,89 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(body.assistantMessage.metadata.repairAttempted).toBe(false);
   });
 
+  it("repairs incomplete canonical first-chunk text once while preserving independently valid effects", async () => {
+    const created = await createRealProviderTestApp("enforced");
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const rawTurn = {
+      replyDecision: {
+        text: "先确认目标。",
+        deliveryMode: "sequential",
+        chunks: ["先确认目标。", "辅助分块里的内容不能直接成为正文。"],
+      },
+      worldEffects: { stateDelta: { energy: -0.12 } },
+    };
+    const repairedText = "先确认目标，再比较方案的成本，最后说清还缺什么信息。";
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn") return rawTurn;
+      if (input.purpose === "repair_chat_turn") return { text: repairedText };
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const before = app.personasim.store.getRuntimeState(character.id)!;
+    const sessionId = await createSession(app, character.id);
+    const userText = "我有点累，请认真展开比较两个方案，说明成本和未知条件。";
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "incomplete-canonical-reply",
+      userText,
+    );
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toBe(repairedText);
+    expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+    expect(body.assistantMessage.content).not.toContain("辅助分块");
+    expect(body.state.energy).toBeCloseTo(before.energy - 0.12, 8);
+    expect(calls.map((input) => input.purpose)).toEqual([
+      "chat_turn",
+      "repair_chat_turn",
+    ]);
+    expect(calls[0]?.schema.safeParse(rawTurn).success).toBe(true);
+    expect(calls[1]?.maxRetries).toBe(0);
+    expect(calls[1]?.prompt).toContain("INCOMPLETE_CANONICAL_REPLY_TEXT");
+    expect(calls[1]?.prompt).toContain(userText);
+  });
+
+  it("stops after the existing repair allowance when the repaired text is also only its first chunk", async () => {
+    const created = await createRealProviderTestApp();
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const incomplete = {
+      text: "先确认目标。",
+      deliveryMode: "sequential",
+      chunks: ["先确认目标。", "辅助分块里的内容不能直接成为正文。"],
+    };
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn" || input.purpose === "repair_chat_turn")
+        return incomplete;
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    calls.length = 0;
+    const sessionId = await createSession(app, character.id);
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "incomplete-canonical-repair-fails",
+      "请认真展开比较两个方案，说明成本和未知条件。",
+    );
+    expect(response.statusCode).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).not.toBe(incomplete.text);
+    expect(body.assistantMessage.content).not.toContain("辅助分块");
+    expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+    expect(body.decision.reasonCode).toBe("persona_chat_fallback");
+    expect(calls.map((input) => input.purpose)).toEqual([
+      "chat_turn",
+      "repair_chat_turn",
+    ]);
+    expect(calls[1]?.maxRetries).toBe(0);
+  });
+
   it("does not erase ordinary spaces when checking model chunks", async () => {
     const created = await createRealProviderTestApp();
     app = created.app;

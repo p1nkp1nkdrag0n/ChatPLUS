@@ -21,6 +21,10 @@ import {
 import { ActivityEventKindSchema } from "./simulation.js";
 import { RuntimeStateDeltaSchema } from "./state.js";
 import { AgentTurnDecisionSchema } from "./turn.js";
+import {
+  COMPLETE_REPLY_TEXT_REFINEMENT,
+  hasIncompleteSequentialReplyText,
+} from "./reply-completeness.js";
 
 export const LlmPurposeSchema = z.enum([
   "compile_character",
@@ -111,39 +115,45 @@ const PersonaChatResponseShapeSchema = z
  * fields are normalized away before the response reaches the strict server
  * decision and persistence contracts.
  */
-export const PersonaChatResponseSchema = z.preprocess((value) => {
-  if (!isPlainRecord(value)) return value;
+export const PersonaChatResponseSchema = z.preprocess(
+  (value) => {
+    if (!isPlainRecord(value)) return value;
 
-  const reply = value["reply"];
-  const nestedReply = isPlainRecord(reply) ? reply : undefined;
-  const text =
-    typeof value["text"] === "string"
-      ? value["text"]
-      : typeof value["content"] === "string"
-        ? value["content"]
-        : typeof reply === "string"
-          ? reply
-          : nestedReply?.["text"];
-  const toneTags =
-    value["toneTags"] === undefined
-      ? nestedReply?.["toneTags"]
-      : value["toneTags"];
-  const deliveryMode = normalizeDeliveryMode(
-    value["deliveryMode"] === undefined
-      ? nestedReply?.["deliveryMode"]
-      : value["deliveryMode"],
-  );
-  const chunks = normalizeReplyChunks(
-    value["chunks"] === undefined ? nestedReply?.["chunks"] : value["chunks"],
-  );
+    const reply = value["reply"];
+    const nestedReply = isPlainRecord(reply) ? reply : undefined;
+    const text =
+      typeof value["text"] === "string"
+        ? value["text"]
+        : typeof value["content"] === "string"
+          ? value["content"]
+          : typeof reply === "string"
+            ? reply
+            : nestedReply?.["text"];
+    const toneTags =
+      value["toneTags"] === undefined
+        ? nestedReply?.["toneTags"]
+        : value["toneTags"];
+    const deliveryMode = normalizeDeliveryMode(
+      value["deliveryMode"] === undefined
+        ? nestedReply?.["deliveryMode"]
+        : value["deliveryMode"],
+    );
+    const chunks = normalizeReplyChunks(
+      value["chunks"] === undefined ? nestedReply?.["chunks"] : value["chunks"],
+    );
 
-  return {
-    text,
-    toneTags: normalizeToneTags(toneTags),
-    ...(deliveryMode === undefined ? {} : { deliveryMode }),
-    ...(chunks === undefined ? {} : { chunks }),
-  };
-}, PersonaChatResponseShapeSchema);
+    return {
+      text,
+      toneTags: normalizeToneTags(toneTags),
+      ...(deliveryMode === undefined ? {} : { deliveryMode }),
+      ...(chunks === undefined ? {} : { chunks }),
+    };
+  },
+  PersonaChatResponseShapeSchema.refine(
+    (reply) => !hasIncompleteSequentialReplyText(reply),
+    COMPLETE_REPLY_TEXT_REFINEMENT,
+  ),
+);
 export type PersonaChatResponse = z.infer<typeof PersonaChatResponseSchema>;
 
 export const CharacterCompilationRequestSchema = z.discriminatedUnion("kind", [

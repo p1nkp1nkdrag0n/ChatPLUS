@@ -14,8 +14,10 @@ import {
   type Memory,
 } from "@personasim/contracts";
 import {
+  buildConversationContextPlan,
   RELATIONSHIP_BASELINE_FAMILIARITY_PER_TURN,
   resolveTemporalQuery,
+  selectMemoryUseForTurn,
 } from "@personasim/features";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -2454,6 +2456,25 @@ describe("continuity memory recall hierarchy", () => {
       selectedMemoryIds: [splitCard.id],
     });
     expect(split.result.selectedEvidenceIds).toHaveLength(2);
+    if (split.result.abstained) throw new Error("Expected split fact proofs");
+    expect(
+      selectMemoryUseForTurn({
+        plan: buildConversationContextPlan({
+          originalQuery: EXPLICIT_FACT_QUERY,
+          agentId: harness.agentId,
+          sessionId: session.id,
+          recentMessages: [],
+        }),
+        evidence: split.result.evidenceBundle.evidence,
+      }).backgroundEvidenceIds,
+    ).toEqual(split.result.selectedEvidenceIds);
+    expect(
+      split.result.evidenceBundle.evidence.every(
+        (item) =>
+          item.relevance?.reasons.includes("verified_fact") &&
+          item.relevance.evidenceId === item.evidence.id,
+      ),
+    ).toBe(true);
     expectReplayExact(
       app.personasim.memoryRecalls,
       app,

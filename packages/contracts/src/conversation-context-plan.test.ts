@@ -25,6 +25,45 @@ describe("conversation advice-policy audit compatibility", () => {
     const parsed = ConversationContextPlanSchema.parse(historical);
     expect(parsed.advicePolicy).toBeUndefined();
     expect(parsed.advicePolicyVersion).toBeUndefined();
+    expect(parsed.requestPolicyVersion).toBeUndefined();
+    expect(parsed.structuredTaskRequested).toBeUndefined();
+  });
+
+  it.each(["clause_requests_v1", "clause_requests_v2", "clause_requests_v3"])(
+    "retains the recorded request parser version %s",
+    (requestPolicyVersion) => {
+      expect(
+        ConversationContextPlanSchema.parse({
+          ...historical,
+          requestPolicyVersion,
+        }).requestPolicyVersion,
+      ).toBe(requestPolicyVersion);
+    },
+  );
+
+  it("rejects unknown request parser versions", () => {
+    expect(
+      ConversationContextPlanSchema.safeParse({
+        ...historical,
+        requestPolicyVersion: "unreviewed",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("retains the v3 procedural hint without inventing it for old plans", () => {
+    expect(
+      ConversationContextPlanSchema.parse({
+        ...historical,
+        requestPolicyVersion: "clause_requests_v3",
+        structuredTaskRequested: true,
+      }).structuredTaskRequested,
+    ).toBe(true);
+    expect(
+      ConversationContextPlanSchema.safeParse({
+        ...historical,
+        structuredTaskRequested: "yes",
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts only the finite server-derived policy and its known version", () => {

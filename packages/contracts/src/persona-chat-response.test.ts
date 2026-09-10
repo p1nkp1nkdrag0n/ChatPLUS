@@ -1,9 +1,89 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { AgentTurnDecisionSchema, PersonaChatResponseSchema } from "./index.js";
+import {
+  AgentTurnDecisionSchema,
+  PersonaChatDecisionSchema,
+  PersonaChatResponseSchema,
+  PersonaReplyDecisionSchema,
+  StrictPersonaTurnProviderEnvelopeSchema,
+} from "./index.js";
 
 describe("PersonaChatResponseSchema", () => {
+  it.each([
+    PersonaChatResponseSchema,
+    PersonaChatDecisionSchema,
+    PersonaReplyDecisionSchema,
+  ])(
+    "rejects an incomplete canonical first chunk at each reply boundary",
+    (schema) => {
+      const reply = {
+        text: "First step.\r\nKeep the scope clear.",
+        deliveryMode: "sequential",
+        chunks: [
+          " First step.\nKeep the scope clear. ",
+          "Then compare the alternatives.",
+        ],
+      };
+      const parsed = schema.safeParse(reply);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues[0]?.path).toEqual(["text"]);
+        expect(parsed.error.issues[0]?.message).toContain(
+          "INCOMPLETE_CANONICAL_REPLY_TEXT",
+        );
+      }
+      // The raw turn remains available for independent effect validation/repair.
+      const raw = {
+        replyDecision: reply,
+        worldEffects: { stateDelta: { energy: -0.1 } },
+      };
+      expect(StrictPersonaTurnProviderEnvelopeSchema.parse(raw)).toEqual(raw);
+    },
+  );
+
+  it.each([
+    {
+      text: "First.Then.",
+      deliveryMode: "sequential",
+      chunks: ["First.", "Then."],
+    },
+    {
+      text: "Complete reply.",
+      deliveryMode: "sequential",
+      chunks: ["Unrelated.", "Also unrelated."],
+    },
+    {
+      text: "Complete reply.",
+      deliveryMode: "single_block",
+      chunks: ["Complete reply.", "Additional optional noise."],
+    },
+    {
+      text: "Complete reply.",
+      deliveryMode: "sequential",
+      chunks: ["Complete reply."],
+    },
+    {
+      text: "Complete reply.",
+      deliveryMode: "sequential",
+      chunks: ["Complete reply.", "Complete reply.", "reply."],
+    },
+    {
+      text: "Hello world.",
+      deliveryMode: "sequential",
+      chunks: ["Helloworld.", "Additional optional noise."],
+    },
+  ])(
+    "keeps faithful, unrelated, single and redundant chunk cases valid: $text",
+    (reply) => {
+      for (const schema of [
+        PersonaChatResponseSchema,
+        PersonaChatDecisionSchema,
+        PersonaReplyDecisionSchema,
+      ])
+        expect(schema.safeParse(reply).success).toBe(true);
+    },
+  );
   it.each([
     { input: { text: "你好" }, label: "top-level text" },
     { input: { content: "你好" }, label: "top-level content" },

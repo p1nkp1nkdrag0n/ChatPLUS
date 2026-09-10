@@ -5,7 +5,10 @@ import {
   MemorySchema,
   type Memory,
 } from "@personasim/contracts";
-import { buildConversationContextPlan } from "@personasim/features";
+import {
+  buildConversationContextPlan,
+  selectMemoryUseForTurn,
+} from "@personasim/features";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { openDatabase, type Database } from "../db/connection.js";
@@ -21,6 +24,8 @@ import { ContinuityMemoryRepository } from "./continuity-memory-repository.js";
 import { ContinuityRepository } from "./continuity-repository.js";
 import { DateDigestService } from "./date-digest-service.js";
 import { MemoryRecallService } from "./memory-recall-service.js";
+import { MemoryLifecycleService } from "./memory-lifecycle-service.js";
+import { readRecallCandidateRecords } from "./memory-service.js";
 
 const NOW = "2026-09-06T12:00:00.000Z";
 const AGENT = "agent_context_recall";
@@ -51,14 +56,22 @@ describe("companion retrieval policy and frozen audit", () => {
   });
   afterEach(() => database.close());
 
-  function seed(id: string, content: string): Memory {
+  function seed(
+    id: string,
+    content: string,
+    options: {
+      quote?: string;
+      importance?: number;
+      stability?: Memory["stability"];
+    } = {},
+  ): Memory {
     const messageId = `message_${id}`;
     store.insertMessage({
       id: messageId,
       sessionId: SESSION,
       agentId: AGENT,
       role: "user",
-      content,
+      content: options.quote ?? content,
       messageKind: "user",
       metadata: {},
       createdAtUtc: NOW,
@@ -69,7 +82,7 @@ describe("companion retrieval policy and frozen audit", () => {
       kind: "semantic",
       content,
       tags: ["共同经历"],
-      importance: 0.8,
+      importance: options.importance ?? 0.8,
       confidence: 1,
       sourceMessageIds: [messageId],
       sourceActivityEventIds: [],
@@ -77,7 +90,7 @@ describe("companion retrieval policy and frozen audit", () => {
       namespace: "user_model",
       certainty: "explicit",
       attribution: "user_explicit",
-      stability: "stable",
+      stability: options.stability ?? "stable",
       status: "active",
       dedupeKey: id,
       createdAtUtc: NOW,
@@ -85,29 +98,38 @@ describe("companion retrieval policy and frozen audit", () => {
     });
     database
       .prepare(
-        "INSERT INTO memories(id, agent_id, type, content, tags_json, importance, confidence, created_at_utc, memory_json, status, namespace, certainty, attribution, stability) VALUES (?, ?, 'semantic', ?, ?, 0.8, 1, ?, ?, 'active', 'user_model', 'explicit', 'user_explicit', 'stable')",
+        "INSERT INTO memories(id, agent_id, type, content, tags_json, importance, confidence, created_at_utc, memory_json, status, namespace, certainty, attribution, stability) VALUES (?, ?, 'semantic', ?, ?, ?, 1, ?, ?, 'active', 'user_model', 'explicit', 'user_explicit', ?)",
       )
       .run(
         id,
         AGENT,
         content,
         JSON.stringify(memory.tags),
+        memory.importance,
         NOW,
         JSON.stringify(memory),
+        memory.stability,
       );
     const evidence = {
       id: `evidence_${id}`,
       memoryId: id,
       sourceType: "message",
       sourceId: messageId,
-      quote: content,
+      quote: options.quote ?? content,
       recordedAtUtc: NOW,
     };
     database
       .prepare(
         "INSERT INTO memory_evidence(id, memory_id, source_type, source_id, quote, recorded_at_utc, evidence_json) VALUES (?, ?, 'message', ?, ?, ?, ?)",
       )
-      .run(evidence.id, id, messageId, content, NOW, JSON.stringify(evidence));
+      .run(
+        evidence.id,
+        id,
+        messageId,
+        evidence.quote,
+        NOW,
+        JSON.stringify(evidence),
+      );
     return memory;
   }
 
@@ -125,6 +147,113 @@ describe("companion retrieval policy and frozen audit", () => {
       })),
     });
   }
+
+  it("preserves selected source relevance through persisted recall, replay, and memory use", () => {
+    seed("drink", "烘焙乌龙", { quote: "饮料喜好：烘焙乌龙" });
+    const query = "饮料喜好";
+    const preview = recall.preview({
+      agentId: AGENT,
+      query,
+      contextPlan: context(query),
+      nowUtc: NOW,
+    });
+    expect(preview.result.abstained).toBe(false);
+    if (preview.result.abstained) return;
+    expect(
+      selectMemoryUseForTurn({
+        plan: context(query),
+        evidence: preview.result.evidenceBundle.evidence,
+      }).explicitMentionEvidenceIds,
+    ).toEqual(["evidence_drink"]);
+    const snapshot = runs.listByAgent(AGENT)[0]!.inputSnapshot;
+    expect(recall.replay(snapshot)).toEqual(preview.result);
+    expect(
+      preview.result.evidenceBundle.evidence[0]?.relevance?.reasons,
+    ).toContain("lexical");
+  });
+
+  it.each([false, true])(
+    "recalls a day-31 aging episode explicitly after restart, with hierarchy=%s",
+    (hierarchy) => {
+      const memory = seed("pottery", "我们去过苔藓陶艺展。", {
+        importance: 0.4,
+        stability: "one_off",
+      });
+      const repository = new ContinuityMemoryRepository(store);
+      const clock = new FakeClock(NOW);
+      const lifecycle = new MemoryLifecycleService(repository, clock);
+      const makeRecall = () =>
+        new MemoryRecallService(
+          store,
+          runs,
+          hierarchy
+            ? {
+                continuityIndex: new ContinuityIndexService(
+                  new ContinuityRepository(store),
+                  clock,
+                ),
+                dateDigests: new DateDigestService(repository),
+              }
+            : undefined,
+        );
+      const query = "你还记得我们去过苔藓陶艺展吗？";
+      const input = () => ({
+        agentId: AGENT,
+        query,
+        nowUtc: clock.nowUtc(),
+        timezone: "Asia/Shanghai",
+        requireDurableEvidence: true,
+      });
+      clock.setUtc(new Date(Date.parse(NOW) + 29 * 86_400_000).toISOString());
+      expect(lifecycle.maintainAgent(AGENT).transitions).toEqual([]);
+      expect(makeRecall().recall(input()).selectedMemoryIds).toEqual([
+        memory.id,
+      ]);
+      clock.setUtc(new Date(Date.parse(NOW) + 31 * 86_400_000).toISOString());
+      expect(lifecycle.maintainAgent(AGENT).transitions).toEqual([
+        expect.objectContaining({ memoryId: memory.id, toStatus: "aging" }),
+      ]);
+      const restarted = makeRecall();
+      const preview = restarted.preview(input());
+      expect(preview.result.selectedMemoryIds).toEqual([memory.id]);
+      expect(
+        restarted.replay(runs.listByAgent(AGENT)[0]!.inputSnapshot),
+      ).toEqual(preview.result);
+      expect(repository.getLifecycleMemory(memory.id)?.memory.status).toBe(
+        "aging",
+      );
+      expect(
+        restarted.recall({ ...input(), query: "苔藓陶艺展" }).selectedMemoryIds,
+      ).toEqual([]);
+      expect(
+        restarted.recall({
+          ...input(),
+          query: "你还记得我现在去哪个苔藓陶艺展吗？",
+        }).selectedMemoryIds,
+      ).toEqual([]);
+      expect(
+        readRecallCandidateRecords(store, AGENT, clock.nowUtc(), {
+          candidateLimit: 50,
+          query,
+          originalQuery: "今天喝什么",
+        }),
+      ).toEqual([]);
+      expect(
+        restarted.recall({ ...input(), suppressedMemoryIds: [memory.id] })
+          .selectedMemoryIds,
+      ).toEqual([]);
+      database
+        .prepare("UPDATE memories SET valid_until_utc = ? WHERE id = ?")
+        .run(clock.nowUtc(), memory.id);
+      expect(restarted.recall(input()).selectedMemoryIds).toEqual([]);
+      database
+        .prepare(
+          "UPDATE memories SET valid_until_utc = NULL, status = 'archived' WHERE id = ?",
+        )
+        .run(memory.id);
+      expect(restarted.recall(input()).selectedMemoryIds).toEqual([]);
+    },
+  );
 
   it("uses unresolved reference candidates without replacing the original query, and replays after sources change", () => {
     seed("sister", "姐姐准备搬家到苏州。");

@@ -652,6 +652,7 @@ function prepareRecall(
     {
       candidateLimit,
       query: recallCandidateQueries(query).join("\n"),
+      originalQuery: query.query,
       keywordLimit: DEFAULT_MEMORY_RECALL_KEYWORD_LIMIT,
       suppressedMemoryIds: input.suppressedMemoryIds ?? [],
     },

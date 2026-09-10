@@ -2,6 +2,7 @@ import type {
   ConversationContextPlan,
   RetrievedMemoryEvidence,
 } from "@personasim/contracts";
+import { MemoryRelevanceSchema } from "@personasim/contracts";
 
 import { recallQueryTokens } from "./memory-recall.js";
 import { matchesConversationTopic } from "./conversation-topic.js";
@@ -28,6 +29,53 @@ export interface MemoryUseInput {
   recentlyMentionedMemoryIds?: readonly string[];
   /** Withdrawn or invalid evidence is excluded from every use, including background. */
   suppressedMemoryIds?: readonly string[];
+  /** Legacy is retained for controlled offline comparisons and old snapshots. */
+  relevanceMode?: "shared" | "legacy_lexical";
+}
+
+/** Relevance is reusable only for the same selected evidence and original turn. */
+function hasSharedRelevance(
+  item: RetrievedMemoryEvidence,
+  originalQuery: string,
+): boolean {
+  const parsed = MemoryRelevanceSchema.safeParse(item.relevance);
+  if (!parsed.success) return false;
+  const relevance = parsed.data;
+  return (
+    relevance.policyVersion === "memory_relevance_v2" &&
+    relevance.query === originalQuery.trim() &&
+    relevance.memoryId === item.memoryId &&
+    relevance.memoryContent === item.memoryContent &&
+    relevance.evidenceId === item.evidence.id &&
+    item.evidence.memoryId === item.memoryId &&
+    relevance.evidenceSourceId === item.evidence.sourceId &&
+    relevance.evidenceText ===
+      (item.evidence.quote ?? item.evidence.contextSummary ?? "") &&
+    relevance.evidenceSourceType === item.evidence.sourceType &&
+    relevance.evidenceQuote === (item.evidence.quote ?? null) &&
+    relevance.evidenceContextSummary ===
+      (item.evidence.contextSummary ?? null) &&
+    relevance.score === item.score &&
+    relevance.score >= relevance.minimumScore &&
+    relevance.reasons.some((reason) => {
+      switch (reason) {
+        case "lexical":
+          return item.scoreBreakdown.lexical > 0;
+        case "tag":
+          return item.scoreBreakdown.tag > 0;
+        case "semantic":
+          return (item.scoreBreakdown.semantic ?? 0) > 0;
+        case "temporal":
+          return item.scoreBreakdown.temporal === 1;
+        case "current_fact":
+          return item.currentFact !== undefined;
+        // The durable fact selector independently verified this supporting
+        // source. Similarity and query expansion never produce this reason.
+        case "verified_fact":
+          return true;
+      }
+    })
+  );
 }
 
 const BEHAVIOR =
@@ -63,9 +111,18 @@ export function selectMemoryUseForTurn(
       item.attribution === "user_explicit" &&
       item.certainty === "explicit" &&
       BEHAVIOR.test(item.memoryContent);
-    const relevant = recallQueryTokens(item.memoryContent).some((token) =>
-      queryTokens.has(token),
-    );
+    const usesSharedRelevance =
+      input.relevanceMode !== "legacy_lexical" && item.relevance !== undefined;
+    const relevant = usesSharedRelevance
+      ? hasSharedRelevance(item, input.plan.originalQuery)
+      : recallQueryTokens(item.memoryContent).some((token) =>
+          queryTokens.has(token),
+        );
+    // A mismatched snapshot cannot be reused as background or as a preference.
+    if (usesSharedRelevance && !relevant) {
+      output.omissions.push({ evidenceId, reason: "not_relevant" });
+      continue;
+    }
     // Explicit topic conditions stay local; an unqualified addressing/listening preference is global.
     const scope = /(?:谈|聊|关于)([^，。；,.;]{1,20}?)(?:时|的时候)/u.exec(
       item.memoryContent,

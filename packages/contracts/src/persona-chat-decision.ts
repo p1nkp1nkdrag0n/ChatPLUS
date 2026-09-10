@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import { PersonaChatDeliveryModeSchema } from "./llm.js";
 import {
+  COMPLETE_REPLY_TEXT_REFINEMENT,
+  hasIncompleteSequentialReplyText,
+} from "./reply-completeness.js";
+import {
   ScheduleNegotiationActionSchema,
   type ScheduleNegotiationAction,
 } from "./schedule-negotiation.js";
@@ -80,78 +84,85 @@ function looseDeliveryMode(
   return parsed.success ? parsed.data : undefined;
 }
 
-export const PersonaChatDecisionSchema = z.preprocess((value) => {
-  if (!isPlainRecord(value)) return value;
+export const PersonaChatDecisionSchema = z.preprocess(
+  (value) => {
+    if (!isPlainRecord(value)) return value;
 
-  const reply = value["replyDecision"] ?? value["reply"];
-  const nestedReply = isPlainRecord(reply) ? reply : undefined;
-  const nestedWorldEffects = isPlainRecord(value["worldEffects"])
-    ? value["worldEffects"]
-    : undefined;
-  const text =
-    typeof value["text"] === "string"
-      ? value["text"]
-      : typeof value["content"] === "string"
-        ? value["content"]
-        : typeof reply === "string"
-          ? reply
-          : nestedReply?.["text"];
+    const reply = value["replyDecision"] ?? value["reply"];
+    const nestedReply = isPlainRecord(reply) ? reply : undefined;
+    const nestedWorldEffects = isPlainRecord(value["worldEffects"])
+      ? value["worldEffects"]
+      : undefined;
+    const text =
+      typeof value["text"] === "string"
+        ? value["text"]
+        : typeof value["content"] === "string"
+          ? value["content"]
+          : typeof reply === "string"
+            ? reply
+            : nestedReply?.["text"];
 
-  const scheduleEffects = looseRecords(
-    value["scheduleEffects"] === undefined
-      ? nestedReply?.["scheduleEffects"]
-      : value["scheduleEffects"],
-  );
-  const scheduleAction = looseScheduleAction(
-    value["scheduleAction"] === undefined
-      ? nestedReply?.["scheduleAction"]
-      : value["scheduleAction"],
-  );
-  const memoryCandidates = looseRecords(
-    nestedWorldEffects?.["memoryCandidates"] ??
-      value["memoryCandidates"] ??
-      nestedReply?.["memoryCandidates"],
-  );
-  const personalIntentCandidates = looseRecords(
-    nestedWorldEffects?.["personalIntentCandidates"] ??
-      value["personalIntentCandidates"],
-  );
-  const stateDelta = nestedWorldEffects?.["stateDelta"] ?? value["stateDelta"];
-  const relationshipDelta =
-    nestedWorldEffects?.["relationshipDelta"] ?? value["relationshipDelta"];
-  const deliveryMode = looseDeliveryMode(
-    value["deliveryMode"] === undefined
-      ? nestedReply?.["deliveryMode"]
-      : value["deliveryMode"],
-  );
-  const toneTags = looseTextList(
-    value["toneTags"] === undefined
-      ? nestedReply?.["toneTags"]
-      : value["toneTags"],
-    12,
-    64,
-  );
-  const chunks = looseTextList(
-    value["chunks"] === undefined ? nestedReply?.["chunks"] : value["chunks"],
-    12,
-    4_000,
-  );
+    const scheduleEffects = looseRecords(
+      value["scheduleEffects"] === undefined
+        ? nestedReply?.["scheduleEffects"]
+        : value["scheduleEffects"],
+    );
+    const scheduleAction = looseScheduleAction(
+      value["scheduleAction"] === undefined
+        ? nestedReply?.["scheduleAction"]
+        : value["scheduleAction"],
+    );
+    const memoryCandidates = looseRecords(
+      nestedWorldEffects?.["memoryCandidates"] ??
+        value["memoryCandidates"] ??
+        nestedReply?.["memoryCandidates"],
+    );
+    const personalIntentCandidates = looseRecords(
+      nestedWorldEffects?.["personalIntentCandidates"] ??
+        value["personalIntentCandidates"],
+    );
+    const stateDelta =
+      nestedWorldEffects?.["stateDelta"] ?? value["stateDelta"];
+    const relationshipDelta =
+      nestedWorldEffects?.["relationshipDelta"] ?? value["relationshipDelta"];
+    const deliveryMode = looseDeliveryMode(
+      value["deliveryMode"] === undefined
+        ? nestedReply?.["deliveryMode"]
+        : value["deliveryMode"],
+    );
+    const toneTags = looseTextList(
+      value["toneTags"] === undefined
+        ? nestedReply?.["toneTags"]
+        : value["toneTags"],
+      12,
+      64,
+    );
+    const chunks = looseTextList(
+      value["chunks"] === undefined ? nestedReply?.["chunks"] : value["chunks"],
+      12,
+      4_000,
+    );
 
-  return {
-    ...(text === undefined ? {} : { text }),
-    ...(toneTags === undefined ? {} : { toneTags }),
-    ...(deliveryMode === undefined ? {} : { deliveryMode }),
-    ...(chunks === undefined ? {} : { chunks }),
-    ...(scheduleAction === undefined ? {} : { scheduleAction }),
-    ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
-    ...(memoryCandidates === undefined ? {} : { memoryCandidates }),
-    ...(stateDelta === undefined ? {} : { stateDelta }),
-    ...(relationshipDelta === undefined ? {} : { relationshipDelta }),
-    ...(personalIntentCandidates === undefined
-      ? {}
-      : { personalIntentCandidates }),
-  };
-}, PersonaChatDecisionShapeSchema);
+    return {
+      ...(text === undefined ? {} : { text }),
+      ...(toneTags === undefined ? {} : { toneTags }),
+      ...(deliveryMode === undefined ? {} : { deliveryMode }),
+      ...(chunks === undefined ? {} : { chunks }),
+      ...(scheduleAction === undefined ? {} : { scheduleAction }),
+      ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
+      ...(memoryCandidates === undefined ? {} : { memoryCandidates }),
+      ...(stateDelta === undefined ? {} : { stateDelta }),
+      ...(relationshipDelta === undefined ? {} : { relationshipDelta }),
+      ...(personalIntentCandidates === undefined
+        ? {}
+        : { personalIntentCandidates }),
+    };
+  },
+  PersonaChatDecisionShapeSchema.refine(
+    (reply) => !hasIncompleteSequentialReplyText(reply),
+    COMPLETE_REPLY_TEXT_REFINEMENT,
+  ),
+);
 
 export type PersonaChatDecision = z.infer<typeof PersonaChatDecisionSchema>;
 
@@ -161,7 +172,10 @@ export const PersonaReplyDecisionSchema = PersonaChatDecisionShapeSchema.omit({
   stateDelta: true,
   relationshipDelta: true,
   personalIntentCandidates: true,
-});
+}).refine(
+  (reply) => !hasIncompleteSequentialReplyText(reply),
+  COMPLETE_REPLY_TEXT_REFINEMENT,
+);
 export type PersonaReplyDecision = z.infer<typeof PersonaReplyDecisionSchema>;
 
 const PersonaTurnWorldEffectsSchema = z

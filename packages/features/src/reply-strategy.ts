@@ -76,6 +76,11 @@ export function deriveReplyStrategy(
       : undefined;
   const negatedLongRequest = NEGATED_LONG_REQUEST.test(text);
   const helpDeferred = plan?.helpTiming === "after_user_finishes";
+  const currentStructuredTask =
+    plan?.structuredTaskRequested === true &&
+    plan.adviceRequested &&
+    plan.supportStyle === "offer_requested_help" &&
+    plan.helpTiming === "now";
   const detailPermitted =
     plan === undefined ? !negatedLongRequest : plan.detailedAnalysisRequested;
   const explicitDetail =
@@ -113,7 +118,7 @@ export function deriveReplyStrategy(
     complexity = "brief";
   } else if (explicitDeep || score >= 4) {
     complexity = "deep";
-  } else if (score >= 2) {
+  } else if (score >= 2 || currentStructuredTask) {
     complexity = "complex";
   } else {
     complexity = "standard";

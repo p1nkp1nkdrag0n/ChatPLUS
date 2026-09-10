@@ -36,6 +36,8 @@ export const ConversationContextPlanSchema = z
     ]),
     adviceRequested: z.boolean(),
     detailedAnalysisRequested: z.boolean(),
+    /** A directly requested procedural output; absent on historical plans. */
+    structuredTaskRequested: z.boolean().optional(),
     supportStyle: z.enum([
       "listen",
       "respond_naturally",
@@ -46,7 +48,9 @@ export const ConversationContextPlanSchema = z
     helpTiming: z
       .enum(["now", "after_user_finishes", "unspecified"])
       .optional(),
-    requestPolicyVersion: z.literal("clause_requests_v1").optional(),
+    requestPolicyVersion: z
+      .enum(["clause_requests_v1", "clause_requests_v2", "clause_requests_v3"])
+      .optional(),
     /** A response-load boundary; absent on older audit snapshots. */
     advicePolicy: z
       .enum(["requested", "none_now", "optional_light"])

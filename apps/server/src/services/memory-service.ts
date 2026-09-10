@@ -1,4 +1,5 @@
 import {
+  allowsAgingMemoryRecall,
   boundedRecallQueryTokens,
   deriveExplicitUserMemoryClaim,
   extractExplicitWeeklyPlanFacts,
@@ -83,6 +84,8 @@ export function readActiveMemoryRecords(
 export type RecallCandidatePoolInput = {
   candidateLimit: number;
   query: string;
+  /** Intent comes from the original query, not candidate-only expansions. */
+  originalQuery?: string;
   keywordLimit?: number;
   suppressedMemoryIds?: readonly string[];
 };
@@ -181,6 +184,11 @@ export function readRecallCandidateRecords(
     Math.min(500, Math.trunc(input.candidateLimit)),
   );
   if (candidateLimit === 0) return [];
+  const statusClause = allowsAgingMemoryRecall(
+    input.originalQuery ?? input.query,
+  )
+    ? "status IN ('active', 'aging')"
+    : "status = 'active'";
   const importancePool = readActiveMemoryRecords(
     store,
     agentId,
@@ -204,7 +212,7 @@ export function readRecallCandidateRecords(
               occurred_start_at_utc, occurred_end_at_utc, recorded_at_utc,
               temporal_certainty, temporal_status
              FROM memories
-             WHERE agent_id = ? AND status = 'active'
+             WHERE agent_id = ? AND ${statusClause}
                AND superseded_by_id IS NULL AND merged_into_id IS NULL
                AND (valid_until_utc IS NULL OR valid_until_utc > ?)
          AND id NOT IN (SELECT value FROM json_each(?))
@@ -276,7 +284,7 @@ export function readRecallCandidateRecords(
     .prepare(
       `SELECT ${frequencyColumns}
        FROM memories
-       WHERE agent_id = ? AND status = 'active'
+       WHERE agent_id = ? AND ${statusClause}
          AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
          AND id NOT IN (SELECT value FROM json_each(?))`,
@@ -309,7 +317,7 @@ export function readRecallCandidateRecords(
         occurred_start_at_utc, occurred_end_at_utc, recorded_at_utc,
         temporal_certainty, temporal_status
        FROM memories
-       WHERE agent_id = ? AND status = 'active'
+       WHERE agent_id = ? AND ${statusClause}
          AND superseded_by_id IS NULL AND merged_into_id IS NULL
          AND (valid_until_utc IS NULL OR valid_until_utc > ?)
          AND id NOT IN (SELECT value FROM json_each(?))

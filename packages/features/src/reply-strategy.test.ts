@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildConversationContextPlan } from "./conversation-context-plan.js";
 
 import {
   deriveReplyStrategy,
@@ -6,6 +7,77 @@ import {
 } from "./reply-strategy.js";
 
 describe("deriveReplyStrategy", () => {
+  const withPlan = (text: string) =>
+    deriveReplyStrategy(
+      text,
+      {
+        averageMessageLength: 100,
+        verbosity: 0.5,
+      },
+      {
+        conversationPlan: buildConversationContextPlan({
+          originalQuery: text,
+          agentId: "agent-test",
+          sessionId: "session-test",
+          recentMessages: [],
+        }),
+      },
+    );
+
+  it.each([
+    "请给我一个适合首次参会时照着做的发言顺序。",
+    "请列一份适合第一次主持会议时用的准备清单。",
+    "替我梳理明天办手续的流程。",
+  ])(
+    "gives an explicit procedural output room for practical detail: %s",
+    (text) => {
+      expect(withPlan(text).complexity).toBe("complex");
+      expect(withPlan(text).targetChars).toBeGreaterThan(
+        deriveReplyStrategy(text, {
+          averageMessageLength: 100,
+          verbosity: 0.5,
+        }).targetChars,
+      );
+      expect(withPlan(text).lengthGuidance).toContain("not a quota");
+    },
+  );
+
+  it.each([
+    "帮我拟一版。",
+    "帮我写一条拒绝回复。",
+    "帮我写一条回复介绍准备顺序。",
+    "帮我写一条回复，里面提到‘准备清单’。",
+    "她说，给我一个准备顺序。",
+    "不要给我一个准备顺序。",
+    "给我一点时间整理准备顺序。",
+    "明天再给我清单，今晚只想说说。",
+    "先让我说完，再帮我列一个准备清单。",
+    "先听我说，也请给我一个准备清单。",
+  ])(
+    "does not expand short drafts or inactive procedural requests: %s",
+    (text) => {
+      expect(withPlan(text).complexity).toBe("standard");
+    },
+  );
+
+  it("keeps an explicit concise instruction ahead of the procedural floor", () => {
+    const text = "请给我一个准备顺序，只用一句话。";
+    expect(withPlan(text).complexity).toBe("brief");
+  });
+
+  it("does not apply a stale plan's procedural floor to a new short request", () => {
+    const plan = buildConversationContextPlan({
+      originalQuery: "请给我一个准备顺序。",
+      agentId: "agent-test",
+      sessionId: "session-test",
+      recentMessages: [],
+    });
+    expect(
+      deriveReplyStrategy("帮我拟一版。", {}, { conversationPlan: plan })
+        .complexity,
+    ).toBe("standard");
+  });
+
   it("keeps greetings brief while expanding analytical questions", () => {
     const dialogue = {
       verbosity: 0.45,

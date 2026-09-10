@@ -9,7 +9,10 @@ import {
   MemoryNamespaceSchema,
   MemoryStabilitySchema,
 } from "./memory.js";
-import { MemoryEvidenceSchema } from "./memory-evidence.js";
+import {
+  MemoryEvidenceSchema,
+  MemoryEvidenceSourceTypeSchema,
+} from "./memory-evidence.js";
 import {
   EntityIdSchema,
   ShortTextSchema,
@@ -80,6 +83,8 @@ export type MemoryRecallQuery = z.infer<typeof MemoryRecallQuerySchema>;
 export const RetrievalScoreBreakdownSchema = z
   .object({
     lexical: UnitIntervalSchema,
+    /** Optional, query/evidence-bound candidate signal; never fact authority. */
+    semantic: UnitIntervalSchema.optional(),
     tag: UnitIntervalSchema,
     importance: UnitIntervalSchema,
     recency: UnitIntervalSchema,
@@ -90,6 +95,54 @@ export const RetrievalScoreBreakdownSchema = z
 export type RetrievalScoreBreakdown = z.infer<
   typeof RetrievalScoreBreakdownSchema
 >;
+
+/** A selected recall's explanation, bound to the exact evidence used for this turn. */
+export const MemoryRelevanceSchema = z
+  .object({
+    policyVersion: z.enum(["memory_relevance_v1", "memory_relevance_v2"]),
+    query: z.string().trim().min(1).max(20_000),
+    memoryId: EntityIdSchema,
+    memoryContent: z.string().min(1).max(2_000),
+    evidenceId: EntityIdSchema,
+    evidenceSourceId: EntityIdSchema,
+    evidenceText: z.string().max(20_000),
+    /** Explicit nulls distinguish absent source text from a partial old binding. */
+    evidenceSourceType: MemoryEvidenceSourceTypeSchema.optional(),
+    evidenceQuote: z.string().max(2_000).nullable().optional(),
+    evidenceContextSummary: z.string().max(1_000).nullable().optional(),
+    score: UnitIntervalSchema,
+    minimumScore: UnitIntervalSchema,
+    reasons: z
+      .array(
+        z.enum([
+          "lexical",
+          "tag",
+          "semantic",
+          "temporal",
+          "current_fact",
+          "verified_fact",
+        ]),
+      )
+      .min(1)
+      .max(6),
+  })
+  .strict()
+  .superRefine((relevance, context) => {
+    if (relevance.policyVersion !== "memory_relevance_v2") return;
+    for (const key of [
+      "evidenceSourceType",
+      "evidenceQuote",
+      "evidenceContextSummary",
+    ] as const) {
+      if (relevance[key] === undefined)
+        context.addIssue({
+          code: "custom",
+          path: [key],
+          message: "Current relevance requires a complete evidence binding",
+        });
+    }
+  });
+export type MemoryRelevance = z.infer<typeof MemoryRelevanceSchema>;
 
 export const RetrievedMemoryEvidenceSchema = z
   .object({
@@ -112,6 +165,7 @@ export const RetrievedMemoryEvidenceSchema = z
     evidence: MemoryEvidenceSchema,
     score: UnitIntervalSchema,
     scoreBreakdown: RetrievalScoreBreakdownSchema,
+    relevance: MemoryRelevanceSchema.optional(),
   })
   .strict();
 export type RetrievedMemoryEvidence = z.infer<

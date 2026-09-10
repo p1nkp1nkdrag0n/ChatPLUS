@@ -5,7 +5,10 @@ import {
   type Message,
 } from "@personasim/contracts";
 
-import { deriveCurrentConversationRequests } from "./conversation-requests.js";
+import {
+  CURRENT_REQUEST_POLICY_VERSION,
+  deriveCurrentConversationRequests,
+} from "./conversation-requests.js";
 import { resolveCurrentConversationTopic } from "./conversation-topic.js";
 import { deriveFactQueryNeeds } from "./current-fact-projection.js";
 import { ADVICE_POLICY_VERSION, deriveAdvicePolicy } from "./advice-policy.js";
@@ -118,6 +121,7 @@ export function buildConversationContextPlan(
     intent,
     adviceRequested,
     detailedAnalysisRequested,
+    structuredTaskRequested: requests.structuredTaskRequested,
     supportStyle,
     ...deriveQuestionIntent(originalQuery),
     expressionContext: buildTurnExpressionContext({
@@ -145,7 +149,7 @@ export function buildConversationContextPlan(
         : { protectedPhrases: input.protectedPhrases }),
     }),
     helpTiming: requests.helpTiming,
-    requestPolicyVersion: "clause_requests_v1",
+    requestPolicyVersion: CURRENT_REQUEST_POLICY_VERSION,
     advicePolicy: deriveAdvicePolicy({
       intent,
       adviceRequested,

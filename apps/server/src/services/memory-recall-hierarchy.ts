@@ -764,6 +764,7 @@ export function inspectContinuityRecall(
     input.nowUtc,
     candidateLimit,
     input.suppressedMemoryIds ?? [],
+    query.query,
   );
   const basicCandidates = allBasicCandidates.filter((candidate) =>
     isEligibleDurableCandidateForIntent(
@@ -1593,10 +1594,12 @@ function basicMemoryCandidates(
   nowUtc: string,
   candidateLimit: number,
   suppressedMemoryIds: readonly string[],
+  originalQuery: string,
 ): HierarchyCandidate[] {
   const memories = readRecallCandidateRecords(store, agentId, nowUtc, {
     candidateLimit,
     query,
+    originalQuery,
     keywordLimit: 50,
     suppressedMemoryIds,
   });
@@ -2769,6 +2772,22 @@ function completeExplicitFactEvidenceResult(
     return candidate.evidence.map((evidence) => ({
       ...selected,
       evidence,
+      ...(selected.relevance === undefined
+        ? {}
+        : {
+            relevance: {
+              ...selected.relevance,
+              evidenceId: evidence.id,
+              evidenceSourceId: evidence.sourceId,
+              evidenceText: evidence.quote ?? evidence.contextSummary ?? "",
+              evidenceSourceType: evidence.sourceType,
+              evidenceQuote: evidence.quote ?? null,
+              evidenceContextSummary: evidence.contextSummary ?? null,
+              // Every candidate source here passed the complete explicit-fact
+              // selector. Bind that decision to each proof, not a sibling quote.
+              reasons: ["verified_fact" as const],
+            },
+          }),
     }));
   });
   const expectedEvidenceIds = new Set(

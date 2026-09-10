@@ -8,6 +8,7 @@ import type {
   MemoryStatus,
   MemoryRecallQuery,
   MemoryRecallResult,
+  MemoryRelevance,
   MemoryStability,
   MemoryClaim,
   RetrievedMemoryEvidence,
@@ -23,6 +24,7 @@ import {
 } from "@personasim/contracts";
 
 import { clamp, normalizeText, stableId } from "./shared.js";
+import { withoutQuotedConversationText } from "./conversation-requests.js";
 import {
   deriveFactQueryNeeds,
   extractExplicitCurrentFactProjections,
@@ -64,6 +66,58 @@ export interface MemoryRecallInput {
   temporalRange?: TemporalQueryRange;
   minimumScore?: number;
   maxEvidence?: number;
+  /** Optional trusted-provider/fixture signals over supplied evidence, not an embedding integration. */
+  semanticSignals?: readonly MemorySemanticSignal[];
+}
+
+/** Similarity proposes relevance only. All fields must match the live recall input exactly. */
+export interface MemorySemanticSignal {
+  query: string;
+  memoryId: string;
+  memoryContent: string;
+  evidenceId: string;
+  evidenceSourceId: string;
+  evidenceText: string;
+  evidenceSourceType: MemoryEvidence["sourceType"];
+  evidenceQuote: string | null;
+  evidenceContextSummary: string | null;
+  score: number;
+}
+
+function semanticScore(
+  signals: readonly MemorySemanticSignal[],
+  query: string,
+  memory: RecallableMemory,
+  evidence: MemoryEvidence,
+): number {
+  const document = `${memory.content}\n${evidence.quote ?? evidence.contextSummary ?? ""}`;
+  const identifiers = recallExactIdentifiers(query);
+  const documentIdentifiers = new Set(recallExactIdentifiers(document));
+  if (identifiers.some((identifier) => !documentIdentifiers.has(identifier))) {
+    return 0;
+  }
+  return Math.max(
+    0,
+    ...signals
+      .filter(
+        (signal) =>
+          signal.query === query &&
+          signal.memoryId === memory.id &&
+          signal.memoryContent === memory.content &&
+          signal.evidenceId === evidence.id &&
+          signal.evidenceSourceId === evidence.sourceId &&
+          signal.evidenceText ===
+            (evidence.quote ?? evidence.contextSummary ?? "") &&
+          signal.evidenceSourceType === evidence.sourceType &&
+          signal.evidenceQuote === (evidence.quote ?? null) &&
+          signal.evidenceContextSummary === (evidence.contextSummary ?? null) &&
+          evidence.memoryId === memory.id &&
+          Number.isFinite(signal.score) &&
+          signal.score >= 0 &&
+          signal.score <= 1,
+      )
+      .map((signal) => signal.score),
+  );
 }
 
 type ScoredCandidate = {
@@ -442,7 +496,9 @@ function evidenceFor(
   for (const item of evidence) {
     if (item.memoryId === memory.id) byId.set(item.id, item);
   }
-  for (const item of memory.evidence ?? []) byId.set(item.id, item);
+  for (const item of memory.evidence ?? []) {
+    if (item.memoryId === memory.id) byId.set(item.id, item);
+  }
 
   if (byId.size === 0) {
     for (const sourceId of memory.sourceActivityEventIds ?? []) {
@@ -526,6 +582,63 @@ function resolve(input: MemoryRecallInput): {
   };
 }
 
+/** Aging remains available for an explicit recollection, never as a current fact. */
+export function allowsAgingMemoryRecall(query: string): boolean {
+  const visible = withoutQuotedConversationText(query);
+  if (
+    /(?:现在|当前|目前|最新|如今|今天)|\b(?:now|current|currently|today|latest)\b/iu.test(
+      visible,
+    )
+  ) {
+    return false;
+  }
+  if (
+    deriveFactQueryNeeds(visible).length > 0 &&
+    !isFactHistoryQuery(visible)
+  ) {
+    return false;
+  }
+  const clauses = visible
+    .replace(/(?<!不)(但是|但|不过|而是)|\b(but|instead)\b/giu, "，$&")
+    .matchAll(/([^，,。.!！?？;；\n]+)([，,。.!！?？;；\n]*)/gu);
+  let allowed = false;
+  let reportedScope = false;
+  let newSentence = true;
+  for (const entry of clauses) {
+    const clause = entry[1]!.trim();
+    if (newSentence) reportedScope = false;
+    newSentence = /[。.!！?？;；\n]/u.test(entry[2]!);
+    if (/^(?:但|不过|而是|but\b|instead\b)/iu.test(clause)) {
+      reportedScope = false;
+    }
+    if (
+      !/^(?:你(?:还)?记得|你记不记得)/u.test(clause) &&
+      /^(?:(?:她|他|他们|别人|朋友|同事|你|我(?:以前|之前|当时|刚才)).{0,12}(?:说|问|让|要求)|(?:如果|假如|假设|要是)|(?:she|he|they|you|I) (?:said|asked)|if\b|suppose\b)/iu.test(
+        clause,
+      )
+    ) {
+      reportedScope = true;
+      continue;
+    }
+    if (reportedScope) continue;
+    for (const match of clause.matchAll(
+      /(?:你(?:还)?记得|还记不记得|你记不记得|回忆一下|回想一下)|\b(?:do you remember|can you recall|recollect|recall when)\b/giu,
+    )) {
+      const prefix = clause.slice(0, match.index);
+      const negated =
+        /(?:不用|不要|不必|不需要|没必要|无需|无须|别|不是|并非|不想|没让|没有让|don't|do not|not).{0,24}$/iu.test(
+          prefix,
+        );
+      const selfReport =
+        /^(?:我(?:想|会|要|准备|打算|正在|刚才|已经)?(?:先)?|I (?:will|can|am|was)(?: going to)?)\s*$/iu.test(
+          prefix,
+        );
+      allowed = !negated && !selfReport;
+    }
+  }
+  return allowed;
+}
+
 /** Candidate discovery only. Consumers must use query.query for intent, time and authority. */
 export function recallCandidateQueries(query: MemoryRecallQuery): string[] {
   return [
@@ -551,7 +664,10 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
   if (!Number.isFinite(now)) return abstain("invalid_recall_time");
 
   const active = input.memories.filter((memory) => {
-    if (memory.status !== "active" || memory.confidence < 0.5) return false;
+    const eligibleStatus =
+      memory.status === "active" ||
+      (memory.status === "aging" && allowsAgingMemoryRecall(query.query));
+    if (!eligibleStatus || memory.confidence < 0.5) return false;
     if (memory.expiresAtUtc === undefined) return true;
     return Date.parse(memory.expiresAtUtc) > now;
   });
@@ -579,17 +695,20 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       ? deriveFactQueryNeeds(query.query)
       : (input.query.contextPlan?.factQueryNeeds ??
         deriveFactQueryNeeds(query.query));
+  const queryIdentifiers = recallExactIdentifiers(query.query);
   for (const memory of temporalMatched) {
     const formal = evidenceFor(memory, input.evidence ?? []);
     if (formal.length === 0) continue;
     evidenceCount += 1;
     const chosen = [...formal].sort((left, right) => {
       const leftScore = Math.max(
+        semanticScore(input.semanticSignals ?? [], query.query, memory, left),
         ...query.candidateQueries.map((text) =>
           lexicalScore(left.quote ?? left.contextSummary ?? "", text),
         ),
       );
       const rightScore = Math.max(
+        semanticScore(input.semanticSignals ?? [], query.query, memory, right),
         ...query.candidateQueries.map((text) =>
           lexicalScore(right.quote ?? right.contextSummary ?? "", text),
         ),
@@ -597,7 +716,22 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       return rightScore - leftScore || left.id.localeCompare(right.id);
     })[0];
     if (chosen === undefined) continue;
+    // A shared prefix such as BGW must never count as the distinct BGW-7419.
+    // Multiple requested identifiers may be covered by separate selected records.
+    const documentIdentifiers = new Set(
+      recallExactIdentifiers(
+        `${memory.content}\n${chosen.quote ?? ""}\n${chosen.contextSummary ?? ""}`,
+      ),
+    );
+    if (
+      queryIdentifiers.length > 0 &&
+      !queryIdentifiers.some((identifier) =>
+        documentIdentifiers.has(identifier),
+      )
+    )
+      continue;
     const verifiedProjection =
+      memory.status === "active" &&
       memory.namespace === "user_model" &&
       memory.attribution === "user_explicit" &&
       memory.certainty === "explicit" &&
@@ -626,10 +760,25 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       verifiedProjection === undefined ? 0 : 1,
       ...query.candidateQueries.map((text) => tagScore(memory.tags, text)),
     );
-    if (lexical === 0 && tag === 0 && query.range === undefined) continue;
+    const semantic = semanticScore(
+      input.semanticSignals ?? [],
+      query.query,
+      memory,
+      chosen,
+    );
+    if (
+      lexical === 0 &&
+      tag === 0 &&
+      semantic === 0 &&
+      query.range === undefined
+    )
+      continue;
 
     const breakdown: RetrievalScoreBreakdown = {
       lexical: roundScore(lexical),
+      ...(input.semanticSignals === undefined
+        ? {}
+        : { semantic: roundScore(semantic) }),
       tag: roundScore(tag),
       importance: roundScore(memory.importance),
       recency: roundScore(recencyScore(memory, input.nowUtc)),
@@ -639,7 +788,7 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       ),
     };
     const weighted =
-      breakdown.lexical * 0.4 +
+      Math.max(breakdown.lexical, breakdown.semantic ?? 0) * 0.4 +
       breakdown.tag * 0.15 +
       breakdown.importance * 0.15 +
       breakdown.recency * 0.1 +
@@ -650,6 +799,13 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
       (certaintyFor(memory) === "uncertain" ? 0.75 : 1);
     const score = roundScore(weighted * reliability);
     const temporal = memoryTemporal(memory);
+    const reasons: MemoryRelevance["reasons"] = [];
+    if (lexical > 0) reasons.push("lexical");
+    if (tag > 0) reasons.push("tag");
+    if (semantic > 0) reasons.push("semantic");
+    if (query.range !== undefined && breakdown.temporal > 0)
+      reasons.push("temporal");
+    if (projection !== undefined) reasons.push("current_fact");
     candidates.push({
       mode: modeFor(chosen),
       retrieved: {
@@ -673,6 +829,21 @@ export function recallMemory(input: MemoryRecallInput): MemoryRecallResult {
         evidence: chosen,
         score,
         scoreBreakdown: breakdown,
+        relevance: {
+          policyVersion: "memory_relevance_v2",
+          query: query.query,
+          memoryId: memory.id,
+          memoryContent: memory.content,
+          evidenceId: chosen.id,
+          evidenceSourceId: chosen.sourceId,
+          evidenceText: chosen.quote ?? chosen.contextSummary ?? "",
+          evidenceSourceType: chosen.sourceType,
+          evidenceQuote: chosen.quote ?? null,
+          evidenceContextSummary: chosen.contextSummary ?? null,
+          score,
+          minimumScore: query.threshold,
+          reasons,
+        },
       },
     });
   }

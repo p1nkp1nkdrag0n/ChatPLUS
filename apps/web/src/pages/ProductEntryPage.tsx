@@ -3,6 +3,7 @@ import { Link, Navigate } from "react-router-dom";
 import { api } from "../api/client";
 import { EmptyState, ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { readActiveCharacter } from "../lib/activeCharacter";
+import { publishedUserCharacters } from "../lib/lastConversation";
 
 export default function ProductEntryPage({
   kind,
@@ -21,9 +22,7 @@ export default function ProductEntryPage({
         <ErrorBlock error={query.error} />
       </div>
     );
-  const characters = query.data.characters.filter(
-    (character) => character.status === "published",
-  );
+  const characters = publishedUserCharacters(query.data.characters);
   const character =
     characters.find((item) => item.id === readActiveCharacter()) ??
     characters[0];
@@ -37,11 +36,11 @@ export default function ProductEntryPage({
   return (
     <div className="page">
       <EmptyState
-        title="先认识一个角色"
-        description="选择一个可以对话的角色，让故事从这里开始。"
+        title="描述你梦中的他/她"
+        description="从一个名字开始，慢慢描绘一个会与你相遇的人。"
         action={
-          <Link className="button button--primary" to="/characters">
-            前往角色库
+          <Link className="button button--primary" to="/create">
+            描述你梦中的他/她
           </Link>
         }
       />

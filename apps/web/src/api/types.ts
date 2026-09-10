@@ -61,6 +61,7 @@ export interface CharacterSummary {
   tier: SimulationTier;
   status: CharacterStatus;
   sourceType: "original" | "imported_character";
+  creationOrigin?: "user" | "demo";
   version: number;
   updatedAtUtc: string;
   currentActivity?: string | null;
@@ -105,6 +106,8 @@ export interface CharacterSpec {
   sourceType: "original" | "imported_character";
   identity: {
     name: string;
+    gender?: string | undefined;
+    ageText?: string | undefined;
     workOrRole: string;
     worldSetting: string;
     selfDescription: string;

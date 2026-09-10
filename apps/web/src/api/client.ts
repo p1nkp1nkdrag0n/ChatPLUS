@@ -65,7 +65,10 @@ type CorrespondenceMailboxListInput = Partial<
   Pick<CorrespondenceMailboxQuery, "cursor" | "limit">
 >;
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) {
     headers.set("content-type", "application/json");
@@ -150,6 +153,7 @@ export const api = {
           workOrRole: stringValue(row.workOrRole),
           tier: simulationTier(row.tier),
           status: characterStatus(row.status),
+          creationOrigin: row.creationOrigin === "demo" ? "demo" : "user",
           sourceType:
             row.sourceType === "imported_character"
               ? "imported_character"

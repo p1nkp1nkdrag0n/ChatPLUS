@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
+import {
+  basicInterviewAnswers,
+  completeInterviewToPreview,
+} from "./character-interview-helpers";
 
 test.describe("PersonaSim fixture flow", () => {
   test("app renders a usable character library", async ({ page }) => {
@@ -8,7 +12,11 @@ test.describe("PersonaSim fixture flow", () => {
     await expect(
       page.getByRole("heading", { name: "角色", exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: /创建角色/ })).toBeVisible();
+    await expect(
+      page
+        .getByRole("link", { name: "描述你梦中的他/她", exact: true })
+        .first(),
+    ).toBeVisible();
   });
 
   test("settles the remembered character when the app opens on the library", async ({
@@ -58,29 +66,16 @@ test.describe("PersonaSim fixture flow", () => {
   }) => {
     const suffix = Date.now().toString().slice(-6);
     const name = `林澈${suffix}`;
-    await page.goto("/create");
-
-    await page.getByLabel("角色名称").fill(name);
-    await page.getByLabel("社会身份或职业").fill("城市社会学研究生");
-    await page.getByLabel("核心性格 1").fill("理性冷静");
-    await page.getByLabel("核心性格 2").fill("细腻敏锐");
-    await page.getByLabel("核心性格 3").fill("克制内敛");
-    await page
-      .getByLabel("最近拿不准的事情（可空）")
-      .fill("渴望深层连接，但担心失去独立判断。");
-    await page
-      .getByLabel("目前在意/想做的事（可空）")
-      .fill("完成一项真正有公共价值的研究");
-    await page.getByRole("radio", { name: /拟真模拟/ }).click();
-    await page.getByTestId("generate-character").click();
-
-    await expect(page).toHaveURL(/\/characters\/[^/]+\/edit/, {
-      timeout: 30_000,
+    await completeInterviewToPreview(page, {
+      ...basicInterviewAnswers,
+      name,
+      gender: "男性",
+      workOrRole: "城市社会学研究生",
+      personality: "理性冷静、细腻敏锐、克制内敛",
+      currentFocus: "完成一项真正有公共价值的研究",
+      additionalDetails: "渴望深层连接，但担心失去独立判断。",
     });
     await expect(page.getByRole("heading", { name })).toBeVisible();
-    await expect(
-      page.getByText("人格与价值观", { exact: true }).first(),
-    ).toBeVisible();
     await page.getByTestId("publish-character").click();
 
     await expect(page).toHaveURL(/\/characters\/[^/]+\/chat/, {

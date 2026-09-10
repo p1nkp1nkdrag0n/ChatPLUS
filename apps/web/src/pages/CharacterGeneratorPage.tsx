@@ -1,344 +1,709 @@
-import { ArrowRight, BookOpenText, WandSparkles } from "lucide-react";
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
-import { api, unwrapCharacter } from "../api/client";
-import type { SimulationTier } from "../api/types";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { useNavigate } from "react-router-dom";
+import { CharacterInterviewAnswersSchema } from "@personasim/contracts";
+import { interviewApi } from "../api/interview";
+import { ApiError } from "../api/types";
+import {
+  CreationDesk,
+  type PenMotion,
+} from "../components/creation/CreationDesk";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import { ErrorBlock } from "../components/Feedback";
-import { PageHeader } from "../components/PageHeader";
-import { rememberActiveCharacter } from "../lib/activeCharacter";
-
-const DEFAULT_TIMEZONE =
-  Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
-
-interface GeneratorForm {
-  name: string;
-  worldSetting: string;
-  storyEra: string;
-  storyAnchorYear: string;
-  workOrRole: string;
-  traits: [string, string, string];
-  coreContradiction: string;
-  primaryGoal: string;
-  dialogueStyle: string;
-  characterBrief: string;
-  tier: SimulationTier;
-  timezone: string;
-}
-
-const INITIAL_FORM: GeneratorForm = {
-  name: "",
-  worldSetting: "当代现实世界",
-  storyEra: "",
-  storyAnchorYear: "",
-  workOrRole: "",
-  traits: ["", "", ""],
-  coreContradiction: "",
-  primaryGoal: "",
-  dialogueStyle: "自然、克制，像即时通讯中的真实对话",
-  characterBrief: "",
-  tier: "high_fidelity",
-  timezone: DEFAULT_TIMEZONE,
-};
+import {
+  CREATION_TITLE,
+  INTERVIEW_QUESTIONS,
+  firstMissingAnswer,
+  interviewSubject,
+  mainAnswersSnapshot,
+  newInterviewDraft,
+  readInterviewDraft,
+  saveInterviewDraft,
+  updateInterviewAnswer,
+  type AnswerField,
+  type InterviewDraft,
+} from "../lib/characterInterview";
 
 export default function CharacterGeneratorPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState<GeneratorForm>(INITIAL_FORM);
-  const mutation = useMutation({
-    mutationFn: api.characters.generate,
-    onSuccess: (result) => {
-      const character = unwrapCharacter(result);
-      rememberActiveCharacter(character.id);
-      void navigate(`/characters/${character.id}/edit`);
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState(
+    () => readInterviewDraft() ?? newInterviewDraft(),
+  );
+  const draftRef = useRef(draft);
+  const live = useRef(true);
+  const requestEpoch = useRef(0);
+  const compileInFlight = useRef(false);
+  const turnInFlight = useRef(false);
+  const turnTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const [storageFailed, setStorageFailed] = useState(false);
+  const [followUpsPending, setFollowUpsPending] = useState(false);
+  const [fieldError, setFieldError] = useState("");
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [customGender, setCustomGender] = useState(() =>
+    Boolean(
+      draft.answers.gender && !["女性", "男性"].includes(draft.answers.gender),
+    ),
+  );
+  const reduced = useReducedMotion();
+  const [motion, setMotion] = useState<PenMotion>(
+    reduced || (draft.phase !== "main" && draft.phase !== "followups")
+      ? "idle"
+      : "writing",
+  );
+  const [inkCount, setInkCount] = useState(0);
+  const [penPoint, setPenPoint] = useState({ x: 50, y: 57 });
+  const questionRef = useRef<HTMLHeadingElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const subject = interviewSubject(draft.answers);
+  const mainQuestion = INTERVIEW_QUESTIONS[draft.step]!;
+  const followQuestion = draft.followUpQuestions[draft.followUpIndex];
+  const isFollowUp = draft.phase === "followups";
+  const questionText =
+    isFollowUp && followQuestion
+      ? followQuestion.text
+      : mainQuestion.text(subject);
+  const questionLetters = Array.from(questionText);
+  const isQuestion = draft.phase === "main" || isFollowUp;
+
+  const commit = (next: InterviewDraft) => {
+    draftRef.current = next;
+    setDraft(next);
+    setStorageFailed(!saveInterviewDraft(next));
+  };
+
+  useEffect(() => {
+    const epoch = requestEpoch;
+    live.current = true;
+    document.title = `${CREATION_TITLE} · Dearvale`;
+    return () => {
+      live.current = false;
+      epoch.current++;
+      clearTimeout(turnTimer.current);
+    };
+  }, []);
+  useEffect(() => {
+    if (draft.phase === "preview" && draft.characterId)
+      void navigate(`/characters/${draft.characterId}/preview`, {
+        replace: true,
+      });
+  }, [draft.phase, draft.characterId, navigate]);
+  useEffect(() => {
+    if (motion !== "writing" || !isQuestion) return;
+    if (reduced) {
+      setInkCount(questionLetters.length);
+      setMotion("idle");
+      return;
+    }
+    const timer = setInterval(
+      () => setInkCount((count) => count + 1),
+      Math.min(38, 680 / Math.max(1, questionLetters.length)),
+    );
+    return () => clearInterval(timer);
+  }, [motion, reduced, questionText, questionLetters.length, isQuestion]);
+  useEffect(() => {
+    if (motion === "writing" && inkCount >= questionLetters.length)
+      setMotion("idle");
+  }, [inkCount, motion, questionLetters.length]);
+  useLayoutEffect(() => {
+    if (motion !== "writing") return;
+    const letter = questionRef.current?.querySelector(
+      `[data-letter="${Math.max(0, inkCount - 1)}"]`,
+    );
+    const stage = questionRef.current?.closest(".creation-stage");
+    if (!letter || !stage) return;
+    const bounds = letter.getBoundingClientRect();
+    const area = stage.getBoundingClientRect();
+    setPenPoint({
+      x: ((bounds.right - area.left) / area.width) * 100,
+      y: ((bounds.bottom - area.top) / area.height) * 100,
+    });
+  }, [inkCount, motion, questionText]);
+  useEffect(() => {
+    if (motion === "idle" && isQuestion)
+      inputRef.current?.focus({ preventScroll: true });
+  }, [motion, isQuestion, draft.step, draft.followUpIndex]);
+
+  const compileMutation = useMutation({
+    mutationFn: (current: InterviewDraft) =>
+      interviewApi.compile({
+        answers: CharacterInterviewAnswersSchema.parse(current.answers),
+        requestId: current.requestId,
+        ...(current.characterId
+          ? {
+              characterId: current.characterId,
+              expectedVersion: current.characterVersion!,
+            }
+          : {}),
+      }),
+    onSuccess: (result, current) => {
+      const next: InterviewDraft = {
+        ...current,
+        phase: "preview",
+        characterId: result.character.id,
+        characterVersion: result.character.version,
+      };
+      const stored = readInterviewDraft();
+      if (!stored || stored.requestId === current.requestId)
+        saveInterviewDraft(next);
+      queryClient.setQueryData(
+        ["creation-preview", result.character.id],
+        result.preview,
+      );
+      queryClient.setQueryData(["character", result.character.id], {
+        character: result.character,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["characters"] });
+      if (live.current) {
+        draftRef.current = next;
+        setDraft(next);
+        void navigate(`/characters/${result.character.id}/preview`, {
+          replace: true,
+        });
+      }
+    },
+    onSettled: () => {
+      compileInFlight.current = false;
     },
   });
 
-  const update = <K extends keyof GeneratorForm>(
-    key: K,
-    value: GeneratorForm[K],
-  ) => {
-    setForm((current) => ({ ...current, [key]: value }));
+  const turnTo = (next: InterviewDraft, backward = false) => {
+    setFieldError("");
+    clearTimeout(turnTimer.current);
+    if (backward || reduced) {
+      turnInFlight.current = false;
+      commit(next);
+      setInkCount(1000);
+      setMotion("idle");
+      return;
+    }
+    turnInFlight.current = true;
+    setStorageFailed(!saveInterviewDraft(next));
+    setMotion("dipping");
+    turnTimer.current = setTimeout(() => {
+      turnInFlight.current = false;
+      commit(next);
+      setInkCount(0);
+      setMotion(
+        next.phase === "main" || next.phase === "followups"
+          ? "writing"
+          : "idle",
+      );
+    }, 880);
   };
-
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    mutation.mutate({ ...form, initialRelationship: "初次相识的陌生人" });
+  const updateAnswer = (field: AnswerField, value: string) => {
+    const current = draftRef.current;
+    setFieldError("");
+    commit(updateInterviewAnswer(current, field, value));
   };
+  const requestFollowUps = async (current: InterviewDraft) => {
+    const missing = firstMissingAnswer(current.answers);
+    if (missing >= 0) {
+      turnTo({ ...current, phase: "main", step: missing }, true);
+      setFieldError("先把这一处写下来，再继续。");
+      return;
+    }
+    const snapshot = mainAnswersSnapshot(current.answers);
+    if (current.followUpSnapshot === snapshot) {
+      turnTo({
+        ...current,
+        phase: current.followUpQuestions.length ? "followups" : "ready",
+        followUpIndex: 0,
+      });
+      return;
+    }
+    const clean: InterviewDraft = {
+      ...current,
+      phase: "ready",
+      followUpSnapshot: snapshot,
+      followUpQuestions: [],
+      followUpIndex: 0,
+      answers: { ...current.answers, followUps: [] },
+    };
+    commit(clean);
+    setFollowUpsPending(true);
+    setMotion("idle");
+    const epoch = ++requestEpoch.current;
+    try {
+      const result = await interviewApi.followUps(clean.answers);
+      if (!live.current || epoch !== requestEpoch.current) return;
+      const questions = result.questions.slice(0, 2);
+      turnTo({
+        ...draftRef.current,
+        followUpQuestions: questions,
+        phase: questions.length ? "followups" : "ready",
+      });
+    } catch {
+      if (live.current && epoch === requestEpoch.current)
+        commit({ ...draftRef.current, phase: "ready" });
+    } finally {
+      if (live.current && epoch === requestEpoch.current)
+        setFollowUpsPending(false);
+    }
+  };
+  const forward = (event?: FormEvent, skip = false) => {
+    event?.preventDefault();
+    if (
+      turnInFlight.current ||
+      compileInFlight.current ||
+      motion === "dipping" ||
+      compileMutation.isPending ||
+      followUpsPending
+    )
+      return;
+    const current = draftRef.current;
+    if (isFollowUp) {
+      let next = current;
+      if (skip && followQuestion)
+        next = {
+          ...current,
+          answers: {
+            ...current.answers,
+            followUps: (current.answers.followUps ?? []).filter(
+              (a) => a.id !== followQuestion.id,
+            ),
+          },
+        };
+      const index = next.followUpIndex + 1;
+      turnTo({
+        ...next,
+        followUpIndex: index,
+        phase: index < next.followUpQuestions.length ? "followups" : "ready",
+      });
+      return;
+    }
+    if (mainQuestion.required && !current.answers[mainQuestion.field]?.trim()) {
+      setFieldError(
+        mainQuestion.field === "gender"
+          ? "选一个性别，或写下你的描述。"
+          : "这一处还空着，写下答案后再继续。",
+      );
+      setMotion("idle");
+      inputRef.current?.focus();
+      return;
+    }
+    const next = skip
+      ? updateInterviewAnswer(current, mainQuestion.field, "")
+      : current;
+    if (next.step === INTERVIEW_QUESTIONS.length - 1)
+      void requestFollowUps(next);
+    else turnTo({ ...next, step: next.step + 1 });
+  };
+  const backward = () => {
+    const current = draftRef.current;
+    requestEpoch.current++;
+    setFollowUpsPending(false);
+    if (current.phase === "ready")
+      turnTo(
+        { ...current, phase: "main", step: INTERVIEW_QUESTIONS.length - 1 },
+        true,
+      );
+    else if (current.phase === "followups")
+      turnTo(
+        current.followUpIndex > 0
+          ? { ...current, followUpIndex: current.followUpIndex - 1 }
+          : { ...current, phase: "main", step: INTERVIEW_QUESTIONS.length - 1 },
+        true,
+      );
+    else if (current.step > 0)
+      turnTo({ ...current, step: current.step - 1 }, true);
+  };
+  const skipRemaining = () => {
+    requestEpoch.current++;
+    setFollowUpsPending(false);
+    clearTimeout(turnTimer.current);
+    turnInFlight.current = false;
+    commit({ ...draftRef.current, phase: "ready" });
+    setMotion("idle");
+  };
+  const generate = () => {
+    if (compileInFlight.current) return;
+    const current = draftRef.current;
+    const validation = CharacterInterviewAnswersSchema.safeParse(
+      current.answers,
+    );
+    if (!validation.success) {
+      setFieldError(
+        validation.error.issues[0]?.message ?? "有一处描绘还需要补充。",
+      );
+      return;
+    }
+    compileInFlight.current = true;
+    commit(current);
+    setFieldError("");
+    compileMutation.mutate(current);
+  };
+  const value = isFollowUp
+    ? (draft.answers.followUps?.find((a) => a.id === followQuestion?.id)
+        ?.answer ?? "")
+    : (draft.answers[mainQuestion.field] ?? "");
+  const updateCurrent = (value: string) => {
+    if (isFollowUp && followQuestion) {
+      const current = draftRef.current;
+      const remaining =
+        current.answers.followUps?.filter((a) => a.id !== followQuestion.id) ??
+        [];
+      commit({
+        ...current,
+        answers: {
+          ...current.answers,
+          followUps: [
+            ...remaining,
+            {
+              id: followQuestion.id,
+              question: followQuestion.text,
+              answer: value,
+            },
+          ],
+        },
+      });
+    } else updateAnswer(mainQuestion.field, value);
+  };
+  const completeInk = () => {
+    if (motion === "writing") {
+      setInkCount(1000);
+      setMotion("idle");
+    }
+  };
+  const waiting =
+    followUpsPending || draft.phase === "ready" || draft.phase === "preview";
+  const disabled = motion === "dipping" || compileMutation.isPending;
 
   return (
-    <div className="page page--form">
-      <PageHeader
-        title="创建角色"
-        description="用最低限度的信息定下方向，其余内容由角色编译器生成并等待你的审阅。"
-        actions={
-          <Link className="button button--ghost" to="/import">
-            <BookOpenText size={16} aria-hidden="true" /> 改为导入作品角色
-          </Link>
-        }
-      />
-
-      <form
-        className="generator-layout"
-        onSubmit={submit}
-        data-testid="character-generator"
-      >
-        <section className="form-document">
-          <div className="form-section">
-            <div className="form-section__heading">
-              <span>01</span>
-              <div>
-                <h2>他是谁</h2>
-                <p>先给角色一个能约束后续生成的现实支点。</p>
-              </div>
-            </div>
-            <div className="field-grid field-grid--two">
-              <label className="field">
-                <span>角色名称</span>
-                <input
-                  required
-                  maxLength={120}
-                  value={form.name}
-                  onChange={(event) => update("name", event.target.value)}
-                  placeholder="例如：林澈"
-                  data-testid="character-name"
-                />
-              </label>
-              <label className="field">
-                <span>社会身份或职业</span>
-                <input
-                  required
-                  maxLength={240}
-                  value={form.workOrRole}
-                  onChange={(event) => update("workOrRole", event.target.value)}
-                  placeholder="例如：城市社会学研究生"
-                />
-              </label>
-            </div>
-            <label className="field">
-              <span>世界背景</span>
-              <textarea
-                required
-                maxLength={4000}
-                rows={3}
-                value={form.worldSetting}
-                onChange={(event) => update("worldSetting", event.target.value)}
-              />
-            </label>
-            <div className="field-grid field-grid--two">
-              <label className="field">
-                <span>故事当前年份（可选）</span>
-                <input
-                  type="number"
-                  min={1000}
-                  max={9999}
-                  value={form.storyAnchorYear}
-                  onChange={(event) =>
-                    update("storyAnchorYear", event.target.value)
-                  }
-                  placeholder="例如：1951"
-                />
-              </label>
-              <label className="field">
-                <span>时代说明（可选）</span>
-                <input
-                  maxLength={240}
-                  value={form.storyEra}
-                  onChange={(event) => update("storyEra", event.target.value)}
-                  placeholder="例如：战后重建初期的明斯克"
-                />
-              </label>
-            </div>
-            <small>
-              只知道年份即可；具体月日由系统作为运行时刻度生成，不会被当作作者提供的角色事实。
-            </small>
-          </div>
-
-          <div className="form-section">
-            <div className="form-section__heading">
-              <span>02</span>
-              <div>
-                <h2>他平时是什么样</h2>
-                <p>
-                  写下一些具体的相处习惯；目前没有目标或拿不准的事，也可以开始。
-                </p>
-              </div>
-            </div>
-            <fieldset className="field fieldset-reset">
-              <legend>性格或行为习惯（至少一项）</legend>
-              <div className="trait-inputs">
-                {form.traits.map((trait, index) => (
-                  <input
-                    key={index}
-                    required={index === 0}
-                    maxLength={120}
-                    value={trait}
-                    onChange={(event) => {
-                      const traits = [
-                        ...form.traits,
-                      ] as GeneratorForm["traits"];
-                      traits[index] = event.target.value;
-                      update("traits", traits);
-                    }}
-                    aria-label={`核心性格 ${index + 1}`}
-                    placeholder={["理性冷静", "细腻敏锐", "克制内敛"][index]}
-                  />
-                ))}
-              </div>
-            </fieldset>
-            <label className="field">
-              <span>最近拿不准的事情（可空）</span>
-              <textarea
-                maxLength={500}
-                rows={3}
-                value={form.coreContradiction}
-                onChange={(event) =>
-                  update("coreContradiction", event.target.value)
-                }
-                placeholder="例如：渴望与人建立深层连接，但害怕失去独立性。"
-              />
-            </label>
-            <label className="field">
-              <span>目前在意/想做的事（可空）</span>
-              <input
-                maxLength={160}
-                value={form.primaryGoal}
-                onChange={(event) => update("primaryGoal", event.target.value)}
-                placeholder="例如：完成一项真正有公共价值的研究"
-              />
-            </label>
-          </div>
-
-          <div className="form-section">
-            <div className="form-section__heading">
-              <span>03</span>
-              <div>
-                <h2>他如何与你相处</h2>
-                <p>你们将从初次相识开始，在交流中慢慢了解彼此。</p>
-              </div>
-            </div>
-            <p className="field-hint">
-              每一段关系都从陌生开始，共同经历会由之后的对话与书信留下。
+    <CreationDesk
+      motion={motion}
+      penPoint={penPoint}
+      onPaperClick={completeInk}
+    >
+      {waiting ? (
+        <section className="creation-ready" aria-live="polite">
+          <h2>
+            {compileMutation.isPending
+              ? `正在写成${subject}的故事…`
+              : followUpsPending
+                ? "再想一想，还有什么细节…"
+                : "那些片段，已经留在纸上。"}
+          </h2>
+          <p>
+            {compileMutation.isPending
+              ? "名字、性格与生活，正慢慢连成一个人。"
+              : followUpsPending
+                ? "也可以先写到这里。"
+                : "读一读这份描绘，再开始你们的第一次相遇。"}
+          </p>
+          {compileMutation.isPending || followUpsPending ? (
+            <span className="creation-waiting-ink" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          ) : null}
+          {compileMutation.isError ? (
+            <ErrorBlock error={compileMutation.error} />
+          ) : null}
+          {fieldError ? (
+            <p className="creation-field-error" role="alert">
+              {fieldError}
             </p>
-            <label className="field">
-              <span>语言风格</span>
-              <textarea
-                required
-                maxLength={500}
-                rows={3}
-                value={form.dialogueStyle}
-                onChange={(event) =>
-                  update("dialogueStyle", event.target.value)
+          ) : null}
+          {compileMutation.error instanceof ApiError &&
+          compileMutation.error.status === 409 &&
+          draft.characterId ? (
+            <button
+              className="creation-text-button"
+              onClick={() =>
+                void navigate(`/characters/${draft.characterId}/preview`)
+              }
+            >
+              查看最新的小传
+            </button>
+          ) : null}
+          <div className="creation-actions">
+            {!compileMutation.isPending ? (
+              <button
+                className="creation-button creation-button--secondary"
+                onClick={backward}
+              >
+                回去看看
+              </button>
+            ) : null}
+            {followUpsPending ? (
+              <button className="creation-button" onClick={skipRemaining}>
+                先写到这里
+              </button>
+            ) : (
+              <button
+                className="creation-button"
+                disabled={
+                  compileMutation.isPending || draft.phase === "preview"
                 }
-              />
-            </label>
-            <label className="field">
-              <span>详细角色素材（可选）</span>
-              <textarea
-                maxLength={20000}
-                rows={10}
-                value={form.characterBrief}
-                onChange={(event) =>
-                  update("characterBrief", event.target.value)
-                }
-                placeholder="可粘贴人物生平、重要经历、公开与私下的关系差异、语言或翻译规则、希望避免的表达套路，以及故事所处的年份。编译器会归纳而不是逐句照搬。"
-              />
-              <small>
-                冲突事实会保留为待确认项。材料没有支持的目标和矛盾可以留空，当前愿望也可以在生活中变化。
-              </small>
-            </label>
+                onClick={generate}
+                data-testid="generate-character"
+              >
+                {compileMutation.isPending ? "正在整理…" : "读一读人物小传"}
+              </button>
+            )}
           </div>
         </section>
-
-        <aside className="form-inspector">
-          <div className="form-inspector__sticky">
-            <h2>模拟方式</h2>
-            <div
-              className="tier-options"
-              role="radiogroup"
-              aria-label="模拟等级"
+      ) : (
+        <form
+          className="creation-question-form"
+          onSubmit={forward}
+          data-testid="character-generator"
+          data-question={isFollowUp ? "follow-up" : mainQuestion.field}
+          noValidate
+        >
+          <h2
+            ref={questionRef}
+            className="creation-question"
+            aria-label={questionText}
+            onClick={completeInk}
+          >
+            <span aria-hidden="true">
+              {questionLetters.map((letter, index) => (
+                <span
+                  className="creation-ink-letter"
+                  data-letter={index}
+                  key={`${questionText}-${index}`}
+                  style={{
+                    opacity: motion !== "writing" || index < inkCount ? 1 : 0,
+                  }}
+                >
+                  {letter}
+                </span>
+              ))}
+            </span>
+          </h2>
+          <div className="creation-answer-area" onFocus={completeInk}>
+            {!isFollowUp && mainQuestion.field === "gender" ? (
+              <>
+                <div
+                  className="creation-gender"
+                  role="radiogroup"
+                  aria-label={questionText}
+                  aria-required="true"
+                >
+                  {["女性", "男性", "自定义"].map((gender) => (
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={
+                        gender === "自定义"
+                          ? customGender
+                          : !customGender && value === gender
+                      }
+                      className="creation-gender-option"
+                      key={gender}
+                      disabled={disabled}
+                      onClick={() => {
+                        setCustomGender(gender === "自定义");
+                        updateAnswer(
+                          "gender",
+                          gender === "自定义" ? "" : gender,
+                        );
+                      }}
+                    >
+                      {gender}
+                    </button>
+                  ))}
+                </div>
+                {customGender ? (
+                  <input
+                    ref={(node) => {
+                      inputRef.current = node;
+                    }}
+                    className="creation-answer"
+                    aria-label="自定义性别"
+                    required
+                    maxLength={120}
+                    value={value}
+                    placeholder={mainQuestion.placeholder}
+                    onChange={(event) => updateCurrent(event.target.value)}
+                    disabled={disabled}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        event.nativeEvent.isComposing
+                      )
+                        event.preventDefault();
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <>
+                <label className="sr-only" htmlFor="interview-answer">
+                  {questionText}
+                </label>
+                {isFollowUp || mainQuestion.multiline ? (
+                  <textarea
+                    ref={(node) => {
+                      inputRef.current = node;
+                    }}
+                    id="interview-answer"
+                    className="creation-answer creation-answer--long"
+                    rows={3}
+                    required={!isFollowUp && mainQuestion.required}
+                    value={value}
+                    maxLength={isFollowUp ? 1000 : mainQuestion.maxLength}
+                    placeholder={
+                      isFollowUp
+                        ? "写下你想到的，也可以暂时略过……"
+                        : mainQuestion.placeholder
+                    }
+                    onChange={(event) => updateCurrent(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        (event.ctrlKey || event.metaKey) &&
+                        !event.nativeEvent.isComposing
+                      )
+                        forward(event);
+                    }}
+                    disabled={disabled}
+                    aria-describedby={
+                      fieldError ? "creation-field-error" : undefined
+                    }
+                  />
+                ) : (
+                  <input
+                    ref={(node) => {
+                      inputRef.current = node;
+                    }}
+                    id="interview-answer"
+                    className="creation-answer"
+                    autoComplete="off"
+                    value={value}
+                    maxLength={mainQuestion.maxLength}
+                    placeholder={mainQuestion.placeholder}
+                    required={mainQuestion.required}
+                    onChange={(event) => updateCurrent(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        event.nativeEvent.isComposing
+                      )
+                        event.preventDefault();
+                    }}
+                    disabled={disabled}
+                    aria-describedby={
+                      fieldError ? "creation-field-error" : undefined
+                    }
+                    data-testid={
+                      mainQuestion.field === "name"
+                        ? "character-name"
+                        : undefined
+                    }
+                  />
+                )}
+              </>
+            )}
+          </div>
+          {fieldError ? (
+            <p
+              id="creation-field-error"
+              className="creation-field-error"
+              role="alert"
             >
-              <TierOption
-                value="lightweight"
-                selected={form.tier === "lightweight"}
-                onSelect={() => update("tier", "lightweight")}
-                title="轻量模拟"
-                description="传统角色对话，不推进独立生活主线。"
-              />
-              <TierOption
-                value="daily"
-                selected={form.tier === "daily"}
-                onSelect={() => update("tier", "daily")}
-                title="日常模拟"
-                description="持续生活、离线推进和动态状态。"
-              />
-              <TierOption
-                value="high_fidelity"
-                selected={form.tier === "high_fidelity"}
-                onSelect={() => update("tier", "high_fidelity")}
-                title="拟真模拟"
-                description="完整的模糊生活、关系、记忆与人生主线模拟。"
-              />
-            </div>
-            <label className="field field--compact">
-              <span>角色时区</span>
-              <input
-                required
-                value={form.timezone}
-                onChange={(event) => update("timezone", event.target.value)}
-              />
-            </label>
-            <div className="inspector-note">
-              <WandSparkles size={18} aria-hidden="true" />
-              <p>
-                生成结果会先保存为草稿。你可以逐字段修改、删除、锁定或查看来源。
-              </p>
-            </div>
-            {mutation.isError ? <ErrorBlock error={mutation.error} /> : null}
+              {fieldError}
+            </p>
+          ) : null}
+          <div className="creation-actions">
             <button
-              className="button button--primary button--wide"
-              type="submit"
-              disabled={mutation.isPending}
-              data-testid="generate-character"
+              type="button"
+              className="creation-button creation-button--secondary"
+              disabled={disabled || (!isFollowUp && draft.step === 0)}
+              onClick={backward}
             >
-              {mutation.isPending ? "正在编译角色…" : "生成角色草稿"}
-              {!mutation.isPending ? (
-                <ArrowRight size={16} aria-hidden="true" />
-              ) : null}
+              上一问
+            </button>
+            <button
+              type="submit"
+              className="creation-button"
+              disabled={disabled}
+              data-testid="interview-next"
+            >
+              写好了
             </button>
           </div>
-        </aside>
-      </form>
-    </div>
-  );
-}
-
-function TierOption({
-  value,
-  selected,
-  onSelect,
-  title,
-  description,
-}: {
-  value: SimulationTier;
-  selected: boolean;
-  onSelect: () => void;
-  title: string;
-  description: string;
-}) {
-  return (
-    <button
-      className={`tier-option${selected ? " is-selected" : ""}`}
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      data-tier={value}
-      onClick={onSelect}
-    >
-      <span className="tier-option__radio" aria-hidden="true" />
-      <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-    </button>
+          <div className="creation-question-footer">
+            {!mainQuestion.required || isFollowUp ? (
+              <button
+                type="button"
+                className="creation-text-button"
+                disabled={disabled}
+                onClick={() => forward(undefined, true)}
+              >
+                暂时略过
+              </button>
+            ) : (
+              <span />
+            )}
+            {isFollowUp ? (
+              <button
+                type="button"
+                className="creation-text-button"
+                disabled={disabled}
+                onClick={skipRemaining}
+              >
+                先写到这里
+              </button>
+            ) : null}
+          </div>
+        </form>
+      )}
+      {storageFailed ? (
+        <p className="creation-field-error" role="status">
+          浏览器暂时无法保存进度，请留在这一页完成描绘。
+        </p>
+      ) : null}
+      {!compileMutation.isPending && !followUpsPending ? (
+        <div className="creation-restart">
+          {restartOpen ? (
+            <div role="group" aria-label="重新描绘确认">
+              <span>开启一张新的信纸？</span>
+              <button
+                className="creation-text-button"
+                onClick={() => {
+                  requestEpoch.current++;
+                  clearTimeout(turnTimer.current);
+                  turnInFlight.current = false;
+                  commit(newInterviewDraft());
+                  setCustomGender(false);
+                  setRestartOpen(false);
+                  setFieldError("");
+                  compileMutation.reset();
+                  setInkCount(0);
+                  setMotion(reduced ? "idle" : "writing");
+                }}
+              >
+                重新描绘
+              </button>
+              <button
+                className="creation-text-button"
+                onClick={() => setRestartOpen(false)}
+              >
+                继续这一份
+              </button>
+            </div>
+          ) : (
+            <button
+              className="creation-text-button"
+              onClick={() => setRestartOpen(true)}
+            >
+              重新描绘
+            </button>
+          )}
+        </div>
+      ) : null}
+    </CreationDesk>
   );
 }

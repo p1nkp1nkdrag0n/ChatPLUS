@@ -35,7 +35,7 @@ export default function CharacterLibraryPage() {
               <Upload size={16} aria-hidden="true" /> 导入作品角色
             </Link>
             <Link className="button button--primary" to="/create">
-              <Plus size={16} aria-hidden="true" /> 创建角色
+              <Plus size={16} aria-hidden="true" /> 描述你梦中的他/她
             </Link>
           </div>
         }
@@ -46,11 +46,11 @@ export default function CharacterLibraryPage() {
 
       {!query.isPending && !query.isError && characters.length === 0 ? (
         <EmptyState
-          title="先创造一个会继续生活的角色"
-          description="只需要八个简短答案。Fixture 模型无需 API Key，也能完成角色生成、持续生活和聊天演示。"
+          title="描述你梦中的他/她"
+          description="在窗边的信纸上，一个问题接着一个问题，慢慢描绘心中的身影。"
           action={
             <Link className="button button--primary" to="/create">
-              开始创建 <ArrowRight size={16} aria-hidden="true" />
+              描述你梦中的他/她 <ArrowRight size={16} aria-hidden="true" />
             </Link>
           }
         />

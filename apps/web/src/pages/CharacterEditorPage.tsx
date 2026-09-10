@@ -399,6 +399,8 @@ function IdentityEditor({
 }) {
   const fields = [
     ["name", "角色名称"],
+    ["gender", "性别"],
+    ["ageText", "年龄描述"],
     ["workOrRole", "社会身份或职业"],
     ["worldSetting", "世界背景"],
     ["selfDescription", "自我描述"],
@@ -419,7 +421,7 @@ function IdentityEditor({
             {key === "worldSetting" || key === "selfDescription" ? (
               <textarea
                 rows={4}
-                value={spec.identity[key]}
+                value={spec.identity[key] ?? ""}
                 onFocus={() => onSelect({ path: `identity.${key}`, label })}
                 onChange={(event) =>
                   onChange({

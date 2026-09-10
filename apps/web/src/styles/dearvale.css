@@ -476,12 +476,13 @@
   line-height: 1.65;
 }
 .welcome-secondary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 22px;
 }
 .welcome-secondary a {
+  flex: 1 1 auto;
   display: grid;
   place-items: center;
   min-height: 53px;

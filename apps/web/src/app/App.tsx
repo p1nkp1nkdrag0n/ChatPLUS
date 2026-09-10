@@ -13,6 +13,9 @@ const ProductEntryPage = lazy(() => import("../pages/ProductEntryPage"));
 const CharacterGeneratorPage = lazy(
   () => import("../pages/CharacterGeneratorPage"),
 );
+const CharacterPreviewPage = lazy(
+  () => import("../pages/CharacterPreviewPage"),
+);
 const CharacterImportPage = lazy(() => import("../pages/CharacterImportPage"));
 const CharacterEditorPage = lazy(() => import("../pages/CharacterEditorPage"));
 const ChatPage = lazy(() => import("../pages/ChatPage"));
@@ -57,6 +60,11 @@ export function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/welcome" element={<WelcomePage />} />
+          <Route path="/create" element={<CharacterGeneratorPage />} />
+          <Route
+            path="/characters/:characterId/preview"
+            element={<CharacterPreviewPage />}
+          />
           <Route element={<AppShell />}>
             <Route path="/chat" element={<ProductEntryPage kind="chat" />} />
             <Route
@@ -64,7 +72,6 @@ export function App() {
               element={<ProductEntryPage kind="mailbox" />}
             />
             <Route path="/characters" element={<CharacterLibraryPage />} />
-            <Route path="/create" element={<CharacterGeneratorPage />} />
             <Route path="/import" element={<CharacterImportPage />} />
             <Route
               path="/characters/:characterId/edit"

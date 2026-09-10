@@ -85,9 +85,7 @@ test.describe("Dearvale desktop journeys", () => {
     await page.getByRole("button", { name: "前往星夜" }).click();
     await page.getByRole("link", { name: "开始相遇" }).click();
     await expect(page).toHaveURL(/\/welcome$/);
-    await expect(
-      page.getByRole("button", { name: "继续上次的对话" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "继续聊天" })).toBeVisible();
     expect(runtimeRequests).toEqual([]);
   });
 
@@ -212,35 +210,37 @@ test.describe("Dearvale desktop journeys", () => {
     expect(coastRequests).toBeGreaterThanOrEqual(2);
   });
 
-  test("enters one idempotent demo and always shows the welcome page before continuing", async ({
+  test("opens a published user's first conversation and always shows welcome before continuing", async ({
     page,
     request,
   }) => {
-    const ensured = await Promise.all([
-      request.post("/api/demo/ensure"),
-      request.post("/api/demo/ensure"),
-    ]);
-    const first = (await ensured[0].json()) as {
-      characterId: string;
-      sessionId: string;
-    };
-    expect(ensured.every((response) => response.ok())).toBe(true);
-    expect(await ensured[1].json()).toEqual(first);
+    const characterId = await createCharacter(request, "首次相遇");
+    const demoRequests: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/api/demo/")) demoRequests.push(req.url());
+    });
+    await page.addInitScript((id) => {
+      localStorage.setItem(
+        "personasim.active-character.v1",
+        JSON.stringify({ version: 1, characterId: id }),
+      );
+    }, characterId);
     await page.goto("/welcome");
-    await page.getByRole("button", { name: "先聊一会儿", exact: true }).click();
-    await expectChatSession(page, first.sessionId);
+    await page.getByRole("button", { name: "继续聊天", exact: true }).click();
+    await expect(page.getByTestId("chat-input")).toBeEnabled();
+    const sessionId = sessionFromUrl(page);
+    expect(sessionId).toBeTruthy();
     expect(new URL(page.url()).pathname).toBe(
-      `/characters/${first.characterId}/chat`,
+      `/characters/${characterId}/chat`,
     );
     await page.locator(".chat-brand").click();
     await expect(page).toHaveURL(/\/welcome$/);
-    await expect(
-      page.getByRole("button", { name: "继续上次的对话" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "继续聊天" })).toBeVisible();
     await page.reload();
     await expect(page).toHaveURL(/\/welcome$/);
-    await page.getByRole("button", { name: "继续上次的对话" }).click();
-    await expectChatSession(page, first.sessionId);
+    await page.getByRole("button", { name: "继续聊天" }).click();
+    await expectChatSession(page, sessionId);
+    expect(demoRequests).toEqual([]);
   });
 
   test("preserves separate drafts, restores the selected session, and searches real characters", async ({
@@ -291,7 +291,7 @@ test.describe("Dearvale desktop journeys", () => {
       new RegExp(`/characters/${otherCharacterId}/edit`),
     );
     await page.goto("/welcome");
-    await page.getByRole("button", { name: "继续上次的对话" }).click();
+    await page.getByRole("button", { name: "继续聊天" }).click();
     await expectChatSession(page, secondSessionId);
   });
 
@@ -329,7 +329,7 @@ test.describe("Dearvale desktop journeys", () => {
     );
     await page.goto("/welcome");
     await expect(
-      page.getByRole("button", { name: "先聊一会儿", exact: true }),
+      page.getByRole("button", { name: "继续聊天", exact: true }),
     ).toBeEnabled();
     await expect(page.getByRole("alert")).toHaveCount(0);
   });

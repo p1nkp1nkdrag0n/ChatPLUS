@@ -1,5 +1,9 @@
 import { api, unwrapCharacter, unwrapList } from "../api/client";
-import { ApiError, type ChatSession } from "../api/types";
+import {
+  ApiError,
+  type CharacterSummary,
+  type ChatSession,
+} from "../api/types";
 import {
   readActiveCharacter,
   rememberActiveCharacter,
@@ -117,6 +121,71 @@ export async function validateLastConversation(
       : undefined;
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return undefined;
+    throw error;
+  }
+}
+
+export function publishedUserCharacters(
+  characters: readonly CharacterSummary[],
+): CharacterSummary[] {
+  return characters
+    .filter(
+      (character) =>
+        character.status === "published" && character.creationOrigin !== "demo",
+    )
+    .sort((a, b) => b.updatedAtUtc.localeCompare(a.updatedAtUtc));
+}
+
+/** Resolve the welcome destination from the server's current library only. */
+export async function resolveWelcomeConversation(
+  characters: readonly CharacterSummary[],
+  candidate = readLastConversation(),
+  activeCharacterId = readActiveCharacter(),
+): Promise<LastConversationCandidate | undefined> {
+  const available = publishedUserCharacters(characters);
+  if (available.length === 0) return undefined;
+  const listedCandidate = available.find(
+    (character) => character.id === candidate?.characterId,
+  );
+  let candidateSessions: ChatSession[] | undefined;
+  if (listedCandidate && candidate?.sessionId) {
+    candidateSessions = await readSessions(listedCandidate.id);
+    const session = findOwnedSession(
+      candidateSessions,
+      listedCandidate.id,
+      candidate.sessionId,
+    );
+    if (session) {
+      return {
+        version: 1,
+        characterId: listedCandidate.id,
+        sessionId: session.id,
+      };
+    }
+  }
+  const selected =
+    available.find((character) => character.id === activeCharacterId) ??
+    available[0]!;
+  const sessions =
+    selected.id === listedCandidate?.id && candidateSessions !== undefined
+      ? candidateSessions
+      : await readSessions(selected.id);
+  const session = selectLegacySession(sessions, selected.id, undefined);
+  return {
+    version: 1,
+    characterId: selected.id,
+    ...(session ? { sessionId: session.id } : {}),
+  };
+}
+
+async function readSessions(characterId: string): Promise<ChatSession[]> {
+  try {
+    return unwrapList<ChatSession>(
+      await api.agents.sessions(characterId),
+      "sessions",
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return [];
     throw error;
   }
 }

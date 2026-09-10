@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
-import { ApiError, type CharacterSpec, type ChatSession } from "../api/types";
+import {
+  ApiError,
+  type CharacterSpec,
+  type CharacterSummary,
+  type ChatSession,
+} from "../api/types";
 import {
   chatHref,
   findOwnedSession,
@@ -8,6 +13,8 @@ import {
   rememberLastConversation,
   selectLegacySession,
   validateLastConversation,
+  publishedUserCharacters,
+  resolveWelcomeConversation,
 } from "./lastConversation";
 
 const sessions: ChatSession[] = [
@@ -179,4 +186,114 @@ describe("last conversation storage and validation", () => {
       "/characters/%E8%A7%92%E8%89%B2%20%2F%201/chat?sessionId=session+%2B+1",
     );
   });
+
+  it("uses only published user and imported characters, newest first", () => {
+    const characters = [
+      summary("draft", { status: "draft" }),
+      summary("demo", { creationOrigin: "demo" }),
+      summary("archived", { status: "archived" }),
+      summary("older", { updatedAtUtc: "2026-08-01" }),
+      summary("imported", { sourceType: "imported_character" }),
+    ];
+    expect(publishedUserCharacters(characters).map((item) => item.id)).toEqual([
+      "imported",
+      "older",
+    ]);
+    expect(characters[0]?.id).toBe("draft");
+  });
+
+  it("prefers an exact valid conversation over the active or newest character", async () => {
+    const characters = [
+      summary("newest"),
+      summary("character-1", { updatedAtUtc: "2026-08-01" }),
+    ];
+    expect(
+      await resolveWelcomeConversation(
+        characters,
+        {
+          version: 1,
+          characterId: "character-1",
+          sessionId: "older",
+        },
+        "newest",
+      ),
+    ).toEqual({ version: 1, characterId: "character-1", sessionId: "older" });
+    expect(api.agents.sessions).toHaveBeenCalledOnce();
+  });
+
+  it("falls back from an invalid saved session to the active character", async () => {
+    vi.mocked(api.agents.sessions).mockImplementation((id) =>
+      Promise.resolve({ sessions: id === "character-1" ? sessions : [] }),
+    );
+    expect(
+      await resolveWelcomeConversation(
+        [
+          summary("newest"),
+          summary("active", { updatedAtUtc: "2026-08-01" }),
+          summary("character-1"),
+        ],
+        { version: 1, characterId: "character-1", sessionId: "removed" },
+        "active",
+      ),
+    ).toEqual({ version: 1, characterId: "active" });
+  });
+
+  it("falls back from an archived active character to the most recently updated user character", async () => {
+    vi.mocked(api.agents.sessions).mockResolvedValue({ sessions: [] });
+    expect(
+      await resolveWelcomeConversation(
+        [
+          summary("older", { updatedAtUtc: "2026-08-01" }),
+          summary("archived", { status: "archived" }),
+          summary("newest"),
+        ],
+        { version: 1, characterId: "archived", sessionId: "old" },
+        "archived",
+      ),
+    ).toEqual({ version: 1, characterId: "newest" });
+    expect(api.agents.sessions).toHaveBeenCalledWith("newest");
+  });
+
+  it("returns an empty welcome state after the last published user character is archived", async () => {
+    expect(
+      await resolveWelcomeConversation(
+        [
+          summary("character-1", { status: "archived" }),
+          summary("demo", { creationOrigin: "demo" }),
+        ],
+        { version: 1, characterId: "character-1", sessionId: "older" },
+        "character-1",
+      ),
+    ).toBeUndefined();
+    expect(api.agents.sessions).not.toHaveBeenCalled();
+  });
+
+  it("preserves session read failures instead of treating them as empty history", async () => {
+    vi.mocked(api.agents.sessions).mockRejectedValue(new Error("offline"));
+    await expect(
+      resolveWelcomeConversation(
+        [summary("character-1")],
+        undefined,
+        "character-1",
+      ),
+    ).rejects.toThrow("offline");
+  });
 });
+
+function summary(
+  id: string,
+  overrides: Partial<CharacterSummary> = {},
+): CharacterSummary {
+  return {
+    id,
+    name: "林夏",
+    status: "published",
+    creationOrigin: "user",
+    sourceType: "original",
+    version: 1,
+    tier: "high_fidelity",
+    workOrRole: "插画师",
+    updatedAtUtc: "2026-09-08",
+    ...overrides,
+  };
+}

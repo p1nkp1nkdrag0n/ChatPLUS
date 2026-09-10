@@ -56,7 +56,7 @@ describe("instance backup and restore", () => {
 
     expect(manifest).toMatchObject({
       format: "chatplus-instance-backup",
-      formatVersion: 2,
+      formatVersion: 3,
       createdAtUtc: OBSERVED,
       database: {
         file: "database.sqlite",
@@ -116,6 +116,168 @@ describe("instance backup and restore", () => {
     } finally {
       restoredDatabase.close();
     }
+  });
+
+  it("backs up and restores sibling achievement assets independently from keepsakes", async () => {
+    const fixture = createFixture(
+      temporaryRoots,
+      SECRET_A,
+      "achievement-assets",
+    );
+    const badges = `${fixture.assetsPath}-achievements`;
+    mkdirSync(join(badges, "badges"), { recursive: true });
+    writeFileSync(
+      join(badges, "badges", "first.png"),
+      "achievement badge bytes",
+    );
+    const manifest = await createBackup(fixture, SECRET_A);
+    expect(manifest.achievementAssets).toMatchObject({
+      included: true,
+      directory: "achievement-assets",
+      fileCount: 1,
+    });
+    const restored = restoreTargets(fixture.root);
+    await restoreInstance({
+      backupDirectory: fixture.backupPath,
+      targetDatabasePath: restored.databasePath,
+      targetAssetsPath: restored.assetsPath,
+      instanceSecret: SECRET_A,
+    });
+    expect(
+      readFileSync(
+        join(`${restored.assetsPath}-achievements`, "badges", "first.png"),
+        "utf8",
+      ),
+    ).toBe("achievement badge bytes");
+    expect(readFileSync(join(restored.assetsPath, "asset.bin"), "utf8")).toBe(
+      "private asset payload",
+    );
+    expect(existsSync(join(restored.assetsPath, "badges"))).toBe(false);
+  });
+
+  it.each([1, 2])(
+    "restores version %i manifests without inventing an achievement asset directory",
+    async (formatVersion) => {
+      const fixture = createFixture(
+        temporaryRoots,
+        SECRET_A,
+        `legacy-${formatVersion}`,
+      );
+      const manifest = await createBackup(fixture, SECRET_A);
+      const legacy = { ...manifest, formatVersion };
+      delete legacy.achievementAssets;
+      if (formatVersion === 1) delete legacy.llmKey;
+      writeFileSync(
+        join(fixture.backupPath, "manifest.json"),
+        JSON.stringify(legacy),
+      );
+      const restored = restoreTargets(fixture.root);
+      await restoreInstance({
+        backupDirectory: fixture.backupPath,
+        targetDatabasePath: restored.databasePath,
+        targetAssetsPath: restored.assetsPath,
+        instanceSecret: SECRET_A,
+      });
+      expect(existsSync(restored.databasePath)).toBe(true);
+      expect(existsSync(`${restored.assetsPath}-achievements`)).toBe(false);
+    },
+  );
+
+  it("rejects tampered achievement assets before publishing any restore target", async () => {
+    const fixture = createFixture(
+      temporaryRoots,
+      SECRET_A,
+      "tampered-achievements",
+    );
+    mkdirSync(`${fixture.assetsPath}-achievements`);
+    writeFileSync(
+      join(`${fixture.assetsPath}-achievements`, "first.png"),
+      "badge",
+    );
+    await createBackup(fixture, SECRET_A);
+    writeFileSync(
+      join(fixture.backupPath, "achievement-assets", "first.png"),
+      "tampered badge",
+    );
+    const restored = restoreTargets(fixture.root);
+    await expect(
+      restoreInstance({
+        backupDirectory: fixture.backupPath,
+        targetDatabasePath: restored.databasePath,
+        targetAssetsPath: restored.assetsPath,
+        instanceSecret: SECRET_A,
+      }),
+    ).rejects.toThrow("achievement asset snapshot");
+    expect(existsSync(restored.databasePath)).toBe(false);
+    expect(existsSync(restored.assetsPath)).toBe(false);
+    expect(existsSync(`${restored.assetsPath}-achievements`)).toBe(false);
+  });
+
+  it("refuses to overwrite an existing achievement asset target", async () => {
+    const fixture = createFixture(
+      temporaryRoots,
+      SECRET_A,
+      "existing-achievements",
+    );
+    mkdirSync(`${fixture.assetsPath}-achievements`);
+    writeFileSync(
+      join(`${fixture.assetsPath}-achievements`, "first.png"),
+      "badge",
+    );
+    await createBackup(fixture, SECRET_A);
+    const restored = restoreTargets(fixture.root);
+    mkdirSync(`${restored.assetsPath}-achievements`, { recursive: true });
+    writeFileSync(
+      join(`${restored.assetsPath}-achievements`, "keep.txt"),
+      "keep existing",
+    );
+    await expect(
+      restoreInstance({
+        backupDirectory: fixture.backupPath,
+        targetDatabasePath: restored.databasePath,
+        targetAssetsPath: restored.assetsPath,
+        instanceSecret: SECRET_A,
+      }),
+    ).rejects.toThrow("targetAchievementAssetsPath already exists");
+    expect(existsSync(restored.databasePath)).toBe(false);
+    expect(
+      readFileSync(
+        join(`${restored.assetsPath}-achievements`, "keep.txt"),
+        "utf8",
+      ),
+    ).toBe("keep existing");
+  });
+
+  it("rejects achievement assets nested below the database file before creating any restore target", async () => {
+    const fixture = createFixture(
+      temporaryRoots,
+      SECRET_A,
+      "nested-achievement-target",
+    );
+    mkdirSync(`${fixture.assetsPath}-achievements`);
+    writeFileSync(
+      join(`${fixture.assetsPath}-achievements`, "first.png"),
+      "badge",
+    );
+    await createBackup(fixture, SECRET_A);
+    const restored = restoreTargets(fixture.root);
+    const achievementAssetsPath = join(restored.databasePath, "badges");
+    const originalEntries = readdirSync(fixture.root);
+
+    await expect(
+      restoreInstance({
+        backupDirectory: fixture.backupPath,
+        targetDatabasePath: restored.databasePath,
+        targetAssetsPath: restored.assetsPath,
+        targetAchievementAssetsPath: achievementAssetsPath,
+        instanceSecret: SECRET_A,
+      }),
+    ).rejects.toThrow("achievement asset restore target must be independent");
+
+    expect(existsSync(restored.databasePath)).toBe(false);
+    expect(existsSync(restored.assetsPath)).toBe(false);
+    expect(existsSync(achievementAssetsPath)).toBe(false);
+    expect(readdirSync(fixture.root)).toEqual(originalEntries);
   });
 
   it("publishes no named or partial backup when a late validation step fails", async () => {

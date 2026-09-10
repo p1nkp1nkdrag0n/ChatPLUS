@@ -1,0 +1,10 @@
+# Optional overlay for restored badge assets stored in a host directory.
+# Compose merges volumes by target, replacing only the default badge volume.
+services:
+  app:
+    volumes:
+      - type: bind
+        source: ${CHATPLUS_ACHIEVEMENT_ASSETS_DIR:?set CHATPLUS_ACHIEVEMENT_ASSETS_DIR}
+        target: /app/assets-achievements
+        bind:
+          create_host_path: false

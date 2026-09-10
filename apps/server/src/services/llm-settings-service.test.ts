@@ -399,7 +399,7 @@ describe("LLM credential backup boundaries", () => {
       databasePath: f.databasePath,
       outputDirectory: backup,
     });
-    expect(manifest.formatVersion).toBe(2);
+    expect(manifest.formatVersion).toBe(3);
     expect(manifest.llmKey?.fingerprint).toHaveLength(64);
     expect(readdirSync(backup)).toEqual(
       expect.arrayContaining(["database.sqlite", "manifest.json"]),

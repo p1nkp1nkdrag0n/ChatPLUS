@@ -50,8 +50,8 @@ COPY --from=builder --chown=node:node /app/packages ./packages
 COPY --from=builder --chown=node:node /app/scripts ./scripts
 COPY --from=builder --chown=node:node /app/tsconfig.base.json ./tsconfig.base.json
 
-RUN mkdir -p /app/data /app/assets /app/logs /app/backups /app/config \
-  && chown -R node:node /app/data /app/assets /app/logs /app/backups /app/config
+RUN mkdir -p /app/data /app/assets /app/assets-achievements /app/logs /app/backups /app/config \
+  && chown -R node:node /app/data /app/assets /app/assets-achievements /app/logs /app/backups /app/config
 
 USER node
 

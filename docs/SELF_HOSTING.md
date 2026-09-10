@@ -76,7 +76,9 @@ docker compose \
 
 数据库备份和对应 `INSTANCE_SECRET` 必须作为同一个恢复批次保管，但 secret 必须放在独立的密钥存储/加密环境文件中，脚本刻意不把它复制到备份目录。只有数据库而没有 secret，未启封回信无法恢复。
 
-页面管理的模型供应商另使用 `${DATABASE_PATH}.llm-key` 主密钥文件。新备份格式 v2 只记录它的指纹，不复制主密钥；需要同批次单独保管。恢复时使用 `--llm-key-file <原主密钥路径>`，校验后恢复到新数据库旁。旧 v1 备份仍可读取。若只恢复聊天数据，可显式使用 `--allow-missing-llm-key`，随后在设置中重填模型凭据；此选项不绕过书信密钥检查。操作详情见[模型设置说明](MODEL_SETTINGS.md)。
+页面管理的聊天与徽章模型供应商共用 `${DATABASE_PATH}.llm-key` 主密钥文件。备份只记录它的指纹，不复制主密钥；需要同批次单独保管。恢复时使用 `--llm-key-file <原主密钥路径>`，校验后恢复到新数据库旁。若只恢复聊天数据，可显式使用 `--allow-missing-llm-key`，随后在设置中重填模型凭据；此选项不绕过书信密钥检查。操作详情见[模型设置说明](MODEL_SETTINGS.md)。
+
+备份格式 v3 单独包含 `achievement-assets/`，仍支持恢复 v1/v2。传入 `--assets /app/assets` 时自动发现 `/app/assets-achievements`；特殊布局可显式传入 `--achievement-assets`。Compose 为徽章配置独立命名卷，镜像已为 `node` 用户创建并授权相应目录。恢复到其他实例时也要恢复该资产目录。[成就收藏说明](ACHIEVEMENTS.md)介绍独立图片配置和任务恢复行为。
 
 ## 恢复演练
 
@@ -103,7 +105,32 @@ docker compose \
   --env-file /app/config/instance.env
 ```
 
-恢复目标放在已经挂载的 `/app/data` 和 `/app/assets` 的新子目录中，因此 `run --rm` 退出后仍保留在宿主机；不要改回 `/app/data-restored` 之类未挂载的 sibling 路径。宿主开发环境可使用 `pnpm selfhost:restore -- ...`。恢复完成后，将 `CHATPLUS_DATA_DIR` 指向原 data 目录下的 `restored` 子目录、将 `CHATPLUS_ASSETS_DIR` 指向原 assets 目录下的 `restored` 子目录，再启动实例；先检查 `/api/health` 和历史信件启封，再触发一次 worker tick/重启验证。任务 claim、logical generation run、稳定 reply id 与 business commit 都是幂等的，恢复测试已覆盖重复 worker tick 不产生第二封回信。
+恢复目标放在已经挂载的 `/app/data` 和 `/app/assets` 的新子目录中，因此 `run --rm` 退出后仍保留在宿主机；不要改回 `/app/data-restored` 之类未挂载的 sibling 路径。上例的徽章默认恢复到 `/app/assets/restored-achievements`，对应原宿主资产目录下的 `restored-achievements` 子目录。宿主开发环境可使用 `pnpm selfhost:restore -- ...`。
+
+恢复完成后，在实例环境文件中分别设置数据库、纪念物和徽章的实际宿主目录。例如，恢复前使用 `.env.selfhosted.example` 的目录布局时：
+
+```dotenv
+CHATPLUS_DATA_DIR=./instances/friend-a/data/restored
+CHATPLUS_ASSETS_DIR=./instances/friend-a/assets/restored
+CHATPLUS_ACHIEVEMENT_ASSETS_DIR=./instances/friend-a/assets/restored-achievements
+```
+
+这些目录必须已经存在并可由容器 UID 1000 读取和写入。恢复 v1/v2 或未包含徽章资产的备份时，脚本不会创建 `restored-achievements`；可保留默认命名卷而不设置第三项、不添加下述覆盖配置，或者先显式创建独立的空徽章目录后再使用覆盖配置。
+
+默认部署继续使用独立命名卷保存徽章。恢复得到的宿主徽章目录需要通过可选的 [徽章资产挂载配置](../deploy/compose.achievement-assets-bind.yml) 接入 `/app/assets-achievements`；它按相同挂载目标替换徽章命名卷，其他挂载保持原有配置。使用两个 Compose 文件启动恢复后的实例：
+
+```bash
+docker compose \
+  --env-file .env.friend-a \
+  --project-name chatplus-friend-a \
+  --file docker-compose.selfhosted.yml \
+  --file deploy/compose.achievement-assets-bind.yml \
+  up --detach --build
+```
+
+此后该实例的 `up`、`run`、`exec`、备份和恢复命令都应携带这两个 `--file` 参数，避免后续启动重新挂回旧徽章命名卷。覆盖配置要求显式设置 `CHATPLUS_ACHIEVEMENT_ASSETS_DIR`，并使用 `create_host_path: false`；目录遗漏或拼错会直接失败。只切换 `CHATPLUS_ASSETS_DIR` 不会切换独立徽章卷。
+
+先检查 `/api/health`、历史信件启封和已有专属徽章图片，再触发一次 worker tick/重启验证。任务 claim、logical generation run、稳定 reply id 与 business commit 都是幂等的，恢复测试已覆盖重复 worker tick 不产生第二封回信。
 
 ## 更新、回滚与隔离检查
 

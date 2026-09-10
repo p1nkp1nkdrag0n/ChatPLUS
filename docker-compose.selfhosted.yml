@@ -39,6 +39,7 @@ services:
         target: /app/logs
         bind:
           create_host_path: false
+      - achievement_assets:/app/assets-achievements
       - type: bind
         source: ${CHATPLUS_BACKUP_DIR:-./backups/selfhosted}
         target: /app/backups
@@ -101,5 +102,6 @@ networks:
     internal: false
 
 volumes:
+  achievement_assets:
   caddy_data:
   caddy_config:

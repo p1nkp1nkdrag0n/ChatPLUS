@@ -11,6 +11,7 @@ const { values } = parseArgs({
   options: {
     database: { type: "string" },
     assets: { type: "string" },
+    "achievement-assets": { type: "string" },
     output: { type: "string" },
     "env-file": { type: "string", default: ".env" },
     "llm-key-file": { type: "string" },
@@ -31,6 +32,9 @@ const manifest = await backupInstance({
   databasePath: values.database,
   outputDirectory: values.output,
   ...(values.assets === undefined ? {} : { assetsPath: values.assets }),
+  ...(values["achievement-assets"] === undefined
+    ? {}
+    : { achievementAssetsPath: values["achievement-assets"] }),
   ...(values["llm-key-file"] === undefined
     ? {}
     : { llmKeyFile: values["llm-key-file"] }),
@@ -41,7 +45,7 @@ const manifest = await backupInstance({
 });
 
 process.stdout.write(
-  `Backup complete: ${resolve(values.output)} (${manifest.database.latestSchemaMigration ?? "no migrations"}, ${manifest.assets.fileCount} assets)\n`,
+  `Backup complete: ${resolve(values.output)} (${manifest.database.latestSchemaMigration ?? "no migrations"}, ${manifest.assets.fileCount} keepsake assets, ${manifest.achievementAssets?.fileCount ?? 0} achievement assets)\n`,
 );
 if (manifest.llmKey)
   process.stdout.write(

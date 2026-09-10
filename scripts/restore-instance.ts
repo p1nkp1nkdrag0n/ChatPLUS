@@ -12,6 +12,7 @@ const { values } = parseArgs({
     backup: { type: "string" },
     database: { type: "string" },
     assets: { type: "string" },
+    "achievement-assets": { type: "string" },
     "env-file": { type: "string", default: ".env" },
     "llm-key-file": { type: "string" },
     "allow-missing-llm-key": { type: "boolean", default: false },
@@ -35,6 +36,9 @@ const manifest = await restoreInstance({
   backupDirectory: values.backup,
   targetDatabasePath: values.database,
   targetAssetsPath: values.assets,
+  ...(values["achievement-assets"] === undefined
+    ? {}
+    : { targetAchievementAssetsPath: values["achievement-assets"] }),
   ...(values["llm-key-file"] === undefined
     ? {}
     : { llmKeyFile: values["llm-key-file"] }),
@@ -45,7 +49,7 @@ const manifest = await restoreInstance({
 });
 
 process.stdout.write(
-  `Restore complete: ${resolve(values.database)} (${manifest.database.latestSchemaMigration ?? "no migrations"}, ${manifest.assets.fileCount} assets)\n`,
+  `Restore complete: ${resolve(values.database)} (${manifest.database.latestSchemaMigration ?? "no migrations"}, ${manifest.assets.fileCount} keepsake assets, ${manifest.achievementAssets?.fileCount ?? 0} achievement assets)\n`,
 );
 if (
   manifest.llmKey &&

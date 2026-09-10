@@ -32,9 +32,10 @@ import {
 } from "../services/llm-credential-service.js";
 
 const BACKUP_FORMAT = "chatplus-instance-backup";
-const BACKUP_FORMAT_VERSION = 2;
+const BACKUP_FORMAT_VERSION = 3;
 const BACKUP_DATABASE_FILE = "database.sqlite";
 const BACKUP_ASSETS_DIRECTORY = "assets";
+const BACKUP_ACHIEVEMENT_ASSETS_DIRECTORY = "achievement-assets";
 const BACKUP_MANIFEST_FILE = "manifest.json";
 const SHA_256_PATTERN = /^[a-f0-9]{64}$/u;
 const MIGRATION_NAME_PATTERN = /^\d+[_-].+\.sql$/u;
@@ -68,10 +69,19 @@ const ExcludedAssetManifestSchema = z.strictObject({
   digest: z.null(),
 });
 
+const IncludedAchievementAssetManifestSchema =
+  IncludedAssetManifestSchema.extend({
+    directory: z.literal(BACKUP_ACHIEVEMENT_ASSETS_DIRECTORY),
+  });
+
 export const InstanceBackupManifestSchema = z
   .strictObject({
     format: z.literal(BACKUP_FORMAT),
-    formatVersion: z.union([z.literal(1), z.literal(BACKUP_FORMAT_VERSION)]),
+    formatVersion: z.union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(BACKUP_FORMAT_VERSION),
+    ]),
     createdAtUtc: z.iso.datetime(),
     database: DatabaseManifestSchema,
     correspondenceKey: CorrespondenceKeyMetadataSchema.nullable(),
@@ -80,16 +90,31 @@ export const InstanceBackupManifestSchema = z
       IncludedAssetManifestSchema,
       ExcludedAssetManifestSchema,
     ]),
+    achievementAssets: z
+      .discriminatedUnion("included", [
+        IncludedAchievementAssetManifestSchema,
+        ExcludedAssetManifestSchema,
+      ])
+      .optional(),
   })
   .superRefine((manifest, context) => {
     if (
-      manifest.formatVersion === 2 &&
+      manifest.formatVersion >= 2 &&
       !Object.prototype.hasOwnProperty.call(manifest, "llmKey")
     )
       context.addIssue({
         code: "custom",
         path: ["llmKey"],
-        message: "Version 2 backups require LLM key metadata",
+        message: "Version 2 and newer backups require LLM key metadata",
+      });
+    if (
+      manifest.formatVersion === 3 &&
+      manifest.achievementAssets === undefined
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["achievementAssets"],
+        message: "Version 3 backups require achievement asset metadata",
       });
   });
 
@@ -101,6 +126,7 @@ export interface BackupInstanceOptions {
   readonly databasePath: string;
   readonly outputDirectory: string;
   readonly assetsPath?: string;
+  readonly achievementAssetsPath?: string;
   readonly instanceSecret?: string;
   readonly llmKeyFile?: string;
   readonly allowMissingLlmKey?: boolean;
@@ -111,6 +137,7 @@ export interface RestoreInstanceOptions {
   readonly backupDirectory: string;
   readonly targetDatabasePath: string;
   readonly targetAssetsPath: string;
+  readonly targetAchievementAssetsPath?: string;
   readonly instanceSecret?: string;
   readonly llmKeyFile?: string;
   readonly allowMissingLlmKey?: boolean;
@@ -156,6 +183,20 @@ export async function backupInstance(
     options.assetsPath === undefined
       ? undefined
       : resolveOptionalDirectory(options.assetsPath, "assetsPath");
+  const achievementAssetSource =
+    options.achievementAssetsPath ??
+    (options.assetsPath === undefined
+      ? undefined
+      : `${resolve(options.assetsPath)}-achievements`);
+  const achievementAssetsPath =
+    achievementAssetSource === undefined ||
+    (options.achievementAssetsPath === undefined &&
+      !existsSync(achievementAssetSource))
+      ? undefined
+      : resolveOptionalDirectory(
+          achievementAssetSource,
+          "achievementAssetsPath",
+        );
 
   assertDifferentPath(databasePath, outputDirectory, "backup output");
   if (
@@ -167,6 +208,14 @@ export async function backupInstance(
       "outputDirectory must not be the asset directory or one of its descendants",
     );
   }
+  if (
+    achievementAssetsPath !== undefined &&
+    (samePath(outputDirectory, achievementAssetsPath) ||
+      isPathWithin(outputDirectory, achievementAssetsPath))
+  )
+    throw new TypeError(
+      "outputDirectory must be outside the achievement asset directory",
+    );
   assertPathDoesNotExist(outputDirectory, "outputDirectory");
   await mkdir(dirname(outputDirectory), { recursive: true });
   const temporaryOutputDirectory = join(
@@ -217,6 +266,18 @@ export async function backupInstance(
             digest: null,
           })
         : await backupAssets(assetsPath, temporaryOutputDirectory);
+    const achievementAssetsManifest =
+      achievementAssetsPath === undefined
+        ? ExcludedAssetManifestSchema.parse({
+            included: false,
+            fileCount: 0,
+            totalBytes: 0,
+            digest: null,
+          })
+        : await backupAchievementAssets(
+            achievementAssetsPath,
+            temporaryOutputDirectory,
+          );
 
     const manifest = InstanceBackupManifestSchema.parse({
       format: BACKUP_FORMAT,
@@ -232,6 +293,7 @@ export async function backupInstance(
       correspondenceKey: inspection.correspondenceKey,
       llmKey: inspection.llmKey,
       assets: assetsManifest,
+      achievementAssets: achievementAssetsManifest,
     });
     await writeFile(
       join(temporaryOutputDirectory, BACKUP_MANIFEST_FILE),
@@ -268,6 +330,10 @@ export async function restoreInstance(
     options.targetAssetsPath,
     "targetAssetsPath",
   );
+  const targetAchievementAssetsPath = resolveSafePath(
+    options.targetAchievementAssetsPath ?? `${targetAssetsPath}-achievements`,
+    "targetAchievementAssetsPath",
+  );
   assertPathDoesNotExist(targetDatabasePath, "targetDatabasePath");
   assertPathDoesNotExist(targetAssetsPath, "targetAssetsPath");
   if (
@@ -281,6 +347,25 @@ export async function restoreInstance(
   const manifest = InstanceBackupManifestSchema.parse(
     JSON.parse(await readUtf8File(manifestPath)) as unknown,
   );
+  if (manifest.achievementAssets?.included) {
+    assertPathDoesNotExist(
+      targetAchievementAssetsPath,
+      "targetAchievementAssetsPath",
+    );
+    if (
+      isPathWithin(targetAchievementAssetsPath, backupDirectory) ||
+      samePath(targetAchievementAssetsPath, backupDirectory) ||
+      samePath(targetAchievementAssetsPath, targetAssetsPath) ||
+      isPathWithin(targetAchievementAssetsPath, targetAssetsPath) ||
+      isPathWithin(targetAssetsPath, targetAchievementAssetsPath) ||
+      samePath(targetAchievementAssetsPath, targetDatabasePath) ||
+      isPathWithin(targetAchievementAssetsPath, targetDatabasePath) ||
+      isPathWithin(targetDatabasePath, targetAchievementAssetsPath)
+    )
+      throw new TypeError(
+        "achievement asset restore target must be independent and outside backupDirectory",
+      );
+  }
   const backupDatabasePath = join(backupDirectory, manifest.database.file);
   assertRegularFileNoSymlink(backupDatabasePath, "backup database");
   const databaseStat = statSync(backupDatabasePath);
@@ -321,12 +406,38 @@ export async function restoreInstance(
   } else if (existsSync(backupAssetsPath)) {
     throw new TypeError("manifest excludes assets but backup contains assets");
   }
+  const backupAchievementAssetsPath = join(
+    backupDirectory,
+    BACKUP_ACHIEVEMENT_ASSETS_DIRECTORY,
+  );
+  if (manifest.achievementAssets?.included) {
+    const snapshot = await inspectAssetDirectory(backupAchievementAssetsPath);
+    if (
+      snapshot.fileCount !== manifest.achievementAssets.fileCount ||
+      snapshot.totalBytes !== manifest.achievementAssets.totalBytes ||
+      !safeDigestEqual(snapshot.digest, manifest.achievementAssets.digest)
+    )
+      throw new TypeError(
+        "backup achievement asset snapshot does not match manifest",
+      );
+  } else if (existsSync(backupAchievementAssetsPath)) {
+    throw new TypeError(
+      "manifest excludes achievement assets but backup contains achievement assets",
+    );
+  }
 
   // Recheck immediately before creating parents to narrow the race window.
   assertPathDoesNotExist(targetDatabasePath, "targetDatabasePath");
   assertPathDoesNotExist(targetAssetsPath, "targetAssetsPath");
+  if (manifest.achievementAssets?.included)
+    assertPathDoesNotExist(
+      targetAchievementAssetsPath,
+      "targetAchievementAssetsPath",
+    );
   await mkdir(dirname(targetDatabasePath), { recursive: true });
   await mkdir(dirname(targetAssetsPath), { recursive: true });
+  if (manifest.achievementAssets?.included)
+    await mkdir(dirname(targetAchievementAssetsPath), { recursive: true });
   const restoreId = randomUUID();
   const temporaryDatabasePath = join(
     dirname(targetDatabasePath),
@@ -337,6 +448,10 @@ export async function restoreInstance(
     `.chatplus-restore-${restoreId}.assets.partial`,
   );
   const temporaryLlmKeyPath = `${temporaryDatabasePath}.llm-key`;
+  const temporaryAchievementAssetsPath = join(
+    dirname(targetAchievementAssetsPath),
+    `.chatplus-restore-${restoreId}.achievement-assets.partial`,
+  );
 
   try {
     await copyFile(
@@ -362,6 +477,19 @@ export async function restoreInstance(
     } else {
       await mkdir(temporaryAssetsPath);
     }
+    if (manifest.achievementAssets?.included) {
+      await copyAssetDirectory(
+        backupAchievementAssetsPath,
+        temporaryAchievementAssetsPath,
+      );
+      const copied = await inspectAssetDirectory(
+        temporaryAchievementAssetsPath,
+      );
+      if (!safeDigestEqual(copied.digest, manifest.achievementAssets.digest))
+        throw new TypeError(
+          "restored achievement asset checksum verification failed",
+        );
+    }
     if (sourceLlmKeyPath !== undefined && !existsSync(targetLlmKeyPath)) {
       await copyFile(
         sourceLlmKeyPath,
@@ -378,6 +506,13 @@ export async function restoreInstance(
     // Publish assets first and the database last. A process watching the final
     // database path can therefore never start against a half-restored batch.
     await rename(temporaryAssetsPath, targetAssetsPath);
+    if (manifest.achievementAssets?.included) {
+      assertPathDoesNotExist(
+        targetAchievementAssetsPath,
+        "targetAchievementAssetsPath",
+      );
+      await rename(temporaryAchievementAssetsPath, targetAchievementAssetsPath);
+    }
     if (existsSync(temporaryLlmKeyPath)) {
       assertPathDoesNotExist(targetLlmKeyPath, "target LLM key");
       await rename(temporaryLlmKeyPath, targetLlmKeyPath);
@@ -389,6 +524,10 @@ export async function restoreInstance(
     await rm(temporaryAssetsPath, { recursive: true, force: true }).catch(
       () => undefined,
     );
+    await rm(temporaryAchievementAssetsPath, {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined);
   }
   return manifest;
 }
@@ -587,6 +726,23 @@ async function backupAssets(
     fileCount: snapshot.fileCount,
     totalBytes: snapshot.totalBytes,
     digest: snapshot.digest,
+  });
+}
+
+async function backupAchievementAssets(
+  assetsPath: string,
+  outputDirectory: string,
+) {
+  const destination = join(
+    outputDirectory,
+    BACKUP_ACHIEVEMENT_ASSETS_DIRECTORY,
+  );
+  await copyAssetDirectory(assetsPath, destination);
+  const snapshot = await inspectAssetDirectory(destination);
+  return IncludedAchievementAssetManifestSchema.parse({
+    included: true,
+    directory: BACKUP_ACHIEVEMENT_ASSETS_DIRECTORY,
+    ...snapshot,
   });
 }
 

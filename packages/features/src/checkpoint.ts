@@ -1,3 +1,5 @@
+import { estimatePromptTokens } from "@personasim/kernel";
+
 export interface ConversationRetentionPolicyLike {
   fullVerbatimHours: number;
   softTokenLimit: number;
@@ -46,13 +48,7 @@ export interface CheckpointRetentionSelection {
 const TURN_MESSAGE_OVERHEAD_TOKENS = 6;
 
 export function estimateCheckpointTokens(value: string): number {
-  let hanCount = 0;
-  let otherCount = 0;
-  for (const character of value.normalize("NFKC")) {
-    if (/\p{Script=Han}/u.test(character)) hanCount += 1;
-    else otherCount += 1;
-  }
-  return Math.max(1, hanCount + Math.ceil(otherCount / 4));
+  return Math.max(1, estimatePromptTokens(value));
 }
 
 function messageTokens(message: CheckpointRetentionMessageLike): number {

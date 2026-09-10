@@ -556,27 +556,34 @@ describe("companion long-run v2 hard assertions", () => {
       ).toBe("FAIL");
     });
 
-    it("uses a conservative mixed-language prompt estimate", () => {
-      const call = logicalCall("", "中文中文中文");
-      expect(
-        status(
-          evaluate(["prompt_budget_bounded"], {
-            logicalCalls: [call],
-            promptHardTokenLimit: 7,
-          }),
-          "prompt_budget_bounded",
-        ),
-      ).toBe("PASS");
-      expect(
-        status(
-          evaluate(["prompt_budget_bounded"], {
-            logicalCalls: [call],
-            promptHardTokenLimit: 6,
-          }),
-          "prompt_budget_bounded",
-        ),
-      ).toBe("FAIL");
-    });
+    it.each([
+      ["", "中文中文中文", 12],
+      ["English", "中文 mix😀", 11],
+      ["rules", '{"ok":false}', 9],
+    ])(
+      "uses the shared per-message prompt estimate for %s / %s",
+      (system, prompt, expectedTokens) => {
+        const call = logicalCall(system, prompt);
+        expect(
+          status(
+            evaluate(["prompt_budget_bounded"], {
+              logicalCalls: [call],
+              promptHardTokenLimit: expectedTokens,
+            }),
+            "prompt_budget_bounded",
+          ),
+        ).toBe("PASS");
+        expect(
+          status(
+            evaluate(["prompt_budget_bounded"], {
+              logicalCalls: [call],
+              promptHardTokenLimit: expectedTokens - 1,
+            }),
+            "prompt_budget_bounded",
+          ),
+        ).toBe("FAIL");
+      },
+    );
 
     it("accepts an idempotent replay only when it performs zero LLM calls", () => {
       const replay = response({ idempotentReplay: true });

@@ -277,8 +277,12 @@ export function createLifeContextPromptSegment(): PromptSegment<DefaultPromptCon
       "LIFE_CONTEXT_JSON",
       "lifeContext",
       95,
-      8_000,
+      12_000,
     ),
+    // The Unicode estimate counts Chinese evidence more conservatively than
+    // the former characters/4 estimate. A bounded projection containing recent
+    // decisions, actions and outcomes can exceed the old 8,000-token slot.
+    // Allow that complete causal chain while still enforcing the global budget.
     // A partial JSON object is worse than no optional context: it hides later
     // causal stages and gives the model malformed evidence. The registry drops
     // this optional segment atomically when either its own or the global budget

@@ -1,4 +1,8 @@
 import type { LLMChatMessage } from "@personasim/contracts";
+import {
+  estimatePromptTokens,
+  PROMPT_TOKEN_ESTIMATE_METHOD,
+} from "@personasim/kernel";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -14,6 +18,7 @@ function harness(
   mode: "json_object" | "prompt_json" | "native_schema",
   diagnostics = true,
   repair = false,
+  usage?: { prompt_tokens: number; completion_tokens: number },
 ) {
   const requests: RecordedBody[] = [];
   const metrics: LlmCallMetric[] = [];
@@ -34,6 +39,7 @@ function harness(
       requests.push(JSON.parse(init.body) as RecordedBody);
       return Promise.resolve(
         Response.json({
+          ...(usage === undefined ? {} : { usage }),
           choices: [
             {
               message: {
@@ -53,6 +59,41 @@ function harness(
 }
 
 describe("stable structured prompt layout", () => {
+  it("keeps Unicode content estimates distinct from reported provider usage", async () => {
+    const { provider, requests, metrics } = harness(
+      "native_schema",
+      true,
+      false,
+      {
+        prompt_tokens: 987,
+        completion_tokens: 9,
+      },
+    );
+    await provider.generateObject({
+      purpose: "chat_turn",
+      system: "Fixed role",
+      prompt: "我没有同意😀",
+      schema: z.object({ ok: z.boolean() }).strict(),
+    });
+    const request = requests[0]!;
+    const expected = request.messages.reduce(
+      (total, message) => total + estimatePromptTokens(message.content),
+      0,
+    );
+    expect(metrics[0]).toMatchObject({
+      inputTokens: 987,
+      usageSource: "provider",
+      promptDiagnostics: {
+        tokenEstimateMethod: PROMPT_TOKEN_ESTIMATE_METHOD,
+        estimatedContentTokens: expected,
+        estimatedResponseFormatTokens: estimatePromptTokens(
+          JSON.stringify(request.response_format),
+        ),
+      },
+    });
+    expect(expected).not.toBe(987);
+    expect(JSON.stringify(metrics)).not.toContain("我没有同意");
+  });
   it.each(["json_object", "prompt_json"] as const)(
     "places one schema before changing input without promoting its role (%s)",
     async (mode) => {

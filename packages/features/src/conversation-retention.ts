@@ -2,6 +2,7 @@ import {
   DEFAULT_CONVERSATION_RETENTION_POLICY as CONTRACT_DEFAULT_CONVERSATION_RETENTION_POLICY,
   type ConversationRetentionPolicy,
 } from "@personasim/contracts";
+import { estimatePromptTokens } from "@personasim/kernel";
 
 export type { ConversationRetentionPolicy } from "@personasim/contracts";
 
@@ -42,16 +43,8 @@ export interface SelectConversationRetentionInput<
   policy?: ConversationRetentionPolicy;
 }
 
-const HAN_CHARACTER = /\p{Script=Han}/u;
-
 export function estimateConversationTokens(value: string): number {
-  let han = 0;
-  let other = 0;
-  for (const character of value) {
-    if (HAN_CHARACTER.test(character)) han += 1;
-    else other += 1;
-  }
-  return han + Math.ceil(other / 4);
+  return estimatePromptTokens(value);
 }
 
 export function groupConversationTurns<T extends RetentionMessageLike>(

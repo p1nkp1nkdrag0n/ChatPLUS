@@ -42,7 +42,7 @@ const POLICY = {
 describe("conversation retention", () => {
   it("uses a conservative mixed Chinese and Latin token estimate", () => {
     expect(estimateCheckpointTokens("abcd")).toBe(1);
-    expect(estimateCheckpointTokens("\u65e9\u4e0aabcd")).toBe(3);
+    expect(estimateCheckpointTokens("\u65e9\u4e0aabcd")).toBe(5);
   });
 
   it("selects only a complete prefix and protects the recent tail", () => {

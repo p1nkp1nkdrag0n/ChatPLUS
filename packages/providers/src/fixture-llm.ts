@@ -8,6 +8,7 @@ import type {
   OriginalCharacterInput,
 } from "@personasim/contracts";
 import type { ZodType } from "zod";
+import { estimatePromptTokens } from "@personasim/kernel";
 
 import { parseStructuredOutput } from "./safe-json.js";
 import {
@@ -822,7 +823,7 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
 };
 
 function tokenEstimate(value: string): number {
-  return Math.max(1, Math.ceil(value.length / 4));
+  return Math.max(1, estimatePromptTokens(value));
 }
 
 export class FixtureLlmProvider implements LlmProvider {

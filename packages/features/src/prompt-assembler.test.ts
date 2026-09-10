@@ -57,12 +57,12 @@ describe("complete evidence budgets", () => {
       return {
         ...MEMORY_EVIDENCE.evidence[0]!,
         memoryId,
-        memoryContent: `那是咖啡店${index}。${"当时公开的具体细节。".repeat(110)}`,
+        memoryContent: `那是咖啡店${index}。${"当时公开的具体细节。".repeat(60)}`,
         evidence: {
           ...MEMORY_EVIDENCE.evidence[0]!.evidence,
           id: `budget-evidence-${index}`,
           memoryId,
-          quote: `我说的是咖啡店${index}。${"当时公开的具体细节。".repeat(110)}`,
+          quote: `我说的是咖啡店${index}。${"当时公开的具体细节。".repeat(60)}`,
         },
       };
     });
@@ -1270,12 +1270,12 @@ describe("assembleChatPrompt registry integration", () => {
       authority: "server_persisted_fuzzy_life",
       recentDecisionDilemmas: Array.from({ length: 4 }, (_, index) => ({
         id: `dilemma-${String(index)}`,
-        summary: `困境${String(index)}-${"证据".repeat(900)}`,
+        summary: `困境${String(index)}-${"证据".repeat(150)}`,
       })),
       evidencedSupport: Array.from({ length: 8 }, (_, index) => ({
         id: `support-${String(index)}`,
         sourceMessageId: `message-${String(index)}`,
-        summary: `支持${String(index)}-${"陪伴".repeat(500)}`,
+        summary: `支持${String(index)}-${"陪伴".repeat(100)}`,
       })),
       evidencedActions: [
         {
@@ -1796,8 +1796,8 @@ describe("assembleChatPrompt registry integration", () => {
         .sort((left, right) => left.localeCompare(right)),
     );
     expect(
-      "FUTURE_SCHEDULE_JSON\n".length + serialized.length,
-    ).toBeLessThanOrEqual(700 * 4);
+      estimatePromptTokens("FUTURE_SCHEDULE_JSON\n" + serialized),
+    ).toBeLessThanOrEqual(700);
     expect(
       result.segmentTrace.segments.find(
         (segment) => segment.id === "12_future_schedule",

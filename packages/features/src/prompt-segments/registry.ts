@@ -1,3 +1,11 @@
+import {
+  estimatePromptTokens,
+  PROMPT_TOKEN_ESTIMATE_METHOD,
+  promptPrefixWithinTokenBudget,
+} from "@personasim/kernel";
+
+export { estimatePromptTokens } from "@personasim/kernel";
+
 import type {
   PromptAssemblyResult,
   PromptContext,
@@ -23,26 +31,15 @@ type EmptyCandidate<TContext extends PromptContext> = {
   readonly cacheHit: boolean;
 };
 
-export function estimatePromptTokens(value: string): number {
-  return value.length === 0 ? 0 : Math.ceil(value.length / 4);
-}
-
 export function truncatePromptToTokenBudget(
   value: string,
   tokenBudget: number,
 ): string {
   if (tokenBudget <= 0 || value.length === 0) return "";
-  const maximumCharacters = tokenBudget * 4;
-  return truncatePromptToCharacterBudget(value, maximumCharacters);
-}
-
-function truncatePromptToCharacterBudget(
-  value: string,
-  maximumCharacters: number,
-): string {
-  if (maximumCharacters <= 0 || value.length === 0) return "";
-  if (value.length <= maximumCharacters) return value;
-  const structured = compactLabeledJson(value, maximumCharacters);
+  const maximumTokens = Math.floor(tokenBudget);
+  if (maximumTokens <= 0) return "";
+  if (estimatePromptTokens(value) <= maximumTokens) return value;
+  const structured = compactLabeledJson(value, maximumTokens);
   if (typeof structured === "string") return structured;
   if (structured === null) {
     throw new PromptSegmentRegistryError(
@@ -50,19 +47,24 @@ function truncatePromptToCharacterBudget(
       "The prompt budget is too small to retain a valid structured segment.",
     );
   }
-  if (maximumCharacters === 1) return ".";
-  return value.slice(0, Math.max(0, maximumCharacters - 3)) + "...";
+  const suffix = maximumTokens > 3 ? "..." : ".";
+  return (
+    promptPrefixWithinTokenBudget(
+      value,
+      maximumTokens - estimatePromptTokens(suffix),
+    ) + suffix
+  );
 }
 
 function compactLabeledJson(
   value: string,
-  maximumCharacters: number,
+  maximumTokens: number,
 ): string | null | undefined {
   const referencePrefix = "USER_MODEL_JSON\n";
   if (value.startsWith(referencePrefix + "REFERENCE_CONTEXT_JSON\n")) {
     const nested = compactLabeledJson(
       value.slice(referencePrefix.length),
-      maximumCharacters - referencePrefix.length,
+      maximumTokens - estimatePromptTokens(referencePrefix),
     );
     return typeof nested === "string" ? referencePrefix + nested : nested;
   }
@@ -77,7 +79,7 @@ function compactLabeledJson(
     return undefined;
   }
   if (label === "AUTOBIOGRAPHY_JSON") {
-    return compactWholeAutobiography(label, parsed, maximumCharacters);
+    return compactWholeAutobiography(label, parsed, maximumTokens);
   }
   if (label === "CURRENT_USER_MESSAGE_JSON") return null;
   if (
@@ -85,7 +87,7 @@ function compactLabeledJson(
     label === "REFERENCE_CONTEXT_JSON" ||
     label === "RECENT_VERBATIM_JSON"
   ) {
-    return compactWholeEvidence(label, parsed, maximumCharacters);
+    return compactWholeEvidence(label, parsed, maximumTokens);
   }
   const configurations = [
     [2_000, 20],
@@ -110,35 +112,53 @@ function compactLabeledJson(
       compactJsonValue(selected, maximumString, maximumArray),
     );
     const candidate = `${label}\n${serialized}`;
-    if (candidate.length <= maximumCharacters) return candidate;
+    if (estimatePromptTokens(candidate) <= maximumTokens) return candidate;
   }
   const marker = `${label}\n{"_truncated":true}`;
-  return marker.length <= maximumCharacters ? marker : null;
+  return estimatePromptTokens(marker) <= maximumTokens ? marker : null;
 }
 
 function compactWholeEvidence(
   label: string,
   value: unknown,
-  maximumCharacters: number,
+  maximumTokens: number,
 ): string | null {
   const render = (data: unknown) => `${label}\n${JSON.stringify(data)}`;
   if (Array.isArray(value)) {
     const selected: unknown[] = [];
+    let selectedTokens = estimatePromptTokens(render(selected));
     // Recent dialogue is chronological; retain only complete messages.
     for (const item of [...(value as unknown[])].reverse()) {
-      if (render([item, ...selected]).length <= maximumCharacters)
+      // Avoid rescanning the full admitted tail for every omitted old message.
+      // Rounded estimates can differ by at most one token when concatenated.
+      if (
+        estimatePromptTokens(JSON.stringify(item)) +
+          (selected.length > 0 ? 1 : 0) >
+        maximumTokens - selectedTokens + 1
+      )
+        continue;
+      const candidateTokens = estimatePromptTokens(render([item, ...selected]));
+      if (candidateTokens <= maximumTokens) {
         selected.unshift(item);
+        selectedTokens = candidateTokens;
+      }
     }
-    return render(selected).length <= maximumCharacters
+    return estimatePromptTokens(render(selected)) <= maximumTokens
       ? render(selected)
       : null;
   }
-  const selected: Record<string, unknown> = { _truncated: true };
-  if (render(selected).length > maximumCharacters) return null;
+  const selected: Record<string, unknown> =
+    label === "RETRIEVED_EVIDENCE_JSON"
+      ? { _truncated: true, evidence: [] }
+      : { _truncated: true };
+  if (estimatePromptTokens(render(selected)) > maximumTokens) return null;
   if (typeof value !== "object" || value === null) return render(selected);
   const original = value as Record<string, unknown>;
   const keep = (key: string, item: unknown) => {
-    if (render({ ...selected, [key]: item }).length <= maximumCharacters)
+    if (
+      estimatePromptTokens(render({ ...selected, [key]: item })) <=
+      maximumTokens
+    )
       selected[key] = item;
   };
   for (const [key, item] of Object.entries(original)) {
@@ -146,7 +166,8 @@ function compactWholeEvidence(
       selected[key] = [];
       for (const record of item)
         keep(key, [...(selected[key] as unknown[]), record]);
-      if (render(selected).length > maximumCharacters) delete selected[key];
+      if (estimatePromptTokens(render(selected)) > maximumTokens)
+        delete selected[key];
     } else {
       // Nested evidence bundles are atomic here. Their dedicated segment can
       // still retain individual records without creating a contradictory copy.
@@ -159,17 +180,20 @@ function compactWholeEvidence(
 function compactWholeAutobiography(
   label: string,
   value: unknown,
-  maximumCharacters: number,
+  maximumTokens: number,
 ): string | null {
   const retained: Record<string, unknown> = { _truncated: true };
   const render = (data: Record<string, unknown>) =>
     `${label}\n${JSON.stringify(data)}`;
-  if (render(retained).length > maximumCharacters) return null;
+  if (estimatePromptTokens(render(retained)) > maximumTokens) return null;
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return render(retained);
   const original = value as Record<string, unknown>;
   const keep = (key: string, item: unknown) => {
-    if (render({ ...retained, [key]: item }).length <= maximumCharacters)
+    if (
+      estimatePromptTokens(render({ ...retained, [key]: item })) <=
+      maximumTokens
+    )
       retained[key] = item;
   };
   for (const key of ["revision", "fromUtc", "throughUtc", "summaryFirstPerson"])
@@ -198,7 +222,8 @@ function compactJsonValue(
 ): unknown {
   if (typeof value === "string") {
     if (value.length <= maximumString) return value;
-    return value.slice(0, Math.max(1, maximumString - 1)) + "…";
+    const prefix = value.slice(0, Math.max(1, maximumString - 1));
+    return prefix.replace(/[\uD800-\uDBFF]$/u, "") + "…";
   }
   if (Array.isArray(value)) {
     return value
@@ -220,21 +245,29 @@ function compactJsonValue(
   return value;
 }
 
-function minimumPromptCharacters(value: string): number {
+function minimumPromptTokens(value: string): number {
   const referencePrefix = "USER_MODEL_JSON\n";
   if (value.startsWith(referencePrefix + "REFERENCE_CONTEXT_JSON\n"))
     return (
-      referencePrefix.length +
-      minimumPromptCharacters(value.slice(referencePrefix.length))
+      estimatePromptTokens(referencePrefix) +
+      minimumPromptTokens(value.slice(referencePrefix.length))
     );
   const newline = value.indexOf("\n");
   if (newline <= 0) return 1;
   const label = value.slice(0, newline);
-  if (label === "CURRENT_USER_MESSAGE_JSON") return value.length;
+  if (label === "CURRENT_USER_MESSAGE_JSON") return estimatePromptTokens(value);
   if (!/^[A-Z0-9_]+_JSON$/u.test(label)) return 1;
   try {
     JSON.parse(value.slice(newline + 1));
-    return `${label}\n{"_truncated":true}`.length;
+    return estimatePromptTokens(
+      `${label}\n${
+        label === "RECENT_VERBATIM_JSON"
+          ? "[]"
+          : label === "RETRIEVED_EVIDENCE_JSON"
+            ? '{"_truncated":true,"evidence":[]}'
+            : '{"_truncated":true}'
+      }`,
+    );
   } catch {
     return 1;
   }
@@ -299,7 +332,8 @@ export class PromptSegmentRegistry<
         continue;
       }
       const normalized = rendered.content.trim();
-      const exceedsSegmentBudget = normalized.length > segment.tokenBudget * 4;
+      const exceedsSegmentBudget =
+        estimatePromptTokens(normalized) > segment.tokenBudget;
       if (
         !segment.required &&
         segment.globalOverflowPolicy === "drop" &&
@@ -373,6 +407,7 @@ export class PromptSegmentRegistry<
       prompt,
       trace: {
         segments: traces,
+        tokenEstimateMethod: PROMPT_TOKEN_ESTIMATE_METHOD,
         droppedSegmentIds: traces
           .filter((trace) => !trace.included && trace.reason !== "empty")
           .map((trace) => trace.id),
@@ -485,11 +520,13 @@ function fitRequiredCandidates<TContext extends PromptContext>(
     const largest = [...required]
       .filter(
         (candidate) =>
-          candidate.content.length > minimumPromptCharacters(candidate.content),
+          estimatePromptTokens(candidate.content) >
+          minimumPromptTokens(candidate.content),
       )
       .sort(
         (left, right) =>
-          right.content.length - left.content.length ||
+          estimatePromptTokens(right.content) -
+            estimatePromptTokens(left.content) ||
           left.segment.id.localeCompare(right.segment.id),
       )[0];
     if (largest === undefined) {
@@ -499,13 +536,10 @@ function fitRequiredCandidates<TContext extends PromptContext>(
       );
     }
     const excess = assemblyTokens(required) - maximumTokens;
-    const minimumCharacters = minimumPromptCharacters(largest.content);
-    largest.content = truncatePromptToCharacterBudget(
+    const minimumTokens = minimumPromptTokens(largest.content);
+    largest.content = truncatePromptToTokenBudget(
       largest.content,
-      Math.max(
-        minimumCharacters,
-        largest.content.length - Math.max(1, excess * 4),
-      ),
+      Math.max(minimumTokens, estimatePromptTokens(largest.content) - excess),
     );
     largest.globallyTruncated = true;
   }
@@ -516,31 +550,17 @@ function fitOptionalCandidate<TContext extends PromptContext>(
   candidate: Candidate<TContext>,
   maximumTokens: number,
 ): boolean {
-  let low = minimumPromptCharacters(candidate.content);
-  let high = candidate.content.length;
-  let best = 0;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const original = candidate.content;
-    candidate.content = original.slice(0, middle);
-    const fits = assemblyTokens([...selected, candidate]) <= maximumTokens;
-    candidate.content = original;
-    if (fits) {
-      best = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  if (best === 0) return false;
-  if (best < candidate.content.length) {
-    candidate.content = truncatePromptToCharacterBudget(
-      candidate.content,
-      best,
-    );
-    candidate.globallyTruncated = true;
-  }
-  return true;
+  const separatorTokens = selected.some(
+    (item) => item.segment.placement === candidate.segment.placement,
+  )
+    ? estimatePromptTokens("\n")
+    : 0;
+  const available = maximumTokens - assemblyTokens(selected) - separatorTokens;
+  if (available < minimumPromptTokens(candidate.content)) return false;
+  const original = candidate.content;
+  candidate.content = truncatePromptToTokenBudget(original, available);
+  candidate.globallyTruncated = candidate.content !== original;
+  return assemblyTokens([...selected, candidate]) <= maximumTokens;
 }
 
 function buildTrace<TContext extends PromptContext>(

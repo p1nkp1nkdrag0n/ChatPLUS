@@ -496,10 +496,8 @@ function compactScheduleItem(item: ScheduleItemLike) {
   };
 }
 
-const FUTURE_SCHEDULE_SEGMENT_CHARACTER_BUDGET = 700 * 4;
+const FUTURE_SCHEDULE_SEGMENT_TOKEN_BUDGET = 700;
 const FUTURE_SCHEDULE_LABEL = "FUTURE_SCHEDULE_JSON\n";
-const FUTURE_SCHEDULE_JSON_CHARACTER_BUDGET =
-  FUTURE_SCHEDULE_SEGMENT_CHARACTER_BUDGET - FUTURE_SCHEDULE_LABEL.length;
 
 function compactFutureSchedule(
   items: readonly ScheduleItemLike[],
@@ -529,7 +527,8 @@ function compactFutureSchedule(
       omittedItemCount: compacted.length - proposed.length,
     };
     if (
-      JSON.stringify(payload).length <= FUTURE_SCHEDULE_JSON_CHARACTER_BUDGET
+      estimatePromptTokens(FUTURE_SCHEDULE_LABEL + JSON.stringify(payload)) <=
+      FUTURE_SCHEDULE_SEGMENT_TOKEN_BUDGET
     ) {
       selected.push(candidate);
     }
@@ -995,12 +994,15 @@ export function assembleChatPrompt(
   const registry = new PromptSegmentRegistry<DefaultPromptContext>(
     createDefaultPromptSegments().map((segment) =>
       segment.id === "16_user_message" ||
+      segment.id === "08_runtime_state" ||
+      segment.id === "10_current_time" ||
       (turnControl !== undefined && segment.id === "15_reply_strategy")
         ? {
             ...segment,
             // Reserve this turn's actual payload, not a larger global context.
-            // The legacy 500-token strategy slot predates the finite controls
-            // and otherwise clips their qualifications before global admission.
+            // Runtime state/time are bounded canonical projections. Preserve
+            // their authority/semantics and the strategy's finite controls before
+            // global admission instead of clipping them to their legacy slots.
             tokenBudget: Math.max(
               segment.tokenBudget,
               estimatePromptTokens(segment.render(promptSafeContext) ?? ""),

@@ -10,9 +10,9 @@ import {
 const NOW = "2026-08-21T10:00:00.000Z";
 
 describe("conversation retention", () => {
-  it("estimates Han characters directly and other text in four-character units", () => {
+  it("uses the shared conservative Unicode estimate for retained conversation", () => {
     expect(estimateConversationTokens("hello")).toBe(2);
-    expect(estimateConversationTokens("\u4f60\u597dabcde")).toBe(4);
+    expect(estimateConversationTokens("\u4f60\u597dabcde")).toBe(6);
   });
 
   it("selects only complete reactive turns at a soft boundary", () => {

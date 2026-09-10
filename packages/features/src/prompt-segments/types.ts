@@ -55,6 +55,8 @@ export interface PromptSegmentTrace {
 
 /** Contains only sizes and identifiers; rendered content is never retained. */
 export interface PromptAssemblyTrace {
+  /** Versioned heuristic for planning, never provider-reported token usage. */
+  readonly tokenEstimateMethod?: "unicode-heuristic-v1";
   readonly segments: readonly PromptSegmentTrace[];
   readonly droppedSegmentIds: readonly string[];
   readonly estimatedInputTokens: number;

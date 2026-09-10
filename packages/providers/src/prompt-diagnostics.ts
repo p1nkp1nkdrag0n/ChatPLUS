@@ -1,11 +1,20 @@
 import { createHash } from "node:crypto";
 
 import type { LLMChatMessage } from "@personasim/contracts";
+import {
+  estimatePromptTokens,
+  PROMPT_TOKEN_ESTIMATE_METHOD,
+} from "@personasim/kernel";
 
 export const LLM_PROMPT_LAYOUT_VERSION = "stable-prefix-v1";
 
 /** Diagnostic character counts describe our messages JSON, never billed tokens. */
 export interface LlmPromptDiagnostics {
+  tokenEstimateMethod: typeof PROMPT_TOKEN_ESTIMATE_METHOD;
+  /** Content only; excludes message framing and any native response schema. */
+  estimatedContentTokens: number;
+  /** Separately estimated native response format, never billed token usage. */
+  estimatedResponseFormatTokens?: number;
   layoutVersion: typeof LLM_PROMPT_LAYOUT_VERSION;
   serialization: "messages-json-v1";
   messagesSha256: string;
@@ -16,6 +25,7 @@ export interface LlmPromptDiagnostics {
     role: LLMChatMessage["role"];
     contentSha256: string;
     characters: number;
+    estimatedContentTokens: number;
   }[];
   comparison: "previous_same_purpose" | "no_baseline" | "size_limit";
   /** Identifies the previous started request even if concurrent responses finish out of order. */
@@ -65,18 +75,29 @@ export class PromptDiagnosticsTracker {
     const previous = this.#previous.get(purpose);
     const withinLimit = serialized.length <= this.maximumCharacters;
     const result: LlmPromptDiagnostics = {
+      tokenEstimateMethod: PROMPT_TOKEN_ESTIMATE_METHOD,
+      estimatedContentTokens: messages.reduce(
+        (total, message) => total + estimatePromptTokens(message.content),
+        0,
+      ),
       layoutVersion: LLM_PROMPT_LAYOUT_VERSION,
       serialization: "messages-json-v1",
       messagesSha256: sha256(serialized),
       serializedCharacters: serialized.length,
       ...(responseFormat === undefined
         ? {}
-        : { responseFormatSha256: sha256(JSON.stringify(responseFormat)) }),
+        : {
+            responseFormatSha256: sha256(JSON.stringify(responseFormat)),
+            estimatedResponseFormatTokens: estimatePromptTokens(
+              JSON.stringify(responseFormat),
+            ),
+          }),
       messages: messages.map((message, index) => ({
         index,
         role: message.role,
         contentSha256: sha256(message.content),
         characters: message.content.length,
+        estimatedContentTokens: estimatePromptTokens(message.content),
       })),
       comparison: !withinLimit
         ? "size_limit"

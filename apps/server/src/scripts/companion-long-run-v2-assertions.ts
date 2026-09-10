@@ -4,7 +4,7 @@ import {
 } from "@personasim/contracts";
 import {
   RELATIONSHIP_SINGLE_TURN_LIMITS,
-  estimateConversationTokens,
+  estimatePromptTokens,
 } from "@personasim/features";
 import { DateTime } from "luxon";
 
@@ -541,8 +541,9 @@ function evaluate(
       );
     }
     case "prompt_budget_bounded": {
-      const tokens = input.logicalCalls.map((call) =>
-        estimateConversationTokens(`${call.system}\n${call.prompt}`),
+      const tokens = input.logicalCalls.map(
+        (call) =>
+          estimatePromptTokens(call.system) + estimatePromptTokens(call.prompt),
       );
       const replay = input.response?.idempotentReplay === true;
       return result(

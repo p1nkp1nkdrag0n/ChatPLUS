@@ -6,7 +6,11 @@ import {
   createDefaultPromptSegments,
   createFollowUpContextPromptSegment,
 } from "./default-segments.js";
-import { estimatePromptTokens, PromptSegmentRegistry } from "./registry.js";
+import {
+  estimatePromptTokens,
+  PromptSegmentRegistry,
+  truncatePromptToTokenBudget,
+} from "./registry.js";
 import {
   PromptSegmentRegistryError,
   type PromptContext,
@@ -43,6 +47,86 @@ function segment(input: {
 }
 
 describe("PromptSegmentRegistry", () => {
+  it.each([
+    "中文没有同意，不能省略条件。",
+    "English long prose.",
+    'JSON {"ok":false}',
+    "中英 mixed 😀😀",
+  ])(
+    "enforces local and global Unicode budgets consistently: %s",
+    (content) => {
+      for (const budget of [1, 2, 3, 10, 20]) {
+        const text = content.repeat(20);
+        const shortened = truncatePromptToTokenBudget(text, budget);
+        expect(estimatePromptTokens(shortened)).toBeLessThanOrEqual(budget);
+        expect(shortened).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
+        const registry = new PromptSegmentRegistry([
+          segment({
+            id: "01_required",
+            content: text,
+            required: true,
+            tokenBudget: 100,
+          }),
+          segment({ id: "02_optional", content: text, tokenBudget: 100 }),
+        ]);
+        const result = registry.render({}, { maxInputTokens: budget });
+        expect(result.trace.estimatedInputTokens).toBeLessThanOrEqual(budget);
+        expect(result.trace.estimatedInputTokens).toBe(
+          estimatePromptTokens(result.prompt),
+        );
+        expect(result.trace.tokenEstimateMethod).toBe("unicode-heuristic-v1");
+      }
+    },
+  );
+
+  it("drops an oversized Chinese evidence record whole and retains the complete smaller record", () => {
+    const oversized = {
+      id: "oversized",
+      quote: "我曾考虑过。".repeat(80) + "但是最终没有执行😀。",
+    };
+    const retained = {
+      id: "retained",
+      quote: "I considered it，但没有执行😀。",
+    };
+    const original = `RETRIEVED_EVIDENCE_JSON\n${JSON.stringify({ evidence: [oversized, retained] })}`;
+    for (const global of [false, true]) {
+      const registry = new PromptSegmentRegistry([
+        segment({
+          id: "01_evidence",
+          content: original,
+          tokenBudget: global ? 10_000 : 100,
+        }),
+      ]);
+      const result = registry.render({}, global ? { maxInputTokens: 100 } : {});
+      expect(JSON.parse(result.prompt.split("\n")[1]!)).toMatchObject({
+        evidence: [retained],
+      });
+      expect(result.prompt).not.toContain("oversized");
+      expect(result.trace.segments[0]).toMatchObject({
+        included: true,
+        truncated: true,
+      });
+      expect(result.trace.estimatedInputTokens).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("applies atomic segment admission to Chinese text rather than its UTF-16 length", () => {
+    const registry = new PromptSegmentRegistry([
+      segment({
+        id: "01_atomic",
+        content: "没有同意".repeat(20),
+        tokenBudget: 30,
+        globalOverflowPolicy: "drop",
+      }),
+    ]);
+    const result = registry.render({});
+    expect(result.prompt).toBe("");
+    expect(result.trace.droppedSegmentIds).toEqual(["01_atomic"]);
+    expect(result.trace.segments[0]).toMatchObject({
+      reason: "segment_budget",
+      truncated: false,
+    });
+  });
   it.each([90, 300, 1_000])(
     "never slices evidence or recent messages at %s tokens",
     (budget) => {
@@ -257,7 +341,7 @@ describe("PromptSegmentRegistry", () => {
         }),
       ]);
 
-    const truncated = createRegistry().render({}, { maxInputTokens: 13 });
+    const truncated = createRegistry().render({}, { maxInputTokens: 23 });
     expect(truncated.prompt).toContain("STRUCTURED_JSON");
     expect(() => {
       JSON.parse(truncated.prompt.split("STRUCTURED_JSON\n")[1]!);
@@ -317,6 +401,15 @@ describe("PromptSegmentRegistry", () => {
     expect(parsed).toHaveProperty("dialogue");
     expect(parsed).toHaveProperty("relationship");
     expect(result.trace.segments[0]).toMatchObject({ truncated: true });
+  });
+
+  it("keeps code points valid when compacting a non-evidence JSON string", () => {
+    const value = `OTHER_JSON\n${JSON.stringify({ value: "😀".repeat(1_000) })}`;
+    const result = truncatePromptToTokenBudget(value, 90);
+    const parsed = JSON.parse(result.split("\n")[1]!) as { value: string };
+    expect(parsed.value).toContain("😀");
+    expect(parsed.value).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
+    expect(estimatePromptTokens(result)).toBeLessThanOrEqual(90);
   });
 
   it.each([60, 300, 1_200, 3_000])(

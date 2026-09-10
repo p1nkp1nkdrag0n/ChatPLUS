@@ -816,6 +816,16 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   plan_schedule: planFixture,
   chat_turn: chatFixture,
   repair_chat_turn: () => repairTurnFixture(),
+  review_reply_goal: () => ({
+    goalAchieved: true,
+    explanation:
+      "Deterministic fixture review; no live semantic judgment was performed.",
+    deviations: [],
+    revisionInstructions: "",
+  }),
+  rewrite_reply_goal: () => ({
+    text: "我在认真听，也会围绕你刚才的问题继续说。",
+  }),
   enrich_activity: enrichFixture,
   compose_proactive_message: proactiveFixture,
   checkpoint_autobiography: checkpointAutobiographyFixture,

@@ -118,6 +118,9 @@ export class TurnCommitService {
         ...(input.turn.semanticGuardAudit === undefined
           ? {}
           : { semanticReplyGuard: input.turn.semanticGuardAudit }),
+        ...(input.turn.replyGoalReviewAudit === undefined
+          ? {}
+          : { replyGoalReview: input.turn.replyGoalReviewAudit }),
         ...(input.turn.explicitFactReplyGuardAudit === undefined
           ? {}
           : {

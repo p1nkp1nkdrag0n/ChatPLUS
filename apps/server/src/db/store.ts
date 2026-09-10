@@ -677,7 +677,7 @@ export class DatabaseStore extends LegacyScheduleStore {
   }
 
   getSettings(): Record<string, unknown> {
-    const output: Record<string, unknown> = {};
+    const output: Record<string, unknown> = { replyGoalReviewEnabled: false };
     for (const row of this.database
       .prepare("SELECT key, value_json FROM settings")
       .all() as Array<{

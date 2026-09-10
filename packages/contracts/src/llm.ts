@@ -32,6 +32,8 @@ export const LlmPurposeSchema = z.enum([
   "plan_schedule",
   "chat_turn",
   "repair_chat_turn",
+  "review_reply_goal",
+  "rewrite_reply_goal",
   "enrich_activity",
   "compose_proactive_message",
   "checkpoint_autobiography",

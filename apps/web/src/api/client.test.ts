@@ -8,6 +8,93 @@ describe("web API normalization", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([undefined, false, "true", true])(
+    "enables reply goal review only for a stored boolean true (%s)",
+    async (replyGoalReviewEnabled) => {
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(
+              JSON.stringify({ settings: { replyGoalReviewEnabled } }),
+            ),
+          ),
+      );
+      await expect(api.settings.get()).resolves.toMatchObject({
+        replyGoalReviewEnabled: replyGoalReviewEnabled === true,
+      });
+    },
+  );
+
+  it("saves the reply review preference without immutable runtime settings", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ settings: { replyGoalReviewEnabled: true } }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ settings: { replyGoalReviewEnabled: true } }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      api.settings.update({
+        replyGoalReviewEnabled: true,
+        clockMode: "fake",
+        model: "fixture",
+      }),
+    ).resolves.toMatchObject({ replyGoalReviewEnabled: true });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/settings",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ replyGoalReviewEnabled: true }),
+      }),
+    ]);
+  });
+
+  it("preserves request and reply links in message fetches and send responses", async () => {
+    const userMessage = {
+      id: "user-1",
+      role: "user",
+      content: "你好",
+      clientMessageId: "request-1",
+    };
+    const assistantMessage = {
+      id: "assistant-1",
+      role: "assistant",
+      content: "你好呀",
+      inReplyToMessageId: "user-1",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ messages: [userMessage, assistantMessage] }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ userMessage, assistantMessage })),
+        ),
+    );
+    const fetched = await api.sessions.messages("session-1");
+    expect(fetched.messages[0]?.clientMessageId).toBe("request-1");
+    expect(fetched.messages[1]?.inReplyToMessageId).toBe("user-1");
+    const sent = await api.sessions.send("session-1", {
+      agentId: "agent-1",
+      clientMessageId: "request-1",
+      text: "你好",
+    });
+    expect(sent.userMessage.clientMessageId).toBe("request-1");
+    expect(sent.assistantMessage.inReplyToMessageId).toBe("user-1");
+  });
+
   it("normalizes immutable correspondence runtime capabilities", async () => {
     vi.stubGlobal(
       "fetch",

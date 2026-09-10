@@ -1,4 +1,4 @@
-import { Check, ShieldCheck } from "lucide-react";
+import { Check, MessageCircleMore, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -36,7 +36,7 @@ export default function SettingsPage() {
             开发者工具
           </Link>
         }
-        description="配置供应商、选择模型，并用真实回复验证连接。"
+        description="配置模型、回复体验与本地偏好。"
       />
       <ProviderSettings />
       {query.isPending ? <LoadingBlock label="正在读取本地设置…" /> : null}
@@ -49,6 +49,44 @@ export default function SettingsPage() {
             mutation.mutate();
           }}
         >
+          <section className="settings-section">
+            <div className="settings-section__title">
+              <MessageCircleMore size={20} />
+              <div>
+                <h2>回复体验</h2>
+                <p>应用于所有会话，保存后从下一条消息生效。</p>
+              </div>
+            </div>
+            <div className="settings-preference">
+              <div className="settings-preference__copy">
+                <h3 id="reply-goal-review-label">回复目标复核</h3>
+                <p id="reply-goal-review-description">
+                  发送前，让当前会话的模型结合上下文检查回复是否满足本轮对话目标，必要时重新生成。
+                </p>
+                <p className="settings-preference__note">
+                  默认关闭。开启后会增加等待时间和模型用量；复核未通过时可重试。
+                </p>
+              </div>
+              <button
+                className="settings-switch"
+                type="button"
+                role="switch"
+                aria-checked={form.replyGoalReviewEnabled}
+                aria-labelledby="reply-goal-review-label"
+                aria-describedby="reply-goal-review-description"
+                disabled={mutation.isPending}
+                onClick={() => {
+                  mutation.reset();
+                  setForm({
+                    ...form,
+                    replyGoalReviewEnabled: !form.replyGoalReviewEnabled,
+                  });
+                }}
+              >
+                <span />
+              </button>
+            </div>
+          </section>
           <section className="settings-section">
             <div className="settings-section__title">
               <ShieldCheck size={20} />

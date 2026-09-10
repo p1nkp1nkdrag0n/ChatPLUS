@@ -31,7 +31,6 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { DateTime } from "luxon";
-import type { LlmExecutionSelection } from "@personasim/contracts";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
 import { llmApi, sessionModelKey } from "../api/llm";
 import { ChatModelToolbar } from "../components/llm/ChatModelToolbar";
@@ -51,6 +50,12 @@ import {
 } from "../hooks/agentEventQueryKeys";
 import { formatLocalTime } from "../lib/date";
 import { shouldSubmitChatKey } from "../lib/chatInput";
+import {
+  findChatSendReceipt,
+  prepareChatSend,
+  type ChatDraft,
+  type ChatSendInput,
+} from "../lib/chatSend";
 import {
   chatHref,
   findOwnedSession,
@@ -99,7 +104,7 @@ function CharacterChat({ characterId }: { characterId: string }) {
   const requestedSessionId = searchParams.get("sessionId");
   const [search, setSearch] = useState("");
   const [railOpen, setRailOpen] = useState(false);
-  const draftsRef = useRef(new Map<string, string>());
+  const draftsRef = useRef(new Map<string, ChatDraft>());
   const initialCreationRef = useRef(false);
   const mountedRef = useRef(true);
   const characterMenuRef = useRef<HTMLDetailsElement>(null);
@@ -489,11 +494,11 @@ function SessionConversation({
 }: {
   character: CharacterSpec;
   session: ChatSession;
-  drafts: Map<string, string>;
+  drafts: Map<string, ChatDraft>;
 }) {
   const characterId = character.id;
   const queryClient = useQueryClient();
-  const [text, setText] = useState(() => drafts.get(session.id) ?? "");
+  const [text, setText] = useState(() => drafts.get(session.id)?.text ?? "");
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
   const modelQuery = useQuery({
@@ -505,6 +510,8 @@ function SessionConversation({
       llmApi.setSession(session.id, selection),
     onSuccess: (value) => {
       queryClient.setQueryData(sessionModelKey(session.id), value);
+      const draft = drafts.get(session.id);
+      if (draft?.retryInput) drafts.set(session.id, { text: draft.text });
       setModelNotice(value.effective ? "已切换，下一条消息使用该模型。" : "");
     },
   });
@@ -512,10 +519,10 @@ function SessionConversation({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
+  const submittingRef = useRef(false);
   const mountedRef = useRef(true);
   const newlyArrivedSequentialIdsRef = useRef(new Set<string>());
   const animatedSequentialIdsRef = useRef(new Set<string>());
-  const knownMessageIdsAtSendStartRef = useRef<Set<string> | null>(null);
   const sendStates = useMutationState({
     filters: {
       mutationKey: ["chat-send", characterId, session.id],
@@ -524,10 +531,15 @@ function SessionConversation({
     select: (mutation) => ({
       status: mutation.state.status,
       error: mutation.state.error,
+      input: mutation.state.variables as ChatSendInput | undefined,
     }),
   });
   const latestSend = sendStates.at(-1);
   const sendPending = latestSend?.status === "pending";
+  const pendingInput = sendPending ? latestSend.input : undefined;
+  const knownMessageIdsAtSendStart = pendingInput
+    ? new Set(pendingInput.knownMessageIds)
+    : null;
   const messagesQuery = useQuery({
     queryKey: ["messages", characterId, session.id],
     queryFn: () => api.sessions.messages(session.id),
@@ -539,29 +551,41 @@ function SessionConversation({
           message.sessionId === session.id && message.agentId === characterId,
       )
     : [];
+  const sendReceipt = findChatSendReceipt(
+    messages,
+    latestSend?.input?.clientMessageId,
+  );
+  const pendingUserMessage: ChatMessage | undefined =
+    pendingInput && !sendReceipt.userMessage
+      ? {
+          id: `pending:${pendingInput.clientMessageId}`,
+          clientMessageId: pendingInput.clientMessageId,
+          sessionId: session.id,
+          agentId: characterId,
+          role: "user",
+          text: pendingInput.text,
+          createdAtUtc: pendingInput.createdAtUtc,
+        }
+      : undefined;
+  const displayMessages = pendingUserMessage
+    ? [...messages, pendingUserMessage]
+    : messages;
+  const awaitingReply = sendPending && !sendReceipt.assistantMessage;
   const updateText = (next: string) => {
     setText(next);
-    drafts.set(session.id, next);
+    // An edit starts a new logical message; unchanged retries keep their identity.
+    drafts.set(session.id, { text: next });
   };
   const sendMutation = useMutation({
     mutationKey: ["chat-send", characterId, session.id],
-    mutationFn: (input: {
-      text: string;
-      clientMessageId: string;
-      modelSelection: LlmExecutionSelection;
-    }) =>
+    mutationFn: (input: ChatSendInput) =>
       api.sessions.send(session.id, {
         agentId: characterId,
-        ...input,
+        text: input.text,
+        clientMessageId: input.clientMessageId,
+        modelSelection: input.modelSelection,
       }),
-    onMutate: () => {
-      knownMessageIdsAtSendStartRef.current = new Set(
-        messages.map((message) => message.id),
-      );
-    },
     onSuccess: (result) => {
-      drafts.delete(session.id);
-      if (mountedRef.current) setText("");
       const assistantDelivery = resolveMessageDelivery(result.assistantMessage);
       if (
         assistantDelivery.mode === "sequential" &&
@@ -590,8 +614,27 @@ function SessionConversation({
         }),
       ]);
     },
+    onError: async (_error, input) => {
+      // The response can be lost after the server commits. Reconcile before
+      // restoring the draft so an acknowledged turn is not offered for resend.
+      await queryClient.invalidateQueries({
+        queryKey: ["messages", characterId, session.id],
+      });
+      const current = queryClient.getQueryData<{ messages: ChatMessage[] }>([
+        "messages",
+        characterId,
+        session.id,
+      ]);
+      if (
+        !findChatSendReceipt(current?.messages ?? [], input.clientMessageId)
+          .assistantMessage
+      ) {
+        drafts.set(session.id, { text: input.text, retryInput: input });
+        if (mountedRef.current) setText(input.text);
+      }
+    },
     onSettled: () => {
-      knownMessageIdsAtSendStartRef.current = null;
+      submittingRef.current = false;
     },
   });
 
@@ -605,8 +648,33 @@ function SessionConversation({
     rememberLastConversation(characterId, session.id);
   }, [characterId, session.id]);
   useEffect(() => {
-    if (!sendPending) setText(drafts.get(session.id) ?? "");
-  }, [drafts, sendPending, session.id]);
+    if (sendPending) return;
+    let draft = drafts.get(session.id);
+    if (
+      sendReceipt.assistantMessage &&
+      draft?.retryInput?.clientMessageId === latestSend?.input?.clientMessageId
+    ) {
+      drafts.delete(session.id);
+      draft = undefined;
+    } else if (
+      !draft &&
+      latestSend?.status === "error" &&
+      latestSend.input &&
+      !sendReceipt.assistantMessage
+    ) {
+      // Mutation state survives leaving this character while a request runs.
+      draft = { text: latestSend.input.text, retryInput: latestSend.input };
+      drafts.set(session.id, draft);
+    }
+    setText(draft?.text ?? "");
+  }, [
+    drafts,
+    latestSend?.input,
+    latestSend?.status,
+    sendPending,
+    sendReceipt.assistantMessage,
+    session.id,
+  ]);
   useEffect(() => {
     if (!emojiOpen) return;
     const close = (event: PointerEvent) => {
@@ -624,7 +692,7 @@ function SessionConversation({
   }, []);
   useEffect(() => {
     scrollToLatest();
-  }, [messages.length, scrollToLatest, sendPending]);
+  }, [displayMessages.length, scrollToLatest, awaitingReply]);
   const finishSequentialDelivery = useCallback((messageId: string) => {
     newlyArrivedSequentialIdsRef.current.delete(messageId);
   }, []);
@@ -636,6 +704,11 @@ function SessionConversation({
     if (
       !message ||
       sendPending ||
+      submittingRef.current ||
+      queryClient.isMutating({
+        mutationKey: ["chat-send", characterId, session.id],
+        exact: true,
+      }) > 0 ||
       modelMutation.isPending ||
       modelQuery.isError ||
       !modelQuery.data?.effective ||
@@ -643,12 +716,17 @@ function SessionConversation({
       messagesQuery.isError
     )
       return;
+    const input = prepareChatSend(
+      drafts.get(session.id),
+      message,
+      modelQuery.data.effective,
+      messages,
+    );
+    submittingRef.current = true;
+    drafts.delete(session.id);
+    setText("");
     setEmojiOpen(false);
-    sendMutation.mutate({
-      text: message,
-      clientMessageId: crypto.randomUUID(),
-      modelSelection: { ...modelQuery.data.effective },
-    });
+    sendMutation.mutate(input);
   };
   const insertEmoji = (emoji: string) => {
     const input = textareaRef.current;
@@ -673,14 +751,14 @@ function SessionConversation({
         {messagesQuery.isError ? (
           <ErrorBlock error={messagesQuery.error} />
         ) : null}
-        {messagesQuery.isSuccess && messages.length === 0 ? (
+        {messagesQuery.isSuccess && displayMessages.length === 0 ? (
           <div className="conversation-opening">
             <CharacterAvatar characterId={characterId} size={88} />
             <h2>从此刻开始</h2>
             <p>和{character.identity.name}聊聊今天，或是刚刚浮上心头的小事。</p>
           </div>
         ) : null}
-        {messages.map((message) => (
+        {displayMessages.map((message) => (
           <MessageBubble
             key={message.id}
             message={message}
@@ -689,7 +767,7 @@ function SessionConversation({
             timezone={character.identity.timezone}
             animateSequential={shouldAnimateLiveMessage(message, {
               sendPending: sendPending,
-              knownMessageIdsAtSendStart: knownMessageIdsAtSendStartRef.current,
+              knownMessageIdsAtSendStart,
               explicitlyAnimatedIds: newlyArrivedSequentialIdsRef.current,
               alreadyAnimatedIds: animatedSequentialIdsRef.current,
             })}
@@ -698,12 +776,16 @@ function SessionConversation({
             onDeliveryComplete={finishSequentialDelivery}
           />
         ))}
-        {sendPending ? (
-          <div className="message-group message-group--assistant is-thinking">
+        {awaitingReply ? (
+          <div
+            className="message-group message-group--assistant is-thinking"
+            data-testid="chat-typing"
+            role="status"
+          >
             <CharacterAvatar characterId={characterId} size={64} />
             <div className="message-content">
-              <span className="message-meta">正在想一想…</span>
-              <div className="thinking-dots" aria-label="正在回复">
+              <span className="message-meta">对方正在输入中...</span>
+              <div className="thinking-dots" aria-label="对方正在输入中...">
                 <span />
                 <span />
                 <span />
@@ -725,7 +807,7 @@ function SessionConversation({
           notice={modelNotice}
           error={modelMutation.error ?? modelQuery.error}
         />
-        {latestSend?.status === "error" ? (
+        {latestSend?.status === "error" && !sendReceipt.assistantMessage ? (
           <ErrorBlock error={latestSend.error} />
         ) : null}
         <div className="composer">

@@ -359,9 +359,18 @@ test.describe("Dearvale desktop journeys", () => {
     await page.getByRole("button", { name: "插入 🌿", exact: true }).click();
     await expect(input).toHaveValue("今天的风很温柔🌿");
     let failedFirstSend = false;
+    const sentInputs: unknown[] = [];
+    let releaseFirstFailure!: () => void;
+    const firstFailure = new Promise<void>((resolve) => {
+      releaseFirstFailure = resolve;
+    });
     await page.route(`**/api/sessions/${sessionId}/messages`, async (route) => {
+      if (route.request().method() === "POST") {
+        sentInputs.push(route.request().postDataJSON());
+      }
       if (route.request().method() === "POST" && !failedFirstSend) {
         failedFirstSend = true;
+        await firstFailure;
         await route.fulfill({
           status: 503,
           json: {
@@ -370,11 +379,33 @@ test.describe("Dearvale desktop journeys", () => {
         });
       } else await route.continue();
     });
-    await page.getByRole("button", { name: "发送消息" }).click();
+    await page.getByRole("button", { name: "发送消息" }).evaluate((button) => {
+      (button as HTMLButtonElement).click();
+      (button as HTMLButtonElement).click();
+    });
+    try {
+      await expect(input).toHaveValue("");
+      await expect(input).toBeDisabled();
+      await expect(
+        page.locator(".message-group--user .message-bubble"),
+      ).toHaveText("今天的风很温柔🌿");
+      await expect(page.getByTestId("chat-typing")).toContainText(
+        "对方正在输入中...",
+      );
+      await expect(
+        page.getByTestId("chat-typing").locator(".thinking-dots span"),
+      ).toHaveCount(3);
+      await expect(page.locator(".conversation-opening")).toHaveCount(0);
+      expect(sentInputs).toHaveLength(1);
+    } finally {
+      releaseFirstFailure();
+    }
     await expect(page.getByRole("alert")).toContainText(
       "暂时没有收到回复，请重试",
     );
     await expect(input).toHaveValue("今天的风很温柔🌿");
+    await expect(page.locator(".message-group--user")).toHaveCount(0);
+    await expect(page.getByTestId("chat-typing")).toHaveCount(0);
     const sent = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
@@ -382,6 +413,8 @@ test.describe("Dearvale desktop journeys", () => {
     );
     await page.getByRole("button", { name: "发送消息" }).click();
     expect((await sent).ok()).toBe(true);
+    expect(sentInputs).toHaveLength(2);
+    expect(sentInputs[1]).toEqual(sentInputs[0]);
     await expect(input).toHaveValue("");
     await expect(
       page.locator(".message-group--user .message-bubble"),
@@ -389,6 +422,73 @@ test.describe("Dearvale desktop journeys", () => {
     await expect(
       page.locator(".message-group--assistant .message-bubble").first(),
     ).toBeVisible();
+  });
+
+  test("replays an uncertain failed send without committing duplicate messages", async ({
+    page,
+    request,
+  }) => {
+    const characterId = await createCharacter(request, "发送恢复");
+    await page.goto(`/characters/${characterId}/chat`);
+    const input = page.getByTestId("chat-input");
+    await expect(input).toBeEnabled();
+    const sessionId = sessionFromUrl(page);
+    let hideCommittedMessages = true;
+    let postCount = 0;
+    const sentInputs: unknown[] = [];
+    await page.route(`**/api/sessions/${sessionId}/messages`, async (route) => {
+      if (route.request().method() === "GET" && hideCommittedMessages) {
+        await route.fulfill({ json: { messages: [] } });
+        return;
+      }
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      sentInputs.push(route.request().postDataJSON());
+      postCount += 1;
+      const response = await route.fetch();
+      if (postCount === 1) {
+        expect(response.ok()).toBe(true);
+        // Commit succeeded, but both the response and SSE refresh are hidden
+        // from this tab until the user retries the same logical request.
+        await route.fulfill({
+          status: 503,
+          json: {
+            error: { code: "TEMPORARY", message: "暂时没有收到回复，请重试" },
+          },
+        });
+      } else {
+        await route.fulfill({ response });
+      }
+    });
+    await input.fill("这条消息只应该发送一次");
+    await page.getByRole("button", { name: "发送消息" }).click();
+    await expect(page.getByRole("alert")).toContainText("暂时没有收到回复");
+    await expect(input).toHaveValue("这条消息只应该发送一次");
+    await expect(input).toBeEnabled();
+    hideCommittedMessages = false;
+    const replay = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().endsWith(`/api/sessions/${sessionId}/messages`),
+    );
+    await page.getByRole("button", { name: "发送消息" }).click();
+    const replayResult = (await (await replay).json()) as {
+      idempotentReplay: boolean;
+    };
+    expect(replayResult.idempotentReplay).toBe(true);
+    expect(sentInputs).toHaveLength(2);
+    expect(sentInputs[1]).toEqual(sentInputs[0]);
+    await expect(input).toHaveValue("");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByTestId("chat-typing")).toHaveCount(0);
+    await expect(
+      page.locator(".message-group--user .message-bubble"),
+    ).toHaveText("这条消息只应该发送一次");
+    const persisted = await request.get(`/api/sessions/${sessionId}/messages`);
+    const persistedResult = (await persisted.json()) as { messages: unknown[] };
+    expect(persistedResult.messages).toHaveLength(2);
   });
 
   test("keeps an old pending reply out of a newly selected conversation", async ({
@@ -399,6 +499,10 @@ test.describe("Dearvale desktop journeys", () => {
     await page.goto(`/characters/${characterId}/chat`);
     await expect(page.getByTestId("chat-input")).toBeEnabled();
     const oldId = sessionFromUrl(page);
+    let releaseGeneration!: () => void;
+    const generationHeld = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
     let releaseReply!: () => void;
     let notifyFetched!: () => void;
     const held = new Promise<void>((resolve) => {
@@ -412,6 +516,7 @@ test.describe("Dearvale desktop journeys", () => {
         await route.continue();
         return;
       }
+      await generationHeld;
       const response = await route.fetch();
       notifyFetched();
       await held;
@@ -419,7 +524,11 @@ test.describe("Dearvale desktop journeys", () => {
     });
     await page.getByTestId("chat-input").fill("这是第一段对话的问候");
     await page.getByRole("button", { name: "发送消息" }).click();
-    await fetched;
+    await expect(page.getByTestId("chat-typing")).toHaveCount(1);
+    await expect(page.getByTestId("chat-input")).toHaveValue("");
+    await expect(
+      page.locator(".message-group--user .message-bubble"),
+    ).toHaveText("这是第一段对话的问候");
     await page
       .getByRole("complementary", { name: "历史对话", exact: true })
       .getByRole("button", { name: "新建对话", exact: true })
@@ -429,8 +538,25 @@ test.describe("Dearvale desktop journeys", () => {
     await expect(page.getByTestId("chat-input")).toBeEnabled();
     await selectSession(page, oldId);
     await expect(page.getByTestId("chat-input")).toBeDisabled();
+    await expect(page.getByTestId("chat-input")).toHaveValue("");
+    await expect(
+      page.locator(".message-group--user .message-bubble"),
+    ).toHaveText("这是第一段对话的问候");
+    await expect(page.getByTestId("chat-typing")).toHaveCount(1);
     await selectSession(page, newId);
     await page.getByTestId("chat-input").fill("第二段对话自己的草稿");
+    releaseGeneration();
+    await fetched;
+    await selectSession(page, oldId);
+    await expect(
+      page.locator(".message-group--assistant .message-bubble").first(),
+    ).toBeVisible();
+    await expect(page.getByTestId("chat-typing")).toHaveCount(0);
+    await expect(page.getByTestId("chat-input")).toBeDisabled();
+    await expect(
+      page.locator(".message-group--user .message-bubble"),
+    ).toHaveText("这是第一段对话的问候");
+    await selectSession(page, newId);
     releaseReply();
     await expect(page.getByTestId("chat-input")).toHaveValue(
       "第二段对话自己的草稿",

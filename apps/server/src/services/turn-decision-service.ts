@@ -51,6 +51,7 @@ import {
 } from "./chat-output-budget.js";
 import type { LlmService } from "./llm-service.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
+import type { ReplyGoalReviewAudit } from "./reply-goal-review-service.js";
 import {
   conservativeSemanticReply,
   inspectSemanticReply,
@@ -202,6 +203,7 @@ export type ResolvedTurn = {
   modelScheduleActionAudit: ModelScheduleActionAudit;
   continuityEffects?: unknown;
   semanticGuardAudit?: SemanticReplyAudit;
+  replyGoalReviewAudit?: ReplyGoalReviewAudit;
   worldEffectsAudit?: {
     mode: "shadow" | "enforced";
     validation: WorldEffectsValidationResult;

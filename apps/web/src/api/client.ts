@@ -627,6 +627,12 @@ function normalizeMessage(row: Record<string, unknown>): ChatMessage {
     id: stringValue(row.id),
     sessionId: stringValue(row.sessionId),
     agentId: stringValue(row.agentId),
+    ...(typeof row.clientMessageId === "string"
+      ? { clientMessageId: row.clientMessageId }
+      : {}),
+    ...(typeof row.inReplyToMessageId === "string"
+      ? { inReplyToMessageId: row.inReplyToMessageId }
+      : {}),
     role: row.role === "user" || row.role === "system" ? row.role : "assistant",
     text,
     ...(validatedChunks ? { chunks: validatedChunks } : {}),
@@ -741,6 +747,7 @@ function normalizeSettings(value: unknown): AppSettings {
         : "off",
     locale: stringValue(settings.locale, "zh-CN"),
     defaultTimezone: stringValue(settings.defaultTimezone, "Asia/Shanghai"),
+    replyGoalReviewEnabled: settings.replyGoalReviewEnabled === true,
   };
 }
 

@@ -18,6 +18,7 @@ import {
   ShareComposerSelectionSchema,
   TriggerKeepsakeGenerationRequestSchema,
   UpdateLetterDraftRequestSchema,
+  UpdateSettingsRequestSchema,
 } from "@personasim/contracts";
 import { projectCharacterTime } from "@personasim/features";
 
@@ -443,12 +444,10 @@ export function registerRoutes(
   app.get("/api/agents/:id/sessions", (request) => {
     const { id } = idParamsSchema.parse(request.params);
     return {
-      sessions: conversations
-        .listSessions(id)
-        .map((session) => ({
-          ...session,
-          model: llm.settings?.sessionModel(session.id),
-        })),
+      sessions: conversations.listSessions(id).map((session) => ({
+        ...session,
+        model: llm.settings?.sessionModel(session.id),
+      })),
     };
   });
 
@@ -458,11 +457,9 @@ export function registerRoutes(
       .object({ title: z.string().max(200).optional() })
       .parse(request.body ?? {});
     const session = conversations.createSession(id, body.title);
-    return reply
-      .code(201)
-      .send({
-        session: { ...session, model: llm.settings?.sessionModel(session.id) },
-      });
+    return reply.code(201).send({
+      session: { ...session, model: llm.settings?.sessionModel(session.id) },
+    });
   });
 
   app.get("/api/sessions/:sessionId/messages", (request) => {
@@ -699,7 +696,7 @@ export function registerRoutes(
   }));
 
   const updateSettings = (request: FastifyRequest) => {
-    const values = z.record(z.string(), z.unknown()).parse(request.body);
+    const values = UpdateSettingsRequestSchema.parse(request.body);
     const forbidden = Object.keys(values).filter((key) =>
       /(api.?key|secret|password|token|credential)/i.test(key),
     );

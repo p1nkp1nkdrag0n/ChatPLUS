@@ -10,6 +10,7 @@ export * from "./events.js";
 export * from "./follow-up.js";
 export * from "./fuzzy-life-context.js";
 export * from "./llm.js";
+export * from "./reply-goal-review.js";
 export * from "./llm-capability.js";
 export * from "./life.js";
 export * from "./keepsake.js";

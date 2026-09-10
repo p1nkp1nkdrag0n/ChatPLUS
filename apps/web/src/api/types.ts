@@ -223,6 +223,8 @@ export interface ChatMessage {
   id: string;
   sessionId: string;
   agentId: string;
+  clientMessageId?: string;
+  inReplyToMessageId?: string;
   role: "user" | "assistant" | "system";
   text: string;
   chunks?: string[];
@@ -267,6 +269,7 @@ export interface AppSettings {
   keepsakeMode: "off" | "shadow" | "enforced";
   locale: string;
   defaultTimezone: string;
+  replyGoalReviewEnabled: boolean;
 }
 
 export type RetrievalRunStageName =

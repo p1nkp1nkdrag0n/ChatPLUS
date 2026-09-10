@@ -4,6 +4,8 @@ import {
   projectInteractionHistory,
 } from "./interaction-history-service.js";
 import type { ReplyRepairBudget } from "./semantic-reply-guard.js";
+import { inspectSemanticReply } from "./semantic-reply-guard.js";
+import { ReplyGoalReviewService } from "./reply-goal-review-service.js";
 import type { MemoryRecallRuntimeDiagnostic } from "@personasim/contracts";
 import {
   DEFAULT_CONVERSATION_RETENTION_POLICY,
@@ -65,6 +67,7 @@ import {
 import { TurnDecisionService } from "./turn-decision-service.js";
 import {
   WorldEffectService,
+  appendNegotiationReplyIssues,
   type ChatTurnDecisionPath,
 } from "./world-effect-service.js";
 
@@ -175,6 +178,8 @@ export class ConversationService {
 
   async chat(sessionId: string, rawInput: unknown): Promise<ChatTurnResult> {
     const input = chatMessageInputSchema.parse(rawInput);
+    const replyGoalReviewEnabled =
+      this.store.getSettings()["replyGoalReviewEnabled"] === true;
     const session = this.store.getSession(sessionId);
     if (!session) throw notFound("Session");
     if (session.agentId !== input.agentId) {
@@ -691,6 +696,106 @@ export class ConversationService {
             ...last.rejections,
           ],
         },
+      };
+    }
+    if (replyGoalReviewEnabled) {
+      const reviewed = await new ReplyGoalReviewService().resolve({
+        llm,
+        agentId: input.agentId,
+        userText: input.text,
+        generationSystem: assembledPrompt.system,
+        generationPrompt: assembledPrompt.prompt,
+        decision: finalized.world.decision,
+        authoritativeEffects: {
+          scheduleChanges: finalized.world.validation.accepted.map((effect) =>
+            effect.operation === "create"
+              ? {
+                  operation: effect.operation,
+                  title: effect.item.title,
+                  startAtUtc: effect.item.startAtUtc,
+                  endAtUtc: effect.item.endAtUtc,
+                }
+              : effect.operation === "reschedule"
+                ? {
+                    operation: effect.operation,
+                    itemId: effect.itemId,
+                    startAtUtc: effect.newStartAtUtc,
+                    endAtUtc: effect.newEndAtUtc,
+                  }
+                : { operation: effect.operation, itemId: effect.itemId },
+          ),
+          scheduleAction: finalized.world.negotiationPlan?.actionKind ?? "none",
+        },
+        // All server-controlled fact, permission and enforced schedule
+        // presentations remain authoritative even when a reviewer rejects them.
+        allowRewrite:
+          explicitFactReplyContract === undefined &&
+          consentModalityGuardContract === undefined &&
+          !(
+            this.options.scheduleNegotiationMode === "enforced" &&
+            finalized.world.negotiationPlan !== undefined &&
+            (finalized.world.negotiationPlan.actionKind !== "none" ||
+              finalized.world.negotiationPlan.effect !== undefined ||
+              finalized.world.negotiationPlan.presentationText !== undefined ||
+              finalized.world.negotiationPlan.rejections.length > 0)
+          ),
+        materialize: (text) =>
+          decisions.materializeReply(
+            { text },
+            spec,
+            assembledPrompt.replyStrategy,
+          ).reply,
+        inspect: (decision) => {
+          const inspection = decisions.inspect({
+            ...semanticContext,
+            agentId: input.agentId,
+            spec,
+            ...(effectivePersona === undefined ? {} : { effectivePersona }),
+            decision,
+            nowUtc,
+            capabilities,
+            userText: input.text,
+            ...(lifeContext === undefined
+              ? {}
+              : { causalContext: lifeContext }),
+          });
+          if (
+            this.options.scheduleNegotiationMode === "enforced" &&
+            finalized.world.negotiationPlan !== undefined
+          ) {
+            appendNegotiationReplyIssues(
+              inspection,
+              decision.reply.text,
+              finalized.world.negotiationPlan.effect !== undefined,
+              false,
+            );
+          }
+          return inspection.issues;
+        },
+      });
+      const finalSemantic = inspectSemanticReply({
+        ...semanticContext,
+        decision: reviewed.decision,
+      });
+      finalized = {
+        turn: {
+          ...finalized.turn,
+          replyGoalReviewAudit: reviewed.audit,
+          ...(finalized.turn.semanticGuardAudit === undefined
+            ? {}
+            : {
+                semanticGuardAudit: {
+                  ...finalized.turn.semanticGuardAudit,
+                  finalTextSha256: reviewed.audit.finalTextSha256,
+                  finalIssues: finalSemantic.issues,
+                  finalDiagnosis: finalSemantic.diagnosis,
+                  ...(finalSemantic.advice === undefined
+                    ? {}
+                    : { finalAdvice: finalSemantic.advice }),
+                },
+              }),
+        },
+        world: { ...finalized.world, decision: reviewed.decision },
       };
     }
     return this.commits.commit({

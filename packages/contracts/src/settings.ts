@@ -66,6 +66,7 @@ export const SettingsUpdateRequestSchema = z
     requestTimeoutMs: z.number().int().min(1_000).max(300_000).optional(),
     defaultTimezone: IanaTimezoneSchema.optional(),
     developerMode: z.boolean().optional(),
+    replyGoalReviewEnabled: z.boolean().optional(),
   })
   .strict()
   .refine(

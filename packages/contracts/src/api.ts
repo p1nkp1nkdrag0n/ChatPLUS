@@ -449,7 +449,9 @@ export const GetSettingsResponseSchema = z
   })
   .strict();
 export type GetSettingsResponse = z.infer<typeof GetSettingsResponseSchema>;
-export const UpdateSettingsRequestSchema = z.record(z.string(), z.unknown());
+export const UpdateSettingsRequestSchema = z
+  .object({ replyGoalReviewEnabled: z.boolean().optional() })
+  .catchall(z.unknown());
 export type UpdateSettingsRequest = z.infer<typeof UpdateSettingsRequestSchema>;
 export const UpdateSettingsResponseSchema = z
   .object({ settings: z.record(z.string(), z.unknown()) })

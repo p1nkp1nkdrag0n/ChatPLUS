@@ -1082,7 +1082,7 @@ function replyRejectsCommittedAgreement(text: string): boolean {
   );
 }
 
-function appendNegotiationReplyIssues(
+export function appendNegotiationReplyIssues(
   inspection: { issues: unknown[] },
   text: string,
   committed: boolean,

@@ -4,6 +4,7 @@ import {
   ImageProviderError,
   normalizeImageBaseUrl,
   RemoteImageGenerationProvider,
+  imagePrompt,
 } from "./achievement-images.js";
 import { createFixtureImageGenerationProvider } from "./image-generation.js";
 import * as imageDownloads from "./safe-image-download.js";
@@ -62,6 +63,71 @@ function oversizedStream(chunkSize: number, chunks: number) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("achievement image providers", () => {
+  it.each(["gold", "mother-of-pearl-aurora"] as const)(
+    "requests transparent style C wax with %s finish and restrained thematic engraving",
+    async (finish) => {
+      const v2 = { ...spec, version: "achievement_badge_v2" as const, finish };
+      const prompt = imagePrompt({ ...input, visualSpec: v2 });
+      expect(prompt).toContain("actual satin sealing wax");
+      expect(prompt).toContain("transparent alpha background");
+      expect(prompt).toContain("recessed engraving");
+      expect(prompt).toContain("Dearvale");
+      expect(prompt).toContain(spec.subject);
+      expect(prompt).toContain(
+        finish === "gold" ? "#C69A4F" : "pink, cyan, violet",
+      );
+      expect(prompt).not.toContain("enamel medallion");
+      const request = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(json({ data: [{ b64_json: base64 }] }));
+      await remote(request).generate({
+        ...input,
+        visualSpec: v2,
+        idempotencyKey: "badge:test:v2",
+      });
+      expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({
+        "idempotency-key": "badge:test:v2",
+      });
+      expect(
+        JSON.parse(request.mock.calls[0]![1]!.body as string),
+      ).toMatchObject({ background: "transparent", output_format: "png" });
+      const svg = new TextDecoder().decode(
+        (
+          await createFixtureImageGenerationProvider().generate({
+            ...input,
+            visualSpec: v2,
+          })
+        ).bytes,
+      );
+      expect(svg).not.toContain("<text");
+      expect(svg).not.toContain("<rect");
+      expect(svg).toContain(
+        finish === "gold" ? 'fill="#C69A4F"' : 'fill="url(#aurora)"',
+      );
+    },
+  );
+
+  it("does not send GPT-only transparency fields to a generic image model", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(json({ data: [{ b64_json: base64 }] }));
+    const provider = new RemoteImageGenerationProvider({
+      settings: {
+        protocol: "openai-compatible",
+        baseUrl: "https://images.example.test/v1",
+        model: "custom-image",
+      },
+      apiKey: "",
+      fetch: request,
+    });
+    await provider.generate({
+      ...input,
+      visualSpec: { ...spec, version: "achievement_badge_v2", finish: "gold" },
+    });
+    const body: unknown = JSON.parse(request.mock.calls[0]![1]!.body as string);
+    expect(body).not.toHaveProperty("background");
+    expect(body).not.toHaveProperty("output_format");
+  });
   it("supports deterministic badge fixtures with XML escaping and bounded dimensions", async () => {
     const provider = createFixtureImageGenerationProvider();
     const first = await provider.generate(input);

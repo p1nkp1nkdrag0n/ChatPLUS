@@ -73,6 +73,7 @@ describe("PersonaSim server integration", () => {
         "031_character_creation_origin.sql",
         "032_achievements.sql",
         "033_archive_system_demo_characters.sql",
+        "034_achievement_wax_versions.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database

@@ -45,16 +45,26 @@ export function registerAchievementRoutes(
     service.retryBadge(params.parse(request.params).id),
   );
   app.get("/api/achievements/:id/badge", async (request, reply) => {
-    const { thumbnail } = z
-      .strictObject({ thumbnail: z.enum(["true", "false"]).optional() })
+    const { thumbnail, v } = z
+      .strictObject({
+        thumbnail: z.enum(["true", "false"]).optional(),
+        v: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/u)
+          .optional(),
+      })
       .parse(request.query);
     const bytes = await service.readAsset(
       params.parse(request.params).id,
       thumbnail === "true",
+      v,
     );
     return reply
       .type("image/webp")
-      .header("cache-control", "private, max-age=86400")
+      .header(
+        "cache-control",
+        v ? "private, max-age=31536000, immutable" : "private, no-cache",
+      )
       .send(bytes);
   });
   app.get("/api/achievement-image/settings", (_request, reply) => {

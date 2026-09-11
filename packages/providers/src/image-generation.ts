@@ -14,7 +14,8 @@ export interface ImageGenerationInput {
 
 export interface GeneratedImageAsset {
   readonly bytes: Uint8Array;
-  readonly mimeType: "image/svg+xml" | "image/png" | "image/webp" | "image/jpeg";
+  readonly mimeType:
+    "image/svg+xml" | "image/png" | "image/webp" | "image/jpeg";
   readonly width: number;
   readonly height: number;
 }
@@ -34,12 +35,27 @@ export class FixtureImageGenerationProvider implements ImageGenerationProvider {
     // fixture so validation failures have the same Promise semantics as real
     // network providers.
     await Promise.resolve();
-    const parsed = input.visualSpec.version === "achievement_badge_v1"
-      ? AchievementBadgeVisualSpecSchema.parse(input.visualSpec)
-      : VisualPromptSpecSchema.parse(input.visualSpec);
-    const spec = { ...parsed, mood: "mood" in parsed ? parsed.mood : parsed.theme };
+    const parsed =
+      input.visualSpec.version === "achievement_badge_v1" ||
+      input.visualSpec.version === "achievement_badge_v2"
+        ? AchievementBadgeVisualSpecSchema.parse(input.visualSpec)
+        : VisualPromptSpecSchema.parse(input.visualSpec);
+    const spec = {
+      ...parsed,
+      mood: "mood" in parsed ? parsed.mood : parsed.theme,
+    };
     const width = boundedDimension(input.width);
     const height = boundedDimension(input.height);
+    if (parsed.version === "achievement_badge_v2") {
+      const color = parsed.finish === "gold" ? "#C69A4F" : "url(#aurora)";
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 100 100"><defs><linearGradient id="aurora" x2="1" y2="1"><stop stop-color="#DBB2C9"/><stop offset=".34" stop-color="#B3DEDE"/><stop offset=".65" stop-color="#B8A8D7"/><stop offset="1" stop-color="#E6D19F"/></linearGradient></defs><path d="M49 10C61 8 65 15 77 17C88 23 82 33 89 44C93 57 82 63 83 76C72 85 64 81 52 90C38 91 36 83 23 81C12 74 17 63 10 52C8 38 17 35 17 24C24 13 38 17 49 10Z" fill="${color}" stroke="#A87B43" stroke-width="1.5"/><circle cx="50" cy="50" r="29" fill="none" stroke="#E8D09A" stroke-width="1.5"/><path d="M48 69V39M49 52C34 50 34 35 34 35C50 33 54 43 49 52ZM49 44C64 43 67 28 67 28C49 29 46 37 49 44Z" fill="none" stroke="#E8D09A" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
+      return {
+        bytes: new TextEncoder().encode(svg),
+        mimeType: "image/svg+xml",
+        width,
+        height,
+      };
+    }
     const [paper, ink, accent] = [
       spec.palette[0]!,
       spec.palette[1]!,

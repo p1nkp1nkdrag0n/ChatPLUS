@@ -121,12 +121,13 @@ describe("achievement image job lifecycle", () => {
   async function imageResponse() {
     const asset = await createFixtureImageGenerationProvider().generate({
       visualSpec: {
-        version: "achievement_badge_v1",
+        version: "achievement_badge_v2",
         subject: "a leaf",
         setting: "a garden",
         motifs: ["leaf"],
         palette: ["#EDF3E9", "#426450"],
         theme: "memento",
+        finish: "gold",
       },
       width: 64,
       height: 64,
@@ -166,6 +167,13 @@ describe("achievement image job lifecycle", () => {
       clock.setUtc("2026-09-04T04:03:00.000Z");
       await service.processNext();
       expect(request).toHaveBeenCalledTimes(3);
+      expect(
+        new Set(
+          request.mock.calls.map(([, init]) =>
+            new Headers(init?.headers).get("idempotency-key"),
+          ),
+        ).size,
+      ).toBe(1);
       expect(service.get(achievement!.id).badge).toEqual({
         key: "star",
         status: "failed",

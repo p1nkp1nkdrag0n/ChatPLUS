@@ -59,8 +59,7 @@ export type AchievementImageSettingsInput = z.infer<
   typeof AchievementImageSettingsInputSchema
 >;
 
-export const AchievementBadgeVisualSpecSchema = z.strictObject({
-  version: z.literal("achievement_badge_v1"),
+const badgeVisualFields = {
   subject: z.string().min(1).max(500),
   setting: z.string().max(500),
   motifs: z.array(z.string().max(200)).max(6),
@@ -69,7 +68,62 @@ export const AchievementBadgeVisualSpecSchema = z.strictObject({
     .min(2)
     .max(5),
   theme: z.string().max(200),
+};
+export const AchievementBadgeVisualSpecV1Schema = z.strictObject({
+  version: z.literal("achievement_badge_v1"),
+  ...badgeVisualFields,
 });
+export const AchievementBadgeVisualSpecV2Schema = z.strictObject({
+  version: z.literal("achievement_badge_v2"),
+  ...badgeVisualFields,
+  finish: z.enum(["gold", "mother-of-pearl-aurora"]),
+});
+export const AchievementBadgeVisualSpecSchema = z.discriminatedUnion(
+  "version",
+  [AchievementBadgeVisualSpecV1Schema, AchievementBadgeVisualSpecV2Schema],
+);
 export type AchievementBadgeVisualSpec = z.infer<
   typeof AchievementBadgeVisualSpecSchema
 >;
+
+/** Cosmetic metadata only: never include achievement rules or thresholds. */
+export const ACHIEVEMENT_WAX_TIERS = {
+  1: { color: "#8B3542", name: "酒红" },
+  2: { color: "#3D654F", name: "松绿" },
+  3: { color: "#355678", name: "深蓝" },
+  4: { color: "#74518A", name: "紫色" },
+  5: { color: "#C69A4F", name: "金色" },
+  6: { color: "#D1B7D9", name: "珠母极光" },
+} as const;
+export type AchievementWaxTier = keyof typeof ACHIEVEMENT_WAX_TIERS;
+export const ACHIEVEMENT_WAX_BADGES = {
+  door: 1,
+  quill: 1,
+  message: 1,
+  envelope: 1,
+  mailbox: 1,
+  letter: 1,
+  sprout: 2,
+  leaf: 2,
+  sun: 3,
+  echo: 3,
+  calendar: 4,
+  flower: 4,
+  tree: 5,
+  star: 5,
+  orbit: 6,
+  constellation: 6,
+} as const satisfies Record<string, AchievementWaxTier>;
+export function getAchievementWaxBadge(key: string) {
+  const safeKey = Object.hasOwn(ACHIEVEMENT_WAX_BADGES, key)
+    ? (key as keyof typeof ACHIEVEMENT_WAX_BADGES)
+    : "door";
+  const tier = ACHIEVEMENT_WAX_BADGES[safeKey];
+  const root = `/dearvale/achievements/wax-v2/${safeKey}`;
+  return {
+    tier,
+    color: ACHIEVEMENT_WAX_TIERS[tier].color,
+    imageUrl: `${root}.webp`,
+    thumbnailUrl: `${root}.thumb.webp`,
+  };
+}

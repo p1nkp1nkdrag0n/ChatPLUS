@@ -346,6 +346,33 @@ describe("achievement collection", () => {
     expect(image.statusCode).toBe(200);
     expect(image.headers["content-type"]).toContain("image/webp");
     const before = image.rawPayload;
+    expect(image.headers["cache-control"]).toBe("private, no-cache");
+    const badge = app.personasim.achievements.get(target.id).badge;
+    const versioned = await app.inject({ method: "GET", url: badge.imageUrl! });
+    expect(versioned.rawPayload).toEqual(before);
+    expect(versioned.headers["cache-control"]).toBe(
+      "private, max-age=31536000, immutable",
+    );
+    expect(
+      (await app.inject({ method: "GET", url: badge.thumbnailUrl! }))
+        .statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/achievements/${target.id}/badge?v=invalid`,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/achievements/${target.id}/badge?v=${"f".repeat(64)}`,
+        })
+      ).statusCode,
+    ).toBe(404);
     app.personasim.characters.updateDraft(agent.id, {
       patch: { identity: { ...agent.identity, workOrRole: "天文学家" } },
     });

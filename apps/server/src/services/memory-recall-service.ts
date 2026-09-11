@@ -570,10 +570,8 @@ function runtimeRelationshipScore(
 ): number | undefined {
   const relationship = store.getRuntimeState(agentId)?.relationship;
   if (relationship === undefined) return undefined;
-  const score =
-    relationship.closeness * 0.35 +
-    relationship.trust * 0.4 +
-    relationship.familiarity * 0.25;
+  // Diagnostic only: this does not alter memory ranking or evidence authority.
+  const score = relationship.closeness;
   return Math.round(Math.max(0, Math.min(1, score)) * 1_000_000) / 1_000_000;
 }
 

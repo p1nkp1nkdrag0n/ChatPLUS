@@ -81,31 +81,25 @@ describe("initial relationship defaults", () => {
 
     expect(draft.userRelationship).toMatchObject({
       initialCloseness: 0.1,
-      initialTrust: 0.1,
       sharedContext: "",
     });
     expect(state.relationship).toMatchObject({
       closeness: 0.1,
-      trust: 0.1,
-      familiarity: 0.1,
     });
   });
 
   it("does not grant relationship progress from legacy relationship labels", () => {
     expect(initialRelationshipPreset("认识多年的亲密好友")).toEqual({
       closeness: 0.1,
-      trust: 0.1,
     });
     expect(initialRelationshipPreset("熟悉的朋友")).toEqual({
       closeness: 0.1,
-      trust: 0.1,
     });
   });
 
   it("ignores edited initial numeric configuration at state creation", () => {
     const draft = buildOriginalDraft(BASE_INPUT);
     draft.userRelationship.initialCloseness = 0.72;
-    draft.userRelationship.initialTrust = 0.81;
 
     expect(
       initialRuntimeState(
@@ -115,9 +109,6 @@ describe("initial relationship defaults", () => {
       ).relationship,
     ).toMatchObject({
       closeness: 0.1,
-      trust: 0.1,
-      familiarity: 0.1,
-      recentInteractionValence: 0,
     });
   });
 });

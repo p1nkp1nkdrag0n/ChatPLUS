@@ -13,7 +13,7 @@ Core persona rules include an origin (`user_spec`, `canon_extract`, `model_infer
 ## Runtime projections
 
 - `RuntimeState`: mood valence `[-1,1]`; energy, stress, arousal, social battery and focus `[0,1]`.
-- `RelationshipState`: closeness, trust, familiarity and recent interaction valence.
+- `RelationshipState`: one persistent `closeness` value in [0, 1], plus `userId` and the optional last-interaction timestamp. `RelationshipDelta` accepts only `closeness`. Retired trust, familiarity and recent-interaction fields are rejected by the strict schemas.
 - `DailyLifeContext`: one idempotent fuzzy context per character/local date, containing a short theme, coarse day period, a few intentions and availability. It has no required exact activity intervals.
 - `LifeThread`: a durable work, creative, relationship, relocation or personal-growth thread with current phase, pressure, progress summary and next uncertainty.
 - `LifePulse`: the character's current fuzzy focus and availability, with `observed` or `inferred` confidence.

@@ -16,7 +16,7 @@ import {
 } from "@personasim/contracts";
 import {
   buildConversationContextPlan,
-  RELATIONSHIP_BASELINE_FAMILIARITY_PER_TURN,
+  RELATIONSHIP_BASELINE_CLOSENESS_PER_TURN,
   resolveTemporalQuery,
   selectMemoryUseForTurn,
 } from "@personasim/features";
@@ -132,9 +132,7 @@ describe("continuity memory recall hierarchy", () => {
     const state = app.personasim.store.getRuntimeState(harness.agentId);
     if (state === undefined) throw new Error("Expected runtime state");
     const expectedRelationshipScore = roundScore(
-      state.relationship.closeness * 0.35 +
-        state.relationship.trust * 0.4 +
-        state.relationship.familiarity * 0.25,
+      state.relationship.closeness,
     );
     expect(run.candidates).toHaveLength(4);
     expect(
@@ -729,12 +727,9 @@ describe("continuity memory recall hierarchy", () => {
       socialBattery: beforeGuardState?.socialBattery,
       focus: beforeGuardState?.focus,
     });
-    expect(afterGuardState?.relationship.trust).toBe(
-      beforeGuardState?.relationship.trust,
-    );
-    expect(afterGuardState?.relationship.familiarity).toBeCloseTo(
-      beforeGuardState!.relationship.familiarity +
-        RELATIONSHIP_BASELINE_FAMILIARITY_PER_TURN,
+    expect(afterGuardState?.relationship.closeness).toBeCloseTo(
+      beforeGuardState!.relationship.closeness +
+        RELATIONSHIP_BASELINE_CLOSENESS_PER_TURN,
     );
     expect(afterGuardState?.relationship.lastInteractionAtUtc).toBe(
       EXPLICIT_FACT_RECALL_AT,
@@ -750,7 +745,7 @@ describe("continuity memory recall hierarchy", () => {
       proposed: {},
       relationship: {
         baselineDelta: {
-          familiarity: RELATIONSHIP_BASELINE_FAMILIARITY_PER_TURN,
+          closeness: RELATIONSHIP_BASELINE_CLOSENESS_PER_TURN,
         },
       },
       accepted: {
@@ -3849,7 +3844,7 @@ async function openHarnessApp(input: {
             },
             worldEffects: {
               stateDelta: { stress: -0.2 },
-              relationshipDelta: { trust: 0.2 },
+              relationshipDelta: { closeness: 0.2 },
               memoryCandidates: [
                 {
                   type: "semantic",

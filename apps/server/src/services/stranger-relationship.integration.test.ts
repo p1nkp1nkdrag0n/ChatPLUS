@@ -24,7 +24,6 @@ function expectStranger(spec: CharacterSpec): void {
   expect(spec.userRelationship).toMatchObject({
     relationshipType: STRANGER_RELATIONSHIP_TYPE,
     initialCloseness: 0.1,
-    initialTrust: 0.1,
     sharedContext: "",
   });
   expect(() =>
@@ -77,9 +76,6 @@ describe("server-owned stranger relationship", () => {
         app.personasim.store.getRuntimeState(spec.id)?.relationship,
       ).toMatchObject({
         closeness: 0.1,
-        trust: 0.1,
-        familiarity: 0.1,
-        recentInteractionValence: 0,
       });
       expect(app.personasim.characters.getCreationOrigin(spec.id)).toBe("user");
     }
@@ -116,7 +112,7 @@ describe("server-owned stranger relationship", () => {
     const state = app.personasim.store.getRuntimeState(spec.id)!;
     app.personasim.store.updateRuntimeState({
       ...state,
-      relationship: { ...state.relationship, closeness: 0.56, trust: 0.42 },
+      relationship: { ...state.relationship, closeness: 0.56 },
     });
     const changed = {
       ...stripCharacterMetadata(spec),
@@ -124,7 +120,6 @@ describe("server-owned stranger relationship", () => {
         ...spec.userRelationship,
         relationshipType: "恋人",
         initialCloseness: 1,
-        initialTrust: 1,
         sharedContext: "相恋十年。",
       },
     };
@@ -145,7 +140,7 @@ describe("server-owned stranger relationship", () => {
     }
     expect(
       app.personasim.store.getRuntimeState(spec.id)?.relationship,
-    ).toMatchObject({ closeness: 0.56, trust: 0.42 });
+    ).toMatchObject({ closeness: 0.56 });
   });
 
   it("rejects provider-authored shared history and prevents exact authority confirmation from reviving it", async () => {
@@ -155,7 +150,6 @@ describe("server-owned stranger relationship", () => {
       ...candidate.userRelationship,
       relationshipType: "青梅竹马",
       initialCloseness: 0.95,
-      initialTrust: 0.98,
       sharedContext: "从小一起长大，彼此无比熟悉。",
     };
     vi.spyOn(app.personasim.llm, "generateObject").mockResolvedValueOnce({
@@ -195,7 +189,6 @@ describe("server-owned stranger relationship", () => {
         ...created.userRelationship,
         relationshipType: "旧友",
         initialCloseness: 0.8,
-        initialTrust: 0.9,
         sharedContext: "曾一起旅行。",
       },
       lockedPaths: ["userRelationship", "userRelationship.sharedContext"],

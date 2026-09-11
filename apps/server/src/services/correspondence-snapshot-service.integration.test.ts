@@ -802,7 +802,6 @@ function seedCharacterTimeline(store: DatabaseStore): void {
     relationship: {
       ...initial.relationship,
       closeness: 0.72,
-      trust: 0.81,
       lastInteractionAtUtc: BEFORE_ARRIVAL,
     },
   };

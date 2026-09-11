@@ -336,7 +336,6 @@ export const InitialUserRelationshipSchema = z
   .object({
     relationshipType: z.string().trim().min(1).max(120),
     initialCloseness: UnitIntervalSchema,
-    initialTrust: UnitIntervalSchema,
     addressTerms: z.array(z.string().trim().min(1).max(80)).max(20),
     sharedContext: z.string().trim().max(2_000),
     behaviorModes: z.array(RelationshipBehaviorModeSchema).max(20).optional(),

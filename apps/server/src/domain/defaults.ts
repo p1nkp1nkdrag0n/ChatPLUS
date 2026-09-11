@@ -269,7 +269,6 @@ export function buildOriginalDraft(
     userRelationship: {
       relationshipType: STRANGER_RELATIONSHIP_TYPE,
       initialCloseness: initialRelationship.closeness,
-      initialTrust: initialRelationship.trust,
       addressTerms: ["你"],
       sharedContext: "",
     },
@@ -400,13 +399,11 @@ function originalTemporalFrame(
 
 export function initialRelationshipPreset(description: string): {
   closeness: number;
-  trust: number;
 } {
   // Retain the legacy helper signature without granting progress from labels.
   void description;
   return {
     closeness: STRANGER_RELATIONSHIP_LEVEL,
-    trust: STRANGER_RELATIONSHIP_LEVEL,
   };
 }
 
@@ -477,9 +474,6 @@ export function initialRuntimeState(
     relationship: {
       userId: LOCAL_USER_ID,
       closeness: STRANGER_RELATIONSHIP_LEVEL,
-      trust: STRANGER_RELATIONSHIP_LEVEL,
-      familiarity: STRANGER_RELATIONSHIP_LEVEL,
-      recentInteractionValence: 0,
     },
     revision: 0,
   };

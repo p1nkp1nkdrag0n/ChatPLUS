@@ -167,9 +167,6 @@ export interface RuntimeState {
   locationContext?: string | null;
   relationship: {
     closeness: number;
-    trust: number;
-    familiarity: number;
-    recentInteractionValence: number;
   };
   revision: number;
 }

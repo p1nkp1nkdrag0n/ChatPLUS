@@ -275,6 +275,7 @@ export class DatabaseStore extends LegacyScheduleStore {
   }
 
   insertInitialState(state: RuntimeState, horizonEndUtc: string): void {
+    state = runtimeStateSchema.parse(state);
     this.database
       .prepare(
         `INSERT INTO runtime_states(agent_id, state_json, revision, updated_at_utc, sleep_debt_minutes)
@@ -306,6 +307,7 @@ export class DatabaseStore extends LegacyScheduleStore {
   }
 
   updateRuntimeState(state: RuntimeState): void {
+    state = runtimeStateSchema.parse(state);
     this.database
       .prepare(
         `UPDATE runtime_states SET state_json = ?, revision = ?, updated_at_utc = ?, sleep_debt_minutes = ?
@@ -324,6 +326,7 @@ export class DatabaseStore extends LegacyScheduleStore {
     state: RuntimeState,
     expectedRevision: number,
   ): boolean {
+    state = runtimeStateSchema.parse(state);
     const result = this.database
       .prepare(
         `UPDATE runtime_states SET state_json = ?, revision = ?, updated_at_utc = ?, sleep_debt_minutes = ?

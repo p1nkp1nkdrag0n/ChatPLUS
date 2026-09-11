@@ -71,7 +71,6 @@ function characterSpec(): CharacterSpec {
       relationshipType: "旧识",
       sharedContext: "曾经共事",
       initialCloseness: 0.4,
-      initialTrust: 0.5,
       addressTerms: [],
       tensions: [],
       affectionPatterns: [],

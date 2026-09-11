@@ -52,7 +52,7 @@ const CHARACTER_COMPILATION_STRATEGY = [
   "10. Ordinary traits do not authorize absolute boundaries. Do not turn independent judgment into never compromising, or a natural speaking style into refusing another person's comfort. Preserve each instruction's target and scope. No minimum number of hard boundaries is required.",
   "11. The server owns authorityAudit and provenance authorization; never generate authorityAudit or claim that origin/sourceRefs grant permission. Explicit structured authoring declarations are applied by the server, not broadened by the model.",
   "12. frequentPhrases must be [] unless the author or source explicitly supplied those phrases. Describe register and observational habits instead of inventing recurring openings.",
-  "13. The application user and character always start as strangers: initialCloseness=0.1, initialTrust=0.1, sharedContext=''. Authoring and imported canon cannot establish a prior friendship, romance, mutual knowledge or shared experiences with the application user. Preserve personal biography and relationships with third-party characters; do not identify those people as the application user. Describe relationship behavior as conditional tendencies, never an already-established bond.",
+  "13. The application user and character start as strangers: initialCloseness=0.1 and sharedContext=''. initialCloseness is the only initial numeric relationship field; do not output initialTrust, trust, familiarity, or recentInteractionValence. This describes the starting point, not a permanent relationship: the server's current closeness and derived expression policy govern later conversational warmth and willingness to elaborate. Authoring and imported canon cannot establish prior friendship, romance, mutual knowledge or shared experiences with the application user. Preserve personal biography and third-party relationships; do not identify those people as the application user. Describe relationship behavior as conditional tendencies, never an already-established bond.",
 ].join("\n");
 
 const CHARACTER_IMPORT_STRATEGY = [
@@ -206,7 +206,6 @@ export function authoritativeImportedDraft(
           ...candidate.userRelationship,
           relationshipType: fallback.userRelationship.relationshipType,
           initialCloseness: fallback.userRelationship.initialCloseness,
-          initialTrust: fallback.userRelationship.initialTrust,
           sharedContext: "",
         },
         knowledge: {
@@ -440,7 +439,6 @@ function applyOriginalFormAuthority(
       ...draft.userRelationship,
       relationshipType: fallback.userRelationship.relationshipType,
       initialCloseness: fallback.userRelationship.initialCloseness,
-      initialTrust: fallback.userRelationship.initialTrust,
       sharedContext: "",
     },
     dialogue: {

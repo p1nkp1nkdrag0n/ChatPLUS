@@ -78,7 +78,6 @@ const validDraft = {
   userRelationship: {
     relationshipType: "friend",
     initialCloseness: 0.5,
-    initialTrust: 0.6,
     addressTerms: ["你"],
     sharedContext: "",
   },
@@ -114,6 +113,18 @@ describe("contract boundaries", () => {
       CharacterSpecDraftSchema.safeParse({
         ...validDraft,
         databaseId: "forbidden",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects the retired initial trust field in new character drafts", () => {
+    expect(
+      CharacterSpecDraftSchema.safeParse({
+        ...validDraft,
+        userRelationship: {
+          ...validDraft.userRelationship,
+          initialTrust: 0.6,
+        },
       }).success,
     ).toBe(false);
   });

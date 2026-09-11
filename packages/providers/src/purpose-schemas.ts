@@ -23,6 +23,7 @@ export const PURPOSE_OUTPUT_SCHEMAS: Record<LlmPurpose, ZodType> = {
   repair_chat_turn: PersonaChatResponseSchema,
   review_reply_goal: ReplyGoalReviewSchema,
   rewrite_reply_goal: ReplyGoalRewriteSchema,
+  rewrite_reply_affinity: ReplyGoalRewriteSchema,
   enrich_activity: ActivityEnrichmentBatchSchema,
   compose_proactive_message: ProactiveMessageProposalSchema,
   checkpoint_autobiography: AutobiographyRevisionProposalSchema,

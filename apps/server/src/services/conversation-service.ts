@@ -6,6 +6,11 @@ import {
 import type { ReplyRepairBudget } from "./semantic-reply-guard.js";
 import { inspectSemanticReply } from "./semantic-reply-guard.js";
 import { ReplyGoalReviewService } from "./reply-goal-review-service.js";
+import {
+  AffinityDeliveryService,
+  finalizeAffinityDeliveryAudit,
+} from "./affinity-delivery-service.js";
+import { TurnLlmCallBudget } from "./turn-llm-call-budget.js";
 import type { MemoryRecallRuntimeDiagnostic } from "@personasim/contracts";
 import {
   DEFAULT_CONVERSATION_RETENTION_POLICY,
@@ -68,6 +73,7 @@ import { TurnDecisionService } from "./turn-decision-service.js";
 import {
   WorldEffectService,
   appendNegotiationReplyIssues,
+  withoutFallbackRelationshipBaseline,
   type ChatTurnDecisionPath,
 } from "./world-effect-service.js";
 
@@ -84,6 +90,8 @@ export interface ConversationServiceOptions {
   personaRuntimeMode?: "off" | "shadow" | "enforced";
   conversationRetention?: ConversationRetentionPolicy;
   replySteeringMode?: ReplySteeringMode;
+  /** Logical generation calls; provider transport retries are measured separately. */
+  maximumLlmCallsPerTurn?: number;
 }
 
 export interface ConversationTurnCollaborators {
@@ -205,7 +213,12 @@ export class ConversationService {
 
     // Freeze one execution for generation and all repairs. Shared background
     // collaborators retain the system default and never inherit this choice.
-    const llm = this.llm.captureSession(sessionId, input.modelSelection);
+    const callBudget = new TurnLlmCallBudget(
+      this.options.maximumLlmCallsPerTurn ?? 12,
+    );
+    const llm = callBudget.bind(
+      this.llm.captureSession(sessionId, input.modelSelection),
+    );
     const decisions = this.decisions;
     const worldEffects = this.worldEffects;
     const fuzzyLifeEnabled = this.options.lifePlanningMode === "fuzzy";
@@ -698,6 +711,71 @@ export class ConversationService {
         },
       };
     }
+    const allowStyleRewrite =
+      explicitFactReplyContract === undefined &&
+      consentModalityGuardContract === undefined &&
+      !(
+        this.options.scheduleNegotiationMode === "enforced" &&
+        finalized.world.negotiationPlan !== undefined &&
+        (finalized.world.negotiationPlan.actionKind !== "none" ||
+          finalized.world.negotiationPlan.effect !== undefined ||
+          finalized.world.negotiationPlan.presentationText !== undefined ||
+          finalized.world.negotiationPlan.rejections.length > 0)
+      );
+    const delivery = await new AffinityDeliveryService().resolve({
+      llm,
+      agentId: input.agentId,
+      userText: input.text,
+      generationSystem: assembledPrompt.system,
+      generationPrompt: assembledPrompt.prompt,
+      strategy: assembledPrompt.replyStrategy,
+      decision: finalized.world.decision,
+      authoritativeEffects: {
+        scheduleChanges: finalized.world.validation.accepted,
+        scheduleAction: finalized.world.negotiationPlan?.actionKind ?? "none",
+      },
+      allowRewrite: allowStyleRewrite,
+      qualityRepairAttempted:
+        repairBudget.attempts > 0 || finalized.world.usedFallback,
+      budget: callBudget,
+      // A final goal review can require review + text revision + second review.
+      reservedFinalReviewCalls: replyGoalReviewEnabled ? 3 : 0,
+      materialize: (text) =>
+        decisions.materializeReply(
+          { text },
+          spec,
+          assembledPrompt.replyStrategy,
+        ).reply,
+      inspect: (decision) => {
+        const inspection = decisions.inspect({
+          ...semanticContext,
+          agentId: input.agentId,
+          spec,
+          ...(effectivePersona === undefined ? {} : { effectivePersona }),
+          decision,
+          nowUtc,
+          capabilities,
+          userText: input.text,
+          ...(lifeContext === undefined ? {} : { causalContext: lifeContext }),
+        });
+        if (
+          this.options.scheduleNegotiationMode === "enforced" &&
+          finalized.world.negotiationPlan !== undefined
+        ) {
+          appendNegotiationReplyIssues(
+            inspection,
+            decision.reply.text,
+            finalized.world.negotiationPlan.effect !== undefined,
+            false,
+          );
+        }
+        return inspection.issues;
+      },
+    });
+    finalized = {
+      turn: { ...finalized.turn, affinityDeliveryAudit: delivery.audit },
+      world: { ...finalized.world, decision: delivery.decision },
+    };
     if (replyGoalReviewEnabled) {
       const reviewed = await new ReplyGoalReviewService().resolve({
         llm,
@@ -798,6 +876,43 @@ export class ConversationService {
         world: { ...finalized.world, decision: reviewed.decision },
       };
     }
+    if (finalized.world.usedFallback) {
+      finalized = {
+        ...finalized,
+        world: withoutFallbackRelationshipBaseline(finalized.world),
+      };
+    }
+    // Goal review may replace the styled text. Every final audit describes the
+    // exact candidate committed below; no world-effect resolution is repeated.
+    const finalDeliveryAudit = finalizeAffinityDeliveryAudit(
+      delivery.audit,
+      finalized.world.decision.reply,
+      callBudget,
+    );
+    const finalDeliverySemantic = inspectSemanticReply({
+      ...semanticContext,
+      decision: finalized.world.decision,
+    });
+    finalized = {
+      ...finalized,
+      turn: {
+        ...finalized.turn,
+        affinityDeliveryAudit: finalDeliveryAudit,
+        ...(finalized.turn.semanticGuardAudit === undefined
+          ? {}
+          : {
+              semanticGuardAudit: {
+                ...finalized.turn.semanticGuardAudit,
+                finalTextSha256: finalDeliveryAudit.finalTextSha256,
+                finalIssues: finalDeliverySemantic.issues,
+                finalDiagnosis: finalDeliverySemantic.diagnosis,
+                ...(finalDeliverySemantic.advice === undefined
+                  ? {}
+                  : { finalAdvice: finalDeliverySemantic.advice }),
+              },
+            }),
+      },
+    };
     return this.commits.commit({
       ...(llm.selection === undefined ? {} : { modelSelection: llm.selection }),
       memoryRevision,

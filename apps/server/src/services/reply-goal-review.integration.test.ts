@@ -5,10 +5,14 @@ import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import { SseHub } from "../sse/hub.js";
-import type { GenerateObjectInput } from "./llm-service.js";
+import type { GenerateObjectInput, LlmService } from "./llm-service.js";
 import { replyTextHash } from "./semantic-reply-guard.js";
 import { ReplyGoalReviewService } from "./reply-goal-review-service.js";
 import { TurnCommitService } from "./turn-commit-service.js";
+import { WorldEffectService } from "./world-effect-service.js";
+import { visibleReplyCharacters } from "./affinity-delivery-service.js";
+import { TurnDecisionService } from "./turn-decision-service.js";
+import { loadDailyRelationshipUsage } from "./relationship-effect-usage.js";
 
 const pass = {
   goalAchieved: true,
@@ -40,7 +44,9 @@ describe("reply goal review on the production HTTP chat path", () => {
   let calls: GenerateObjectInput<unknown>[];
   let reviews: unknown[];
   let rewrites: unknown[];
+  let affinityRewrites: unknown[];
   let candidate: string;
+  let relationshipProposal: number | undefined;
   let onGenerate: (() => void) | undefined;
 
   afterEach(async () => {
@@ -52,7 +58,9 @@ describe("reply goal review on the production HTTP chat path", () => {
     calls = [];
     reviews = [];
     rewrites = [];
+    affinityRewrites = [];
     candidate = "嗯，我在听。";
+    relationshipProposal = undefined;
     onGenerate = undefined;
     app = await buildApp({
       config: readConfig({
@@ -95,7 +103,12 @@ describe("reply goal review on the production HTTP chat path", () => {
               text: candidate,
               scheduleAction: { kind: "none" },
             },
-            worldEffects: {},
+            worldEffects:
+              relationshipProposal === undefined
+                ? {}
+                : {
+                    relationshipDelta: { closeness: relationshipProposal },
+                  },
           } as never);
         }
         if (input.purpose === "review_reply_goal") {
@@ -107,6 +120,12 @@ describe("reply goal review on the production HTTP chat path", () => {
           return Promise.resolve(
             (rewrites.shift() ?? {
               text: "我明白了，先听你说。",
+            }) as never,
+          );
+        if (input.purpose === "rewrite_reply_affinity")
+          return Promise.resolve(
+            (affinityRewrites.shift() ?? {
+              text: "今天也想听听你的近况。",
             }) as never,
           );
         if (input.purpose === "repair_chat_turn")
@@ -197,7 +216,14 @@ describe("reply goal review on the production HTTP chat path", () => {
     const result = response.internalTurn!;
     expect(goalCalls()).toHaveLength(1);
     expect(capture).toHaveBeenCalledTimes(1);
-    expect(goalGate.mock.calls[0]![0].llm).toBe(capture.mock.results[0]!.value);
+    // The turn budget wraps the frozen execution without changing its selection.
+    const capturedExecution = capture.mock.results[0]!.value as LlmService;
+    expect(goalGate.mock.calls[0]![0].llm.selection).toBe(
+      capturedExecution.selection,
+    );
+    expect(goalGate.mock.calls[0]![0].llm.capabilities).toBe(
+      capturedExecution.capabilities,
+    );
     const main = calls.find((call) => call.purpose === "chat_turn")!;
     const review = JSON.parse(goalCalls()[0]!.prompt) as ReviewPrompt;
     expect(review.context.generationInstructions).toBe(main.system);
@@ -252,6 +278,123 @@ describe("reply goal review on the production HTTP chat path", () => {
     expect((await send()).statusCode).toBe(200);
     expect(calls).toHaveLength(before);
   });
+
+  it("styles before final goal review, commits effects once, and audits the exact final text", async () => {
+    await setup(true);
+    candidate = "我想慢慢听你聊聊今天的事情。".repeat(40);
+    affinityRewrites.push({ text: "今天也想听听你的近况。" });
+    const finalText = "今天过得还算平静。你想聊什么？";
+    reviews.push(fail, pass);
+    rewrites.push({ text: finalText });
+    const commit = vi.spyOn(TurnCommitService.prototype, "commit");
+    const effects = vi.spyOn(WorldEffectService.prototype, "resolve");
+    const response = await send("今天想随便聊聊。", "affinity-goal-once");
+    expect(response.statusCode, response.body).toBe(201);
+    const result = response.internalTurn!;
+    const phases = calls.filter((call) =>
+      [
+        "chat_turn",
+        "rewrite_reply_affinity",
+        "review_reply_goal",
+        "rewrite_reply_goal",
+      ].includes(call.purpose),
+    );
+    expect(phases.map((call) => call.purpose)).toEqual([
+      "chat_turn",
+      "rewrite_reply_affinity",
+      "review_reply_goal",
+      "rewrite_reply_goal",
+      "review_reply_goal",
+    ]);
+    expect((JSON.parse(phases[2]!.prompt) as ReviewPrompt).candidate.text).toBe(
+      "今天也想听听你的近况。",
+    );
+    expect(result.assistantMessage.content.replaceAll("\n", "")).toBe(
+      finalText,
+    );
+    const actualFinal = result.assistantMessage.content;
+    expect(result.assistantMessage.metadata["affinityDelivery"]).toMatchObject({
+      rewriteStatus: "rewritten",
+      finalTextSha256: replyTextHash(actualFinal),
+      finalCharacters: visibleReplyCharacters(actualFinal),
+    });
+    expect(result.assistantMessage.metadata["replyGoalReview"]).toMatchObject({
+      finalTextSha256: replyTextHash(actualFinal),
+    });
+    expect(
+      result.assistantMessage.metadata["semanticReplyGuard"],
+    ).toMatchObject({
+      finalTextSha256: replyTextHash(actualFinal),
+    });
+    expect(commit).toHaveBeenCalledOnce();
+    expect(effects).toHaveBeenCalledOnce();
+    const usedCalls = calls.length;
+    const replay = await send("今天想随便聊聊。", "affinity-goal-once");
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.internalTurn!.idempotentReplay).toBe(true);
+    expect(calls).toHaveLength(usedCalls);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(effects).toHaveBeenCalledOnce();
+    expect(app.personasim.store.listMessages(sessionId)).toHaveLength(2);
+  });
+
+  it.each([undefined, 0.02])(
+    "withdraws baseline when the last semantic guard falls back, preserving proposal %s",
+    async (proposal) => {
+      await setup(false);
+      relationshipProposal = proposal;
+      const before =
+        app.personasim.store.getRuntimeState(agentId)!.relationship.closeness;
+      const originalFinalizer =
+        // eslint-disable-next-line @typescript-eslint/unbound-method -- Captured before the spy and always invoked below with .call(this, input).
+        TurnDecisionService.prototype.finalizeSemanticReply;
+      vi.spyOn(
+        TurnDecisionService.prototype,
+        "finalizeSemanticReply",
+      ).mockImplementation(async function (this: TurnDecisionService, input) {
+        const result = await originalFinalizer.call(this, input);
+        const fallbackText = "这件事我需要再想一想。";
+        return {
+          ...result,
+          usedFallback: true,
+          decision: {
+            ...result.decision,
+            reply: { text: fallbackText, chunks: [fallbackText], toneTags: [] },
+          },
+        };
+      });
+      const commit = vi.spyOn(TurnCommitService.prototype, "commit");
+      const effects = vi.spyOn(WorldEffectService.prototype, "resolve");
+      const response = await send(
+        "谢谢你认真听我说，和你聊天让我安心。",
+        "last-guard-fallback",
+      );
+      expect(response.statusCode, response.body).toBe(201);
+      expect(
+        app.personasim.store.getRuntimeState(agentId)!.relationship.closeness,
+      ).toBeCloseTo(before + (proposal ?? 0), 12);
+      const usage = loadDailyRelationshipUsage(
+        app.personasim.store,
+        agentId,
+        "Asia/Shanghai",
+        "2026-09-07T00:00:00.000Z",
+      );
+      expect(usage).toEqual({ closeness: proposal ?? 0, baselineCloseness: 0 });
+      const committedWorld = commit.mock.calls[0]![0].world;
+      expect(
+        committedWorld.effectTrace.actual.relationship.baselineDelta.closeness,
+      ).toBe(0);
+      expect(committedWorld.effectTrace.sources.baselineEligibility).toEqual({
+        eligible: false,
+        reason: "fallback",
+      });
+      expect(commit).toHaveBeenCalledOnce();
+      expect(effects).toHaveBeenCalledOnce();
+      expect(
+        calls.filter((call) => call.purpose === "rewrite_reply_affinity"),
+      ).toHaveLength(0);
+    },
+  );
 
   it.each(["rejected", "unavailable", "invalid-revision"])(
     "does not commit or publish a %s turn and permits retry",

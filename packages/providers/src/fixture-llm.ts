@@ -279,7 +279,6 @@ function makeDraft(
     userRelationship: {
       relationshipType: input.initialRelationship.slice(0, 120),
       initialCloseness: 0.62,
-      initialTrust: 0.68,
       addressTerms: ["你"],
       sharedContext: input.initialRelationship,
     },
@@ -516,7 +515,7 @@ function partyTurnFixture(request: LLMRequest): JsonValue {
     reply: { text, chunks: [text], toneTags: ["自然", "期待"] },
     scheduleEffects: effects,
     stateDelta: { moodValence: 0.08, moodArousal: 0.06 },
-    relationshipDelta: { closeness: 0.03, recentInteractionValence: 0.08 },
+    relationshipDelta: { closeness: 0.03 },
     memoryCandidates: [
       {
         kind: "commitment",
@@ -543,7 +542,6 @@ function normalTurnFixture(): JsonValue {
     reply: { text, chunks: [text], toneTags: ["温和", "自然"] },
     scheduleEffects: [],
     stateDelta: { socialBattery: -0.01 },
-    relationshipDelta: { familiarity: 0.01, recentInteractionValence: 0.02 },
     memoryCandidates: [],
     reasonCode: "ordinary_conversation",
     reasonSummary: "按照角色的日常语气回应并关心用户近况。",
@@ -831,6 +829,9 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   }),
   rewrite_reply_goal: () => ({
     text: "我在认真听，也会围绕你刚才的问题继续说。",
+  }),
+  rewrite_reply_affinity: () => ({
+    text: "我在听，你慢慢说。",
   }),
   enrich_activity: enrichFixture,
   compose_proactive_message: proactiveFixture,

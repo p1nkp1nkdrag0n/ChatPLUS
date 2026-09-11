@@ -121,6 +121,9 @@ export class TurnCommitService {
         ...(input.turn.replyGoalReviewAudit === undefined
           ? {}
           : { replyGoalReview: input.turn.replyGoalReviewAudit }),
+        ...(input.turn.affinityDeliveryAudit === undefined
+          ? {}
+          : { affinityDelivery: input.turn.affinityDeliveryAudit }),
         ...(input.turn.explicitFactReplyGuardAudit === undefined
           ? {}
           : {

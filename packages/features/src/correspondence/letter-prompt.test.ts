@@ -34,7 +34,7 @@ const snapshot: LetterGenerationSnapshot = {
       knowledge: {},
     },
     runtimeState: { energy: 0.65 },
-    relationship: { closeness: 0.7, trust: 0.8 },
+    relationship: { closeness: 0.7 },
     fuzzyLife: {
       dailyContext: { summary: "抵达日前的生活" },
       intents: [{ text: "也许去散步", status: "planned" }],
@@ -121,10 +121,10 @@ describe("buildLetterReplyPrompt", () => {
       "The application user and character begin as strangers",
     );
     expect(built.system).toContain(
-      "canonical third-party relationships do not establish prior intimacy",
+      "canonical third-party relationships do not establish intimacy",
     );
     expect(built.system).toContain(
-      "never recite scores, thresholds, stages, or diagnostics",
+      "Never recite private scores, thresholds, stages or diagnostics",
     );
     expect(built.system).toContain("complete correspondence letter");
     expect(built.prompt).toContain(ARRIVAL);

@@ -7,6 +7,54 @@ import {
 } from "./reply-strategy.js";
 
 describe("deriveReplyStrategy", () => {
+  const affinityStyle = { averageMessageLength: 45, verbosity: 0.4 };
+  const affinityStrategy = (
+    closeness: number,
+    text = "今天忽然想找你聊两句。",
+  ) =>
+    deriveReplyStrategy(text, affinityStyle, { relationship: { closeness } });
+
+  it("makes the published single-affinity curve monotone without the old 80-character floor", () => {
+    expect(
+      [0.1, 0.3, 0.5, 0.7, 0.9].map((a) => affinityStrategy(a).targetChars),
+    ).toEqual([26, 42, 67, 91, 107]);
+    const targets = Array.from(
+      { length: 101 },
+      (_, n) => affinityStrategy(n / 100).targetChars,
+    );
+    expect(
+      targets.every((target, i) => i === 0 || target >= targets[i - 1]!),
+    ).toBe(true);
+    expect(affinityStrategy(0.1).targetMaxChars).toBeLessThan(80);
+    expect(affinityStrategy(0.1).affinityGuidance).not.toBe(
+      affinityStrategy(0.9).affinityGuidance,
+    );
+  });
+
+  it.each([
+    "晚安",
+    "只用一句话告诉我。",
+    "今天只想有人安静陪我待一会儿。",
+    "请详细解释为什么会出现这个问题。",
+  ])("keeps an explicit need independent of affinity: %s", (text) => {
+    const low = affinityStrategy(0.1, text);
+    const high = affinityStrategy(0.9, text);
+    expect(high.targetChars).toBe(low.targetChars);
+    expect(low.affinityApplied).toBe(false);
+    expect(high.lengthOverride).not.toBe("none");
+  });
+
+  it("keeps high affinity fatigue effective and never buffs capacity at 0.8", () => {
+    const input = "今天忽然想找你聊两句。";
+    const tired = deriveReplyStrategy(input, affinityStyle, {
+      relationship: { closeness: 0.9 },
+      state: { energy: 0.1, stress: 0.8, socialBattery: 0.1 },
+    });
+    expect(tired.targetChars).toBeLessThan(
+      affinityStrategy(0.9, input).targetChars,
+    );
+    expect(tired.preferredChunkCount).toBe(1);
+  });
   const withPlan = (text: string) =>
     deriveReplyStrategy(
       text,
@@ -63,6 +111,7 @@ describe("deriveReplyStrategy", () => {
   it("keeps an explicit concise instruction ahead of the procedural floor", () => {
     const text = "请给我一个准备顺序，只用一句话。";
     expect(withPlan(text).complexity).toBe("brief");
+    expect(withPlan("请总结完整方案，只用一句话。").complexity).toBe("brief");
   });
 
   it("does not apply a stale plan's procedural floor to a new short request", () => {

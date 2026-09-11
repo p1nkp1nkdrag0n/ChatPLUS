@@ -380,8 +380,6 @@ export class LetterReplyGenerationService {
       relationship: {
         closeness:
           numberProperty(snapshot.contextJson.relationship, "closeness") ?? 0.5,
-        trust:
-          numberProperty(snapshot.contextJson.relationship, "trust") ?? 0.5,
       },
       stationeryType: stationeryTypeFrom(snapshot.contextJson.budgets),
     });

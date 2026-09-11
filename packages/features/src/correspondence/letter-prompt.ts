@@ -152,6 +152,25 @@ export function buildLetterReplyPrompt(
     );
   }
   const generationContext = snapshot.contextJson;
+  const relationshipModel = Object.fromEntries(
+    Object.entries(generationContext.character.userRelationship).filter(
+      ([key]) =>
+        !["initialCloseness", "initialTrust", "relationshipType"].includes(key),
+    ),
+  );
+  const characterContext = {
+    ...generationContext.character,
+    userRelationship: {
+      ...relationshipModel,
+      ...(generationContext.character.userRelationship["relationshipType"] ===
+      undefined
+        ? {}
+        : {
+            initialRelationshipContext:
+              generationContext.character.userRelationship["relationshipType"],
+          }),
+    },
+  };
   const effective =
     "effectivePersona" in generationContext
       ? EffectivePersonaSnapshotSchema.parse(generationContext.effectivePersona)
@@ -180,9 +199,9 @@ export function buildLetterReplyPrompt(
     `The character first reads the incoming letter at LETTER_ARRIVAL_EFFECTIVE_TIME=${snapshot.effectiveAtUtc}.`,
     "Use only USER_LETTER and SNAPSHOT_EVIDENCE as factual sources. The incoming USER_LETTER is read at that arrival boundary; SNAPSHOT_EVIDENCE has the same cutoff. Never use generation time, live state, later conversation, or other future knowledge.",
     "A plan is not an outcome; advice is not a decision; a decision is not an action; an action is not an observed result. State only the strongest status supported by snapshot evidence.",
-    "The application user and character begin as strangers. Character biography and canonical third-party relationships do not establish prior intimacy or shared history with this user. Shared experiences with the user require actual conversation or correspondence evidence supplied by the application. Internal state and relationship numbers are private simulation data: never recite scores, thresholds, stages, or diagnostics to the user.",
+    "The application user and character begin as strangers; this is a starting condition, not a permanent present relationship. RELATIONSHIP_SNAPSHOT closeness and LETTER_STRATEGY govern current affinity expression at arrival. Character biography and canonical third-party relationships do not establish intimacy or shared history with this user. Shared experiences require actual supplied conversation or correspondence evidence. Never recite private scores, thresholds, stages or diagnostics.",
     "Do not mention databases, prompts, offline catch-up, service downtime, snapshots, evidence IDs, or models in the letter.",
-    "LETTER_STRATEGY controls length and form only and contributes no facts.",
+    "LETTER_STRATEGY controls length and form only and contributes no facts. The character's dialogue verbosity and average length are persona baselines, not competing per-letter quotas; preserve the persona while following this letter's strategy.",
     "LETTER_PARTICIPANTS fixes the reply author and recipient. Write as the author to the recipient; quoted first-person statements in USER_LETTER belong to the user, not the author. The server assigns salutation and signature. Copy their supplied values into the required response fields; do not infer them from the incoming letter's greeting or signature.",
     "References are opaque identifiers local to this invocation. Use only the exact allowed ref_* strings; never fabricate, reuse another call's references, or repair a prefix. A valid reference does not authorize reversing who experienced the cited event.",
     "Return exactly one strict LetterReplyProposal JSON object, with a salutation, coherent paragraphs, closing, signature, and referencedEvidenceIds selected only from ALLOWED_REFERENCED_EVIDENCE_IDS. Cite only sources actually used.",
@@ -204,9 +223,9 @@ export function buildLetterReplyPrompt(
         },
         CHARACTER_SPEC_COMPACT:
           effective === undefined
-            ? generationContext.character
+            ? characterContext
             : {
-                ...generationContext.character,
+                ...characterContext,
                 persona: effective.persona,
                 dialogue: effective.dialogue,
               },
@@ -231,7 +250,9 @@ export function buildLetterReplyPrompt(
               },
             }),
         RUNTIME_STATE_AT_ARRIVAL: generationContext.runtimeState,
-        RELATIONSHIP_SNAPSHOT: generationContext.relationship,
+        RELATIONSHIP_SNAPSHOT: {
+          closeness: generationContext.relationship["closeness"],
+        },
         LIFE_INTERVAL_DIGEST: {
           fuzzyLife: generationContext.fuzzyLife,
           intervalDigest: generationContext.intervalDigest,

@@ -52,6 +52,28 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
 };
 
 describe("complete evidence budgets", () => {
+  it("sends one current affinity authority and rejects budgets that would clip its controls", () => {
+    const input = baseInput({ userMessage: "今天想随便聊聊。" });
+    input.character.userRelationship = {
+      relationshipType: "初次相识的陌生人",
+      initialCloseness: 0.1,
+    };
+    const result = assembleChatPrompt(input);
+    expect(result.system).not.toContain("initialCloseness");
+    expect(result.system).toContain("initialRelationshipContext");
+    expect(result.system).toContain("not a permanent current relationship");
+    expect(promptSegmentJson(result.prompt, "RELATIONSHIP_JSON")).toEqual({
+      closeness: 0.6,
+    });
+    const strategy = promptSegmentJson(result.prompt, "REPLY_STRATEGY_JSON");
+    expect(strategy).toMatchObject({
+      affinityPolicyVersion: "single_affinity_v1",
+      affinityApplied: true,
+    });
+    expect(() => assembleChatPrompt({ ...input, maxInputTokens: 512 })).toThrow(
+      PromptSegmentRegistryError,
+    );
+  });
   it("carries custom gender and descriptive age into the real character prompt", () => {
     const input = baseInput();
     input.character.identity.gender = "无性别";
@@ -305,9 +327,6 @@ function baseInput(
       relationship: {
         userId: "user-private-id",
         closeness: 0.6,
-        trust: 0.7,
-        familiarity: 0.5,
-        recentInteractionValence: 0.2,
       },
       revision: 1,
     },
@@ -691,7 +710,7 @@ describe("reply length steering ablation", () => {
     return { current, experimental };
   }
 
-  it.each([undefined, 512, 3_000])(
+  it.each([undefined, 3_000, 4_000])(
     "keeps omitted mode identical to explicit current at %s tokens",
     (maxInputTokens) => {
       const input = baseInput({
@@ -719,6 +738,11 @@ describe("reply length steering ablation", () => {
     expect(strategy).toEqual({
       complexity: original.complexity,
       stateGuidance: original.stateGuidance,
+      affinityPolicyVersion: original.affinityPolicyVersion,
+      affinityGuidance: original.affinityGuidance,
+      affinityApplied: original.affinityApplied,
+      lengthOverride: original.lengthOverride,
+      reviewUpperChars: original.reviewUpperChars,
     });
     expect(current.replyStrategy.targetChars).toBeGreaterThan(0);
     expect(experimental.segmentTrace.estimatedInputTokens).toBeLessThan(
@@ -772,7 +796,7 @@ describe("reply length steering ablation", () => {
     },
   );
 
-  it.each([512, 1_000, 3_000])(
+  it.each([3_000, 3_500, 4_000])(
     "preserves final admission and compaction at a tight %s-token budget",
     (maxInputTokens) => {
       const { current, experimental } = expectOnlySteeringRemoved(
@@ -1092,7 +1116,6 @@ describe("assembleChatPrompt registry integration", () => {
         userRelationship: {
           relationshipType: "共同生活两年的师生",
           initialCloseness: 0.58,
-          initialTrust: 0.7,
           behaviorModes: [
             {
               conditions: ["公开场合"],
@@ -1173,7 +1196,6 @@ describe("assembleChatPrompt registry integration", () => {
         userRelationship: {
           relationshipType: "长期相处的师生",
           initialCloseness: 0.6,
-          initialTrust: 0.7,
           behaviorModes: [
             { conditions: ["公开场合"], behavior: "维持克制的师生距离" },
             { conditions: ["私下独处"], behavior: "允许更柔软的表达" },
@@ -1366,7 +1388,7 @@ describe("assembleChatPrompt registry integration", () => {
       baseInput({
         lifePlanningMode: "fuzzy",
         lifeContext,
-        maxInputTokens: 512,
+        maxInputTokens: 3_000,
       }),
     );
     const tightTrace = tight.segmentTrace.segments.find(
@@ -1659,14 +1681,14 @@ describe("assembleChatPrompt registry integration", () => {
           role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
           content: "m".repeat(2_000),
         })),
-        maxInputTokens: 512,
+        maxInputTokens: 3_000,
       }),
     );
 
-    expect(result.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(512);
+    expect(result.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(3_000);
     expect(
       estimatePromptTokens(result.system) + estimatePromptTokens(result.prompt),
-    ).toBeLessThanOrEqual(512);
+    ).toBeLessThanOrEqual(3_000);
     expect(
       result.segmentTrace.segments
         .filter((segment) => segment.required)
@@ -1729,17 +1751,11 @@ describe("assembleChatPrompt registry integration", () => {
     expect(instructions).toContain(
       "moodValence, moodArousal, energy, stress, socialBattery, and focus",
     );
-    expect(instructions).toContain(
-      "closeness, trust, familiarity, and recentInteractionValence",
-    );
+    expect(instructions).toContain("relationshipDelta may use only closeness");
     expect(instructions).toContain("never closenessDelta");
-    expect(instructions).toContain("Direct support, hurt, repair");
-    expect(instructions).toContain(
-      "recentInteractionValence for the immediate positive or negative tone",
-    );
-    expect(instructions).toContain(
-      "server already applies routine familiarity",
-    );
+    expect(instructions).toContain("meaningful support, hurt, repair");
+    expect(instructions).toContain("Immediate feelings belong to stateDelta");
+    expect(instructions).toContain("server owns routine interaction growth");
 
     const promptLines = result.prompt.split("\n");
     const contractIndex = promptLines.indexOf("OUTPUT_CONTRACT_JSON");
@@ -1874,7 +1890,7 @@ describe("assembleChatPrompt registry integration", () => {
     );
 
     const tight = assembleChatPrompt(
-      baseInput({ schedule, maxInputTokens: 512 }),
+      baseInput({ schedule, maxInputTokens: 3_000 }),
     );
     const tightTrace = tight.segmentTrace.segments.find(
       (segment) => segment.id === "12_future_schedule",

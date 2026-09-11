@@ -25,7 +25,6 @@ export interface ReplyStrategyContext {
   };
   relationship?: {
     closeness: number;
-    trust: number;
   };
 }
 
@@ -40,6 +39,12 @@ export interface ReplyStrategy {
   lengthGuidance: string;
   deliveryGuidance: string;
   stateGuidance: string;
+  affinityPolicyVersion: "single_affinity_v1";
+  affinityGuidance: string;
+  affinityApplied: boolean;
+  lengthOverride:
+    "none" | "greeting" | "explicit_brief" | "requested_detail" | "listen";
+  reviewUpperChars: number;
 }
 
 const BRIEF_REQUEST =
@@ -58,6 +63,8 @@ const ANALYTICAL_REQUEST_EN =
   /\b(?:what|why|how|compare|explain|analy[sz](?:e|is|ing)|recommend(?:ation)?s?|plan(?:ning)?|design|architecture|trade-?offs?|steps?|risks?)\b/iu;
 const GREETING_OR_ACK =
   /^(?:你?好|嗨|哈[喽啰]|早上好|早安|午安|晚上好|晚安|在吗|谢谢|好的|好呀|嗯+|哦+|收到|hello|hi|hey|thanks)[!！。.，,～~ ]*$/iu;
+const QUIET_COMPANY =
+  /(?:只想|只要|想要|希望).{0,12}(?:陪我|陪着|陪伴|安静)|(?:先|只)(?:听我说|让我说完)|(?:不想|不要|别|不用).{0,6}(?:分析|建议)/u;
 
 /**
  * Produces a soft response budget. It deliberately avoids hard output-length
@@ -88,10 +95,13 @@ export function deriveReplyStrategy(
   const explicitDeep =
     !helpDeferred && DEEP_REQUEST.test(text) && detailPermitted;
   const explicitBrief =
-    BRIEF_REQUEST.test(text) &&
-    !NEGATED_BRIEF_REQUEST.test(text) &&
+    BRIEF_REQUEST.test(text) && !NEGATED_BRIEF_REQUEST.test(text);
+  const greeting = text.length <= 24 && GREETING_OR_ACK.test(text);
+  const listening =
     !explicitDetail &&
-    !explicitDeep;
+    !explicitDeep &&
+    !currentStructuredTask &&
+    (helpDeferred || QUIET_COMPANY.test(text));
 
   let score = 0;
   if (text.length >= 70) score += 1;
@@ -114,7 +124,7 @@ export function deriveReplyStrategy(
     score += 1;
 
   let complexity: ReplyComplexity;
-  if (explicitBrief || (text.length <= 24 && GREETING_OR_ACK.test(text))) {
+  if (explicitBrief || greeting) {
     complexity = "brief";
   } else if (explicitDeep || score >= 4) {
     complexity = "deep";
@@ -132,6 +142,25 @@ export function deriveReplyStrategy(
   );
   const personaBaseline = averageLength * (0.7 + verbosity * 0.9);
   let target = targetFor(complexity, personaBaseline);
+  const affinity = clamp(context.relationship?.closeness ?? 0.1, 0, 1);
+  const affinityApplied = complexity === "standard" && !listening;
+  const lengthOverride: ReplyStrategy["lengthOverride"] = greeting
+    ? "greeting"
+    : explicitBrief
+      ? "explicit_brief"
+      : listening
+        ? "listen"
+        : complexity === "complex" || complexity === "deep"
+          ? "requested_detail"
+          : "none";
+  if (affinityApplied) {
+    const smooth = affinity * affinity * (3 - 2 * affinity);
+    target = Math.round(clamp(personaBaseline, 40, 120) * (0.5 + 1.8 * smooth));
+  } else if (greeting) {
+    target = clamp(Math.round(personaBaseline * 0.22), 8, 24);
+  } else if (explicitBrief || listening) {
+    target = clamp(Math.round(personaBaseline * 0.4), 16, 48);
+  }
   let range = rangeFor(complexity, target);
   let preferredChunkCount = clamp(
     Math.round(dialogue.averageChunksPerTurn ?? 1),
@@ -156,14 +185,8 @@ export function deriveReplyStrategy(
     const sleepDebt = clamp(runtime.sleepDebtMinutes ?? 0, 0, 720) / 720;
     const fatigue = Math.max((1 - energy) * 0.65 + stress * 0.35, sleepDebt);
     if (fatigue >= 0.55) {
-      const relationshipBuffer =
-        (context.relationship?.closeness ?? 0) >= 0.8 ? 0.06 : 0;
-      const factor = clamp(
-        1 - (fatigue - 0.45) * 0.4 + relationshipBuffer,
-        0.72,
-        1,
-      );
-      target = Math.max(24, Math.round(target * factor));
+      const factor = clamp(1 - (fatigue - 0.45) * 0.4, 0.72, 1);
+      target = Math.max(8, Math.round(target * factor));
       range = rangeFor(complexity, target);
       preferredChunkCount = Math.min(
         preferredChunkCount,
@@ -176,7 +199,7 @@ export function deriveReplyStrategy(
       deliveryPreference = "prefer_single_block";
     }
     if (focus < 0.3) {
-      target = Math.max(24, Math.round(target * 0.88));
+      target = Math.max(8, Math.round(target * 0.88));
       range = rangeFor(complexity, target);
       preferredChunkCount = Math.min(preferredChunkCount, 2);
     } else if (focus > 0.78 && fatigue < 0.55) {
@@ -195,6 +218,13 @@ export function deriveReplyStrategy(
     }
   }
 
+  if (complexity === "brief" || complexity === "standard" || listening) {
+    range = {
+      minimum: Math.max(1, Math.round(target * 0.65)),
+      maximum: Math.max(target, Math.round(target * 1.55)),
+    };
+  }
+
   return {
     complexity,
     targetMinChars: range.minimum,
@@ -211,7 +241,24 @@ export function deriveReplyStrategy(
       preferredChunkCount,
     ),
     stateGuidance: stateGuidanceFor(runtime),
+    affinityPolicyVersion: "single_affinity_v1",
+    affinityGuidance: affinityGuidanceFor(affinity),
+    affinityApplied,
+    lengthOverride,
+    reviewUpperChars: Math.max(Math.ceil(target * 1.6), target + 16),
   };
+}
+
+function affinityGuidanceFor(affinity: number): string {
+  const expression =
+    affinity < 0.25
+      ? "Keep polite personal distance. Acknowledge the current point with one short, complete thought; do not volunteer several topics, advice branches or questions."
+      : affinity < 0.55
+        ? "Speak with growing ease. You may add one relevant thought or gentle follow-up when it fits the user's request."
+        : affinity < 0.8
+          ? "Show comfortable personal concern. Follow the same topic one layer further and express a grounded personal attitude when useful."
+          : "Speak with relaxed familiarity and willingness to engage. You may share a grounded attitude or specific concern and develop the current topic naturally, without repetitive reassurance or padding.";
+  return `${expression} This is present relational expression, not a replacement personality. Preserve the character's own warmth, vocabulary and boundaries. High affinity does not imply agreement, trust in unsupported claims, consent, romance or invented shared history. Explicit brevity, requested detail, quiet companionship and current capacity take priority. Never force nicknames, questions or extra words, and never reveal scores or stages.`;
 }
 
 function stateGuidanceFor(state: ReplyStrategyContext["state"]): string {

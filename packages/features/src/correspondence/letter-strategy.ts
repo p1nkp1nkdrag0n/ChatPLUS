@@ -6,7 +6,6 @@ export interface LetterStrategyContext {
   readonly characterVerbosity?: number;
   readonly relationship?: {
     readonly closeness: number;
-    readonly trust: number;
   };
   readonly stationeryType?: LetterStationeryType;
 }
@@ -36,8 +35,6 @@ export function deriveLetterStrategy(
   const stationeryType = context.stationeryType ?? "standard";
   const verbosity = clamp(context.characterVerbosity ?? 0.5, 0, 1);
   const closeness = clamp(context.relationship?.closeness ?? 0.5, 0, 1);
-  const trust = clamp(context.relationship?.trust ?? 0.5, 0, 1);
-  const relationshipStrength = (closeness + trust) / 2;
   const incomingLengthSignal = clamp(
     incomingLetterBody.trim().length / 1_200,
     0,
@@ -49,7 +46,7 @@ export function deriveLetterStrategy(
       stationery.baseline +
         incomingLengthSignal * 340 +
         verbosity * 280 +
-        relationshipStrength * 180,
+        closeness * 180,
     ),
     400,
     stationery.maximum,
@@ -67,17 +64,9 @@ export function deriveLetterStrategy(
     stationeryType === "extended" ? 7 : 6,
   );
   const salutationStyle: LetterSalutationStyle =
-    closeness >= 0.78 && trust >= 0.68
-      ? "intimate"
-      : relationshipStrength >= 0.45
-        ? "warm"
-        : "courteous";
+    closeness >= 0.78 ? "intimate" : closeness >= 0.45 ? "warm" : "courteous";
   const closingStyle: LetterClosingStyle =
-    closeness >= 0.8 && trust >= 0.75
-      ? "affectionate"
-      : relationshipStrength >= 0.4
-        ? "gentle"
-        : "formal";
+    closeness >= 0.8 ? "affectionate" : closeness >= 0.4 ? "gentle" : "formal";
 
   return Object.freeze({
     targetMinChars,
@@ -90,7 +79,7 @@ export function deriveLetterStrategy(
     lengthGuidance: `Aim for roughly ${targetMinChars}-${targetMaxChars} Chinese characters; this is a soft budget, and grounded completeness matters more than an exact count.`,
     structureGuidance: `Write one complete letter in about ${paragraphCount} coherent paragraphs, with a ${salutationStyle} salutation and a ${closingStyle} closing.`,
     evidenceGuidance:
-      "This strategy controls expression only. It supplies no facts; use only facts and evidence present in the frozen snapshot.",
+      "This strategy controls expression only. It supplies no facts; use only facts and evidence present in the frozen snapshot. A familiar salutation or affectionate closing means relaxed personal regard, never presumed romance, consent or invented shared history.",
   });
 }
 

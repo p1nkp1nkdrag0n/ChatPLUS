@@ -848,7 +848,7 @@ function generationContext(): LetterGenerationContextV1 {
       knowledge: {},
     },
     runtimeState: { energy: 0.7 },
-    relationship: { closeness: 0.75, trust: 0.8 },
+    relationship: { closeness: 0.75 },
     fuzzyLife: {
       dailyContext: { summary: "抵达日清晨很安静" },
       intents: [{ text: "也许去散步", status: "planned" }],

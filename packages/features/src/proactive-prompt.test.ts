@@ -165,9 +165,6 @@ describe("prompt and persona guard", () => {
         relationship: {
           userId,
           closeness: 0.6,
-          trust: 0.7,
-          familiarity: 0.5,
-          recentInteractionValence: 0.2,
         },
         revision: 0,
       },
@@ -236,9 +233,7 @@ describe("prompt and persona guard", () => {
     expect(assembled.prompt).not.toContain(userId);
     expect(assembled.prompt).not.toContain("agent-1");
     expect(assembled.system).toContain("replyDecision and worldEffects");
-    expect(assembled.system).toContain(
-      "For complex questions, explain naturally and completely",
-    );
+    expect(assembled.system).toContain("requested explanations stay complete");
     expect(assembled.system).toContain(
       "Choose deliveryMode as the character would",
     );

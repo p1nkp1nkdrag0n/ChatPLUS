@@ -213,6 +213,11 @@ export class ReplyRepairService {
             targetMaxChars: input.replyStrategy.targetMaxChars,
             deliveryPreference: input.replyStrategy.deliveryPreference,
             preferredChunkCount: input.replyStrategy.preferredChunkCount,
+            affinityPolicyVersion: input.replyStrategy.affinityPolicyVersion,
+            affinityGuidance: input.replyStrategy.affinityGuidance,
+            affinityApplied: input.replyStrategy.affinityApplied,
+            lengthOverride: input.replyStrategy.lengthOverride,
+            reviewUpperChars: input.replyStrategy.reviewUpperChars,
           })}\n` +
           'Return at minimum {"text":"the complete repaired in-character reply"}. You may add toneTags and deliveryMode. Add chunks only when deliveryMode is sequential; omit chunks for single_block.',
         schema: PersonaChatResponseSchema,

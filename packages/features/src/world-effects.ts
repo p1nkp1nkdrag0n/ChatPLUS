@@ -55,12 +55,7 @@ const STATE_KEYS = [
   "socialBattery",
   "focus",
 ] as const;
-const RELATIONSHIP_KEYS = [
-  "closeness",
-  "trust",
-  "familiarity",
-  "recentInteractionValence",
-] as const;
+const RELATIONSHIP_KEYS = ["closeness"] as const;
 const SERVER_OWNED_STATE_KEYS = new Set([
   "agentId",
   "asOfUtc",
@@ -478,9 +473,6 @@ export function validateWorldEffects(
         {
           userId: LOCAL_USER_ID,
           closeness: 0.5,
-          trust: 0.5,
-          familiarity: 0.5,
-          recentInteractionValence: 0,
         },
         parsed,
         "1970-01-01T00:00:00.000Z",

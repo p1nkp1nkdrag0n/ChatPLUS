@@ -117,7 +117,6 @@ export class TurnCommitAuditWriter {
             capabilityScale: input.capabilities.relationshipDeltaScale,
             limitsApplied:
               input.world.effectTrace.actual.relationship.limitsApplied,
-            valence: input.world.effectTrace.actual.relationship.valence,
           },
           ...(input.world.effectTrace.wouldApply === undefined
             ? {}

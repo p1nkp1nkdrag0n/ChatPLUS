@@ -10,7 +10,7 @@ describe("validateWorldEffects", () => {
       replyDecision: { text: "I am listening." },
       worldEffects: {
         stateDelta: { energy: -1, stress: 0.7 },
-        relationshipDelta: { trust: 0.8, familiarity: -0.5 },
+        relationshipDelta: { closeness: 0.8 },
       },
     });
 
@@ -18,8 +18,7 @@ describe("validateWorldEffects", () => {
 
     expect(result.effects.stateDelta).toEqual({ energy: -0.2, stress: 0.2 });
     expect(result.effects.relationshipDelta).toEqual({
-      trust: 0.08,
-      familiarity: 0,
+      closeness: 0.08,
     });
     expect(result.limitsApplied).toEqual(["state_delta", "relationship_delta"]);
     expect(result.rejections).toEqual([]);
@@ -87,16 +86,17 @@ describe("validateWorldEffects", () => {
       replyDecision: { text: "The valid effects remain usable." },
       worldEffects: {
         stateDelta: { stress: 0.1, energy: "low" },
-        relationshipDelta: { trust: 0.02, closeness: Number.NaN },
+        relationshipDelta: { retiredField: 0.02, closeness: Number.NaN },
       },
     });
 
     const result = validateWorldEffects(envelope.worldEffects);
 
     expect(result.effects.stateDelta).toEqual({ stress: 0.1 });
-    expect(result.effects.relationshipDelta).toEqual({ trust: 0.02 });
+    expect(result.effects.relationshipDelta).toBeUndefined();
     expect(result.rejections.map((item) => item.reasonCode)).toEqual([
       "invalid_state_delta_field",
+      "unknown_relationship_delta_field",
       "invalid_relationship_delta_field",
     ]);
   });

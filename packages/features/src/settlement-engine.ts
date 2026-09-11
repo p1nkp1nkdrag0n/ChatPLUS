@@ -669,25 +669,16 @@ function applySharedActivityRelationship<
 const SHARED_ACTIVITY_RELATIONSHIP_EFFECTS = {
   completed: {
     closeness: 0.006,
-    trust: 0.003,
-    familiarity: 0.002,
-    recentInteractionValence: 0.08,
   },
   partial: {
     closeness: 0.003,
-    trust: 0.001,
-    familiarity: 0.001,
-    recentInteractionValence: 0.03,
   },
   skipped: {
-    closeness: -0.002,
-    trust: -0.003,
-    recentInteractionValence: -0.08,
+    // An automatic outcome does not establish that the user caused harm.
+    closeness: 0,
   },
   cancelled: {
-    closeness: -0.001,
-    trust: -0.002,
-    recentInteractionValence: -0.05,
+    closeness: 0,
   },
 } as const;
 
@@ -696,14 +687,9 @@ function usageDifference(
   after: RelationshipDailyUsage,
 ): RelationshipDailyUsage {
   const difference: RelationshipDailyUsage = {};
-  for (const field of [
-    "closeness",
-    "trust",
-    "familiarity",
-    "recentInteractionValence",
-  ] as const) {
+  for (const field of ["closeness", "baselineCloseness"] as const) {
     const amount = (after[field] ?? 0) - (before?.[field] ?? 0);
-    if (amount > 0) difference[field] = amount;
+    if (amount !== 0) difference[field] = Number(amount.toFixed(12));
   }
   return difference;
 }

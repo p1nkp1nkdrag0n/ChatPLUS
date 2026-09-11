@@ -730,18 +730,12 @@ describe("planner and settlement", () => {
   );
 
   it.each([
-    ["completed", 0.006, 0.003, 0.002, 1],
-    ["partial", 0.003, 0.001, 0.001, 0.5],
-    ["skipped", -0.002, -0.003, 0, 0],
+    ["completed", 0.006, 1],
+    ["partial", 0.003, 0.5],
+    ["skipped", 0, 0],
   ] as const)(
     "applies a bounded shared-activity relationship outcome after %s",
-    (
-      expectedStatus,
-      closenessDelta,
-      trustDelta,
-      familiarityDelta,
-      completionRatio,
-    ) => {
+    (expectedStatus, closenessDelta, completionRatio) => {
       const state = {
         agentId: "agent-1",
         asOfUtc: NOW,
@@ -755,9 +749,6 @@ describe("planner and settlement", () => {
         relationship: {
           userId: "local-user",
           closeness: 0.2,
-          trust: 0.25,
-          familiarity: 0.1,
-          recentInteractionValence: 0,
         },
         revision: 0,
       };
@@ -812,20 +803,17 @@ describe("planner and settlement", () => {
         effectTrace: {
           relationshipSource: "shared_activity_outcome",
           relationship: {
-            baselineDelta: { familiarity: 0 },
+            baselineDelta: { closeness: 0 },
           },
         },
       });
       expect(settled.state.relationship).toMatchObject({
-        closeness: 0.2 + closenessDelta,
-        trust: 0.25 + trustDelta,
-        familiarity: 0.1 + familiarityDelta,
+        closeness: Number((0.2 + closenessDelta).toFixed(12)),
         lastInteractionAtUtc: "2026-06-01T10:00:00.000Z",
       });
-      expect(settled.relationshipDailyUsageApplied).toMatchObject({
-        closeness: Math.abs(closenessDelta),
-        trust: Math.abs(trustDelta),
-      });
+      expect(settled.relationshipDailyUsageApplied.closeness ?? 0).toBe(
+        closenessDelta,
+      );
       expect(settled.state.revision).toBe(1);
     },
   );
@@ -855,9 +843,6 @@ describe("planner and settlement", () => {
       relationship: {
         userId: "local-user",
         closeness: 0.2,
-        trust: 0.25,
-        familiarity: 0.1,
-        recentInteractionValence: 0,
       },
       revision: 0,
     };
@@ -888,9 +873,7 @@ describe("planner and settlement", () => {
     expect(cancelledEvent?.effectTrace).not.toHaveProperty("outcomeRoll");
     expect(settled.changedItems).toEqual([]);
     expect(settled.state.relationship).toMatchObject({
-      closeness: 0.199,
-      trust: 0.248,
-      familiarity: 0.1,
+      closeness: 0.2,
       lastInteractionAtUtc: cancelled.updatedAtUtc,
     });
 

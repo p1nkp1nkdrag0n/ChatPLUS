@@ -1,3 +1,4 @@
+import type { AffinityDeliveryAudit } from "./affinity-delivery-service.js";
 import type {
   ConversationContextPlan,
   EffectivePersonaSnapshot,
@@ -194,6 +195,7 @@ export interface ConsentModalityGuardAudit {
 }
 
 export type ResolvedTurn = {
+  affinityDeliveryAudit?: AffinityDeliveryAudit;
   decision: AgentTurnDecision;
   inspection: DecisionInspection;
   repairAttempted: boolean;
@@ -1458,8 +1460,6 @@ function fixtureDecision(
       stateDelta: { moodValence: 0.03, stress: -0.03 },
       relationshipDelta: {
         closeness: 0.012,
-        trust: 0.018,
-        recentInteractionValence: 0.05,
       },
       memoryCandidates: [],
       personalIntentCandidates: [],
@@ -1535,8 +1535,6 @@ function fixtureDecision(
         stateDelta: { moodValence: 0.08, moodArousal: 0.1 },
         relationshipDelta: {
           closeness: 0.025,
-          trust: 0.01,
-          recentInteractionValence: 0.12,
         },
         memoryCandidates: [
           {
@@ -1587,7 +1585,7 @@ function fixtureDecision(
     },
     scheduleEffects: [],
     stateDelta: { socialBattery: -0.015, moodValence: 0.015 },
-    relationshipDelta: { closeness: 0.008, recentInteractionValence: 0.03 },
+    relationshipDelta: { closeness: 0.008 },
     memoryCandidates: [...explicitFacts, ...reviewedContinuityMemories].slice(
       0,
       4,

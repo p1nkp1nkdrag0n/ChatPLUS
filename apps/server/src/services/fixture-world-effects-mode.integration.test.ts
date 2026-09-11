@@ -49,17 +49,11 @@ describe("fixture world-effects modes", () => {
       socialBattery: before.socialBattery,
       focus: before.focus,
       relationship: {
-        closeness: before.relationship.closeness,
-        trust: before.relationship.trust,
-        recentInteractionValence: before.relationship.recentInteractionValence,
+        closeness: before.relationship.closeness + 0.001,
         lastInteractionAtUtc: START_UTC,
       },
     });
     expect(after.revision).toBe(before.revision + 1);
-    expect(after.relationship.familiarity).toBeCloseTo(
-      before.relationship.familiarity + 0.001,
-      8,
-    );
 
     const chatCall = generate.mock.calls.find(
       ([input]) => input.purpose === "chat_turn",
@@ -88,7 +82,7 @@ describe("fixture world-effects modes", () => {
         audit?.payload,
         "applied",
         "relationshipDelta",
-        "familiarity",
+        "closeness",
       ),
     ).toBe("number");
   });
@@ -117,17 +111,11 @@ describe("fixture world-effects modes", () => {
       socialBattery: before.socialBattery,
       focus: before.focus,
       relationship: {
-        closeness: before.relationship.closeness,
-        trust: before.relationship.trust,
-        recentInteractionValence: before.relationship.recentInteractionValence,
+        closeness: before.relationship.closeness + 0.001,
         lastInteractionAtUtc: START_UTC,
       },
     });
     expect(after.revision).toBe(before.revision + 1);
-    expect(after.relationship.familiarity).toBeCloseTo(
-      before.relationship.familiarity + 0.001,
-      8,
-    );
     const audit = app.personasim.store
       .listDomainEvents(character.id, 100)
       .find(
@@ -146,17 +134,10 @@ describe("fixture world-effects modes", () => {
       rejectionCodes: [],
     });
     for (const path of [
-      ["applied", "relationshipDelta", "familiarity"],
+      ["applied", "relationshipDelta", "closeness"],
       ["wouldApply", "applied", "stateDelta", "moodValence"],
       ["wouldApply", "applied", "stateDelta", "socialBattery"],
       ["wouldApply", "applied", "relationshipDelta", "closeness"],
-      ["wouldApply", "applied", "relationshipDelta", "familiarity"],
-      [
-        "wouldApply",
-        "applied",
-        "relationshipDelta",
-        "recentInteractionValence",
-      ],
     ] as const) {
       expect(typeof nestedValue(audit?.payload, ...path)).toBe("number");
     }
@@ -240,6 +221,8 @@ describe("fixture world-effects modes", () => {
     expect(committedAudit(app, character.id)?.payload).toMatchObject({
       mode: "enforced",
       accepted: { stateDelta: true },
+      source: { baselineEligibility: { eligible: false, reason: "fallback" } },
+      relationship: { baselineDelta: { closeness: 0 } },
     });
   });
 

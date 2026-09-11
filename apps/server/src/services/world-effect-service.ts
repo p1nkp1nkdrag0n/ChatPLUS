@@ -31,8 +31,10 @@ import {
   type ReplyRepairBudget,
 } from "./semantic-reply-guard.js";
 import {
-  loadDailyRelationshipSignedUsage,
-  type RelationshipDailySignedUsage,
+  loadDailyRelationshipUsage,
+  relationshipBaselineEligibility,
+  type RelationshipBaselineEligibility,
+  type RelationshipEvidenceKind,
 } from "./relationship-effect-usage.js";
 import type {
   PartialProposalValidation,
@@ -112,7 +114,8 @@ export interface WorldEffectTrace {
   sources: {
     relationshipBaseline: "server_interaction_baseline";
     semanticProposal: "none" | "model_validated_envelope";
-    relationshipEvidence: "neutral" | "rupture_or_boundary" | "explicit_repair";
+    relationshipEvidence: RelationshipEvidenceKind;
+    baselineEligibility: RelationshipBaselineEligibility;
   };
   proposed: {
     stateDelta?: unknown;
@@ -560,16 +563,21 @@ export class WorldEffectService {
       input.state.relationship.lastInteractionAtUtc,
       input.nowUtc,
     );
-    const signedUsage = loadDailyRelationshipSignedUsage(
+    const dailyUsage = loadDailyRelationshipUsage(
       this.store,
       input.agentId,
       input.spec.identity.timezone,
       effectiveInteractionAtUtc,
     );
-    const dailyUsage = signedUsageForProposal(
-      decision.relationshipDelta,
-      signedUsage,
-    );
+    const baselineEligibility = relationshipBaselineEligibility({
+      store: this.store,
+      agentId: input.agentId,
+      timezone: input.spec.identity.timezone,
+      atUtc: effectiveInteractionAtUtc,
+      userText: input.userText,
+      usedFallback,
+      evidence: relationshipSemantics.evidence,
+    });
     const actual = applyTurnState({
       state: input.state,
       stateDelta: effectMode === "enforced" ? decision.stateDelta : undefined,
@@ -578,6 +586,7 @@ export class WorldEffectService {
       nowUtc: input.nowUtc,
       capabilities: input.capabilities,
       dailyUsage,
+      includeInteractionBaseline: baselineEligibility.eligible,
     });
     const shadowAccepted = input.turn.worldEffectsAudit?.validation.effects;
     const wouldApply =
@@ -588,10 +597,8 @@ export class WorldEffectService {
             relationshipDelta: relationshipSemantics.accepted,
             nowUtc: input.nowUtc,
             capabilities: input.capabilities,
-            dailyUsage: signedUsageForProposal(
-              relationshipSemantics.accepted,
-              signedUsage,
-            ),
+            dailyUsage,
+            includeInteractionBaseline: baselineEligibility.eligible,
           })
         : undefined;
     const worldValidation = input.turn.worldEffectsAudit?.validation;
@@ -604,6 +611,7 @@ export class WorldEffectService {
         semanticProposal:
           worldValidation === undefined ? "none" : "model_validated_envelope",
         relationshipEvidence: relationshipSemantics.evidence,
+        baselineEligibility,
       },
       proposed: worldValidation?.proposed ?? {},
       accepted: {
@@ -646,6 +654,98 @@ export class WorldEffectService {
     };
   }
 }
+/** Remove only the baseline when a later reply guard selects a fallback.
+ * Already applied proposal contributions stay frozen; released budget is not
+ * an opportunity to grant more effects after the original decision. */
+export function withoutFallbackRelationshipBaseline(
+  world: PreparedWorldEffectTurn,
+): PreparedWorldEffectTurn {
+  const actual = removeApplicationBaseline(world.effectTrace.actual);
+  const nextState = {
+    ...world.nextState,
+    relationship: { ...actual.after.relationship },
+    revision: actual.after.revision,
+  };
+  return {
+    ...world,
+    nextState,
+    stateChanged:
+      nextState.revision !== world.effectTrace.expectedStateRevision,
+    effectTrace: {
+      ...world.effectTrace,
+      sources: {
+        ...world.effectTrace.sources,
+        baselineEligibility: { eligible: false, reason: "fallback" },
+      },
+      actual,
+      ...(world.effectTrace.wouldApply === undefined
+        ? {}
+        : {
+            wouldApply: removeApplicationBaseline(world.effectTrace.wouldApply),
+          }),
+    },
+  };
+}
+
+function removeApplicationBaseline(
+  application: RuntimeEffectApplication,
+): RuntimeEffectApplication {
+  const original = application.relationship;
+  const projected = applyRelationshipInteraction({
+    state: application.before.relationship,
+    atUtc: original.after.lastInteractionAtUtc ?? application.after.asOfUtc,
+    capabilityScale: 1,
+    proposal: original.appliedProposalDelta,
+    dailyUsage: application.dailyUsageBefore,
+    includeInteractionBaseline: false,
+  });
+  const relationship: RelationshipInteractionResult<
+    RuntimeState["relationship"]
+  > = {
+    ...projected,
+    proposedDelta: { ...original.proposedDelta },
+    acceptedProposalDelta: { ...original.acceptedProposalDelta },
+    limitsApplied: [
+      ...original.limitsApplied.filter(
+        (item) => item.source === "proposal" && item.stage !== "state_boundary",
+      ),
+      ...projected.limitsApplied.filter(
+        (item) => item.stage === "state_boundary",
+      ),
+    ],
+  };
+  const changed =
+    Object.keys(application.applied.stateDelta).length > 0 ||
+    !sameRelationship(application.before.relationship, relationship.after) ||
+    application.after.asOfUtc !== application.before.asOfUtc;
+  const after: RuntimeEffectSnapshot = {
+    ...application.after,
+    relationship: { ...relationship.after },
+    revision: application.before.revision + (changed ? 1 : 0),
+  };
+  const dailyUsageApplied: RelationshipDailyUsage = {};
+  for (const field of ["closeness", "baselineCloseness"] as const) {
+    const delta = Number(
+      (
+        relationship.dailyUsageAfter[field] -
+        (application.dailyUsageBefore[field] ?? 0)
+      ).toFixed(12),
+    );
+    if (delta !== 0) dailyUsageApplied[field] = delta;
+  }
+  return {
+    ...application,
+    after,
+    applied: {
+      ...application.applied,
+      relationshipDelta: { ...relationship.appliedDelta },
+    },
+    relationship,
+    dailyUsageApplied,
+    dailyUsageAfter: { ...relationship.dailyUsageAfter },
+  };
+}
+
 function materializeAcceptedScheduleAction(input: {
   action: ResolvedTurn["scheduleAction"];
   userText: string;
@@ -1114,7 +1214,7 @@ export function appendNegotiationReplyIssues(
 }
 
 interface RelationshipSemanticValidation {
-  evidence: "neutral" | "rupture_or_boundary" | "explicit_repair";
+  evidence: RelationshipEvidenceKind;
   accepted: AgentTurnDecision["relationshipDelta"];
   rejections: TurnProposalRejection[];
 }
@@ -1126,28 +1226,32 @@ interface RelationshipSemanticValidation {
  * positive durable movement. The server rejects only the unsupported sign; it
  * never invents a negative delta on the model's behalf.
  */
-function validateRelationshipSemanticDirection(input: {
+export function validateRelationshipSemanticDirection(input: {
   userText: string;
   delta: AgentTurnDecision["relationshipDelta"];
 }): RelationshipSemanticValidation {
   const evidence = relationshipEvidenceKind(input.userText);
-  if (input.delta === undefined || evidence !== "rupture_or_boundary") {
+  if (input.delta === undefined) {
     return { evidence, accepted: input.delta, rejections: [] };
   }
 
   const accepted: RelationshipDeltaLike = { ...input.delta };
   const rejections: TurnProposalRejection[] = [];
-  for (const field of [
-    "closeness",
-    "trust",
-    "recentInteractionValence",
-  ] as const) {
+  for (const field of ["closeness"] as const) {
     const proposed = accepted[field];
-    if (proposed === undefined || proposed <= 0) continue;
+    if (proposed === undefined || proposed === 0) continue;
+    const unsupported =
+      proposed < 0
+        ? evidence !== "rupture_or_boundary"
+        : evidence !== "neutral" && evidence !== "explicit_repair";
+    if (!unsupported) continue;
     delete accepted[field];
     rejections.push({
       reasonCode: "relationship_direction_unsupported",
-      reasonSummary: `Positive ${field} movement is unsupported by explicit user rupture or boundary evidence.`,
+      reasonSummary:
+        proposed > 0
+          ? `Positive ${field} movement is unsupported by explicit user rupture or boundary evidence.`
+          : `Negative ${field} movement requires explicit relationship rupture evidence; ordinary disagreement or temporary mood is insufficient.`,
       raw: { field, proposed, evidence: input.userText },
     });
   }
@@ -1161,17 +1265,55 @@ function validateRelationshipSemanticDirection(input: {
 function relationshipEvidenceKind(
   userText: string,
 ): RelationshipSemanticValidation["evidence"] {
-  const text = userText.replace(/\s+/gu, " ").trim();
-  const explicitRepair =
-    /(?:我们(?:已经)?和好|愿意重新(?:谈|聊|开始)|接受(?:你的)?道歉|原谅你|误会(?:已经)?(?:讲清楚|说开)|谢谢你.{0,24}(?:停下来|道歉|重新听)|(?:我|这件事).{0,18}对不起|修复.{0,20}(?:更准确|说清责任|继续|重新))/u.test(
-      text,
+  const text = userText.normalize("NFC").replace(/\s+/gu, " ").trim();
+  // Quoted, hypothetical and reported speech is not a present relationship fact.
+  const unquoted = text.replace(
+    /“[^”]*”|「[^」]*」|『[^』]*』|"[^"]*"|'[^']*'/gu,
+    " ",
+  );
+  const asserted = unquoted
+    .split(/(?<=[。！？!?；;])/u)
+    .filter(
+      (sentence) =>
+        !/(?:如果|假如|要是|假设|比如|例如|当我说|他说|她说|朋友说|同事说|台词|故事里|[?？])/u.test(
+          sentence,
+        ),
     );
+  const repairMentioned =
+    /(?:原谅你|接受你的道歉|我们.{0,6}和好|愿意重新(?:谈|聊|开始))/u.test(text);
+  const deniedRepair =
+    /(?:不|没|没有|尚未|还没|并未|不能|不愿意).{0,8}(?:原谅你|接受你的道歉|和好|愿意重新)/u;
+  const explicitRepair = asserted.some(
+    (sentence) =>
+      !deniedRepair.test(sentence) &&
+      /(?:我(?:已经|现在|愿意|决定)?(?:原谅你|接受你的道歉)|我们(?:已经|现在)?和好了?|(?:^|[，,])(?:现在)?原谅你了|误会(?:已经)?(?:讲清楚了|说开了)|谢谢你.{0,24}(?:停下来|道歉|重新听)|我愿意重新(?:和你)?(?:谈|聊|开始))/u.test(
+        sentence,
+      ),
+  );
+  const rupture = asserted.some((sentence) => {
+    if (
+      /(?:和|跟|与)你(?:没(?:有)?关系|无关)|不是你.{0,8}(?:造成|引起)|你(?:没有|没|从没|并未).{0,5}(?:骗|欺骗|越界|伤害|失信|食言)|我(?:没有|没|从没|并未).{0,5}(?:骗了?你|欺骗你|违背|伤害你|侮辱你|羞辱你)/u.test(
+        sentence,
+      )
+    )
+      return false;
+    return /(?:你(?:刚才|刚刚|又|真的|确实|一直|已经|仍然|还是|这次|对我|又一次|再一次|明明|甚至|居然|总是){0,3}(?:越界|骗了我|欺骗了我|伤害了我|不尊重我|侮辱我|失信了|食言了|违背.{0,8}(?:对我的承诺|我们的约定)|把我的意思理解反了|没有听懂我的意思)|你(?:的话|做法|态度|行为|回复)?让我.{0,8}(?:受伤|不舒服|没有被理解|没有被听见)|你(?:刚才|刚刚|这样|这么|那样|那句|说的|做的|把|又|一直|对我).{0,28}(?:让我|我觉得|我感到).{0,8}(?:受伤|不舒服|没有被理解|没有被听见)|你逼我.{0,20}(?:辞职|选择|决定)|我(?:再也)?不(?:再)?信任你|我们的关系(?:结束|破裂|到此为止)|你(?:就是|真是|是个|这个|个).{0,4}(?:废物|垃圾|蠢货|混蛋)|我(?:就是|要|想|故意).{0,6}(?:羞辱|侮辱|伤害|欺骗)你|我骗了你|我.{0,6}(?:违背|没有遵守).{0,8}(?:对你的承诺|我们的约定))/u.test(
+      sentence,
+    );
+  });
+  // A simultaneous unresolved injury and claimed repair is ambiguous: grant
+  // neither sign rather than infer that one phrase cancels the other.
+  if (rupture && explicitRepair) return "unconfirmed_repair";
+  if (rupture) return "rupture_or_boundary";
   if (explicitRepair) return "explicit_repair";
-  const ruptureOrBoundary =
-    /(?:不舒服|受伤|越界|不公平|没有?被(?:听见|理解)|你没(?:有)?(?:听懂|听进去)|停止(?:讨论|聊)|不想继续(?:这个|这件|该)?话题|如果我说停|先别再?(?:提|说|问|聊)|别再(?:提|说|问|聊)|逼我.{0,20}(?:辞职|选择|决定))/u.test(
-      text,
-    );
-  return ruptureOrBoundary ? "rupture_or_boundary" : "neutral";
+  if (repairMentioned) return "unconfirmed_repair";
+  if (
+    /(?:停止(?:讨论|聊)|不想继续(?:这个|这件|该)?话题|如果我说停|先别再?(?:提|说|问|聊)|别再(?:提|说|问|聊))/u.test(
+      unquoted,
+    )
+  )
+    return "temporary_boundary";
+  return "neutral";
 }
 
 function replaceRelationshipDelta(
@@ -1186,20 +1328,6 @@ function replaceRelationshipDelta(
   return withoutRelationshipDelta;
 }
 
-function signedUsageForProposal(
-  proposal: AgentTurnDecision["relationshipDelta"],
-  usage: RelationshipDailySignedUsage,
-): RelationshipDailyUsage {
-  const selected: RelationshipDailyUsage = {};
-  for (const field of RELATIONSHIP_EFFECT_FIELDS) {
-    const proposed = proposal?.[field];
-    const net = usage.net[field] ?? 0;
-    const outstanding = proposed !== undefined && proposed < 0 ? -net : net;
-    if (outstanding > 0) selected[field] = outstanding;
-  }
-  return selected;
-}
-
 function applyTurnState(input: {
   state: RuntimeState;
   stateDelta: AgentTurnDecision["stateDelta"];
@@ -1207,6 +1335,7 @@ function applyTurnState(input: {
   nowUtc: string;
   capabilities: SimulationCapabilities;
   dailyUsage: RelationshipDailyUsage;
+  includeInteractionBaseline: boolean;
 }): { state: RuntimeState; trace: RuntimeEffectApplication } {
   const next = structuredClone(input.state);
   const relationship = applyRelationshipInteraction({
@@ -1217,6 +1346,7 @@ function applyTurnState(input: {
       ? {}
       : { proposal: input.relationshipDelta }),
     dailyUsage: input.dailyUsage,
+    includeInteractionBaseline: input.includeInteractionBaseline,
   });
   const appliedStateDelta: StateDeltaLike = {};
   if (input.capabilities.dynamicState) {
@@ -1242,10 +1372,11 @@ function applyTurnState(input: {
   next.revision = input.state.revision + (changed ? 1 : 0);
 
   const dailyUsageApplied: RelationshipDailyUsage = {};
-  for (const field of RELATIONSHIP_EFFECT_FIELDS) {
+  for (const field of ["closeness", "baselineCloseness"] as const) {
     const before = input.dailyUsage[field] ?? 0;
     const after = relationship.dailyUsageAfter[field];
-    if (after > before) dailyUsageApplied[field] = after - before;
+    if (after !== before)
+      dailyUsageApplied[field] = Number((after - before).toFixed(12));
   }
   return {
     state: next,
@@ -1273,13 +1404,6 @@ const STATE_EFFECT_FIELDS = [
   "focus",
 ] as const;
 
-const RELATIONSHIP_EFFECT_FIELDS = [
-  "closeness",
-  "trust",
-  "familiarity",
-  "recentInteractionValence",
-] as const;
-
 function effectSnapshot(state: RuntimeState): RuntimeEffectSnapshot {
   return {
     asOfUtc: state.asOfUtc,
@@ -1301,9 +1425,6 @@ function sameRelationship(
   return (
     left.userId === right.userId &&
     left.closeness === right.closeness &&
-    left.trust === right.trust &&
-    left.familiarity === right.familiarity &&
-    left.recentInteractionValence === right.recentInteractionValence &&
     left.lastInteractionAtUtc === right.lastInteractionAtUtc
   );
 }

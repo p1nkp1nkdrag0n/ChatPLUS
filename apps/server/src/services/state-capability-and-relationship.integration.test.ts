@@ -10,6 +10,7 @@ import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { GenerateObjectInput } from "./llm-service.js";
+import { loadDailyRelationshipUsage } from "./relationship-effect-usage.js";
 
 const START_UTC = "2026-08-16T02:00:00.000Z";
 
@@ -36,9 +37,6 @@ describe("state capability and relationship scenarios", () => {
           stateDelta: { energy: -0.1, stress: 0.1 },
           relationshipDelta: {
             closeness: 0.02,
-            trust: 0.02,
-            familiarity: 0.002,
-            recentInteractionValence: 0.2,
             lastInteractionAtUtc: "2099-01-01T00:00:00.000Z",
           },
         },
@@ -66,15 +64,7 @@ describe("state capability and relationship scenarios", () => {
         10,
       );
       expect(body.state.relationship.closeness).toBeCloseTo(
-        before.relationship.closeness + 0.02 * relationshipScale,
-        10,
-      );
-      expect(body.state.relationship.trust).toBeCloseTo(
-        before.relationship.trust + 0.02 * relationshipScale,
-        10,
-      );
-      expect(body.state.relationship.familiarity).toBeCloseTo(
-        before.relationship.familiarity + 0.003 * relationshipScale,
+        before.relationship.closeness + 0.021 * relationshipScale,
         10,
       );
       expect(body.state.relationship.lastInteractionAtUtc).toBe(START_UTC);
@@ -102,9 +92,6 @@ describe("state capability and relationship scenarios", () => {
           stateDelta: { energy: -1, stress: 1 },
           relationshipDelta: {
             closeness: 1,
-            trust: 1,
-            familiarity: 1,
-            recentInteractionValence: 1,
           },
         },
       }));
@@ -129,12 +116,6 @@ describe("state capability and relationship scenarios", () => {
       expect(
         body.state.relationship.closeness - before.relationship.closeness,
       ).toBeCloseTo(0.04, 10);
-      expect(
-        body.state.relationship.trust - before.relationship.trust,
-      ).toBeCloseTo(0.03, 10);
-      expect(
-        body.state.relationship.familiarity - before.relationship.familiarity,
-      ).toBeCloseTo(0.012, 10);
 
       const audit = worldEffectsAudit(app, character.id, `limits-${tier}`);
       const limits = nestedValue(audit?.payload, "limitsApplied");
@@ -152,8 +133,6 @@ describe("state capability and relationship scenarios", () => {
         worldEffects: {
           relationshipDelta: {
             closeness: 0.02,
-            trust: 0.02,
-            recentInteractionValence: 0.3,
           },
         },
       },
@@ -162,8 +141,6 @@ describe("state capability and relationship scenarios", () => {
         worldEffects: {
           relationshipDelta: {
             closeness: -0.02,
-            trust: -0.025,
-            recentInteractionValence: -0.4,
           },
         },
       },
@@ -172,8 +149,6 @@ describe("state capability and relationship scenarios", () => {
         worldEffects: {
           relationshipDelta: {
             closeness: 0.015,
-            trust: 0.025,
-            recentInteractionValence: 0.4,
           },
         },
       },
@@ -218,29 +193,11 @@ describe("state capability and relationship scenarios", () => {
     expect(states[1]!.relationship.closeness).toBeGreaterThan(
       states[0]!.relationship.closeness,
     );
-    expect(states[1]!.relationship.trust).toBeGreaterThan(
-      states[0]!.relationship.trust,
-    );
-    expect(states[1]!.relationship.recentInteractionValence).toBeGreaterThan(
-      states[0]!.relationship.recentInteractionValence,
-    );
     expect(states[2]!.relationship.closeness).toBeLessThan(
       states[1]!.relationship.closeness,
     );
-    expect(states[2]!.relationship.trust).toBeLessThan(
-      states[1]!.relationship.trust,
-    );
-    expect(states[2]!.relationship.recentInteractionValence).toBeLessThan(
-      states[1]!.relationship.recentInteractionValence,
-    );
     expect(states[3]!.relationship.closeness).toBeGreaterThan(
       states[2]!.relationship.closeness,
-    );
-    expect(states[3]!.relationship.trust).toBeGreaterThan(
-      states[2]!.relationship.trust,
-    );
-    expect(states[3]!.relationship.recentInteractionValence).toBeGreaterThan(
-      states[2]!.relationship.recentInteractionValence,
     );
   });
 
@@ -252,8 +209,6 @@ describe("state capability and relationship scenarios", () => {
       worldEffects: {
         relationshipDelta: {
           closeness: 0.02,
-          trust: 0.02,
-          recentInteractionValence: 0.25,
         },
       },
     }));
@@ -273,13 +228,6 @@ describe("state capability and relationship scenarios", () => {
     const body = jsonBody<ChatTurnResult>(response);
     expect(body.state.relationship.closeness).toBe(
       before.relationship.closeness,
-    );
-    expect(body.state.relationship.trust).toBe(before.relationship.trust);
-    expect(body.state.relationship.recentInteractionValence).toBe(
-      before.relationship.recentInteractionValence,
-    );
-    expect(body.state.relationship.familiarity).toBeGreaterThan(
-      before.relationship.familiarity,
     );
     const audit = worldEffectsAudit(
       app,
@@ -303,8 +251,6 @@ describe("state capability and relationship scenarios", () => {
         worldEffects: {
           relationshipDelta: {
             closeness: -0.04,
-            trust: -0.03,
-            recentInteractionValence: -0.3,
           },
         },
       },
@@ -313,8 +259,6 @@ describe("state capability and relationship scenarios", () => {
         worldEffects: {
           relationshipDelta: {
             closeness: 0.04,
-            trust: 0.03,
-            recentInteractionValence: 0.3,
           },
         },
       },
@@ -338,10 +282,6 @@ describe("state capability and relationship scenarios", () => {
       initial.relationship.closeness - 0.04,
       10,
     );
-    expect(afterRupture.relationship.trust).toBeCloseTo(
-      initial.relationship.trust - 0.03,
-      10,
-    );
 
     const repair = await sendMessage(
       app,
@@ -356,10 +296,6 @@ describe("state capability and relationship scenarios", () => {
       initial.relationship.closeness,
       10,
     );
-    expect(afterRepair.relationship.trust).toBeCloseTo(
-      initial.relationship.trust,
-      10,
-    );
     const audit = worldEffectsAudit(
       app,
       character.id,
@@ -368,6 +304,188 @@ describe("state capability and relationship scenarios", () => {
     expect(nestedValue(audit?.payload, "source", "relationshipEvidence")).toBe(
       "explicit_repair",
     );
+  });
+  it("awards eligible baseline once, blocks repeated content across sessions, and preserves replay", async () => {
+    const created = await createHarness();
+    app = created.app;
+    mockChat(app, () => ({
+      replyDecision: { text: "听起来不错，我在听。" },
+      worldEffects: {},
+    }));
+    const character = await createAndPublish(app, "high_fidelity");
+    const session = await createSession(app, character.id);
+    const initial = app.personasim.store.getRuntimeState(character.id)!;
+    const text = "我今天看了一本新书，想和你聊聊。";
+    const first = await sendMessage(
+      app,
+      session,
+      character.id,
+      "baseline-first",
+      text,
+    );
+    expect(first.statusCode, first.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(first).state.relationship.closeness,
+    ).toBeCloseTo(initial.relationship.closeness + 0.001, 12);
+    const replay = await sendMessage(
+      app,
+      session,
+      character.id,
+      "baseline-first",
+      text,
+    );
+    expect(jsonBody<ChatTurnResult>(replay).idempotentReplay).toBe(true);
+    created.clock.advance({ minutes: 2 });
+    const otherSession = await createSession(app, character.id);
+    const repeated = await sendMessage(
+      app,
+      otherSession,
+      character.id,
+      "baseline-repeat",
+      "我今天看了一本新书想和你聊聊",
+    );
+    expect(repeated.statusCode, repeated.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(repeated).state.relationship.closeness,
+    ).toBeCloseTo(initial.relationship.closeness + 0.001, 12);
+    expect(
+      nestedValue(
+        worldEffectsAudit(app, character.id, "baseline-repeat")?.payload,
+        "source",
+        "baselineEligibility",
+      ),
+    ).toEqual({ eligible: false, reason: "duplicate_content" });
+    expect(
+      loadDailyRelationshipUsage(
+        app.personasim.store,
+        character.id,
+        "Asia/Shanghai",
+        created.clock.nowUtc(),
+      ),
+    ).toEqual({ closeness: 0.001, baselineCloseness: 0.001 });
+  });
+
+  it("caps the persisted baseline across many valid turns and restarts its allowance on a new local day", async () => {
+    const created = await createHarness();
+    app = created.app;
+    mockChat(app, () => ({
+      replyDecision: { text: "我在听，你接着说。" },
+      worldEffects: {},
+    }));
+    const character = await createAndPublish(app, "high_fidelity");
+    const session = await createSession(app, character.id);
+    const initial = app.personasim.store.getRuntimeState(character.id)!;
+    for (let index = 0; index < 14; index++) {
+      created.clock.advance({ minutes: 1 });
+      const response = await sendMessage(
+        app,
+        session,
+        character.id,
+        `baseline-cap-${index}`,
+        `今天第${index}件小事，我想慢慢和你讲。`,
+      );
+      expect(response.statusCode, response.body).toBe(201);
+    }
+    expect(
+      app.personasim.store.getRuntimeState(character.id)!.relationship
+        .closeness,
+    ).toBeCloseTo(initial.relationship.closeness + 0.012, 12);
+    expect(
+      loadDailyRelationshipUsage(
+        app.personasim.store,
+        character.id,
+        "Asia/Shanghai",
+        created.clock.nowUtc(),
+      ),
+    ).toEqual({ closeness: 0.012, baselineCloseness: 0.012 });
+    created.clock.advance({ days: 1 });
+    const next = await sendMessage(
+      app,
+      session,
+      character.id,
+      "baseline-new-day",
+      "新的一天，又发生了一件小事。",
+    );
+    expect(next.statusCode, next.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(next).state.relationship.closeness,
+    ).toBeCloseTo(initial.relationship.closeness + 0.013, 12);
+  });
+
+  it("does not interpret ordinary disagreement as durable relationship damage", async () => {
+    const created = await createHarness();
+    app = created.app;
+    mockChat(app, () => ({
+      replyDecision: { text: "可以，我保留看法，也愿意听你怎么想。" },
+      worldEffects: { relationshipDelta: { closeness: -0.02 } },
+    }));
+    const character = await createAndPublish(app, "high_fidelity");
+    const session = await createSession(app, character.id);
+    const initial = app.personasim.store.getRuntimeState(character.id)!;
+    const response = await sendMessage(
+      app,
+      session,
+      character.id,
+      "ordinary-disagreement",
+      "我不太同意你的看法，但愿意聊聊各自的理由。",
+    );
+    expect(response.statusCode, response.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(response).state.relationship.closeness,
+    ).toBeCloseTo(initial.relationship.closeness + 0.001, 12);
+    expect(
+      nestedValue(
+        worldEffectsAudit(app, character.id, "ordinary-disagreement")?.payload,
+        "rejectionCodes",
+      ),
+    ).toContain("relationship_direction_unsupported");
+  });
+
+  it("rolls back the baseline ledger together with a failed state commit", async () => {
+    const created = await createHarness();
+    app = created.app;
+    mockChat(app, () => ({
+      replyDecision: { text: "我在听，你慢慢讲。" },
+      worldEffects: {},
+    }));
+    const character = await createAndPublish(app, "high_fidelity");
+    const session = await createSession(app, character.id);
+    const initial = app.personasim.store.getRuntimeState(character.id)!;
+    vi.spyOn(
+      app.personasim.store,
+      "compareAndSetRuntimeState",
+    ).mockReturnValueOnce(false);
+    const failed = await sendMessage(
+      app,
+      session,
+      character.id,
+      "baseline-failed-commit",
+      "我想讲讲今天发生的一件事。",
+    );
+    expect(failed.statusCode).toBe(409);
+    expect(
+      app.personasim.store.getRuntimeState(character.id)!.relationship
+        .closeness,
+    ).toBe(initial.relationship.closeness);
+    expect(
+      loadDailyRelationshipUsage(
+        app.personasim.store,
+        character.id,
+        "Asia/Shanghai",
+        created.clock.nowUtc(),
+      ),
+    ).toEqual({ closeness: 0, baselineCloseness: 0 });
+    const retried = await sendMessage(
+      app,
+      session,
+      character.id,
+      "baseline-failed-commit",
+      "我想讲讲今天发生的一件事。",
+    );
+    expect(retried.statusCode, retried.body).toBe(201);
+    expect(
+      jsonBody<ChatTurnResult>(retried).state.relationship.closeness,
+    ).toBeCloseTo(initial.relationship.closeness + 0.001, 12);
   });
 });
 

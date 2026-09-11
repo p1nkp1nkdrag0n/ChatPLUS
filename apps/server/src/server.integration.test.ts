@@ -347,7 +347,6 @@ describe("PersonaSim server integration", () => {
       revision: beforeState.revision + 1,
       relationship: {
         ...beforeState.relationship,
-        familiarity: beforeState.relationship.familiarity,
         lastInteractionAtUtc: created.clock.nowUtc(),
       },
     });
@@ -686,9 +685,7 @@ describe("PersonaSim server integration", () => {
     const after = app.personasim.store.getRuntimeState(character.id)!;
     expect(after.revision).toBe(before.revision + 1);
     expect(after.relationship).toMatchObject({
-      closeness: before.relationship.closeness + 0.006,
-      trust: before.relationship.trust + 0.003,
-      familiarity: before.relationship.familiarity + 0.002,
+      closeness: Number((before.relationship.closeness + 0.006).toFixed(12)),
       lastInteractionAtUtc: shared.endAtUtc,
     });
     const completed = app.personasim.store
@@ -703,17 +700,13 @@ describe("PersonaSim server integration", () => {
       stateRevisionAfter: before.revision + 1,
       relationshipSource: "shared_activity_outcome",
       relationship: {
-        baselineDelta: { familiarity: 0 },
+        baselineDelta: { closeness: 0 },
         appliedProposalDelta: {
           closeness: 0.006,
-          trust: 0.003,
-          familiarity: 0.002,
         },
       },
       relationshipDailyUsageApplied: {
         closeness: 0.006,
-        trust: 0.003,
-        familiarity: 0.002,
       },
     });
     expect(typeof completed?.effectTrace?.["outcomeProbability"]).toBe(

@@ -163,8 +163,8 @@ describe("P1 default-policy 30-day continuity long run", () => {
       if (day === 1) {
         firstTurnUserMessageId = body.userMessage.id;
         expect(body.state.stress).toBeCloseTo(stateBeforeTurn.stress + 0.05, 8);
-        expect(body.state.relationship.trust).toBeCloseTo(
-          stateBeforeTurn.relationship.trust + 0.02,
+        expect(body.state.relationship.closeness).toBeCloseTo(
+          stateBeforeTurn.relationship.closeness + 0.021,
           8,
         );
       } else {
@@ -453,7 +453,7 @@ function deterministicWorldEffects(turn: number): Record<string, unknown> {
   }
   return {
     stateDelta: { stress: 0.05 },
-    relationshipDelta: { trust: 0.02 },
+    relationshipDelta: { closeness: 0.02 },
     memoryCandidates: [
       {
         type: "user_preference",

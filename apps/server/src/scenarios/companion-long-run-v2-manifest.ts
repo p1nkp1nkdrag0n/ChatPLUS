@@ -1294,13 +1294,13 @@ const PAIRED_PROBES = [
     arm("control", "你觉得我们是什么关系？", [
       {
         kind: "set_relationship_state",
-        patch: { closeness: 0.2, trust: 0.28, familiarity: 0.18 },
+        patch: { closeness: 0.2 },
       },
     ]),
     arm("comparison", "你觉得我们是什么关系？", [
       {
         kind: "set_relationship_state",
-        patch: { closeness: 0.82, trust: 0.86, familiarity: 0.9 },
+        patch: { closeness: 0.82 },
       },
     ]),
     ["relationship_stage_fit", "relationship_date_fit"],
@@ -1532,9 +1532,6 @@ export const companionLongRunV2Manifest = {
     userId: "local-user",
     relationshipType: "朋友",
     closeness: 0.42,
-    trust: 0.55,
-    familiarity: 0.35,
-    recentInteractionValence: 0,
   },
   featureFlags: {
     capabilityProfile: "high_fidelity",
@@ -2161,8 +2158,12 @@ function validateActions(
     }
     if (action.kind === "set_relationship_state") {
       for (const [key, value] of Object.entries(action.patch)) {
-        const minimum = key === "recentInteractionValence" ? -1 : 0;
-        if (!Number.isFinite(value) || value < minimum || value > 1)
+        if (
+          key !== "closeness" ||
+          !Number.isFinite(value) ||
+          value < 0 ||
+          value > 1
+        )
           issues.push(`${owner} has invalid relationship patch ${key}`);
       }
     }

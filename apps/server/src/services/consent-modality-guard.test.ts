@@ -863,7 +863,7 @@ describe("third-party consent modality guard", () => {
     expect(guarded.decision.reply.text).toBe(safeText);
     expect(guarded.decision.scheduleEffects).toHaveLength(1);
     expect(guarded.decision.stateDelta).toEqual({ stress: -0.1 });
-    expect(guarded.decision.relationshipDelta).toEqual({ trust: 0.1 });
+    expect(guarded.decision.relationshipDelta).toEqual({ closeness: 0.1 });
     expect(guarded.scheduleAction).toEqual({ kind: "request_details" });
     expect(guarded.decision.memoryCandidates).toEqual([]);
     expect(guarded.consentModalityGuardAudit).toMatchObject({
@@ -1338,7 +1338,7 @@ function unsafeTurn(replyText = UNSAFE_REPLY): ResolvedTurn {
       },
       scheduleEffects: [{ operation: "create" }],
       stateDelta: { stress: -0.1 },
-      relationshipDelta: { trust: 0.1 },
+      relationshipDelta: { closeness: 0.1 },
       memoryCandidates: [{ content: "姨妈已经授权查看修复稿。" }],
       personalIntentCandidates: [{ activity: "公开修复稿" }],
       continuityEffects: { careCueCandidates: [{}] },
@@ -1363,11 +1363,11 @@ function unsafeTurn(replyText = UNSAFE_REPLY): ResolvedTurn {
       validation: {
         proposed: {
           stateDelta: { stress: -0.1 },
-          relationshipDelta: { trust: 0.1 },
+          relationshipDelta: { closeness: 0.1 },
         },
         effects: {
           stateDelta: { stress: -0.1 },
-          relationshipDelta: { trust: 0.1 },
+          relationshipDelta: { closeness: 0.1 },
           memoryCandidates: [{ content: "姨妈已经授权查看修复稿。" }],
           personalIntentCandidates: [{ activity: "公开修复稿" }],
         },

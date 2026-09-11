@@ -468,15 +468,15 @@ describe("companion long-run v2 hard assertions", () => {
 
     it("measures relationship deltas after completed setup patches", () => {
       const before = runtimeState({
-        relationship: { closeness: 0.2, trust: 0.2 },
+        relationship: { closeness: 0.2 },
       });
       const after = runtimeState({
-        relationship: { closeness: 0.8, trust: 0.8 },
+        relationship: { closeness: 0.8 },
       });
       const setup: ScenarioActionResult = {
         action: {
           kind: "set_relationship_state",
-          patch: { closeness: 0.8, trust: 0.8 },
+          patch: { closeness: 0.8 },
         },
         status: "completed",
         atUtc: T1,
@@ -882,9 +882,6 @@ function runtimeState(
     relationship: {
       userId: "local-user",
       closeness: 0.5,
-      trust: 0.5,
-      familiarity: 0.5,
-      recentInteractionValence: 0,
       ...relationshipOverrides,
     },
   };

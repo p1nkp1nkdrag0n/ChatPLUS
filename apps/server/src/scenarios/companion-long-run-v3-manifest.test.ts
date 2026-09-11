@@ -21,7 +21,7 @@ import {
 } from "./companion-long-run-v3-manifest.js";
 
 const EXPECTED_SHA256 =
-  "9758d157a0fb69aae31e6f52781168716cd42982bdff59c65a907bec99ff31ef";
+  "6a3e0d95072b2a0c0124169825392bb435815dbf978f568b0de932b2c11e096f";
 
 describe("companion long-run v3 manifest", () => {
   it("freezes the approved DeepSeek fuzzy-life baseline", () => {
@@ -47,8 +47,6 @@ describe("companion long-run v3 manifest", () => {
         userId: "local-user",
         relationshipType: "朋友",
         closeness: 0.42,
-        trust: 0.55,
-        familiarity: 0.35,
       },
       featureFlags: {
         lifePlanningMode: "fuzzy",

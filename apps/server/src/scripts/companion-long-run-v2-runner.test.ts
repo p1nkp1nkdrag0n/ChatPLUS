@@ -99,7 +99,7 @@ describe("companion long-run v2 runner", () => {
     const mutable = {
       runtimeState: {
         energy: 0.42,
-        relationship: { closeness: 0.72, trust: 0.81 },
+        relationship: { closeness: 0.72 },
       },
       cursor: { settledThroughUtc: "2026-09-02T00:00:00.000Z" },
       schedule: rows("schedule", 19),
@@ -131,7 +131,7 @@ describe("companion long-run v2 runner", () => {
     }
     expect(
       (compact.after.runtimeState as { relationship: unknown }).relationship,
-    ).toEqual({ closeness: 0.72, trust: 0.81 });
+    ).toEqual({ closeness: 0.72 });
     for (const collection of LONG_RUN_V2_EVIDENCE_HISTORY_COLLECTIONS) {
       expect(compact.before[collection]).toEqual(before[collection].slice(-4));
       expect(compact.after[collection]).toEqual(after[collection].slice(-4));
@@ -564,7 +564,7 @@ function snapshot(
     capturedAtUtc: "2026-09-01T00:00:00.000Z",
     runtimeState: {
       energy: 0.7,
-      relationship: { closeness: 0.5, trust: 0.5 },
+      relationship: { closeness: 0.5 },
     },
     cursor: { settledThroughUtc: "2026-09-01T00:00:00.000Z" },
     schedule: [],

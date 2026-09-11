@@ -197,7 +197,6 @@ export function buildGuLanV3CharacterSpec(): CharacterSpec {
   draft.userRelationship = {
     relationshipType: "朋友",
     initialCloseness: 0.42,
-    initialTrust: 0.55,
     addressTerms: ["你"],
     sharedContext: "双方已经聊过一些日常，但尚未共同经历线下活动。",
   };
@@ -288,9 +287,6 @@ export function buildGuLanV3InitialState(spec: CharacterSpec): RuntimeState {
     relationship: {
       userId: "local-user",
       closeness: 0.42,
-      trust: 0.55,
-      familiarity: 0.35,
-      recentInteractionValence: 0,
     },
   });
 }

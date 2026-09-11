@@ -99,9 +99,6 @@ export interface RuntimeStatePatch {
 
 export interface RelationshipStatePatch {
   closeness?: number;
-  trust?: number;
-  familiarity?: number;
-  recentInteractionValence?: number;
 }
 
 export type ScenarioAction =
@@ -206,9 +203,6 @@ export interface LongRunInitialRelationshipV2 {
   userId: "local-user";
   relationshipType: string;
   closeness: number;
-  trust: number;
-  familiarity: number;
-  recentInteractionValence: number;
 }
 
 export interface LongRunFeatureFlagsV2 {

@@ -433,14 +433,10 @@ function validateCharacterBuild(input: {
     ],
     [
       "stranger_relationship_baseline",
-      relationship !== undefined &&
-        relationship.closeness === 0.1 &&
-        relationship.trust === 0.1 &&
-        relationship.familiarity === 0.1 &&
-        relationship.recentInteractionValence === 0,
+      relationship !== undefined && relationship.closeness === 0.1,
       relationship === undefined
         ? "missing"
-        : `closeness=${String(relationship.closeness)},trust=${String(relationship.trust)}`,
+        : `closeness=${String(relationship.closeness)}`,
     ],
     [
       "session_created",

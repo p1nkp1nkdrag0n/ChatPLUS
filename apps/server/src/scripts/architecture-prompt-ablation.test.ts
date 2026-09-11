@@ -87,7 +87,7 @@ function fixture() {
       id: "09_relationship",
       label: "RELATIONSHIP_JSON",
       placement: "prompt",
-      content: 'RELATIONSHIP_JSON\n{"trust":0.8}',
+      content: 'RELATIONSHIP_JSON\n{"closeness":0.8}',
     },
     {
       id: "10_current_time",

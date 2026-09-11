@@ -585,9 +585,6 @@ export const companionLongRunV3Manifest = {
     userId: "local-user",
     relationshipType: "朋友",
     closeness: 0.42,
-    trust: 0.55,
-    familiarity: 0.35,
-    recentInteractionValence: 0,
   },
   featureFlags: {
     capabilityProfile: "high_fidelity",

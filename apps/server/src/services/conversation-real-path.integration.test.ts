@@ -657,7 +657,7 @@ describe("openai-compatible reply-first conversation path", () => {
       revision: (stateBefore?.revision ?? 0) + 1,
       relationship: {
         ...stateBefore?.relationship,
-        familiarity: (stateBefore?.relationship.familiarity ?? 0) + 0.001,
+        closeness: stateBefore?.relationship.closeness,
         lastInteractionAtUtc: START_UTC,
       },
     });
@@ -780,7 +780,7 @@ describe("openai-compatible reply-first conversation path", () => {
           },
           worldEffects: {
             stateDelta: { energy: -0.1 },
-            relationshipDelta: { familiarity: 0.02 },
+            relationshipDelta: { closeness: 0.02 },
           },
         };
       }
@@ -807,7 +807,7 @@ describe("openai-compatible reply-first conversation path", () => {
       revision: before.revision + 1,
       relationship: {
         ...before.relationship,
-        familiarity: before.relationship.familiarity + 0.001,
+        closeness: before.relationship.closeness + 0.001,
         lastInteractionAtUtc: START_UTC,
       },
     });
@@ -824,13 +824,15 @@ describe("openai-compatible reply-first conversation path", () => {
       llmProposalStatus: "shadow",
       applied: {
         stateDelta: {},
-        relationshipDelta: { familiarity: 0.001 },
+        relationshipDelta: { closeness: 0.001 },
       },
       wouldApply: {
         after: {
           energy: before.energy - 0.1,
           relationship: {
-            familiarity: before.relationship.familiarity + 0.012,
+            closeness: Number(
+              (before.relationship.closeness + 0.021).toFixed(12),
+            ),
           },
         },
       },
@@ -868,7 +870,7 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(body.state.revision).toBe(before.revision + 1);
     expect(body.state.relationship).toMatchObject({
       ...before.relationship,
-      familiarity: before.relationship.familiarity + 0.001,
+      closeness: before.relationship.closeness + 0.001,
       lastInteractionAtUtc: START_UTC,
     });
     const audit = app.personasim.store
@@ -880,8 +882,8 @@ describe("openai-compatible reply-first conversation path", () => {
       mode: "enforced",
       source: { relationshipBaseline: "server_interaction_baseline" },
       relationship: {
-        baselineDelta: { familiarity: 0.001 },
-        dailyUsageApplied: { familiarity: 0.001 },
+        baselineDelta: { closeness: 0.001 },
+        dailyUsageApplied: { closeness: 0.001 },
       },
     });
   });
@@ -899,7 +901,7 @@ describe("openai-compatible reply-first conversation path", () => {
           },
           worldEffects: {
             stateDelta: { energy: -1, stress: 0.1 },
-            relationshipDelta: { closeness: 1, trust: 0.2 },
+            relationshipDelta: { closeness: 1 },
             personalIntentCandidates: [
               {
                 activity: "photograph the riverside night view",
@@ -970,11 +972,11 @@ describe("openai-compatible reply-first conversation path", () => {
       mode: "enforced",
       proposed: {
         stateDelta: { energy: -1, stress: 0.1 },
-        relationshipDelta: { closeness: 1, trust: 0.2 },
+        relationshipDelta: { closeness: 1 },
       },
       acceptedDelta: {
         stateDelta: { energy: -0.2, stress: 0.1 },
-        relationshipDelta: { closeness: 0.08, trust: 0.08 },
+        relationshipDelta: { closeness: 0.08 },
       },
       accepted: {
         stateDelta: true,
@@ -1015,8 +1017,7 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(applied?.stateDelta?.["stress"]).toBeCloseTo(0.1, 8);
     const appliedRelationshipDelta = applied?.relationshipDelta;
     expect(appliedRelationshipDelta?.["closeness"]).toBeCloseTo(0.04, 8);
-    expect(appliedRelationshipDelta?.["trust"]).toBeCloseTo(0.03, 8);
-    expect(appliedRelationshipDelta?.["familiarity"]).toBeCloseTo(0.001, 8);
+    expect(Object.keys(appliedRelationshipDelta ?? {})).toEqual(["closeness"]);
     expect(audit?.payload).not.toHaveProperty("proposedDelta");
     expect(audit?.payload).not.toHaveProperty("beforeChangedFields");
     expect(audit?.payload).not.toHaveProperty("afterChangedFields");
@@ -1125,10 +1126,6 @@ describe("openai-compatible reply-first conversation path", () => {
         promptJsonSegment(chatCall?.prompt ?? "", "RELATIONSHIP_JSON"),
       ).toEqual({
         closeness: committedState.relationship.closeness,
-        trust: committedState.relationship.trust,
-        familiarity: committedState.relationship.familiarity,
-        recentInteractionValence:
-          committedState.relationship.recentInteractionValence,
         lastInteractionAtUtc: committedState.relationship.lastInteractionAtUtc,
       });
     } finally {
@@ -1152,8 +1149,6 @@ describe("openai-compatible reply-first conversation path", () => {
             stateDelta: { energy: -0.11, stress: 0.04 },
             relationshipDelta: {
               closeness: 0.02,
-              trust: 0.01,
-              recentInteractionValence: 0.2,
             },
           },
         };
@@ -1535,7 +1530,7 @@ describe("openai-compatible reply-first conversation path", () => {
           },
           worldEffects: {
             stateDelta: { stress: -0.1 },
-            relationshipDelta: { trust: 0.08 },
+            relationshipDelta: { closeness: 0.08 },
             memoryCandidates: [
               {
                 type: "user_fact",
@@ -1601,7 +1596,9 @@ describe("openai-compatible reply-first conversation path", () => {
     });
     expect(body.state.energy).toBe(before.energy);
     expect(body.state.stress).toBe(before.stress);
-    expect(body.state.relationship.trust).toBe(before.relationship.trust);
+    expect(body.state.relationship.closeness).toBeCloseTo(
+      before.relationship.closeness + 0.001,
+    );
     expect(
       app.personasim.store.database
         .prepare(

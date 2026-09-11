@@ -53,13 +53,7 @@ const RUNTIME_FIELDS = [
   "socialBattery",
   "focus",
 ] as const;
-const RELATIONSHIP_FIELDS = [
-  "closeness",
-  "trust",
-  "familiarity",
-  "recentInteractionValence",
-  "lastInteractionAtUtc",
-] as const;
+const RELATIONSHIP_FIELDS = ["closeness", "lastInteractionAtUtc"] as const;
 
 const AgentStateResponseSchema = z
   .object({

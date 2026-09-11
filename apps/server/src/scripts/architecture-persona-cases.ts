@@ -185,7 +185,6 @@ export function buildArchitecturePersonaFixtureCharacter(
     ...draft.userRelationship,
     relationshipType: "普通朋友",
     initialCloseness: 0.3,
-    initialTrust: 0.45,
     addressTerms: ["你"],
     sharedContext: input.initialRelationship,
   };

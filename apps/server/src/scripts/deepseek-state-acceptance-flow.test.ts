@@ -79,7 +79,7 @@ describe("DeepSeek state acceptance flow", () => {
         "RUNTIME_STATE_JSON",
         '{"revision":9,"energy":0.2,"stress":0.8}',
         "RELATIONSHIP_JSON",
-        '{"trust":0.3,"familiarity":0.11}',
+        '{"closeness":0.3}',
       ].join("\n"),
     );
 
@@ -91,7 +91,7 @@ describe("DeepSeek state acceptance flow", () => {
       energy: 0.2,
       stress: 0.8,
     });
-    expect(summary.relationship).toEqual({ trust: 0.3, familiarity: 0.11 });
+    expect(summary.relationship).toEqual({ closeness: 0.3 });
   });
 
   it("accepts the server clock advancing between the pre-state read and turn prompt", () => {
@@ -314,9 +314,6 @@ function completeScene(id: string, index: number): DeepSeekStateSceneResult {
     },
     relationship: {
       closeness: state.relationship.closeness,
-      trust: state.relationship.trust,
-      familiarity: state.relationship.familiarity,
-      recentInteractionValence: state.relationship.recentInteractionValence,
       lastInteractionAtUtc: state.relationship.lastInteractionAtUtc,
     },
   };
@@ -403,9 +400,6 @@ function runtimeState(index: number): RuntimeState {
     relationship: {
       userId: "local-user",
       closeness: 0.2,
-      trust: 0.25,
-      familiarity: 0.1,
-      recentInteractionValence: 0,
       lastInteractionAtUtc: "2026-08-28T00:00:00.000Z",
     },
     revision: index + 1,
@@ -430,7 +424,7 @@ function completeContinuationResult(): DeepSeekStateContinuationResult {
     asOfUtc: "2026-08-28T00:00:01.000Z",
     relationship: {
       ...preState.relationship,
-      familiarity: preState.relationship.familiarity + 0.001,
+      closeness: preState.relationship.closeness + 0.001,
       lastInteractionAtUtc: "2026-08-28T00:00:01.000Z",
     },
     revision: preState.revision + 1,
@@ -448,7 +442,7 @@ function completeContinuationResult(): DeepSeekStateContinuationResult {
     eventType: "conversation.world_effects_committed" as const,
     recordedAtUtc: postState.asOfUtc,
     effectiveAtUtc: postState.asOfUtc,
-    payload: { applied: { relationshipDelta: { familiarity: 0.001 } } },
+    payload: { applied: { relationshipDelta: { closeness: 0.001 } } },
     correlationId: "continuation-client",
     causationId: "continuation-message",
     idempotencyKey: "continuation-idempotency",

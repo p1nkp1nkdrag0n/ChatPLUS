@@ -706,7 +706,8 @@ describe("server-owned schedule negotiation", () => {
   });
 
   it("keeps HTTP, projection, audit events and SSE notifications aligned", async () => {
-    app = (await createNegotiationTestApp()).app;
+    const harness = await createNegotiationTestApp();
+    app = harness.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
     let turn = 0;
     mockLlm(app.personasim.llm, calls, () => {
@@ -728,6 +729,12 @@ describe("server-owned schedule negotiation", () => {
     );
     expect(proposal.statusCode).toBe(201);
     expect(jsonBody<ChatTurnResult>(proposal).scheduleChanges).toEqual([]);
+    // Separate valid interactions can earn a new baseline after the cooldown.
+    harness.clock.advance({ minutes: 1 });
+    await app.inject({
+      method: "POST",
+      url: `/api/agents/${character.id}/activate`,
+    });
     const publish = vi.spyOn(app.personasim.sse, "publish");
     const clientMessageId = "negotiation-observable-commit";
 

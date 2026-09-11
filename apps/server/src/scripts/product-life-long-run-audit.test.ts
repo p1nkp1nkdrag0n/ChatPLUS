@@ -43,7 +43,7 @@ describe("product life database audit", () => {
       updated_at_utc: NOW,
       state_json: JSON.stringify({
         energy: 0.5,
-        relationship: { trust: 0.7 },
+        relationship: { closeness: 0.7 },
         privateText: "DO_NOT_EXPORT_STATE_TEXT",
       }),
     });
@@ -80,7 +80,7 @@ describe("product life database audit", () => {
     expect(evidence.messages.withClientMessageId).toBe(1);
     expect(evidence.state?.numericValues).toEqual({
       energy: 0.5,
-      "relationship.trust": 0.7,
+      "relationship.closeness": 0.7,
     });
     expect(JSON.stringify(evidence)).not.toContain("DO_NOT_EXPORT");
   });

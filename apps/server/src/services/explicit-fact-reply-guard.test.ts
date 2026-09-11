@@ -442,7 +442,7 @@ describe("explicit fact reply guard", () => {
       if (surface === "decision_state") {
         world.decision = { ...world.decision, stateDelta: { stress: -0.1 } };
       } else {
-        world.effectTrace.accepted.relationshipDelta = { trust: 0.1 };
+        world.effectTrace.accepted.relationshipDelta = { closeness: 0.1 };
       }
 
       expect(() => finalizeExplicitFactWorld({ world, contract })).toThrow(
@@ -849,7 +849,7 @@ function unsafeTurn(): ResolvedTurn {
       },
       scheduleEffects: [{ operation: "create" }],
       stateDelta: { stress: -0.1 },
-      relationshipDelta: { trust: 0.1 },
+      relationshipDelta: { closeness: 0.1 },
       memoryCandidates: [{ content: "错误记忆" }],
       personalIntentCandidates: [{ activity: "整理暗房" }],
       continuityEffects: { careCueCandidates: [{}] },
@@ -874,11 +874,11 @@ function unsafeTurn(): ResolvedTurn {
       validation: {
         proposed: {
           stateDelta: { stress: -0.1 },
-          relationshipDelta: { trust: 0.1 },
+          relationshipDelta: { closeness: 0.1 },
         },
         effects: {
           stateDelta: { stress: -0.1 },
-          relationshipDelta: { trust: 0.1 },
+          relationshipDelta: { closeness: 0.1 },
           memoryCandidates: [{ content: "错误记忆" }],
           personalIntentCandidates: [{ activity: "整理暗房" }],
         },

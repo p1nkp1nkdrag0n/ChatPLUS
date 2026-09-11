@@ -24,7 +24,7 @@ import {
 } from "./companion-long-run-v2-manifest.js";
 
 const EXPECTED_SHA256 =
-  "160945e00890c1b0ff1640b86f58b47d8b417dbc27e79f96a6b93dafa737b367";
+  "6c0fee49d9a1bc855ddf43c635b927af4f1bb41aed4205112837c09096ccf53e";
 
 const EXPECTED_BLOCKS = [
   ["daily-conversation", "shared", 1, 12],
@@ -76,9 +76,6 @@ describe("companion long-run v2 manifest", () => {
         userId: "local-user",
         relationshipType: "朋友",
         closeness: 0.42,
-        trust: 0.55,
-        familiarity: 0.35,
-        recentInteractionValence: 0,
       },
       featureFlags: {
         capabilityProfile: "high_fidelity",
@@ -538,6 +535,18 @@ describe("companion long-run v2 manifest", () => {
       "2026-09-27 15:00";
     expect(validateLongRunScenarioManifestV2(wrongExpectedSlot)).toContain(
       `turn ${wrongExpectedSlot.branches[0].turns[1]!.id} expected schedule localStart must match startAtUtc`,
+    );
+  });
+
+  it("rejects retired relationship control fields in scenario input", () => {
+    const changed = cloneManifest();
+    const turn = changed.sharedTurns[0]!;
+    turn.actionsBefore = [
+      ...(turn.actionsBefore ?? []),
+      { kind: "set_relationship_state", patch: { closeness: 0.2, trust: 0.9 } },
+    ] as unknown as NonNullable<typeof turn.actionsBefore>;
+    expect(validateLongRunScenarioManifestV2(changed)).toContain(
+      `turn ${turn.id} has invalid relationship patch trust`,
     );
   });
 });

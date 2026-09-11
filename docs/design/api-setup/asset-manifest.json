@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "artDirection": "B · 暖白魔法手册",
+  "approvedReference": "key-concept.png",
+  "generationTool": "image_gen",
+  "assets": [
+    {
+      "name": "book",
+      "publicPath": "/dearvale/art/setup/book.png",
+      "source": "exec-f81b63bc-d0ef-4fe3-a5e7-f92b362b5edb.png",
+      "reference": "key-concept.png",
+      "prompt": "Precise-object-edit. Extract and recreate ONLY the open green-bound two-page magic book from the provided approved Dearvale UI. Production separate background asset for live HTML forms. Preserve its exact delicate 2D watercolor style, pale warm ivory subtly mottled paper, sage leather outer binding, soft page edges, thin layered pages, central binding seam, green ribbon bookmark below the center, soft shadows. Front-facing nearly flat topdown full spread with the same gentle outline as source, wide landscape about 2.4:1. BOTH pages must be completely BLANK including removing left wand/books/daisies illustration, all texts, all headings, labels, controls, buttons, progress, lock icon and ornament drawings INSIDE the pages. Keep light natural paper grain, small gold botanical flourishes at corners if subtle. Entire book fully within canvas with tight even 2% padding, no clipped edges or ribbon. Remove everything outside book, no app background, header, UI or botanical page corners. Actual alpha transparent outside book, not painted checkerboard. Bright cream clean center suitable for dark readable HTML forms. No 3D rendered look, no dark stains, no writing.",
+      "correction": "Initial output painted transparency checkerboard into RGB pixels. A subsequent image_gen edit removed only the checkerboard, replacing exterior with an opaque matching ivory (book/page) or white (wand) while preserving object layout, watercolor texture, colors, proportions and all details. Final assets intentionally use CSS multiply; they do not contain alpha transparency.",
+      "role": "Stable blank double-page base and binding"
+    },
+    {
+      "name": "wand",
+      "publicPath": "/dearvale/art/setup/wand.png",
+      "source": "exec-b6f4c7f0-4ac7-412a-9664-b96c65a8dfee.png",
+      "reference": "key-concept.png",
+      "prompt": "Precise-object-edit. Extract ONLY the source left-page illustration: a delicate golden crystal-tipped wooden magic wand diagonally laid across a small closed sage-green magic book with a thin gold starburst cover, white daisies, sage leaves, softly flowing pale green ribbon and several tiny golden sparkles. Preserve exact object positions, scale relationships, colors, gentle matte watercolor brushwork and fine details from approved Dearvale reference. Remove the large open book, the app background, all interface, all text, headings and buttons. Production stand-alone illustration for overlay on an ivory page. Entire botanical cluster/wand with all tips inside canvas, tight 3% padding, approximately square. TRUE alpha transparent background, no checkerboard painting or shadow rectangle. No photorealism, no 3D, no new props, no typography. Keep the same small sharp amber crystal at the upper-right of the wand for a code-animated glint overlay.",
+      "correction": "Initial output painted transparency checkerboard into RGB pixels. A subsequent image_gen edit removed only the checkerboard, replacing exterior with an opaque matching ivory (book/page) or white (wand) while preserving object layout, watercolor texture, colors, proportions and all details. Final assets intentionally use CSS multiply; they do not contain alpha transparency.",
+      "role": "Independent wand/book/daisy watercolor illustration; one CSS glint on success"
+    },
+    {
+      "name": "page",
+      "publicPath": "/dearvale/art/setup/page.png",
+      "source": "exec-e7d556d3-3367-4357-b9f4-cf5760921a81.png",
+      "reference": "key-concept.png",
+      "prompt": "Precise-object-edit. Create the separate blank RIGHT-HAND paper leaf from the approved Dearvale open magic book. Production paper texture for a rotating CSS3D page and mobile single page. Portrait about 4:5. Exactly front-facing rectangle, vertically upright and straight, no perspective deformation, cream watercolor paper with subtle natural grain, slight handmade outer edges and thin darker paper thickness at right/bottom only. Tiny muted gold botanical corner ornaments at top-right and bottom-right as in reference; leave left edge straight for book spine. Whole center and all writing areas completely BLANK. No text, form fields, buttons, progress, illustration, wand, daisies, large book binding or green cover. Small alpha transparent margin outside natural edges, genuine transparency no checkerboard. Very pale warm ivory interior matching source. Low contrast texture for excellent HTML text legibility. This leaf is to overlay the existing book without visual borders.",
+      "correction": "Initial output painted transparency checkerboard into RGB pixels. A subsequent image_gen edit removed only the checkerboard, replacing exterior with an opaque matching ivory (book/page) or white (wand) while preserving object layout, watercolor texture, colors, proportions and all details. Final assets intentionally use CSS multiply; they do not contain alpha transparency.",
+      "role": "Independent blank page face and reverse texture; also mobile paper"
+    }
+  ],
+  "codeRendered": [
+    "Headings and instructions",
+    "Form controls and model list",
+    "Buttons and validation",
+    "Progress",
+    "Leaf perspective, rotation, highlights and shadows",
+    "Success glint"
+  ]
+}

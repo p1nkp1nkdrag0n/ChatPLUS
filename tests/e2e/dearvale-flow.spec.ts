@@ -5,8 +5,13 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { mockConfiguredWelcomeCatalog } from "./api-onboarding-fixture";
 
 test.describe("Dearvale desktop journeys", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockConfiguredWelcomeCatalog(page);
+  });
+
   test("keeps the illustrated public journey independent from the character runtime", async ({
     page,
     request,

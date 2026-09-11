@@ -8,7 +8,7 @@ const CharacterLibraryPage = lazy(
   () => import("../pages/CharacterLibraryPage"),
 );
 const LandingPage = lazy(() => import("../pages/LandingPage"));
-const WelcomePage = lazy(() => import("../pages/WelcomePage"));
+const WelcomeEntryPage = lazy(() => import("../pages/WelcomeEntryPage"));
 const ProductEntryPage = lazy(() => import("../pages/ProductEntryPage"));
 const CharacterGeneratorPage = lazy(
   () => import("../pages/CharacterGeneratorPage"),
@@ -59,7 +59,7 @@ export function App() {
       <Suspense fallback={<LoadingBlock label="正在打开 Dearvale…" fullPage />}>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/welcome" element={<WelcomePage />} />
+          <Route path="/welcome" element={<WelcomeEntryPage />} />
           <Route path="/create" element={<CharacterGeneratorPage />} />
           <Route
             path="/characters/:characterId/preview"

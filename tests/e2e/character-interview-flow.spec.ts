@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { mockConfiguredWelcomeCatalog } from "./api-onboarding-fixture";
 import {
   answerMainQuestion,
   basicInterviewAnswers,
@@ -9,6 +10,9 @@ import {
 
 test.describe("Dearvale character interview", () => {
   test.setTimeout(90_000);
+  test.beforeEach(async ({ page }) => {
+    await mockConfiguredWelcomeCatalog(page);
+  });
 
   test("answers twelve questions, restores progress, revises one draft and publishes before welcome changes", async ({
     page,

@@ -44,10 +44,13 @@ export function registerLlmRoutes(
     return reply.code(201).send(settings.importEnvironment(providerId));
   });
   app.patch("/api/llm/default", (request) => {
-    const { selection } = z
-      .strictObject({ selection: LlmSelectionSchema })
+    const { selection, expectedRevision } = z
+      .strictObject({
+        selection: LlmSelectionSchema,
+        expectedRevision: z.number().int().positive().optional(),
+      })
       .parse(request.body);
-    return settings.setDefault(selection);
+    return settings.setDefault(selection, expectedRevision);
   });
   app.get("/api/sessions/:id/model", (request) =>
     settings.sessionModel(idParams.parse(request.params).id),

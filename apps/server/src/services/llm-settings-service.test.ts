@@ -190,6 +190,28 @@ describe("managed LLM settings", () => {
     });
   });
 
+  it("keeps the default unchanged when a tested provider revision becomes stale", () => {
+    const f = setup();
+    const originalDefault = f.service.catalog().defaultSelection;
+    const provider = f.service.create(input());
+    const selection = { providerId: provider.id, modelId: "test-model" };
+    const updated = f.service.update(
+      provider.id,
+      input({ expectedRevision: provider.revision, name: "Updated elsewhere" }),
+    );
+
+    expect(() => f.service.setDefault(selection, provider.revision)).toThrow(
+      /供应商配置已更新/,
+    );
+    expect(f.service.catalog().defaultSelection).toEqual(originalDefault);
+    expect(
+      f.service.setDefault(selection, updated.revision).defaultSelection,
+    ).toEqual(selection);
+    expect(f.service.setDefault(originalDefault).defaultSelection).toEqual(
+      originalDefault,
+    );
+  });
+
   it("leaves key files absent for local models and distinguishes keep/replace/clear", () => {
     const f = setup();
     let provider = f.service.create(input({ apiKey: "" }));

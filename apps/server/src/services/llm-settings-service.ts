@@ -194,11 +194,11 @@ export class LlmSettingsService {
     });
   }
 
-  setDefault(raw: LlmSelection): LlmCatalog {
+  setDefault(raw: LlmSelection, expectedRevision?: number): LlmCatalog {
     const selection = LlmSelectionSchema.parse(raw);
     this.store.database
       .transaction(() => {
-        this.resolve(selection);
+        this.resolve(selection, expectedRevision);
         this.store.database
           .prepare(
             "UPDATE llm_settings SET default_selection_json=? WHERE id=1",

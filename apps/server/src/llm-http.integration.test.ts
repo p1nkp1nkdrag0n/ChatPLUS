@@ -260,6 +260,65 @@ describe("LLM settings HTTP contract", () => {
     expect(fetchOverride).not.toHaveBeenCalled();
   });
 
+  it("checks the tested revision before changing the global default", async () => {
+    const fetchOverride = vi.fn<typeof fetch>();
+    const { app } = await setup(fetchOverride);
+    const originalDefault = body<LlmCatalog>(
+      await app.inject({ method: "GET", url: "/api/llm/providers" }),
+    ).defaultSelection;
+    const provider = await createProvider(app);
+    const selection = { providerId: provider.id, modelId: "test-model" };
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/llm/providers/${provider.id}`,
+      payload: providerInput({
+        expectedRevision: provider.revision,
+        name: "v2",
+      }),
+    });
+    expect(updated.statusCode).toBe(200);
+    const currentRevision = body<LlmProviderView>(updated).revision;
+    const stale = await app.inject({
+      method: "PATCH",
+      url: "/api/llm/default",
+      payload: { selection, expectedRevision: provider.revision },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(body<{ error: { code: string } }>(stale).error.code).toBe(
+      "model_configuration_changed",
+    );
+    expect(
+      body<LlmCatalog>(
+        await app.inject({ method: "GET", url: "/api/llm/providers" }),
+      ).defaultSelection,
+    ).toEqual(originalDefault);
+
+    for (const expectedRevision of [0, -1, 1.5, "2", null]) {
+      const invalid = await app.inject({
+        method: "PATCH",
+        url: "/api/llm/default",
+        payload: { selection, expectedRevision },
+      });
+      expect(invalid.statusCode).toBe(400);
+    }
+
+    const selected = await app.inject({
+      method: "PATCH",
+      url: "/api/llm/default",
+      payload: { selection, expectedRevision: currentRevision },
+    });
+    expect(selected.statusCode).toBe(200);
+    expect(body<LlmCatalog>(selected).defaultSelection).toEqual(selection);
+    const legacy = await app.inject({
+      method: "PATCH",
+      url: "/api/llm/default",
+      payload: { selection: originalDefault },
+    });
+    expect(legacy.statusCode).toBe(200);
+    expect(body<LlmCatalog>(legacy).defaultSelection).toEqual(originalDefault);
+    expect(fetchOverride).not.toHaveBeenCalled();
+  });
+
   it("rejects stale probe and send selections before any remote request", async () => {
     const fetchOverride = vi.fn<typeof fetch>();
     const { app } = await setup(fetchOverride);

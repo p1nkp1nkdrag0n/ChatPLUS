@@ -84,8 +84,11 @@ export const llmApi = {
       undefined,
       signal,
     ),
-  setDefault: (selection: LlmSelection) =>
-    request<LlmCatalog>(`${prefix}/default`, "PATCH", { selection }),
+  setDefault: (selection: LlmSelection, expectedRevision?: number) =>
+    request<LlmCatalog>(`${prefix}/default`, "PATCH", {
+      selection,
+      ...(expectedRevision === undefined ? {} : { expectedRevision }),
+    }),
   session: (id: string) =>
     request<LlmSessionModel>(`/api/sessions/${encodeURIComponent(id)}/model`),
   setSession: (id: string, selection: LlmSelection | null) =>

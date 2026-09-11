@@ -34,6 +34,31 @@ describe("model settings transport", () => {
       modelId: "model-a",
     });
   });
+  it.each([undefined, 7])(
+    "sets the default with optional expected revision %s",
+    async (expectedRevision) => {
+      const selection = { providerId: "provider-a", modelId: "model-a" };
+      const catalog = { providers: [], defaultSelection: selection };
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify(catalog)));
+      vi.stubGlobal("fetch", fetch);
+
+      await expect(
+        llmApi.setDefault(selection, expectedRevision),
+      ).resolves.toEqual(catalog);
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/llm/default",
+        expect.objectContaining({ method: "PATCH" }),
+      );
+      const init = fetch.mock.calls[0]?.[1] as RequestInit;
+      expect(JSON.parse(init.body as string)).toEqual(
+        expectedRevision === undefined
+          ? { selection }
+          : { selection, expectedRevision },
+      );
+    },
+  );
   it("never exposes a raw provider HTML error", async () => {
     vi.stubGlobal(
       "fetch",

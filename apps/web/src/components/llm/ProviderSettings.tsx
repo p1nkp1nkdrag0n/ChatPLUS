@@ -22,6 +22,7 @@ import {
   type LlmProtocol,
   type LlmProviderInput,
   type LlmProviderView,
+  type LlmSelection,
 } from "@personasim/contracts";
 import { llmApi, llmCatalogKey } from "../../api/llm";
 import { ErrorBlock, LoadingBlock } from "../Feedback";
@@ -98,7 +99,7 @@ export function ProviderSettings() {
     if (blocker.state === "blocked") blocker.reset();
   };
   const defaultMutation = useMutation({
-    mutationFn: llmApi.setDefault,
+    mutationFn: (selection: LlmSelection) => llmApi.setDefault(selection),
     onSuccess: (value) => {
       client.setQueryData(llmCatalogKey, value);
       void client.invalidateQueries({ queryKey: ["llm", "session"] });

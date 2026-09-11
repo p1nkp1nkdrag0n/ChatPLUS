@@ -19,8 +19,11 @@ import {
   Sun,
   UserRound,
 } from "lucide-react";
-import type { Achievement } from "@personasim/contracts";
-import { useState } from "react";
+import {
+  getAchievementWaxBadge,
+  type Achievement,
+} from "@personasim/contracts";
+import { useState, type CSSProperties } from "react";
 import { achievementDate, badgeStatusLabel } from "./achievementPresentation";
 
 const icons: Record<string, typeof Flower2> = {
@@ -62,29 +65,53 @@ export function AchievementBadge({
   achievement: Achievement;
   large?: boolean;
 }) {
-  const [failedUrl, setFailedUrl] = useState<string>();
-  const url = large
-    ? achievement.badge.imageUrl
-    : (achievement.badge.thumbnailUrl ?? achievement.badge.imageUrl);
+  const [failedUrls, setFailedUrls] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const wax = getAchievementWaxBadge(achievement.badge.key);
+  // An existing custom image remains visible while its replacement is drawing.
+  // Track failures by URL so a new content-hash URL is automatically eligible.
+  const candidates = large
+    ? [
+        achievement.badge.imageUrl,
+        achievement.badge.thumbnailUrl,
+        wax.imageUrl,
+        wax.thumbnailUrl,
+      ]
+    : [
+        achievement.badge.thumbnailUrl,
+        achievement.badge.imageUrl,
+        wax.thumbnailUrl,
+        wax.imageUrl,
+      ];
+  const url = candidates.find(
+    (candidate) => candidate && !failedUrls.has(candidate),
+  );
   const Icon = badgeIcon(achievement.badge.key);
   return (
     <span
       className={`achievement-badge achievement-badge--${achievement.category}${large ? " achievement-badge--large" : ""}`}
+      data-wax-tier={wax.tier}
+      style={{ "--wax-color": wax.color } as CSSProperties}
       aria-hidden="true"
     >
-      {url && failedUrl !== url ? (
+      {url ? (
         <img
+          key={url}
           src={url}
           alt=""
           loading={large ? "eager" : "lazy"}
-          onError={() => setFailedUrl(url)}
+          decoding="async"
+          width={large ? 176 : 108}
+          height={large ? 176 : 108}
+          onError={() =>
+            setFailedUrls((previous) => new Set(previous).add(url))
+          }
         />
       ) : (
-        <>
-          <span className="achievement-badge__ring" />
+        <span className="achievement-badge__fallback">
           <Icon size={large ? 60 : 38} strokeWidth={1.2} />
-          <span className="achievement-badge__spark">✦</span>
-        </>
+        </span>
       )}
     </span>
   );
@@ -105,7 +132,9 @@ export function AchievementCard({
       onClick={onSelect}
       aria-label={`查看成就：${achievement.title}${achievement.agentName ? `，与 ${achievement.agentName}` : ""}`}
     >
-      <AchievementBadge achievement={achievement} />
+      <span className="achievement-card__seal">
+        <AchievementBadge achievement={achievement} />
+      </span>
       <span className="achievement-card__category">
         {achievement.agentName ? `与 ${achievement.agentName}` : "我的足迹"}
       </span>

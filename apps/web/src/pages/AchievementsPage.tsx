@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Flower2 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { type AchievementCategory } from "../api/achievements";
 import { useAchievements } from "../hooks/useAchievements";
 import { EmptyState, ErrorBlock, LoadingBlock } from "../components/Feedback";
@@ -45,12 +45,10 @@ export default function AchievementsPage() {
         description="把相处中值得记住的时刻，收进一枚小小的纪念。"
       />
       <section className="achievement-intro" aria-label="收藏寄语">
-        <Flower2 size={37} strokeWidth={1.1} aria-hidden="true" />
         <div>
           <h2>一路走来，皆有回响</h2>
           <p>每一次回来，每一段相识，都会留下属于你的印记。</p>
         </div>
-        <span aria-hidden="true">Dear moments, kept.</span>
       </section>
       <div className="achievement-filterbar">
         <div className="achievement-tabs" role="group" aria-label="成就类别">

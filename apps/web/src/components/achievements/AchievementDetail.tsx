@@ -38,7 +38,8 @@ export function AchievementDetail({
     <dialog
       className="achievement-dialog"
       ref={dialog}
-      aria-labelledby="achievement-detail-title"
+      aria-label={item ? undefined : "成就详情"}
+      aria-labelledby={item ? "achievement-detail-title" : undefined}
       onCancel={onClose}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();

@@ -10,8 +10,8 @@ async function mockCollection(page: Page) {
   const items: Achievement[] = [
     {
       id: "earned-door",
-      title: "推开这扇门",
-      description: "第一次来到 Dearvale，故事从这里开始。",
+      title: "初来乍到",
+      description: "你第一次推开了这里的门。",
       category: "global",
       unlockedAtUtc: "2026-09-10T04:00:00.000Z",
       badge: { key: "door", status: "fixed" },
@@ -19,8 +19,8 @@ async function mockCollection(page: Page) {
     },
     {
       id: "earned-star",
-      title: "星光相映",
-      description: "相处的日子，汇成一片只属于你们的星光。",
+      title: "独一份纪念",
+      description: "这一份纪念，只属于你们的故事。",
       category: "character",
       agentId: "agent-forest",
       agentName: "林间",
@@ -29,14 +29,14 @@ async function mockCollection(page: Page) {
       notificationRead: false,
     },
     {
-      id: "earned-flower",
-      title: "花开有时",
-      description: "一段相识，静静开出了花。",
+      id: "earned-constellation",
+      title: "珍藏此刻",
+      description: "把这个值得珍藏的时刻，留在这里。",
       category: "character",
       agentId: "agent-tide",
       agentName: "晚潮",
       unlockedAtUtc: "2026-09-10T04:02:00.000Z",
-      badge: { key: "flower", status: "failed" },
+      badge: { key: "constellation", status: "failed" },
       notificationRead: true,
     },
   ];
@@ -174,23 +174,25 @@ test("earned collection filters, merged notification persistence, detail, retry,
     .selectOption("agent-tide");
   await expect(page.locator(".achievement-card")).toHaveCount(1);
   await page
-    .getByRole("button", { name: "查看成就：花开有时，与 晚潮" })
+    .getByRole("button", { name: "查看成就：珍藏此刻，与 晚潮" })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("dialog")).toContainText("这枚纪念已经属于你");
   await page.getByRole("button", { name: "重新绘制", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("专属图案等待绘制");
-  const completed = state.items.find((item) => item.id === "earned-flower");
+  const completed = state.items.find(
+    (item) => item.id === "earned-constellation",
+  );
   if (!completed) throw new Error("Missing collection fixture");
   completed.badge = {
-    key: "flower",
+    key: "constellation",
     status: "ready",
-    imageUrl: "/dearvale/art/botanical.png",
+    imageUrl: "/dearvale/achievements/wax-v2/constellation.webp?v=completed",
   };
   await page.reload();
   await expect(page.locator("dialog img")).toHaveAttribute(
     "src",
-    "/dearvale/art/botanical.png",
+    "/dearvale/achievements/wax-v2/constellation.webp?v=completed",
   );
   await page.getByRole("button", { name: "关闭成就详情" }).click();
   await page.getByRole("button", { name: "全部", exact: true }).click();
@@ -225,7 +227,7 @@ test("earned collection filters, merged notification persistence, detail, retry,
     ),
   });
   await page
-    .getByRole("button", { name: "查看成就：星光相映，与 林间" })
+    .getByRole("button", { name: "查看成就：独一份纪念，与 林间" })
     .click();
   await expect(page.getByRole("dialog")).toContainText("专属图案等待绘制");
   await expect(
@@ -244,6 +246,158 @@ test("earned collection filters, merged notification persistence, detail, retry,
     page.getByRole("heading", { name: "你的故事，正要开始" }),
   ).toBeVisible();
   await expect(page.locator(".achievement-card")).toHaveCount(0);
+});
+
+test("six wax colors sit across the note edge on desktop and two-column mobile wall", async ({
+  page,
+}, testInfo) => {
+  const state = await mockCollection(page);
+  const samples = [
+    ["door", "初来乍到", "你第一次推开了这里的门。"],
+    ["sprout", "三日之约", "连续三天，你都来过这里。"],
+    ["sun", "一周相伴", "七个连续的日子，留下了你的足迹。"],
+    ["flower", "岁月留痕", "共同走过的日子，留下了一份纪念。"],
+    ["star", "独一份纪念", "这一份纪念，只属于你们的故事。"],
+    ["constellation", "珍藏此刻", "把这个值得珍藏的时刻，留在这里。"],
+  ] as const;
+  state.items.splice(
+    0,
+    state.items.length,
+    ...samples.map(([key, title, description], index): Achievement => ({
+      id: `wax-${key}`,
+      title,
+      description,
+      category: index < 3 ? "global" : "character",
+      ...(index < 3 ? {} : { agentId: "agent-forest", agentName: "林间" }),
+      unlockedAtUtc: "2026-09-11T04:00:00.000Z",
+      badge: { key, status: "fixed" },
+      notificationRead: true,
+    })),
+  );
+  await page.goto("/achievements");
+  await expect(page.locator(".achievement-card")).toHaveCount(6);
+  await expect
+    .poll(() =>
+      page
+        .locator(".achievement-card img")
+        .evaluateAll((images) =>
+          images.every(
+            (image) =>
+              image instanceof HTMLImageElement &&
+              image.complete &&
+              image.naturalWidth > 0,
+          ),
+        ),
+    )
+    .toBe(true);
+  const verifyNotes = async (columns: number) => {
+    const geometry = await page
+      .locator(".achievement-grid")
+      .evaluate((grid) => ({
+        columns:
+          getComputedStyle(grid).gridTemplateColumns.split(/\s+/u).length,
+        cards: [...grid.querySelectorAll(".achievement-card")].map((card) => {
+          const note = card.getBoundingClientRect();
+          const seal = card
+            .querySelector(".achievement-card__seal")!
+            .getBoundingClientRect();
+          const image = card.querySelector("img")!;
+          return {
+            attached: seal.top < note.top && seal.bottom > note.top,
+            contained: getComputedStyle(image).objectFit === "contain",
+            width: note.width,
+          };
+        }),
+      }));
+    expect(geometry.columns).toBe(columns);
+    expect(
+      geometry.cards.every(
+        (card) => card.attached && card.contained && card.width > 130,
+      ),
+    ).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  };
+  await verifyNotes(3);
+  await page.screenshot({
+    path: join(
+      tmpdir(),
+      `dearvale-wax-wall-${testInfo.project.name}-desktop.png`,
+    ),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await verifyNotes(2);
+  await page.screenshot({
+    path: join(
+      tmpdir(),
+      `dearvale-wax-wall-${testInfo.project.name}-mobile.png`,
+    ),
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const first = page.locator(".achievement-card").first();
+  await first.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "初来乍到" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(first).toBeFocused();
+});
+
+test("custom image failures fall back to matching wax, and exhausted sources stop retrying", async ({
+  page,
+}) => {
+  const state = await mockCollection(page);
+  const item = state.items[1]!;
+  item.notificationRead = true;
+  item.badge = {
+    key: "star",
+    status: "generating",
+    imageUrl: "/wax-image-test/full.webp?v=retained",
+    thumbnailUrl: "/wax-image-test/thumb.webp?v=retained",
+  };
+  state.items.splice(0, state.items.length, item);
+  const attempted: string[] = [];
+  await page.route("**/wax-image-test/*.webp?*", async (route) => {
+    attempted.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "image/webp",
+      body: "invalid image",
+    });
+  });
+  await page.goto("/achievements");
+  await expect(page.locator(".achievement-card img")).toHaveAttribute(
+    "src",
+    "/dearvale/achievements/wax-v2/star.thumb.webp",
+  );
+  expect(attempted).toHaveLength(2);
+  await expect(page.locator(".achievement-card")).toContainText("独一份纪念");
+  await expect(page.locator(".achievement-card")).toContainText(
+    "专属图案绘制中",
+  );
+  await page.route(
+    "**/dearvale/achievements/wax-v2/star*.webp",
+    async (route) => {
+      attempted.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: "image/webp",
+        body: "invalid image",
+      });
+    },
+  );
+  attempted.length = 0;
+  await page.reload();
+  await expect(page.locator(".achievement-badge__fallback svg")).toBeVisible();
+  await expect(page.locator(".achievement-card img")).toHaveCount(0);
+  expect(attempted).toHaveLength(4);
+  expect(new Set(attempted).size).toBe(4);
+  await expect(
+    page.getByRole("button", { name: "查看成就：独一份纪念，与 林间" }),
+  ).toBeVisible();
 });
 
 test("real service records opening, publication and successful conversation as earned mementos", async ({

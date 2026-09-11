@@ -1,0 +1,137 @@
+{
+  "checks": [
+    {
+      "id": "A1",
+      "file": "a-matte-green.png",
+      "width": 1254,
+      "height": 1254,
+      "hasAlpha": true,
+      "transparentFraction": 0.4085,
+      "partialAlphaFraction": 0.5909,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "visibleBounds": {
+        "left": 70,
+        "top": 77,
+        "right": 1182,
+        "bottom": 1181
+      },
+      "alphaPass": true
+    },
+    {
+      "id": "A2",
+      "file": "a-matte-aurora.png",
+      "width": 1254,
+      "height": 1254,
+      "hasAlpha": true,
+      "transparentFraction": 0.3982,
+      "partialAlphaFraction": 0.6014,
+      "cornerAlpha": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "visibleBounds": {
+        "left": 78,
+        "top": 80,
+        "right": 1195,
+        "bottom": 1188
+      },
+      "alphaPass": false
+    },
+    {
+      "id": "B1",
+      "file": "b-pearl-green.png",
+      "width": 1254,
+      "height": 1254,
+      "hasAlpha": true,
+      "transparentFraction": 0.404,
+      "partialAlphaFraction": 0.5955,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "visibleBounds": {
+        "left": 65,
+        "top": 71,
+        "right": 1193,
+        "bottom": 1185
+      },
+      "alphaPass": true
+    },
+    {
+      "id": "B2",
+      "file": "b-pearl-aurora.png",
+      "width": 1254,
+      "height": 1254,
+      "hasAlpha": true,
+      "transparentFraction": 0.4335,
+      "partialAlphaFraction": 0.5662,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "visibleBounds": {
+        "left": 88,
+        "top": 70,
+        "right": 1170,
+        "bottom": 1188
+      },
+      "alphaPass": true
+    },
+    {
+      "id": "C1",
+      "file": "c-gilded-green.png",
+      "width": 1254,
+      "height": 1254,
+      "hasAlpha": true,
+      "transparentFraction": 0.3983,
+      "partialAlphaFraction": 0.6011,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "visibleBounds": {
+        "left": 75,
+        "top": 58,
+        "right": 1202,
+        "bottom": 1197
+      },
+      "alphaPass": true
+    },
+    {
+      "id": "C2",
+      "file": "c-gilded-aurora.png",
+      "width": 1254,
+      "height": 1254,
+      "hasAlpha": true,
+      "transparentFraction": 0.4225,
+      "partialAlphaFraction": 0.5771,
+      "cornerAlpha": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "visibleBounds": {
+        "left": 78,
+        "top": 84,
+        "right": 1175,
+        "bottom": 1173
+      },
+      "alphaPass": false
+    }
+  ],
+  "scope": "Reference PNG validation only; final production-size, motif, edge and browser checks occur after style selection."
+}

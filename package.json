@@ -17,6 +17,7 @@
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @personasim/server db:migrate",
     "achievement:wax": "tsx apps/server/src/scripts/achievement-wax.ts",
+    "achievement:assets": "tsx apps/server/src/scripts/prepare-achievement-wax-assets.ts",
     "selfhost:backup": "tsx scripts/backup-instance.ts",
     "selfhost:restore": "tsx scripts/restore-instance.ts",
     "test": "vitest run",

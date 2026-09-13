@@ -6,6 +6,8 @@ export default defineConfig({
       "packages/**/*.test.ts",
       "apps/server/**/*.test.ts",
       "apps/web/**/*.test.{ts,tsx}",
+      "apps/desktop/**/*.test.ts",
+      "apps/desktop-online/**/*.test.ts",
       "tests/{integration,simulation}/**/*.test.ts",
     ],
     exclude: ["tests/e2e/**", "**/node_modules/**", "**/dist/**"],

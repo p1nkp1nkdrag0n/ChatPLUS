@@ -33,6 +33,7 @@ import {
 import type { SelectedField } from "../components/character-editor/types";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
 import { formatLocalDateTime } from "../lib/date";
+import { createUuid } from "../lib/uuid";
 
 const TABS = [
   ["identity", "基础身份"],
@@ -505,7 +506,7 @@ function PersonaEditor({
                   traits: [
                     ...spec.persona.traits,
                     {
-                      id: crypto.randomUUID(),
+                      id: createUuid(),
                       name: "新特质",
                       description: "",
                       strength: 0.5,
@@ -696,7 +697,7 @@ function PersonaEditor({
                   values: [
                     ...spec.persona.values,
                     {
-                      id: crypto.randomUUID(),
+                      id: createUuid(),
                       name: "新价值观",
                       priority: 0.5,
                       description: "请描述这个价值观如何影响角色的选择。",

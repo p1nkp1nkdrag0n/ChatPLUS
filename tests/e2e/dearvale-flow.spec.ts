@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   expect,
   test,
@@ -6,10 +8,169 @@ import {
   type Page,
 } from "@playwright/test";
 import { mockConfiguredWelcomeCatalog } from "./api-onboarding-fixture";
+import {
+  basicInterviewAnswers,
+  fillMainInterview,
+  skipInterviewFollowUps,
+} from "./character-interview-helpers";
+
+const truncatedCompileMessage =
+  "模型回复达到输出长度上限，生成未能完成。请在模型设置的高级设置中提高“输出 token 上限”，或降低思考预算；也可以精简输入或更换模型后重试。";
 
 test.describe("Dearvale desktop journeys", () => {
   test.beforeEach(async ({ page }) => {
     await mockConfiguredWelcomeCatalog(page);
+  });
+
+  test("recovers a truncated character compilation through model settings without losing the interview or request identity", async ({
+    page,
+  }) => {
+    const requests: Array<{ answers: unknown; requestId: string }> = [];
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.route("**/api/characters/interview/compile", async (route) => {
+      requests.push(
+        route.request().postDataJSON() as (typeof requests)[number],
+      );
+      if (requests.length > 1) return route.continue();
+      await route.fulfill({
+        status: 502,
+        json: {
+          error: {
+            code: "llm_output_truncated",
+            message: truncatedCompileMessage,
+          },
+        },
+      });
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/create");
+    await fillMainInterview(page, {
+      ...basicInterviewAnswers,
+      name: `重试描绘-${test.info().project.name}`,
+      importantExperience: "和祖母一起整理过旧书店",
+    });
+    await skipInterviewFollowUps(page);
+    const saved = await page.evaluate(() =>
+      localStorage.getItem("dearvale.character-interview.v1"),
+    );
+    expect(saved).not.toBeNull();
+    await page.getByTestId("generate-character").click();
+    await expect(page.getByRole("alert")).toContainText(
+      truncatedCompileMessage,
+    );
+    await expect(
+      page.getByText("描绘已保存在本机，调整模型设置后可以回来重试。", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByTestId("generate-character")).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "回去看看", exact: true }),
+    ).toBeEnabled();
+    await expect(page.getByRole("alert")).toBeInViewport({ ratio: 1 });
+    await expect(
+      page.getByRole("link", { name: "前往模型设置", exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    await page.screenshot({
+      path: join(
+        tmpdir(),
+        `dearvale-compile-truncated-${test.info().project.name}.png`,
+      ),
+    });
+    // The paper is a scrollable panel; a full provider error can extend its
+    // content beyond the initial view. Prove the retry control is reachable.
+    await page.getByTestId("generate-character").scrollIntoViewIfNeeded();
+    // The scaled paper can round its bottom edge by one CSS pixel.
+    await expect(page.getByTestId("generate-character")).toBeInViewport({
+      ratio: 0.98,
+    });
+    await page.getByTestId("generate-character").click({ trial: true });
+    await expect(page.getByRole("alert")).toBeInViewport({ ratio: 1 });
+    await page.screenshot({
+      path: join(
+        tmpdir(),
+        `dearvale-compile-truncated-controls-${test.info().project.name}.png`,
+      ),
+    });
+    await page.getByRole("link", { name: "前往模型设置", exact: true }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(
+      page.getByRole("heading", { name: "让对话连接你的模型", exact: true }),
+    ).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/create$/);
+    await expect(page.getByTestId("generate-character")).toBeEnabled();
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("dearvale.character-interview.v1"),
+      ),
+    ).toBe(saved);
+    await page.getByTestId("generate-character").click();
+    await expect(page).toHaveURL(/\/characters\/[^/]+\/preview$/);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+    await expect(
+      page.getByRole("heading", {
+        name: `重试描绘-${test.info().project.name}`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByTestId("publish-character")).toBeEnabled();
+    await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("does not claim a truncated interview is saved when local draft storage fails", async ({
+    page,
+  }) => {
+    await page.route("**/api/characters/interview/compile", (route) =>
+      route.fulfill({
+        status: 502,
+        json: {
+          error: {
+            code: "llm_output_truncated",
+            message: truncatedCompileMessage,
+          },
+        },
+      }),
+    );
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/create");
+    await fillMainInterview(page, basicInterviewAnswers);
+    await skipInterviewFollowUps(page);
+    await page.evaluate(() => {
+      const original = Object.getOwnPropertyDescriptor(
+        Storage.prototype,
+        "setItem",
+      )?.value as (this: Storage, key: string, value: string) => void;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key === "dearvale.character-interview.v1")
+          throw new DOMException(
+            "Storage quota exceeded",
+            "QuotaExceededError",
+          );
+        original.call(this, key, value);
+      };
+    });
+    await page.getByTestId("generate-character").click();
+    await expect(page.getByRole("alert")).toContainText(
+      truncatedCompileMessage,
+    );
+    await expect(
+      page.getByText("描绘已保存在本机，调整模型设置后可以回来重试。", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("浏览器暂时无法保存进度，请留在这一页完成描绘。", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "前往模型设置", exact: true }),
+    ).toHaveAttribute("href", "/settings");
+    await expect(page.getByTestId("generate-character")).toBeEnabled();
   });
 
   test("keeps the illustrated public journey independent from the character runtime", async ({

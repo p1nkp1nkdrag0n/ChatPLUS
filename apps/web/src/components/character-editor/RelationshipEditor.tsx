@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
 import type { CharacterSpec } from "../../api/types";
+import { createUuid } from "../../lib/uuid";
 import { ensureUserEditSource, rebaseEditedRuleToUserSpec } from "./source";
 import type { SelectedField } from "./types";
 import { EditableStringList, EditorSectionHeading } from "./EditorFields";
@@ -92,7 +93,7 @@ export function RelationshipEditor({
                   behaviorModes: [
                     ...modes,
                     {
-                      id: crypto.randomUUID(),
+                      id: createUuid(),
                       conditions: ["适用情境"],
                       behavior: "描述角色在此时如何与你相处。",
                       origin: "user_spec",

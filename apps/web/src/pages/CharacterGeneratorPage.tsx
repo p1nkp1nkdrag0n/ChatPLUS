@@ -6,7 +6,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { CharacterInterviewAnswersSchema } from "@personasim/contracts";
 import { interviewApi } from "../api/interview";
 import { ApiError } from "../api/types";
@@ -407,7 +407,22 @@ export default function CharacterGeneratorPage() {
             </span>
           ) : null}
           {compileMutation.isError ? (
-            <ErrorBlock error={compileMutation.error} />
+            <ErrorBlock
+              error={compileMutation.error}
+              action={
+                compileMutation.error instanceof ApiError &&
+                compileMutation.error.code === "llm_output_truncated" ? (
+                  <>
+                    {!storageFailed ? (
+                      <p>描绘已保存在本机，调整模型设置后可以回来重试。</p>
+                    ) : null}
+                    <Link to="/settings" className="creation-text-button">
+                      前往模型设置
+                    </Link>
+                  </>
+                ) : undefined
+              }
+            />
           ) : null}
           {fieldError ? (
             <p className="creation-field-error" role="alert">

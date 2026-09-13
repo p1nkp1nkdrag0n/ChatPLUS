@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
 import type { CharacterSpec } from "../../api/types";
+import { createUuid } from "../../lib/uuid";
 import type { SelectedField } from "./types";
 import {
   EditableStringList,
@@ -44,7 +45,7 @@ export function LifePolicyEditor({
                 routines: [
                   ...spec.routines,
                   {
-                    id: crypto.randomUUID(),
+                    id: createUuid(),
                     title: "新的生活规律",
                     category: "personal",
                     recurrence: "每周按需要安排",

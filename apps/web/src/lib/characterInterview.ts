@@ -5,6 +5,7 @@ import {
 } from "@personasim/contracts";
 import { z } from "zod";
 import type { InterviewQuestion } from "../api/interview";
+import { createUuid } from "./uuid";
 
 export const INTERVIEW_KEY = "dearvale.character-interview.v1";
 const CHANGE_EVENT = "dearvale:character-interview-changed";
@@ -144,7 +145,7 @@ export interface InterviewDraft {
 export function newInterviewDraft(): InterviewDraft {
   return {
     version: 1,
-    requestId: crypto.randomUUID(),
+    requestId: createUuid(),
     step: 0,
     phase: "main",
     followUpQuestions: [],

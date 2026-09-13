@@ -18,7 +18,11 @@ const workspaceRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../..",
 );
-loadEnv({ path: resolve(workspaceRoot, ".env"), quiet: true });
+// Packaged desktop startup supplies its own instance paths and must never read
+// a developer checkout's .env (or a file beside the installed application).
+if (process.env.PERSONASIM_LOAD_ENV !== "false") {
+  loadEnv({ path: resolve(workspaceRoot, ".env"), quiet: true });
+}
 
 const booleanFromEnv = z
   .enum(["true", "false"])

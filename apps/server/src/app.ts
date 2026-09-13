@@ -16,6 +16,7 @@ import { ApiError } from "./domain/errors.js";
 import { registerRoutes, type RouteServices } from "./http/routes.js";
 import { registerLlmRoutes } from "./http/llm-routes.js";
 import { registerAchievementRoutes } from "./http/achievement-routes.js";
+import { publicLlmProviderError } from "./http/llm-provider-error.js";
 import type { Clock } from "./runtime/clock.js";
 import type { HourlyScheduler } from "./runtime/hourly-scheduler.js";
 import type { LlmServiceObservationOptions } from "./services/llm-service.js";
@@ -104,16 +105,16 @@ export async function buildApp(
         wildcard: false,
         cacheControl: false,
         dotfiles: "deny",
-        setHeaders: (response, filePath) => {
+        setHeaders: (reply, filePath) => {
           if (basename(filePath) === "index.html") {
-            response.setHeader("cache-control", "no-store");
+            reply.header("cache-control", "no-store");
           } else if (filePath.includes(`${sep}assets${sep}`)) {
-            response.setHeader(
+            reply.header(
               "cache-control",
               "public, max-age=31536000, immutable",
             );
           } else {
-            response.setHeader("cache-control", "public, max-age=3600");
+            reply.header("cache-control", "public, max-age=3600");
           }
         },
       });
@@ -138,6 +139,20 @@ export async function buildApp(
             code: error.code,
             message: error.message,
             ...(error.issues === undefined ? {} : { issues: error.issues }),
+            requestId: request.id,
+          },
+        });
+        return;
+      }
+      const providerError = publicLlmProviderError(error);
+      if (providerError !== undefined) {
+        // Provider errors can contain private prompt text or credentials in a
+        // message/cause; log only our allowlisted public diagnostic code.
+        request.log.warn({ code: providerError.code }, "model request failed");
+        void reply.code(providerError.statusCode).send({
+          error: {
+            code: providerError.code,
+            message: providerError.message,
             requestId: request.id,
           },
         });

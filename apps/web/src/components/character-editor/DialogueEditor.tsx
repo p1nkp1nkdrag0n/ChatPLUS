@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
 import type { CharacterSpec } from "../../api/types";
+import { createUuid } from "../../lib/uuid";
 import { ensureUserEditSource, rebaseEditedRuleToUserSpec } from "./source";
 import type { SelectedField } from "./types";
 import {
@@ -227,7 +228,7 @@ export function DialogueEditor({
                   rules: [
                     ...rules,
                     {
-                      id: crypto.randomUUID(),
+                      id: createUuid(),
                       kind: "register",
                       instruction: "描述角色在这个场景下如何表达。",
                       enforcement: "soft",

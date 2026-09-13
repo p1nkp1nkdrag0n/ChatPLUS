@@ -1,5 +1,6 @@
 import type { LlmExecutionSelection } from "@personasim/contracts";
 import type { ChatMessage } from "../api/types";
+import { createUuid } from "./uuid";
 
 export interface ChatSendInput {
   text: string;
@@ -50,7 +51,7 @@ export function prepareChatSend(
       ? retry
       : {
           text,
-          clientMessageId: crypto.randomUUID(),
+          clientMessageId: createUuid(),
           modelSelection: { ...modelSelection },
           createdAtUtc: new Date().toISOString(),
         }),

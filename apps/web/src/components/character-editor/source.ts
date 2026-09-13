@@ -1,4 +1,5 @@
 import type { CharacterSpec, ProvenanceRule } from "../../api/types";
+import { createUuid } from "../../lib/uuid";
 
 type CharacterSourceOwner = Pick<CharacterSpec, "sources">;
 
@@ -18,7 +19,7 @@ export function ensureUserEditSource(spec: CharacterSourceOwner): {
   if (existing && typeof existing.id === "string") {
     return { id: existing.id, sources: spec.sources };
   }
-  const id = crypto.randomUUID();
+  const id = createUuid();
   return {
     id,
     sources: [

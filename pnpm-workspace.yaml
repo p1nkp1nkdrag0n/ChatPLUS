@@ -2,11 +2,19 @@ packages:
   - apps/*
   - packages/*
 
+# Same-major security floors, including the September 2026 fast-uri advisories.
+overrides:
+  'fast-uri@>=3.0.0 <3.1.7': 3.1.7
+  'fast-uri@>=4.0.0 <4.1.4': 4.1.4
+
 onlyBuiltDependencies:
   - better-sqlite3
+  - electron
   - esbuild
   - sharp
 allowBuilds:
   better-sqlite3: true
+  electron: true
+  electron-winstaller: false
   esbuild: true
   sharp: true

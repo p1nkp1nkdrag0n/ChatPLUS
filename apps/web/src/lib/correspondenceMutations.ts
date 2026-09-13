@@ -8,6 +8,7 @@ import {
   type LetterRevealPhase,
 } from "./correspondence";
 import { ApiError } from "../api/types";
+import { createUuid } from "./uuid";
 
 export interface ReplyGenerationRetryLease {
   readonly agentId: string;
@@ -119,11 +120,7 @@ export function replyGenerationRetryErrorMessage(error: unknown): string {
 }
 
 function createReplyGenerationRetryClientRequestId(): string {
-  const value =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `letter-reply-retry:${value}`;
+  return `letter-reply-retry:${createUuid()}`;
 }
 
 async function submitReplyGenerationRetryLease(

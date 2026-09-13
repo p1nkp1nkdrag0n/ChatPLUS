@@ -2748,13 +2748,13 @@ function choosePersonaDeliveryMode(
   spec: CharacterSpec,
   strategy: ReplyStrategy,
 ): "single_block" | "sequential" {
+  // A persona's usual rhythm is a fallback, not a reason to replace the model's
+  // explicit choice for this particular turn.
+  if (response.deliveryMode === "single_block") return "single_block";
   const faithfulChunks = faithfulModelChunks(response);
-  if (
-    response.deliveryMode === "sequential" &&
-    (faithfulChunks?.length ?? 0) > 1
-  ) {
-    return "sequential";
-  }
+  // Faithful model grouping also selects sequential delivery when the optional
+  // mode is omitted; content heuristics only supply missing grouping.
+  if ((faithfulChunks?.length ?? 0) > 1) return "sequential";
   const structured = isStructuredReply(response.text);
   const naturalBeatCount = sentenceUnits(
     response.text.replace(/\r\n?/gu, "\n").trim(),
@@ -2769,7 +2769,6 @@ function choosePersonaDeliveryMode(
     return "sequential";
   }
   if (response.deliveryMode !== undefined) return response.deliveryMode;
-  if ((faithfulChunks?.length ?? 0) > 1) return "sequential";
   if (strategy.complexity === "complex" && spec.dialogue.formality >= 0.58) {
     return "single_block";
   }
@@ -2803,7 +2802,7 @@ function comparableReply(value: string): string {
 
 function splitSequentialReply(text: string): string[] {
   const source = text.replace(/\r\n?/gu, "\n").trim();
-  const units = sentenceUnits(source);
+  const units = sentenceUnits(source, { splitSemicolons: false });
   if (units.length < 2) {
     return splitLongText(source, 4_000).map((part) => part.trim());
   }
@@ -2814,9 +2813,16 @@ function splitSequentialReply(text: string): string[] {
   return packSequentialUnits(expanded, 12);
 }
 
-export function sentenceUnits(source: string): string[] {
+export function sentenceUnits(
+  source: string,
+  options: { splitSemicolons?: boolean } = {},
+): string[] {
+  // Keep clauses joined by semicolons together for delivery. Other callers use
+  // the existing finer sentence boundaries for their own inspection purposes.
   const boundary =
-    /(?:[\u3002\uff01\uff1f!?\uff1b;]+|\.(?=\s|$))[\u201d\u2019"\uff09\u3011\u300b\u300d\u300f]*(?:[ \t]*\n+[ \t]*|[ \t]+)?|\n+/gu;
+    options.splitSemicolons === false
+      ? /(?:[\u3002\uff01\uff1f!?]+|\.(?=\s|$))[\u201d\u2019"\uff09\u3011\u300b\u300d\u300f]*(?:[ \t]*\n+[ \t]*|[ \t]+)?|\n+/gu
+      : /(?:[\u3002\uff01\uff1f!?\uff1b;]+|\.(?=\s|$))[\u201d\u2019"\uff09\u3011\u300b\u300d\u300f]*(?:[ \t]*\n+[ \t]*|[ \t]+)?|\n+/gu;
   const units: string[] = [];
   let start = 0;
   for (const match of source.matchAll(boundary)) {

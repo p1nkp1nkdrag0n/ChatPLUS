@@ -134,7 +134,7 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(body.assistantMessage.metadata.repairAttempted).toBe(false);
   });
 
-  it("calibrates a low-formality multi-beat comfort reply into chat bubbles", async () => {
+  it("honors an explicit single block for a low-formality multi-sentence reply", async () => {
     const created = await createRealProviderTestApp();
     app = created.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
@@ -143,6 +143,10 @@ describe("openai-compatible reply-first conversation path", () => {
         return {
           text: "先别逼自己马上振作。你已经撑了很久。今晚先让我陪你慢慢缓一缓。",
           deliveryMode: "single_block",
+          chunks: [
+            "先别逼自己马上振作。你已经撑了很久。",
+            "今晚先让我陪你慢慢缓一缓。",
+          ],
           toneTags: ["温柔", "安慰"],
         };
       }
@@ -162,25 +166,23 @@ describe("openai-compatible reply-first conversation path", () => {
 
     expect(response.statusCode).toBe(201);
     const body = jsonBody<ChatTurnResult>(response);
-    expect(body.assistantMessage.metadata.deliveryMode).toBe("sequential");
+    expect(body.assistantMessage.metadata.deliveryMode).toBe("single_block");
     expect(body.assistantMessage.metadata.chunks).toEqual([
-      "先别逼自己马上振作。",
-      "你已经撑了很久。",
-      "今晚先让我陪你慢慢缓一缓。",
+      "先别逼自己马上振作。你已经撑了很久。今晚先让我陪你慢慢缓一缓。",
     ]);
     expect(body.assistantMessage.content).toBe(
-      "先别逼自己马上振作。\n你已经撑了很久。\n今晚先让我陪你慢慢缓一缓。",
+      "先别逼自己马上振作。你已经撑了很久。今晚先让我陪你慢慢缓一缓。",
     );
   });
 
-  it("honors sequential delivery and falls back to deterministic sentence chunks", async () => {
+  it("honors sequential delivery and keeps semicolon clauses in the same fallback chunk", async () => {
     const created = await createRealProviderTestApp();
     app = created.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
     mockLlm(app.personasim.llm, calls, (input) => {
       if (input.purpose === "chat_turn") {
         return {
-          text: "我刚看到你的消息。这个想法挺有意思。你再说说细节？",
+          text: "我刚看到你的消息。这个想法挺有意思；我想听听。你再说说细节？",
           deliveryMode: "sequential",
           chunks: ["与正文不一致，但不应该导致回复失败。"],
           toneTags: ["自然", "好奇"],
@@ -205,26 +207,30 @@ describe("openai-compatible reply-first conversation path", () => {
     expect(body.assistantMessage.metadata.deliveryMode).toBe("sequential");
     expect(body.assistantMessage.metadata.chunks).toEqual([
       "我刚看到你的消息。",
-      "这个想法挺有意思。",
+      "这个想法挺有意思；我想听听。",
       "你再说说细节？",
     ]);
     expect(body.assistantMessage.content).toBe(
-      "我刚看到你的消息。\n这个想法挺有意思。\n你再说说细节？",
+      "我刚看到你的消息。\n这个想法挺有意思；我想听听。\n你再说说细节？",
     );
     expect(body.assistantMessage.metadata.repairAttempted).toBe(false);
     expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
   });
 
-  it("persists faithful model-authored sequential chunks", async () => {
+  it("preserves faithful model grouping across sentences and numbered lists", async () => {
     const created = await createRealProviderTestApp();
     app = created.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
+    const chunks = [
+      "我想好了。可以分两步来。",
+      "1. 先把目标写清楚。\n2. 再列出你手头的材料。",
+    ];
     mockLlm(app.personasim.llm, calls, (input) => {
       if (input.purpose === "chat_turn") {
         return {
-          text: "你等等。让我想一下。好，我大概有答案了。",
+          text: chunks.join("\n"),
           deliveryMode: "sequential",
-          chunks: ["你等等。", "让我想一下。", "好，我大概有答案了。"],
+          chunks,
         };
       }
       return fixtureFor(input);
@@ -238,22 +244,79 @@ describe("openai-compatible reply-first conversation path", () => {
       sessionId,
       character.id,
       "delivery-faithful",
-      "你想到答案了吗？",
+      "请帮我列两步整理思路的方法。",
     );
 
     expect(response.statusCode).toBe(201);
     const body = jsonBody<ChatTurnResult>(response);
     expect(body.assistantMessage.metadata.deliveryMode).toBe("sequential");
-    expect(body.assistantMessage.metadata.chunks).toEqual([
-      "你等等。",
-      "让我想一下。",
-      "好，我大概有答案了。",
-    ]);
-    expect(body.assistantMessage.content).toBe(
-      "你等等。\n让我想一下。\n好，我大概有答案了。",
-    );
+    expect(body.assistantMessage.metadata.chunks).toEqual(chunks);
+    expect(body.assistantMessage.content).toBe(chunks.join("\n"));
     expect(body.assistantMessage.metadata.repairAttempted).toBe(false);
   });
+
+  it.each([
+    {
+      name: "unpunctuated short reply",
+      chunks: ["哈哈", "真的诶"],
+      separator: "",
+      userText: "你看这个小狗，像不像一团棉花糖？",
+      deep: false,
+    },
+    {
+      name: "numbered list",
+      chunks: ["1. 先把目标写清楚。", "2. 再列出你手头的材料。"],
+      separator: "\n",
+      userText: "请帮我列两步整理思路的方法。",
+      deep: false,
+    },
+    {
+      name: "deep answer",
+      chunks: [
+        "先明确系统目标和约束。再搭建最小链路验证关键假设。",
+        "随后比较各方案的成本与风险。根据验证结果分阶段实施。",
+      ],
+      separator: "\n",
+      userText:
+        "请从零开始给出一套完整设计，详细分析目标、架构、主要取舍、失败风险和逐步实施方案。",
+      deep: true,
+    },
+  ])(
+    "preserves faithful chunks without deliveryMode for a $name",
+    async ({ chunks, separator, userText, deep }) => {
+      const created = await createRealProviderTestApp();
+      app = created.app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      mockLlm(app.personasim.llm, calls, (input) => {
+        if (input.purpose === "chat_turn") {
+          return { text: chunks.join(separator), chunks };
+        }
+        return fixtureFor(input);
+      });
+      const character = await createAndPublish(app, "lightweight");
+      calls.length = 0;
+      const sessionId = await createSession(app, character.id);
+
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "delivery-implicit-faithful",
+        userText,
+      );
+
+      expect(response.statusCode, response.body).toBe(201);
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.assistantMessage.metadata.deliveryMode).toBe("sequential");
+      expect(body.assistantMessage.metadata.chunks).toEqual(chunks);
+      expect(body.assistantMessage.content).toBe(chunks.join("\n"));
+      expect(body.assistantMessage.metadata.repairAttempted).toBe(false);
+      expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
+      if (deep) {
+        expect(calls[0]?.prompt).toContain('"complexity":"deep"');
+      }
+    },
+  );
 
   it("repairs incomplete canonical first-chunk text once while preserving independently valid effects", async () => {
     const created = await createRealProviderTestApp("enforced");

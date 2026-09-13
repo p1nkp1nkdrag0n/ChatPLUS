@@ -126,7 +126,7 @@ test("reads real correspondence inside the mailbox without caching decrypted let
     ["素笺", "plain"],
     ["夜蓝", "midnight"],
     ["棉纸", "cotton"],
-  ]) {
+  ] as const) {
     const radio = page.getByRole("radio", { name, exact: true });
     await page
       .locator(".paper-selector__option")

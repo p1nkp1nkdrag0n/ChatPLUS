@@ -144,7 +144,7 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     });
     expect(reply).not.toHaveProperty("previewText");
     expect((await readKeepsakes(request, agentId)).items).toEqual([]);
-    const replyLetterId = reply.id;
+    const replyLetterId = reply!.id;
     expect(await countLetterReplyCalls(request, agentId)).toBe(
       replyCallsBeforeSeal + 1,
     );
@@ -267,14 +267,14 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
       .selectOption("letter");
     expect((await filteredKeepsakesPromise).ok()).toBe(true);
     await expect(
-      page.getByText(sourcedKeepsake.keepsake.title, { exact: true }).first(),
+      page.getByText(sourcedKeepsake!.keepsake.title, { exact: true }).first(),
     ).toBeVisible();
     await page
       .getByRole("button")
-      .filter({ hasText: sourcedKeepsake.keepsake.title })
+      .filter({ hasText: sourcedKeepsake!.keepsake.title })
       .first()
       .click();
-    await expect(page).toHaveURL(`/keepsakes/${sourcedKeepsake.keepsake.id}`);
+    await expect(page).toHaveURL(`/keepsakes/${sourcedKeepsake!.keepsake.id}`);
     const provenanceLink = page
       .getByRole("link", { name: "打开来源", exact: true })
       .first();
@@ -290,7 +290,7 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     await page.goto(
       `/characters/${agentId}/relationship-share?${new URLSearchParams({
         letterId: replyLetterId,
-        keepsakeId: sourcedKeepsake.keepsake.id,
+        keepsakeId: sourcedKeepsake!.keepsake.id,
       }).toString()}`,
     );
     await expect(
@@ -320,7 +320,7 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     expect(projection).toMatchObject({
       exportMode: "local_png",
       envelope: { letterId: replyLetterId, waitingDays: 5 },
-      keepsake: { keepsakeId: sourcedKeepsake.keepsake.id },
+      keepsake: { keepsakeId: sourcedKeepsake!.keepsake.id },
     });
     expect(projection).not.toHaveProperty("redactedExcerpt");
     expect(JSON.stringify(projection)).not.toContain(USER_BODY);

@@ -117,7 +117,7 @@ test.describe("Dearvale first model setup", () => {
         providers: [provider],
         defaultSelection: {
           providerId: provider.id,
-          modelId: provider.models[0].id,
+          modelId: provider.models[0]!.id,
         },
       });
       await page.goto("/welcome");
@@ -742,7 +742,7 @@ test.describe("Dearvale spellbook animation recovery", () => {
     await expectStep(page, "service");
     await freezeFallbackTimers(page);
     await page.evaluate(() => {
-      const root = document.querySelector('[data-testid="api-setup"]');
+      const root = document.querySelector('[data-testid="api-setup"]')!;
       const recorded = window as Window & { setupStepChanges?: string[] };
       recorded.setupStepChanges = [];
       new MutationObserver(() =>
@@ -790,10 +790,10 @@ test.describe("Dearvale spellbook animation recovery", () => {
     await expectStep(page, "service");
     await freezeFallbackTimers(page);
     await page.evaluate(() => {
-      const book = document.querySelector('[data-testid="setup-book"]');
+      const book = document.querySelector('[data-testid="setup-book"]')!;
       const observer = new MutationObserver(() => {
         if (book.getAttribute("data-phase") !== "revealing") return;
-        const form = book.querySelector(".setup-form");
+        const form = book.querySelector(".setup-form")!;
         for (const animation of form.getAnimations()) {
           animation.pause();
           animation.currentTime = 80;

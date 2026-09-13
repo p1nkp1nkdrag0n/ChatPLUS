@@ -134,7 +134,8 @@ export async function mockOnboardingLlm(
       const status = state.probeStatus;
       const result: LlmProbeResult = {
         modelId: body?.["modelId"] as string,
-        ...(providerId ? { providerId, configRevision: revision } : {}),
+        ...(providerId ? { providerId } : {}),
+        ...(revision === undefined ? {} : { configRevision: revision }),
         testedAt: "2026-09-11T08:00:00.000Z",
         status,
         text:

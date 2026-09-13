@@ -300,12 +300,12 @@ test("six wax colors remain intact on desktop notes and readable mobile rows", a
           (card: Element) => {
             const note = card.getBoundingClientRect();
             const seal = card
-              .querySelector(".achievement-card__seal")
+              .querySelector(".achievement-card__seal")!
               .getBoundingClientRect();
             const title = card
-              .querySelector(".achievement-card__title")
+              .querySelector(".achievement-card__title")!
               .getBoundingClientRect();
-            const image = card.querySelector("img");
+            const image = card.querySelector("img")!;
             return {
               attached: seal.top < note.top && seal.bottom > note.top,
               inline:
@@ -363,7 +363,7 @@ test("custom image failures fall back to matching wax, and exhausted sources sto
   page,
 }) => {
   const state = await mockCollection(page);
-  const item = state.items[1];
+  const item = state.items[1]!;
   item.notificationRead = true;
   item.badge = {
     key: "star",

@@ -217,7 +217,7 @@ test("reviews an exact quarantined constraint and saves the author's confirmatio
   await expect(
     review
       .locator("details")
-      .filter({ hasText: candidateSummary.replace("待复核", "未采用") })
+      .filter({ hasText: candidateSummary!.replace("待复核", "未采用") })
       .first(),
   ).toBeVisible();
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);

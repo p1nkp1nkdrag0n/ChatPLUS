@@ -64,7 +64,7 @@ test.describe("Dearvale character interview", () => {
       .getByRole("button", { name: "描述你梦中的他/她", exact: true })
       .click();
     await expect(page).toHaveURL(/\/create$/);
-    const answers: InterviewTestAnswers = {
+    const answers = {
       ...basicInterviewAnswers,
       gender: "非二元",
       name: `时雨-${test.info().project.name}`,
@@ -75,7 +75,7 @@ test.describe("Dearvale character interview", () => {
       dialogueStyle: "自然克制，偶尔有一点干幽默",
       currentFocus: "那间即将搬迁的老书店",
       additionalDetails: "喜欢收集不同树木的落叶",
-    };
+    } satisfies InterviewTestAnswers;
     await answerMainQuestion(page, "gender", answers.gender);
     await answerMainQuestion(page, "name", answers.name);
     await expect(page.locator("label[for='interview-answer']")).toContainText(

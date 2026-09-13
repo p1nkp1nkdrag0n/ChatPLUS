@@ -86,5 +86,5 @@ export async function completeInterviewToPreview(
   await expect(page).toHaveURL(/\/characters\/[^/]+\/preview$/, {
     timeout: 30_000,
   });
-  return new URL(page.url()).pathname.split("/")[2];
+  return new URL(page.url()).pathname.split("/")[2]!;
 }

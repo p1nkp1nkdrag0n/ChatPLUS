@@ -755,7 +755,7 @@ async function expectNoStoryDisplacement(page: Page): Promise<void> {
       return {
         verticalOffset: new DOMMatrixReadOnly(style.transform).m42,
         animation: style.animationName,
-        opacity: getComputedStyle(element.parentElement).opacity,
+        opacity: getComputedStyle(element.parentElement!).opacity,
       };
     }),
   );

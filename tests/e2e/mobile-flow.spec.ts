@@ -16,7 +16,7 @@ import { answerMainQuestion } from "./character-interview-helpers";
 // use the actual fixture model, isolated SQLite database, and HTTP server.
 test.beforeEach(async ({ page }, info) => {
   test.skip(
-    !info.config.configFile.endsWith("playwright.mobile.config.ts"),
+    !info.config.configFile!.endsWith("playwright.mobile.config.ts"),
     "Run with playwright.mobile.config.ts for isolated mobile ports and artifacts.",
   );
   await mockConfiguredWelcomeCatalog(page);

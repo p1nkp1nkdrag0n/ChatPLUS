@@ -182,7 +182,7 @@ describe("P0 personal-life long-run acceptance", () => {
     await closeTrackedApp(first);
     const restarted = await openTrackedApp(databasePath, clock);
     const settlementSpy = vi.spyOn(
-      restarted.personasim.settlements,
+      restarted.personasim.settlements!,
       "settleAndExtend",
     );
     const turnSpy = vi.spyOn(restarted.personasim.conversations, "chat");
@@ -502,7 +502,7 @@ describe("P0 personal-life long-run acceptance", () => {
     await closeTrackedApp(restarted);
     const restartedAgain = await openTrackedApp(databasePath, clock);
     const repeatedSettlementSpy = vi.spyOn(
-      restartedAgain.personasim.settlements,
+      restartedAgain.personasim.settlements!,
       "settleAndExtend",
     );
     const repeatedActivation = await restartedAgain.inject({

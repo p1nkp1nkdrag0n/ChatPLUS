@@ -8,11 +8,6 @@ import { turnExpressionPromptView } from "@personasim/features";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
-import {
-  PERSONA_RUNTIME_SERVICE_TOKEN,
-  REPLY_REPAIR_SERVICE_TOKEN,
-  TURN_DECISION_SERVICE_TOKEN,
-} from "../composition/service-tokens.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
@@ -134,9 +129,7 @@ describe("persona runtime through committed HTTP turns", () => {
   }
 
   function runtime() {
-    return app.personasim.kernel.registry.resolve(
-      PERSONA_RUNTIME_SERVICE_TOKEN,
-    );
+    return app.personasim.kernel.services.personaRuntime;
   }
 
   function snapshot() {
@@ -248,9 +241,7 @@ describe("persona runtime through committed HTTP turns", () => {
     expect(first.statusCode, first.body).toBe(201);
     expect(first.internalTurn!.assistantMessage.content).toBe(previousReply);
 
-    const decisions = app.personasim.kernel.registry.resolve(
-      TURN_DECISION_SERVICE_TOKEN,
-    );
+    const decisions = app.personasim.kernel.services.turnDecisions;
     const decide = vi.spyOn(decisions, "decide");
     generate.mockClear();
     breakReply = true;
@@ -365,9 +356,7 @@ describe("persona runtime through committed HTTP turns", () => {
             ? Promise.resolve({ invalid: true } as never)
             : originalGenerate(input),
         );
-      const decisions = app.personasim.kernel.registry.resolve(
-        TURN_DECISION_SERVICE_TOKEN,
-      );
+      const decisions = app.personasim.kernel.services.turnDecisions;
       const decide = vi.spyOn(decisions, "decide");
       const response = await send(sessionId, current, "topic-current");
       expect(response.statusCode, response.body).toBe(201);
@@ -755,12 +744,8 @@ describe("persona runtime through committed HTTP turns", () => {
   it("passes the same frozen persona to generation, inspection, and reply repair", async () => {
     await setup();
     await learn();
-    const decisions = app.personasim.kernel.registry.resolve(
-      TURN_DECISION_SERVICE_TOKEN,
-    );
-    const repairs = app.personasim.kernel.registry.resolve(
-      REPLY_REPAIR_SERVICE_TOKEN,
-    );
+    const decisions = app.personasim.kernel.services.turnDecisions;
+    const repairs = app.personasim.kernel.services.replyRepairs;
     const decide = vi.spyOn(decisions, "decide");
     const inspect = vi.spyOn(decisions, "inspect");
     const repair = vi.spyOn(repairs, "repairFixtureDecision");

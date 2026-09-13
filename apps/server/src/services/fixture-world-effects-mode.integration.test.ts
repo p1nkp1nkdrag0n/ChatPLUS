@@ -5,7 +5,6 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
-import { TURN_DECISION_SERVICE_TOKEN } from "../composition/service-tokens.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
@@ -503,9 +502,7 @@ function mockFixtureRepair(app: PersonaSimApp, repair: unknown): void {
 }
 
 function forceInspectionFailures(app: PersonaSimApp, count: number): void {
-  const decisions = app.personasim.kernel.registry.resolve(
-    TURN_DECISION_SERVICE_TOKEN,
-  );
+  const decisions = app.personasim.kernel.services.turnDecisions;
   const inspect = decisions.inspect.bind(decisions);
   let remaining = count;
   vi.spyOn(decisions, "inspect").mockImplementation((input) => {

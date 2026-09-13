@@ -307,7 +307,7 @@ describe("P1 default-policy 30-day continuity long run", () => {
     activeApps.delete(app);
     const restarted = await openTrackedApp(databasePath, clock);
     const settlementSpy = vi.spyOn(
-      restarted.personasim.settlements,
+      restarted.personasim.settlements!,
       "settleAndExtend",
     );
     const drained = await restarted.inject({

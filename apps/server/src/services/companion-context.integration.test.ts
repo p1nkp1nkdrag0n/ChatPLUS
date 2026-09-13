@@ -5,7 +5,6 @@ import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { ConversationContextPlan } from "@personasim/contracts";
-import { CONVERSATION_CONTEXT_SERVICE_TOKEN } from "../composition/service-tokens.js";
 
 const NOW = "2026-09-06T04:00:00.000Z";
 describe("companion context pipeline", () => {
@@ -123,9 +122,7 @@ describe("companion context pipeline", () => {
           .assistantMessage.metadata["companionContext"],
       ).toEqual(diagnostic);
       if (mode === "enforced") {
-        const contexts = app.personasim.kernel.registry.resolve(
-          CONVERSATION_CONTEXT_SERVICE_TOKEN,
-        );
+        const contexts = app.personasim.kernel.services.conversationContext;
         const reconcile = vi
           .spyOn(contexts, "reconcileMemories")
           .mockImplementation(() => {

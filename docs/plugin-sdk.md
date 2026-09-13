@@ -1,16 +1,20 @@
 # Trusted plugin SDK
 
-The MVP exposes an in-process composition contract inspired by service-oriented harnesses. It is intentionally not a third-party plugin system.
+Historical reference, retained for the standalone kernel SDK. Since 2026-09-13,
+production server composition uses typed service factories and one cleanup
+stack; it no longer registers or activates these plugins. See
+[the current architecture](ARCHITECTURE.md). This contract was an in-process
+composition mechanism, not a third-party plugin system.
 
 ## Manifest
 
 Each plugin declares:
 
 - a unique `id`;
-- `apiVersion: '1'`;
-- service keys it `requires`;
+- `apiVersion: 1`;
+- plugin IDs it `requires`;
 - service keys it `provides`;
-- an `activate(context)` function that may return a disposer.
+- a `setup(context)` function that may return a disposer.
 
 The runtime validates API versions, rejects duplicate IDs and service keys, topologically sorts requirements, activates in dependency order and disposes in reverse order. If activation fails, already-active plugins are cleaned up before the error escapes.
 

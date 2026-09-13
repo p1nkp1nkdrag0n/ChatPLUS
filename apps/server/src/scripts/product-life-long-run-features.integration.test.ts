@@ -236,6 +236,9 @@ describe("product long-run correspondence and relationship artifacts", () => {
       ),
     ).toHaveLength(1);
 
+    // Cabinet reads intentionally return before queued image work completes.
+    // Drain the same managed background pass before asserting ready asset bytes.
+    await app.personasim.temporalTaskScheduler.requestAgentCatchUp(agentId);
     const artifacts = await inspectProductLifeArtifacts(app, agentId, {
       letterId: opened.replyLetterId!,
       recapFromUtc: START,

@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted.
+Historical; superseded for production server composition on 2026-09-13.
+The standalone SDK remains available, but the server now uses typed service
+factories and a shared cleanup stack as documented in
+[the architecture](../ARCHITECTURE.md). The original decision below records
+the earlier design.
 
 ## Decision
 

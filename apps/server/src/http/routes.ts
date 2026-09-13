@@ -60,7 +60,6 @@ import {
   type CorrespondenceService,
 } from "../services/correspondence-service.js";
 import type { ContinuityIndexService } from "../services/continuity-index-service.js";
-import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
 import { registerCharacterInterviewRoutes } from "./character-interview-routes.js";
 import { registerDiaryRoutes } from "./diary-routes.js";
@@ -71,8 +70,6 @@ import type { LlmService } from "../services/llm-service.js";
 import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import type { MemoryRecallService } from "../services/memory-recall-service.js";
 import type { PersonalLifeService } from "../services/personal-life-service.js";
-import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
-import type { ProactiveGenerationService } from "../services/proactive-generation-service.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
 import type { TemporalCatchUpService } from "../services/temporal-catch-up-service.js";
@@ -96,20 +93,17 @@ export type RouteServices = {
   llm: LlmService;
   memoryRecalls: MemoryRecallService;
   characters: CharacterService;
-  schedules: ScheduleService;
-  settlements: SettlementService;
-  personalLife: PersonalLifeService;
+  schedules: ScheduleService | undefined;
+  settlements: SettlementService | undefined;
+  personalLife: PersonalLifeService | undefined;
   life: FuzzyLifeService;
   autobiographies: AutobiographyService;
   calendar: CalendarService;
   checkpoints: CheckpointService;
   continuityIndex: ContinuityIndexService;
-  conversationActivity: ConversationActivityTracker;
   dateDigests: DateDigestService;
   followUps: FollowUpService;
   memoryLifecycle: MemoryLifecycleService;
-  proactiveDelivery: ProactiveDeliveryService;
-  proactiveGeneration: ProactiveGenerationService;
   retrievalRuns: RetrievalRunRepository;
   conversations: ConversationService;
   correspondence: CorrespondenceService;
@@ -145,16 +139,14 @@ export function registerRoutes(
     llm,
     memoryRecalls,
     characters,
-    schedules,
-    settlements,
-    personalLife,
     life,
-    conversationActivity,
     conversations,
     correspondence,
     keepsakes,
     relationshipArchive,
   } = services;
+
+  const legacyServices = () => requireLegacyServices(services);
 
   const requireDeveloperMode = () => {
     if (!config.developerRoutes) throw notFound("Developer endpoint");
@@ -295,7 +287,10 @@ export function registerRoutes(
         life.promptContext(id);
         return { character };
       }
-      await schedules.ensure72Hours(id, store.listSchedule(id).length === 0);
+      await legacyServices().schedules.ensure72Hours(
+        id,
+        store.listSchedule(id).length === 0,
+      );
       return { character };
     });
   });
@@ -303,42 +298,18 @@ export function registerRoutes(
   app.post("/api/agents/:id/activate", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
     await correspondence.catchUpAgent(id);
-    const activated = await actors.runExclusive(id, async () => {
+    await actors.runExclusive(id, async () => {
       const spec = store.getCharacterSpec(id);
       if (!spec) throw notFound("Character");
-      const capabilities = capabilitiesForRuntime(
-        spec.tier,
-        config.lifePlanningMode,
-      );
-      if (
-        capabilities.proactiveDialogue &&
-        store.listSessions(id).length === 0
-      ) {
-        store.createSession(
-          id,
-          `与${spec.identity.name}的对话`,
-          clock.nowUtc(),
-        );
-      }
       if (config.lifePlanningMode === "fuzzy") {
         life.advance(id);
-        return { capabilities };
+        return;
       }
-      const settlement = await settlements.settleAndExtend(id);
-      personalLife.ensureSelfInitiatedPlans(id);
-      return { capabilities, settlement };
+      const settlement = await legacyServices().settlements.settleAndExtend(id);
+      legacyServices().personalLife.ensureSelfInitiatedPlans(id);
+      return settlement;
     });
-    const proactiveOutcome = activated.capabilities.proactiveDialogue
-      ? await services.proactiveDelivery.deliverNext(id)
-      : undefined;
-    const proactiveMessage =
-      proactiveOutcome?.status === "committed"
-        ? proactiveOutcome.message
-        : undefined;
-    return projectPublicSnapshot(
-      buildAgentSnapshot(id, services),
-      proactiveMessage,
-    );
+    return projectPublicSnapshot(buildAgentSnapshot(id, services));
   });
 
   app.get("/api/agents/:id/state", (request, reply) => {
@@ -371,7 +342,7 @@ export function registerRoutes(
     }
     return {
       dataModel: "legacy_exact_schedule" as const,
-      items: schedules.list(id, range.fromUtc, range.toUtc),
+      items: legacyServices().schedules.list(id, range.fromUtc, range.toUtc),
       serverTimeUtc: clock.nowUtc(),
     };
   });
@@ -392,7 +363,10 @@ export function registerRoutes(
       .parse(request.body);
     return actors.runExclusive(id, () => {
       const effects = z.array(scheduleEffectProposalSchema).parse(body.effects);
-      const validation = schedules.validateEffects(id, effects);
+      const validation = legacyServices().schedules.validateEffects(
+        id,
+        effects,
+      );
       if (!validation.valid) {
         throw new ApiError(
           422,
@@ -403,7 +377,7 @@ export function registerRoutes(
       }
       const nowUtc = clock.nowUtc();
       const changed = store.transaction(() =>
-        schedules.applyValidatedEffects(id, effects, nowUtc),
+        legacyServices().schedules.applyValidatedEffects(id, effects, nowUtc),
       );
       sse.publish({
         type: "schedule.updated",
@@ -511,28 +485,25 @@ export function registerRoutes(
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const input = chatMessageInputSchema.parse(normalizeChatBody(request.body));
     await correspondence.catchUpAgent(input.agentId);
-    const lease = conversationActivity.beginUserTurn(input.agentId);
-    try {
-      const result = await actors.runExclusive(input.agentId, async () => {
-        const turn = await conversations.chat(sessionId, input);
-        if (
-          config.lifePlanningMode === "fuzzy" ||
-          turn.idempotentReplay ||
-          turn.scheduleChanges.length > 0
-        ) {
-          return turn;
-        }
-        const planning = personalLife.ensureSelfInitiatedPlans(input.agentId);
-        return planning.state === undefined
-          ? turn
-          : { ...turn, state: planning.state };
-      });
-      return reply
-        .code(result.idempotentReplay ? 200 : 201)
-        .send(projectPublicTurn(result));
-    } finally {
-      lease.end();
-    }
+    const result = await actors.runExclusive(input.agentId, async () => {
+      const turn = await conversations.chat(sessionId, input);
+      if (
+        config.lifePlanningMode === "fuzzy" ||
+        turn.idempotentReplay ||
+        turn.scheduleChanges.length > 0
+      ) {
+        return turn;
+      }
+      const planning = legacyServices().personalLife.ensureSelfInitiatedPlans(
+        input.agentId,
+      );
+      return planning.state === undefined
+        ? turn
+        : { ...turn, state: planning.state };
+    });
+    return reply
+      .code(result.idempotentReplay ? 200 : 201)
+      .send(projectPublicTurn(result));
   });
 
   app.post("/api/agents/:id/messages", async (request, reply) => {
@@ -542,30 +513,26 @@ export function registerRoutes(
       agentId: id,
     });
     await correspondence.catchUpAgent(id);
-    const lease = conversationActivity.beginUserTurn(id);
-    try {
-      const result = await actors.runExclusive(id, async () => {
-        const session =
-          conversations.listSessions(id)[0] ?? conversations.createSession(id);
-        const turn = await conversations.chat(session.id, input);
-        if (
-          config.lifePlanningMode === "fuzzy" ||
-          turn.idempotentReplay ||
-          turn.scheduleChanges.length > 0
-        ) {
-          return turn;
-        }
-        const planning = personalLife.ensureSelfInitiatedPlans(id);
-        return planning.state === undefined
-          ? turn
-          : { ...turn, state: planning.state };
-      });
-      return reply
-        .code(result.idempotentReplay ? 200 : 201)
-        .send(projectPublicTurn(result));
-    } finally {
-      lease.end();
-    }
+    const result = await actors.runExclusive(id, async () => {
+      const session =
+        conversations.listSessions(id)[0] ?? conversations.createSession(id);
+      const turn = await conversations.chat(session.id, input);
+      if (
+        config.lifePlanningMode === "fuzzy" ||
+        turn.idempotentReplay ||
+        turn.scheduleChanges.length > 0
+      ) {
+        return turn;
+      }
+      const planning =
+        legacyServices().personalLife.ensureSelfInitiatedPlans(id);
+      return planning.state === undefined
+        ? turn
+        : { ...turn, state: planning.state };
+    });
+    return reply
+      .code(result.idempotentReplay ? 200 : 201)
+      .send(projectPublicTurn(result));
   });
 
   app.get("/api/agents/:agentId/correspondence", async (request, reply) => {
@@ -1049,20 +1016,15 @@ export function registerRoutes(
             result: life.advance(id),
           };
         }
-        const settlement = await settlements.settleAndExtend(id);
-        personalLife.ensureSelfInitiatedPlans(id);
+        const settlement =
+          await legacyServices().settlements.settleAndExtend(id);
+        legacyServices().personalLife.ensureSelfInitiatedPlans(id);
         return { mode: "legacy_exact" as const, result: settlement };
       });
-      const proactiveOutcome = await services.proactiveDelivery.deliverNext(id);
       return {
         ...(lifecycle.mode === "fuzzy"
           ? { lifecycle }
           : { settlement: lifecycle.result }),
-        proactiveMessage:
-          proactiveOutcome.status === "committed"
-            ? proactiveOutcome.message
-            : undefined,
-        proactiveOutcome,
       };
     });
   }
@@ -1245,14 +1207,26 @@ async function settleActiveAgents(services: RouteServices): Promise<void> {
         if (services.config.lifePlanningMode === "fuzzy") {
           services.life.advance(agentId, nowUtc);
         } else {
-          await services.settlements.settleAndExtend(agentId, {
-            toUtc: nowUtc,
-          });
-          services.personalLife.ensureSelfInitiatedPlans(agentId);
+          await requireLegacyServices(services).settlements.settleAndExtend(
+            agentId,
+            {
+              toUtc: nowUtc,
+            },
+          );
+          requireLegacyServices(services).personalLife.ensureSelfInitiatedPlans(
+            agentId,
+          );
         }
         services.memoryLifecycle.maintainAgent(agentId);
       });
-      await services.proactiveDelivery.deliverNext(agentId);
     }),
   );
+}
+
+function requireLegacyServices(services: RouteServices) {
+  const { schedules, settlements, personalLife } = services;
+  if (!schedules || !settlements || !personalLife) {
+    throw new Error("Legacy schedule operation requires legacy_exact services");
+  }
+  return { schedules, settlements, personalLife };
 }

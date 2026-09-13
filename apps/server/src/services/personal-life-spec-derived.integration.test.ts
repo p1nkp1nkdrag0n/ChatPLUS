@@ -11,10 +11,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
 import { readConfig } from "../config.js";
-import {
-  PERSONAL_INTENT_SERVICE_TOKEN,
-  SELF_PLANNING_SERVICE_TOKEN,
-} from "../composition/service-tokens.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 
@@ -39,9 +35,7 @@ describe("production CharacterSpec personal-intent seeding", () => {
     const clock = new FakeClock(NOW_UTC);
     const first = await openTrackedApp(databasePath, clock);
     const character = await createAndPublish(first);
-    const planner = first.personasim.kernel.registry.resolve(
-      SELF_PLANNING_SERVICE_TOKEN,
-    );
+    const planner = first.personasim.kernel.services.selfPlanning!;
     const firstPlanning = vi.spyOn(planner, "ensureSelfInitiatedPlans");
 
     const activation = await first.inject({
@@ -90,9 +84,7 @@ describe("production CharacterSpec personal-intent seeding", () => {
     expect(tableCount(first, "messages", character.id)).toBe(0);
     expect(specIntentCommandCount(first, character.id)).toBe(2);
 
-    const intentLifecycle = first.personasim.kernel.registry.resolve(
-      PERSONAL_INTENT_SERVICE_TOKEN,
-    );
+    const intentLifecycle = first.personasim.kernel.services.personalIntents!;
     await first.personasim.actors.runExclusive(character.id, () => {
       for (const intent of readIntents(first, character.id)) {
         if (intent.status !== "pending" && intent.status !== "planned") {
@@ -117,9 +109,7 @@ describe("production CharacterSpec personal-intent seeding", () => {
     await closeTrackedApp(first);
 
     const restarted = await openTrackedApp(databasePath, clock);
-    const restartedPlanner = restarted.personasim.kernel.registry.resolve(
-      SELF_PLANNING_SERVICE_TOKEN,
-    );
+    const restartedPlanner = restarted.personasim.kernel.services.selfPlanning!;
     const restartedPlanning = vi.spyOn(
       restartedPlanner,
       "ensureSelfInitiatedPlans",

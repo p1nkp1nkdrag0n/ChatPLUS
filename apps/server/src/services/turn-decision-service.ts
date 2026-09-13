@@ -336,7 +336,7 @@ const EnforcedScheduleTurnProviderEnvelopeSchema =
 export class TurnDecisionService {
   constructor(
     private readonly llm: LlmService,
-    private readonly schedules: ScheduleService,
+    private readonly schedules: ScheduleService | undefined,
     private readonly repairs: ReplyRepairService,
     private readonly options: TurnDecisionServiceOptions = {},
   ) {}
@@ -1269,7 +1269,7 @@ function providerReplyCandidate(
 }
 
 function inspectDecision(
-  schedules: ScheduleService,
+  schedules: ScheduleService | undefined,
   agentId: string,
   spec: CharacterSpec,
   decision: AgentTurnDecision,
@@ -1277,11 +1277,26 @@ function inspectDecision(
   capabilities: SimulationCapabilities,
   effectivePersona?: EffectivePersonaSnapshot,
 ): DecisionInspection {
-  const validation = schedules.validateEffectsPartial(
-    agentId,
-    decision.scheduleEffects,
-    nowUtc,
-  );
+  if (capabilities.legacyExactSchedule && schedules === undefined) {
+    throw new Error(
+      "Legacy exact scheduling requires a composed ScheduleService.",
+    );
+  }
+  const validation: PartialProposalValidation = capabilities.legacyExactSchedule
+    ? schedules!.validateEffectsPartial(
+        agentId,
+        decision.scheduleEffects,
+        nowUtc,
+      )
+    : {
+        accepted: [],
+        rejections: decision.scheduleEffects.map((proposal, index) => ({
+          index,
+          code: "schedule_disabled",
+          message: "Scheduling is disabled for this character.",
+          proposal,
+        })),
+      };
   const issues: unknown[] = [];
   if (violatesTruthfulReply(decision, validation.accepted.length)) {
     issues.push({

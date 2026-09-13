@@ -55,7 +55,7 @@ Each arrow requires evidence. Discussion is not a decision, a decision is not an
 ## Workspace boundaries
 
 - `packages/contracts`: shared Zod schemas and inferred TypeScript types.
-- `packages/kernel`: service registry, event bus, actor queue and trusted plugin lifecycle.
+- `packages/kernel`: shared prompt-token estimation plus the retained historical plugin SDK; the server no longer uses its registry or plugin lifecycle.
 - `packages/features`: pure state, memory, relationship, fuzzy-life, decision, outcome, prompt and proactive rules.
 - `packages/providers`: system/fake clocks and fixture/OpenAI-compatible LLM implementations.
 - `apps/server`: Fastify routes, SQLite migrations/repositories, transactions, life progression and SSE.
@@ -68,7 +68,23 @@ negotiations and activity-event projections are isolated in
 must not add another exact-calendar responsibility to the core store. The
 legacy schedule and settlement writers also receive the runtime planning mode
 and fail closed unless it is explicitly `legacy_exact`, including when migrated
-character data still has an old schedule policy enabled.
+character data still has an old schedule policy enabled. These writers are
+constructed only by the explicitly selected `legacy_exact` regression runtime;
+the default fuzzy runtime has no schedule, settlement or self-planning writer.
+
+`apps/server/src/composition/compose-server.ts` builds a typed service graph with
+ordinary constructors and explicit dependencies. HTTP and internal diagnostics
+refer to the same service instances. A single cleanup stack reverses startup
+order, drains in-flight hourly work, stops temporal and achievement workers,
+closes SSE, and closes SQLite last. Startup failure uses the same cleanup path;
+one failed disposer does not skip the remaining resources. The former fixed
+plugin manifests, service-token registration and profile bundle shells have
+been removed from production composition.
+
+Paused proactive generation is not composed in the product runtime. Normal
+chat no longer maintains its user-turn activity leases, and hourly work does
+not attempt delivery. Its independent services, history and regression tests
+remain available for a future explicit feature decision.
 
 The service layer follows the same boundary: character compilation, local clock
 projection and draft editing are separate from `CharacterService`; turn audit,

@@ -133,19 +133,26 @@ export interface WorldEffectTrace {
 
 /** Prepares validated world effects and next state without durable writes. */
 export class WorldEffectService {
-  private readonly scheduleNegotiations: ScheduleNegotiationService;
+  private readonly scheduleNegotiations: ScheduleNegotiationService | undefined;
 
   constructor(
     private readonly store: DatabaseStore,
-    schedules: ScheduleService,
+    schedules: ScheduleService | undefined,
     private readonly decisions: TurnDecisionService,
     private readonly repairs: ReplyRepairService,
     private readonly options: WorldEffectServiceOptions = {},
   ) {
-    this.scheduleNegotiations = new ScheduleNegotiationService(
-      store,
-      schedules,
-    );
+    this.scheduleNegotiations =
+      schedules === undefined
+        ? undefined
+        : new ScheduleNegotiationService(store, schedules);
+  }
+
+  private requireScheduleNegotiations(): ScheduleNegotiationService {
+    if (this.scheduleNegotiations === undefined) {
+      throw new Error("Legacy schedule negotiation requires legacy services");
+    }
+    return this.scheduleNegotiations;
   }
 
   prepareDecisionContext(input: {
@@ -170,7 +177,10 @@ export class WorldEffectService {
       input.spec.tier === "high_fidelity" &&
       input.spec.schedulePolicy.enabled;
     const activeNegotiation = scheduleNegotiationEligible
-      ? this.scheduleNegotiations.getActive(input.sessionId, input.nowUtc)
+      ? this.requireScheduleNegotiations().getActive(
+          input.sessionId,
+          input.nowUtc,
+        )
       : undefined;
     const effectsEligible =
       !negotiationEnforced &&
@@ -234,7 +244,7 @@ export class WorldEffectService {
               hasActiveNegotiation:
                 input.effects.activeNegotiation !== undefined,
             });
-      negotiationPlan = this.scheduleNegotiations.prepare({
+      negotiationPlan = this.requireScheduleNegotiations().prepare({
         agentId: input.agentId,
         sessionId: input.sessionId,
         timezone: input.spec.identity.timezone,

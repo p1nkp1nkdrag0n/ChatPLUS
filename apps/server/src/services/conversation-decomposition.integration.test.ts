@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
-import {
-  REPLY_REPAIR_SERVICE_TOKEN,
-  TURN_COMMIT_SERVICE_TOKEN,
-  TURN_DECISION_SERVICE_TOKEN,
-  WORLD_EFFECT_SERVICE_TOKEN,
-} from "../composition/service-tokens.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
@@ -40,11 +34,11 @@ describe("conversation service decomposition", () => {
       logger: false,
     });
 
-    const registry = app.personasim.kernel.registry;
-    const replyRepairs = registry.resolve(REPLY_REPAIR_SERVICE_TOKEN);
-    const decisions = registry.resolve(TURN_DECISION_SERVICE_TOKEN);
-    const worldEffects = registry.resolve(WORLD_EFFECT_SERVICE_TOKEN);
-    const commits = registry.resolve(TURN_COMMIT_SERVICE_TOKEN);
+    const services = app.personasim.kernel.services;
+    const replyRepairs = services.replyRepairs;
+    const decisions = services.turnDecisions;
+    const worldEffects = services.worldEffects;
+    const commits = services.turnCommits;
     const coordinator = app.personasim.conversations as unknown as {
       decisions: TurnDecisionService;
       worldEffects: WorldEffectService;

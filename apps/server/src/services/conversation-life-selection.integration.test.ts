@@ -6,11 +6,6 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "../app.js";
-import {
-  LIFE_SERVICE_TOKEN,
-  REPLY_REPAIR_SERVICE_TOKEN,
-  TURN_DECISION_SERVICE_TOKEN,
-} from "../composition/service-tokens.js";
 import { readConfig } from "../config.js";
 import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
@@ -149,24 +144,24 @@ describe("requested life projects through HTTP generation and repair", () => {
       const { agentId, sessionId } = await setup();
       const full = lifeSnapshot();
       vi.spyOn(
-        app.personasim.kernel.registry.resolve(LIFE_SERVICE_TOKEN),
+        app.personasim.kernel.services.life,
         "promptContext",
       ).mockReturnValue(full);
-      const decisions = app.personasim.kernel.registry.resolve(
-        TURN_DECISION_SERVICE_TOKEN,
-      );
+      const decisions = app.personasim.kernel.services.turnDecisions;
       const decide = vi.spyOn(decisions, "decide");
       const inspect = vi.spyOn(decisions, "inspect");
-      const repairs = app.personasim.kernel.registry.resolve(
-        REPLY_REPAIR_SERVICE_TOKEN,
-      );
+      const repairs = app.personasim.kernel.services.replyRepairs;
       const repairFixture = vi.spyOn(repairs, "repairFixtureDecision");
       const repairPersona = vi.spyOn(repairs, "repairPersonaReply");
       if (path === "persona")
-        Object.defineProperty(app.personasim.llm.captureDefault(), "providerName", {
-          value: "openai-compatible",
-          configurable: true,
-        });
+        Object.defineProperty(
+          app.personasim.llm.captureDefault(),
+          "providerName",
+          {
+            value: "openai-compatible",
+            configurable: true,
+          },
+        );
       const originalGenerate = app.personasim.llm.generateObject.bind(
         app.personasim.llm,
       );

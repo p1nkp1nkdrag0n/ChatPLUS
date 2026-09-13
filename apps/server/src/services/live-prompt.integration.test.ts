@@ -35,7 +35,7 @@ describe("live-model prompt contracts", () => {
     llm.mockClear();
     created.clock.advance({ hours: 60 });
     const expectedTargetEndUtc = "2026-08-21T14:00:00.000Z";
-    await app.personasim.schedules.ensure72Hours(character.id);
+    await app.personasim.schedules!.ensure72Hours(character.id);
 
     const planCall = llm.mock.calls.find(
       ([input]) => input.purpose === "plan_schedule",
@@ -64,7 +64,9 @@ describe("live-model prompt contracts", () => {
     const created = await createTestApp();
     app = created.app;
     const provider = (
-      app.personasim.llm.captureDefault() as unknown as { provider: LlmProvider }
+      app.personasim.llm.captureDefault() as unknown as {
+        provider: LlmProvider;
+      }
     ).provider;
     const providerCall = vi.spyOn(provider, "generateObject");
 

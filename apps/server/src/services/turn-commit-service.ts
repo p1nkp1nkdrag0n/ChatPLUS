@@ -49,8 +49,8 @@ export class TurnCommitService {
 
   constructor(
     private readonly store: DatabaseStore,
-    private readonly schedules: ScheduleService,
-    private readonly personalIntents: PersonalIntentService,
+    private readonly schedules: ScheduleService | undefined,
+    private readonly personalIntents: PersonalIntentService | undefined,
     sse: SseHub,
     private readonly contexts?: ConversationContextService,
     private readonly options: TurnCommitServiceOptions = {},
@@ -230,6 +230,8 @@ export class TurnCommitService {
           this.options.scheduleNegotiationMode === "enforced" &&
           input.world.negotiationPlan?.effect !== undefined
         ) {
+          if (this.schedules === undefined)
+            throw new Error("Legacy schedule writer is unavailable.");
           const finalValidation = this.schedules.validateEffectsPartial(
             input.command.agentId,
             [input.world.negotiationPlan.effect],
@@ -273,6 +275,8 @@ export class TurnCommitService {
         this.audits.persistWorldEffectsAudit(input, userMessage);
         if (!fuzzyLifeEnabled) {
           this.audits.persistNegotiation(input, userMessage);
+          if (this.schedules === undefined)
+            throw new Error("Legacy schedule writer is unavailable.");
           scheduleChanges = this.schedules.applyValidatedEffects(
             input.command.agentId,
             effectsToApply,
@@ -453,6 +457,8 @@ export class TurnCommitService {
       input.world.decision.personalIntentCandidates ?? []
     ).entries()) {
       try {
+        if (this.personalIntents === undefined)
+          throw new Error("Legacy personal-intent writer is unavailable.");
         ids.push(
           this.personalIntents.upsertOrMerge({
             agentId: input.command.agentId,

@@ -568,8 +568,8 @@ describe("Stage 8 correspondence long-run matrix", () => {
       mismatchedKeyError = error;
     }
     expect(mismatchedKeyError).toMatchObject({
-      code: "plugin_activation_failed",
-      cause: { code: "CORRESPONDENCE_SECRET_MISMATCH" },
+      name: "CorrespondenceCryptoStartupError",
+      code: "CORRESPONDENCE_SECRET_MISMATCH",
     });
   }, 30_000);
 

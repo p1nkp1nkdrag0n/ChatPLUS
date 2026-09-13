@@ -65,6 +65,7 @@ describe("achievement wax migration", () => {
         migration,
         "035_letter_delivery_methods.sql",
         "036_memory_diaries.sql",
+        "037_keepsake_retry_receipt.sql",
       ]);
       expect(
         database

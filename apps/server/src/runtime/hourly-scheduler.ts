@@ -3,7 +3,6 @@ import { DateTime } from "luxon";
 import type { PersonalLifeService } from "../services/personal-life-service.js";
 import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
-import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
 import type { SseHub } from "../sse/hub.js";
 import type { ActorQueue } from "./actor-queue.js";
@@ -16,21 +15,16 @@ type SchedulerLogger = {
 export class HourlyScheduler {
   private timer: NodeJS.Timeout | undefined;
   private stopped = true;
+  private readonly running = new Set<Promise<void>>();
 
   constructor(
     private readonly clock: Clock,
     private readonly sse: SseHub,
     private readonly actors: ActorQueue,
-    private readonly settlements: SettlementService,
+    private readonly settlements: SettlementService | undefined,
     private readonly logger: SchedulerLogger,
-    private readonly personalLife: Pick<
-      PersonalLifeService,
-      "ensureSelfInitiatedPlans"
-    >,
-    private readonly proactiveDelivery: Pick<
-      ProactiveDeliveryService,
-      "deliverNext"
-    >,
+    private readonly personalLife:
+      Pick<PersonalLifeService, "ensureSelfInitiatedPlans"> | undefined,
     private readonly memoryLifecycle?: Pick<
       MemoryLifecycleService,
       "maintainAgent"
@@ -52,7 +46,22 @@ export class HourlyScheduler {
     this.timer = undefined;
   }
 
-  async tick(): Promise<void> {
+  async dispose(): Promise<void> {
+    this.stop();
+    await Promise.allSettled([...this.running]);
+  }
+
+  tick(): Promise<void> {
+    const pass = this.runTick();
+    this.running.add(pass);
+    const completed = () => {
+      this.running.delete(pass);
+    };
+    void pass.then(completed, completed);
+    return pass;
+  }
+
+  private async runTick(): Promise<void> {
     const nowUtc = this.clock.nowUtc();
     const bucket = DateTime.fromISO(nowUtc).toUTC().startOf("hour").toISO()!;
     const activeAgents = this.sse.getActiveAgentIds();
@@ -68,6 +77,14 @@ export class HourlyScheduler {
               }
               this.life.advance(agentId, nowUtc);
             } else {
+              if (
+                this.settlements === undefined ||
+                this.personalLife === undefined
+              ) {
+                throw new Error(
+                  "Legacy hourly work requires legacy_exact services",
+                );
+              }
               await this.settlements.settleAndExtend(agentId, {
                 toUtc: nowUtc,
                 hourlyBucket: bucket,
@@ -76,9 +93,6 @@ export class HourlyScheduler {
             }
             this.memoryLifecycle?.maintainAgent(agentId);
           });
-          // ProactiveDeliveryService owns the preflight/postflight actor
-          // phases. Its optional model compose must run between them.
-          await this.proactiveDelivery.deliverNext(agentId);
         } catch (error) {
           this.logger.error(
             {

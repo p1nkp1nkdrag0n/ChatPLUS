@@ -76,6 +76,7 @@ describe("PersonaSim server integration", () => {
         "034_achievement_wax_versions.sql",
         "035_letter_delivery_methods.sql",
         "036_memory_diaries.sql",
+        "037_keepsake_retry_receipt.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -473,7 +474,7 @@ describe("PersonaSim server integration", () => {
     const character = await createAndPublish(app, "daily");
     created.clock.advance({ hours: 14 });
     const settlementSpy = vi.spyOn(
-      app.personasim.settlements,
+      app.personasim.settlements!,
       "settleAndExtend",
     );
 
@@ -560,7 +561,7 @@ describe("PersonaSim server integration", () => {
     );
     created.clock.advance({ hours: 8 });
     const settlementSpy = vi.spyOn(
-      app.personasim.settlements,
+      app.personasim.settlements!,
       "settleAndExtend",
     );
 
@@ -638,7 +639,7 @@ describe("PersonaSim server integration", () => {
     app = created.app;
     const character = await createAndPublish(app, "high_fidelity");
     const settlementSpy = vi.spyOn(
-      app.personasim.settlements,
+      app.personasim.settlements!,
       "settleAndExtend",
     );
     app.personasim.store.database
@@ -903,12 +904,7 @@ describe("PersonaSim server integration", () => {
       .get(character.id) as { count: number };
     expect(proactiveCalls.count).toBe(0);
 
-    await expect(
-      app.personasim.proactiveDelivery.deliverNext(character.id),
-    ).resolves.toEqual({
-      status: "not_claimed",
-      reasonCode: "tier_not_supported",
-    });
+    expect(app.personasim).not.toHaveProperty("proactiveDelivery");
 
     const repeated = await app.inject({
       method: "POST",

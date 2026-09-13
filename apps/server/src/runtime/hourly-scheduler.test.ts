@@ -1,353 +1,118 @@
 import { describe, expect, it, vi } from "vitest";
-import { CharacterSpecSchema } from "@personasim/contracts";
-
-import { openDatabase, type Database } from "../db/connection.js";
-import { runMigrations } from "../db/migrations.js";
-import { DatabaseStore } from "../db/store.js";
-import { buildOriginalDraft, initialRuntimeState } from "../domain/defaults.js";
-import {
-  ConversationActivityTracker,
-  type UserTurnLease,
-} from "../services/conversation-activity-tracker.js";
-import type { LlmService } from "../services/llm-service.js";
-import { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
-import { ProactiveGenerationRepository } from "../services/proactive-generation-repository.js";
-import { ProactiveGenerationService } from "../services/proactive-generation-service.js";
-
-import type { PersonalLifeService } from "../services/personal-life-service.js";
 import type { SettlementService } from "../services/settlement-service.js";
+import type { PersonalLifeService } from "../services/personal-life-service.js";
+import type { MemoryLifecycleService } from "../services/memory-lifecycle-service.js";
 import { SseHub } from "../sse/hub.js";
 import { ActorQueue } from "./actor-queue.js";
 import { FakeClock } from "./clock.js";
 import { HourlyScheduler } from "./hourly-scheduler.js";
-
-const AGENT_ID = "agent-hourly-lifecycle";
-const NOW_UTC = "2026-08-21T04:37:00.000Z";
-const BUCKET_UTC = "2026-08-21T04:00:00.000Z";
-
-describe("HourlyScheduler personal life ordering", () => {
-  it("runs settlement and personal planning in the actor queue, then invokes the delivery coordinator", async () => {
-    const clock = new FakeClock(NOW_UTC);
-    const sse = new SseHub();
-    vi.spyOn(sse, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
-    const actors = new ActorQueue();
+const NOW = "2026-08-21T04:37:00.000Z";
+function setup() {
+  const sse = new SseHub();
+  vi.spyOn(sse, "getActiveAgentIds").mockReturnValue(["agent-hourly"]);
+  return {
+    clock: new FakeClock(NOW),
+    sse,
+    actors: new ActorQueue(),
+    logger: { error: vi.fn() },
+  };
+}
+describe("hourly lifecycle", () => {
+  it("serializes legacy settlement, planning and memory maintenance for one actor", async () => {
+    const { clock, sse, actors, logger } = setup();
     const order: string[] = [];
-    const activeActorCounts: number[] = [];
     const settleAndExtend = vi.fn(() => {
       order.push("settle");
-      activeActorCounts.push(actors.activeActors);
+      expect(actors.activeActors).toBe(1);
       return Promise.resolve();
     });
-    const settlements = {
-      settleAndExtend,
-    } as unknown as SettlementService;
     const ensureSelfInitiatedPlans = vi.fn(() => {
       order.push("plan");
-      activeActorCounts.push(actors.activeActors);
     });
-    const personalLife = {
-      ensureSelfInitiatedPlans,
-    } as unknown as Pick<PersonalLifeService, "ensureSelfInitiatedPlans">;
-    const deliverNext = vi.fn(() => {
-      order.push("deliver");
-      activeActorCounts.push(actors.activeActors);
+    const maintainAgent = vi.fn(() => {
+      order.push("memory");
     });
-    const proactiveDelivery = {
-      deliverNext,
-    } as unknown as Pick<ProactiveDeliveryService, "deliverNext">;
-    const logger = { error: vi.fn() };
-    const scheduler = new HourlyScheduler(
-      clock,
-      sse,
-      actors,
-      settlements,
-      logger,
-      personalLife,
-      proactiveDelivery,
-    );
-
-    let releaseGate: () => void = () => undefined;
-    let markEntered: () => void = () => undefined;
-    const entered = new Promise<void>((resolve) => {
-      markEntered = () => resolve();
-    });
-    const gate = new Promise<void>((resolve) => {
-      releaseGate = () => resolve();
-    });
-    const blocker = actors.runExclusive(AGENT_ID, async () => {
-      markEntered();
-      await gate;
-    });
-    await entered;
-
-    const tick = scheduler.tick();
-    await Promise.resolve();
-    expect(order).toEqual([]);
-
-    releaseGate();
-    await Promise.all([blocker, tick]);
-
-    expect(order).toEqual(["settle", "plan", "deliver"]);
-    expect(activeActorCounts).toEqual([1, 1, 0]);
-    expect(settleAndExtend).toHaveBeenCalledWith(AGENT_ID, {
-      toUtc: NOW_UTC,
-      hourlyBucket: BUCKET_UTC,
-    });
-    expect(ensureSelfInitiatedPlans).toHaveBeenCalledWith(AGENT_ID);
-    expect(deliverNext).toHaveBeenCalledWith(AGENT_ID);
-    expect(logger.error).not.toHaveBeenCalled();
-  });
-
-  it("advances fuzzy life without invoking exact settlement or schedule planning", async () => {
-    const clock = new FakeClock(NOW_UTC);
-    const sse = new SseHub();
-    vi.spyOn(sse, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
-    const actors = new ActorQueue();
-    const settleAndExtend = vi.fn();
-    const ensureSelfInitiatedPlans = vi.fn();
-    const advance = vi.fn();
-    const deliverNext = vi.fn();
-    const logger = { error: vi.fn() };
     const scheduler = new HourlyScheduler(
       clock,
       sse,
       actors,
       { settleAndExtend } as unknown as SettlementService,
       logger,
-      { ensureSelfInitiatedPlans },
-      { deliverNext },
+      { ensureSelfInitiatedPlans } as unknown as Pick<
+        PersonalLifeService,
+        "ensureSelfInitiatedPlans"
+      >,
+      { maintainAgent } as unknown as Pick<
+        MemoryLifecycleService,
+        "maintainAgent"
+      >,
+    );
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocker = actors.runExclusive("agent-hourly", () => gate);
+    const tick = scheduler.tick();
+    await Promise.resolve();
+    expect(order).toEqual([]);
+    release();
+    await Promise.all([blocker, tick]);
+    expect(order).toEqual(["settle", "plan", "memory"]);
+    expect(settleAndExtend).toHaveBeenCalledWith("agent-hourly", {
+      toUtc: NOW,
+      hourlyBucket: "2026-08-21T04:00:00.000Z",
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+  it("advances fuzzy life and memories without any legacy or proactive collaborators", async () => {
+    const { clock, sse, actors, logger } = setup();
+    const advance = vi.fn();
+    const maintainAgent = vi.fn();
+    const scheduler = new HourlyScheduler(
+      clock,
+      sse,
+      actors,
+      undefined,
+      logger,
+      undefined,
+      { maintainAgent },
+      { advance },
+      "fuzzy",
+    );
+    await scheduler.tick();
+    expect(advance).toHaveBeenCalledWith("agent-hourly", NOW);
+    expect(maintainAgent).toHaveBeenCalledWith("agent-hourly");
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+  it("waits for an already queued tick before releasing its lifecycle", async () => {
+    const { clock, sse, actors, logger } = setup();
+    const advance = vi.fn();
+    const scheduler = new HourlyScheduler(
+      clock,
+      sse,
+      actors,
+      undefined,
+      logger,
+      undefined,
       undefined,
       { advance },
       "fuzzy",
     );
-
-    await scheduler.tick();
-
-    expect(advance).toHaveBeenCalledWith(AGENT_ID, NOW_UTC);
-    expect(settleAndExtend).not.toHaveBeenCalled();
-    expect(ensureSelfInitiatedPlans).not.toHaveBeenCalled();
-    expect(deliverNext).toHaveBeenCalledWith(AGENT_ID);
-    expect(logger.error).not.toHaveBeenCalled();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocker = actors.runExclusive("agent-hourly", () => gate);
+    const tick = scheduler.tick();
+    let disposed = false;
+    const closing = scheduler.dispose().then(() => {
+      disposed = true;
+    });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+    release();
+    await Promise.all([blocker, tick, closing]);
+    expect(disposed).toBe(true);
+    expect(advance).toHaveBeenCalledOnce();
   });
 });
-
-const DELIVERY_NOW_UTC = "2026-08-21T12:37:00.000Z";
-const DELIVERY_CANDIDATE_ID = "candidate-hourly-delivery";
-
-describe("HourlyScheduler paused proactive delivery", () => {
-  it("does not compose or emit even when a legacy pending candidate exists", async () => {
-    const harness = createDeliveryHarness(false);
-    try {
-      const scheduler = createDeliveryScheduler(harness);
-      await scheduler.tick();
-
-      expect(harness.settlementActorCounts).toEqual([1]);
-      expect(harness.composeActorCounts).toEqual([]);
-      expect(harness.legacyDelivery).not.toHaveBeenCalled();
-      expect(harness.messageCreatedEvents).toEqual([]);
-      expect(harness.publishRunStatuses).toEqual([]);
-      expect(readLatestGenerationStatus(harness.database)).toBeUndefined();
-      expect(readCandidateStatus(harness.database)).toBe("pending");
-      expect(countProactiveMessages(harness.database)).toBe(0);
-      expect(harness.logger.error).not.toHaveBeenCalled();
-    } finally {
-      harness.endUserTurn();
-      harness.database.close();
-    }
-  });
-
-  it("leaves the legacy pending candidate untouched across repeated ticks", async () => {
-    const harness = createDeliveryHarness(true);
-    try {
-      const scheduler = createDeliveryScheduler(harness);
-      await scheduler.tick();
-      await scheduler.tick();
-
-      expect(harness.settlementActorCounts).toEqual([1, 1]);
-      expect(harness.composeActorCounts).toEqual([]);
-      expect(harness.messageCreatedEvents).toEqual([]);
-      expect(harness.publishRunStatuses).toEqual([]);
-      expect(readLatestGenerationStatus(harness.database)).toBeUndefined();
-      expect(readCandidateStatus(harness.database)).toBe("pending");
-      expect(countProactiveMessages(harness.database)).toBe(0);
-      expect(harness.logger.error).not.toHaveBeenCalled();
-    } finally {
-      harness.endUserTurn();
-      harness.database.close();
-    }
-  });
-});
-
-function createDeliveryHarness(returnUserDuringCompose: boolean) {
-  const database = openDatabase(":memory:");
-  runMigrations(database);
-  const store = new DatabaseStore(database);
-  seedDeliveryFixture(store);
-  const clock = new FakeClock(DELIVERY_NOW_UTC);
-  const sse = new SseHub();
-  vi.spyOn(sse, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
-  const actors = new ActorQueue();
-  const tracker = new ConversationActivityTracker(database);
-  const composeActorCounts: number[] = [];
-  let userTurn: UserTurnLease | undefined;
-  const llm = {
-    generateObject: vi.fn((input: { fixture?: unknown }) => {
-      composeActorCounts.push(actors.activeActors);
-      if (returnUserDuringCompose) {
-        userTurn = tracker.beginUserTurn(AGENT_ID);
-      }
-      if (input.fixture === undefined) {
-        throw new Error("Proactive delivery fixture is missing.");
-      }
-      return Promise.resolve(input.fixture);
-    }),
-  } as unknown as LlmService;
-  const deliveryRef: { current?: ProactiveDeliveryService } = {};
-  const generations = new ProactiveGenerationService(
-    new ProactiveGenerationRepository(database),
-    tracker,
-    actors,
-    clock,
-    (agentId, nowUtc) => {
-      const current = deliveryRef.current;
-      if (current === undefined) {
-        throw new Error("Proactive delivery policy loader is not ready.");
-      }
-      return current.loadPolicy(agentId, nowUtc);
-    },
-  );
-  const delivery = new ProactiveDeliveryService(
-    store,
-    clock,
-    llm,
-    sse,
-    generations,
-  );
-  deliveryRef.current = delivery;
-  const settlementActorCounts: number[] = [];
-  const legacyDelivery = vi.fn();
-  const settlements = {
-    settleAndExtend: vi.fn(() => {
-      settlementActorCounts.push(actors.activeActors);
-      return Promise.resolve();
-    }),
-    deliverOneProactive: legacyDelivery,
-  } as unknown as SettlementService;
-  const logger = { error: vi.fn() };
-  const messageCreatedEvents: unknown[] = [];
-  const publishRunStatuses: string[] = [];
-  vi.spyOn(sse, "publish").mockImplementation((event) => {
-    if (event.type !== "message.created") return;
-    messageCreatedEvents.push(event);
-    publishRunStatuses.push(readLatestGenerationStatus(database) ?? "missing");
-  });
-  return {
-    database,
-    clock,
-    sse,
-    actors,
-    delivery,
-    settlements,
-    logger,
-    settlementActorCounts,
-    composeActorCounts,
-    legacyDelivery,
-    messageCreatedEvents,
-    publishRunStatuses,
-    endUserTurn: () => userTurn?.end(),
-  };
-}
-
-function createDeliveryScheduler(
-  harness: ReturnType<typeof createDeliveryHarness>,
-): HourlyScheduler {
-  return new HourlyScheduler(
-    harness.clock,
-    harness.sse,
-    harness.actors,
-    harness.settlements,
-    harness.logger,
-    { ensureSelfInitiatedPlans: vi.fn() },
-    harness.delivery,
-  );
-}
-
-function seedDeliveryFixture(store: DatabaseStore): void {
-  const draft = buildOriginalDraft({
-    name: "Hourly Delivery Agent",
-    worldSetting: "A contemporary city",
-    workOrRole: "Illustrator",
-    coreTraits: ["Warm", "Reliable", "Independent"],
-    coreContradiction: "Values focus but also values close relationships",
-    mainGoal: "Complete a portfolio",
-    initialRelationship: "Close friend",
-    dialogueStyle: "Brief and warm",
-    tier: "high_fidelity",
-    timezone: "UTC",
-  });
-  const spec = CharacterSpecSchema.parse({
-    ...draft,
-    id: AGENT_ID,
-    version: 1,
-    status: "published",
-    createdAtUtc: DELIVERY_NOW_UTC,
-    updatedAtUtc: DELIVERY_NOW_UTC,
-  });
-  store.insertCharacter(spec);
-  store.insertInitialState(
-    initialRuntimeState(AGENT_ID, DELIVERY_NOW_UTC, draft),
-    "2026-08-24T12:37:00.000Z",
-  );
-  store.createSession(AGENT_ID, "Hourly delivery", DELIVERY_NOW_UTC);
-  store.insertActivityEvent({
-    id: "event-hourly-delivery",
-    agentId: AGENT_ID,
-    eventType: "completed",
-    occurredAtUtc: "2026-08-21T12:00:00.000Z",
-    summary: "Completed a shareable city walk.",
-    outcomeFacts: ["Completed the city walk"],
-    stateDelta: {},
-    origin: "deterministic",
-    idempotencyKey: "activity:hourly-delivery:completed",
-  });
-  store.database
-    .prepare(
-      `INSERT INTO proactive_candidates(
-        id, agent_id, trigger_event_id, intent, summary, draft_message,
-        earliest_at_utc, expires_at_utc, priority, cooldown_key, status,
-        created_at_utc
-      ) VALUES (
-        ?, ?, 'event-hourly-delivery', 'share_experience',
-        'Completed a shareable city walk.',
-        'The city walk was worth sharing.',
-        '2026-08-21T12:00:00.000Z', '2026-08-23T12:00:00.000Z',
-        0.9, 'share:walk:2026-08-21', 'pending', ?
-      )`,
-    )
-    .run(DELIVERY_CANDIDATE_ID, AGENT_ID, DELIVERY_NOW_UTC);
-}
-
-function readLatestGenerationStatus(database: Database): string | undefined {
-  const row = database
-    .prepare(
-      "SELECT status FROM proactive_generation_runs ORDER BY rowid DESC LIMIT 1",
-    )
-    .get() as { status: string } | undefined;
-  return row?.status;
-}
-
-function readCandidateStatus(database: Database): string | undefined {
-  const row = database
-    .prepare("SELECT status FROM proactive_candidates WHERE id = ?")
-    .get(DELIVERY_CANDIDATE_ID) as { status: string } | undefined;
-  return row?.status;
-}
-
-function countProactiveMessages(database: Database): number {
-  const row = database
-    .prepare(
-      "SELECT COUNT(*) AS count FROM messages WHERE message_kind = 'assistant_proactive'",
-    )
-    .get() as { count: number };
-  return Number(row.count);
-}

@@ -227,7 +227,7 @@ pnpm test:e2e
 apps/
   web/                  React 页面、交互、样式及 Dearvale 视觉资产
   server/
-    src/composition/    服务装配与插件注册
+    src/composition/    静态类型化服务工厂与统一启动/释放
     src/http/           HTTP 路由、公开数据投影与开发者边界
     src/services/       角色、对话、记忆、生活、书信与成就服务
     src/repositories/   专项持久化接口
@@ -236,7 +236,7 @@ apps/
     src/scripts/        模型验收与实验执行器
 packages/
   contracts/            Zod schemas 与共享类型
-  kernel/               服务注册、事件总线、角色队列、可信插件生命周期
+  kernel/               提示 token 估算与保留的历史插件 SDK
   features/             纯领域规则、因果、记忆、提示与模拟算法
   providers/            Fixture、兼容/原生模型适配与图片 Provider
 scripts/                实例备份、恢复及资源准备工具

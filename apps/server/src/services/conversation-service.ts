@@ -119,8 +119,8 @@ export class ConversationService {
     private readonly store: DatabaseStore,
     private readonly clock: Clock,
     private readonly llm: LlmService,
-    schedules: ScheduleService,
-    private readonly settlements: SettlementService,
+    schedules: ScheduleService | undefined,
+    private readonly settlements: SettlementService | undefined,
     sse: SseHub,
     private readonly options: ConversationServiceOptions = {},
     personalIntents?: PersonalIntentService,
@@ -131,7 +131,10 @@ export class ConversationService {
     this.fuzzyLife = collaborators.fuzzyLife;
     this.personaRuntime = collaborators.personaRuntime;
     const intentService =
-      personalIntents ?? new PersonalIntentService(store, clock);
+      personalIntents ??
+      (schedules === undefined
+        ? undefined
+        : new PersonalIntentService(store, clock));
     this.memoryRecalls = memoryRecalls ?? new MemoryRecallService(store);
     const replyRepairs =
       collaborators.replyRepairs ?? new ReplyRepairService(llm);
@@ -230,6 +233,8 @@ export class ConversationService {
       }
       this.fuzzyLife.advance(input.agentId);
     } else {
+      if (this.settlements === undefined)
+        throw new Error("Legacy life mode requires settlement services.");
       await this.settlements.settleAndExtend(input.agentId);
     }
     const spec = this.store.getCharacterSpec(input.agentId);

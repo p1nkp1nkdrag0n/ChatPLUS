@@ -213,13 +213,12 @@ describe("fuzzy life runtime routing", () => {
       updatedAtUtc: START_UTC,
     });
 
-    const result = await app.personasim.settlements.settle(draft.id, {
-      toUtc: "2026-09-01T04:00:00.000Z",
+    expect(app.personasim.settlements).toBeUndefined();
+    const result = await app.inject({
+      method: "POST",
+      url: "/api/developer/agents/" + draft.id + "/settle",
     });
-
-    expect(result.alreadySettled).toBe(true);
-    expect(result.activityEvents).toEqual([]);
-    expect(result.updatedScheduleItems).toEqual([]);
+    expect(result.statusCode).toBe(200);
     expect(store.getScheduleItem("migrated-planned-schedule")?.status).toBe(
       "planned",
     );

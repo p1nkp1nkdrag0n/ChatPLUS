@@ -252,10 +252,7 @@ export async function buildApp(
       }
     }
 
-    if (
-      options.startScheduler &&
-      composition.kernel.bundle.capabilities.hourlySettlement
-    ) {
+    if (options.startScheduler && composition.hourlyEnabled) {
       scheduler.start();
     }
     if (

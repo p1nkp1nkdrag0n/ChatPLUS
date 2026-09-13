@@ -979,7 +979,12 @@ async function runTurn(
       scheduleNegotiationMode: "legacy",
       liveWorldEffectsMode: "off",
       memoryRecallMode: mode,
+      lifePlanningMode: "fuzzy",
     },
+    undefined,
+    undefined,
+    undefined,
+    { fuzzyLife: app.personasim.life },
   );
   const session = conversations.createSession(agentId, `${mode} recall`);
   const callStart = calls.length;

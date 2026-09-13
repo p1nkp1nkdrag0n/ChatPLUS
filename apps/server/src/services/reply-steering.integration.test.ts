@@ -4,7 +4,6 @@ import type { ReplySteeringMode } from "@personasim/features";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../app.js";
-import { REPLY_REPAIR_SERVICE_TOKEN } from "../composition/service-tokens.js";
 import { readConfig } from "../config.js";
 import { buildOriginalDraft, initialRuntimeState } from "../domain/defaults.js";
 import { FakeClock } from "../runtime/clock.js";
@@ -145,7 +144,7 @@ async function runIsolatedTurn(replySteeringMode?: ReplySteeringMode) {
     },
   });
   const repairs = vi.spyOn(
-    app.personasim.kernel.registry.resolve(REPLY_REPAIR_SERVICE_TOKEN),
+    app.personasim.kernel.services.replyRepairs,
     "repairPersonaReply",
   );
   try {

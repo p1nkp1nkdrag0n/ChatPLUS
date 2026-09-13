@@ -131,9 +131,7 @@ describe("continuity memory recall hierarchy", () => {
     });
     const state = app.personasim.store.getRuntimeState(harness.agentId);
     if (state === undefined) throw new Error("Expected runtime state");
-    const expectedRelationshipScore = roundScore(
-      state.relationship.closeness,
-    );
+    const expectedRelationshipScore = roundScore(state.relationship.closeness);
     expect(run.candidates).toHaveLength(4);
     expect(
       run.candidates.every(
@@ -554,7 +552,7 @@ describe("continuity memory recall hierarchy", () => {
     });
     expect(app.personasim.llm.providerName).toBe("openai-compatible");
     const publish = vi.spyOn(app.personasim.sse, "publish");
-    await app.personasim.settlements.settleAndExtend(harness.agentId);
+    app.personasim.life.advance(harness.agentId);
     const recallSession = app.personasim.conversations.createSession(
       harness.agentId,
       "Explicit fact recall after restart",
@@ -1777,7 +1775,7 @@ describe("continuity memory recall hierarchy", () => {
     expect(
       new ScheduleNegotiationService(
         app.personasim.store,
-        app.personasim.schedules,
+        app.personasim.schedules!,
       ).getActive(recallSession.id, EXPLICIT_FACT_RECALL_AT),
     ).toMatchObject({
       stored: pending,

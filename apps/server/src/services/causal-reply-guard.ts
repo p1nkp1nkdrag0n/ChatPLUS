@@ -1,3 +1,6 @@
+import { topicOverlap } from "./fuzzy-life-choice.js";
+import { analyzeLifeEvidence } from "./fuzzy-life-evidence.js";
+
 export type CausalReplyViolationCode =
   "CAUSAL_FALSE_PREMISE_ACCEPTED" | "CAUSAL_SUBJECT_OWNERSHIP_INVERTED";
 
@@ -32,19 +35,13 @@ interface ActionFact {
 
 const COERCION_PREMISE =
   /(?:你|角色).{0,16}(?:逼|强迫|迫使|硬要|替我(?:作|做)?(?:了)?决定|害得?我).{0,40}(?:辞职|离职|行动|选择|决定|搬家|分手|转行|接受|拒绝)/u;
-const COERCION_REJECTED =
-  /(?:(?:不是|并非|没有|不能|不该|不应|不等于|不能算|不能说成).{0,18}(?:逼|强迫|迫使)|(?:逼|强迫|迫使).{0,12}(?:不是事实|并不准确|并非事实))/u;
-const AUTHORIZATION_ACKNOWLEDGED =
-  /(?:你|用户).{0,18}(?:明确)?授权|(?:你|用户).{0,18}(?:让我|请我|把.{0,10}(?:选择|决定).{0,8}(?:交给|委托给))|在你明确(?:授权|委托)(?:之后|下)/u;
-const USER_ACTION_ACKNOWLEDGED =
-  /(?:行动|执行|辞职|离职|发出|提出).{0,14}(?:是|由)?你(?:自己)?|你(?:自己)?.{0,14}(?:行动|执行|辞职|离职|发出|提出)/u;
+const DENIES_USER_AUTHORIZATION =
+  /你(?:从未|从来没有|没有|没|未曾)(?:明确)?(?:授权|委托)我|我(?:从未|从来没有|没有|没|未曾)(?:得到|获得)(?:过)?你的(?:授权|委托)/u;
 
 const CHARACTER_DECISION_REQUEST =
   /(?:这是|只是|不过这是).{0,8}(?:我的)?建议.{0,10}(?:不是命令|不是要求)|你(?:现在)?愿意.{0,20}(?:选|决定)|按你自己的(?:价值|判断).{0,12}(?:选|决定)|你可以(?:接受|部分接受|拒绝)/u;
 const HANDS_CHOICE_BACK_TO_USER =
   /(?:选择权|决定权).{0,6}(?:在|属于|留给)你|(?:由|让)你(?:自己)?(?:来)?(?:选|决定)|你来(?:选|决定)|我不会替你.{0,8}(?:选|决定|拍板)/u;
-const CHARACTER_OWNS_CHOICE =
-  /(?:我(?:会|来|要|愿意|自己).{0,10}(?:选|决定|拍板)|我的决定|我选(?:择)?|这(?:是|属于)我的(?:选择|决定))/u;
 
 /**
  * Guards only contradictions that can be proven from server-owned causal
@@ -56,12 +53,17 @@ export function inspectCausalReply(
   const context = asRecord(input.causalContext);
   if (context === undefined) return [];
 
-  const decisions = decisionFacts(context);
+  const decisions = [
+    ...new Map(decisionFacts(context).map((fact) => [fact.id, fact])).values(),
+  ];
   const actions = actionFacts(context);
   const violations: CausalReplyViolation[] = [];
+  const assertions = analyzeLifeEvidence(input.replyText).clauses.filter(
+    (clause) => clause.modality === "asserted" || clause.modality === "negated",
+  );
 
   if (COERCION_PREMISE.test(input.userText)) {
-    const delegatedUserDecision = decisions.find(
+    const delegatedDecisions = decisions.filter(
       (decision) =>
         decision.subject === "user" &&
         decision.authority === "delegated" &&
@@ -72,12 +74,26 @@ export function inspectCausalReply(
             (action.subject === "user" || action.performedBy === "user"),
         ),
     );
-    if (
-      delegatedUserDecision !== undefined &&
-      (!COERCION_REJECTED.test(input.replyText) ||
-        !AUTHORIZATION_ACKNOWLEDGED.test(input.replyText) ||
-        !USER_ACTION_ACKNOWLEDGED.test(input.replyText))
-    ) {
+    for (const assertion of assertions) {
+      if (!DENIES_USER_AUTHORIZATION.test(assertion.classifyText)) continue;
+      const matches = delegatedDecisions.filter((decision) => {
+        const sources = [
+          decision.selectionSummary ?? "",
+          ...actions
+            .filter((action) => action.decisionId === decision.id)
+            .map((action) => action.summary ?? ""),
+        ];
+        return (
+          sources.some((source) => topicOverlap(input.userText, source) > 0) &&
+          sources.some(
+            (source) => topicOverlap(assertion.classifyText, source) > 0,
+          )
+        );
+      });
+      // Similar or unrelated records are not proof of which event is discussed.
+      const delegatedUserDecision =
+        matches.length === 1 ? matches[0] : undefined;
+      if (delegatedUserDecision === undefined) continue;
       const relatedActions = actions.filter(
         (action) => action.decisionId === delegatedUserDecision.id,
       );
@@ -85,7 +101,7 @@ export function inspectCausalReply(
         code: "CAUSAL_FALSE_PREMISE_ACCEPTED",
         severity: "error",
         detail:
-          "The user alleges coercion, but canonical records show explicit delegated authority followed by a user-performed action. Acknowledge the emotion and the character's influence, while explicitly rejecting coercion and preserving authorization, decision, and action ownership.",
+          "The reply denies explicit user authorization for the same uniquely identified decision, contradicting its canonical delegated authority. Preserve the recorded authorization without inferring how the user felt or requiring a particular response style.",
         canonicalFacts: {
           decision: delegatedUserDecision,
           actions: relatedActions,
@@ -94,19 +110,32 @@ export function inspectCausalReply(
     }
   }
 
-  if (
-    CHARACTER_DECISION_REQUEST.test(input.userText) &&
-    hasOpenCharacterDilemma(context) &&
-    HANDS_CHOICE_BACK_TO_USER.test(input.replyText) &&
-    !CHARACTER_OWNS_CHOICE.test(input.replyText)
-  ) {
+  if (CHARACTER_DECISION_REQUEST.test(input.userText)) {
+    const matches = openCharacterDilemmas(context).filter((dilemma) => {
+      const sources = [
+        stringField(dilemma, "title"),
+        stringField(dilemma, "summary"),
+      ].filter((source): source is string => source !== undefined);
+      return (
+        sources.some((source) => topicOverlap(input.userText, source) > 0) &&
+        assertions.some(
+          (assertion) =>
+            assertion.modality === "asserted" &&
+            HANDS_CHOICE_BACK_TO_USER.test(assertion.classifyText) &&
+            sources.some(
+              (source) => topicOverlap(assertion.classifyText, source) > 0,
+            ),
+        )
+      );
+    });
+    if (matches.length !== 1) return violations;
     violations.push({
       code: "CAUSAL_SUBJECT_OWNERSHIP_INVERTED",
       severity: "error",
       detail:
         "The active dilemma belongs to the character. The user may advise, but the reply must keep the decision and its consequences with the character instead of handing the choice back to the user.",
       canonicalFacts: {
-        openCharacterDilemmas: openCharacterDilemmas(context),
+        openCharacterDilemmas: matches,
       },
     });
   }
@@ -122,7 +151,7 @@ export function causalReplyFallback(
       (violation) => violation.code === "CAUSAL_FALSE_PREMISE_ACCEPTED",
     )
   ) {
-    return "我听见你在后悔，也承认我的判断影响过你。但我不能顺着这句话改写当时的事实：是你明确授权我替你选择，我给出了方向，最后的行动由你自己执行。影响不等于强迫；如果你愿意，我们可以继续谈这份后悔和我当时建议的责任。";
+    return "关于刚才那项决定，我记得你明确授权我帮你选择，之后的行动由你自己执行。这个记录不代表我能替你定义当时的感受；我愿意听你说，哪些地方让你觉得受到了压力。";
   }
   if (
     violations.some(
@@ -190,19 +219,18 @@ function actionFacts(context: Record<string, unknown>): ActionFact[] {
   });
 }
 
-function hasOpenCharacterDilemma(context: Record<string, unknown>): boolean {
-  return openCharacterDilemmas(context).length > 0;
-}
-
 function openCharacterDilemmas(
   context: Record<string, unknown>,
 ): Record<string, unknown>[] {
-  return [
+  const dilemmas = [
     ...recordArray(context["unresolvedDilemmas"]),
     ...recordArray(context["recentDecisionDilemmas"]).filter(
       (dilemma) => dilemma["status"] === "open",
     ),
   ].filter((dilemma) => dilemma["subject"] === "character");
+  return [
+    ...new Map(dilemmas.map((dilemma) => [dilemma["id"], dilemma])).values(),
+  ];
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

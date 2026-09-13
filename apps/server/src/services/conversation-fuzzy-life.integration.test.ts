@@ -3691,8 +3691,8 @@ describe("fuzzy-life conversation integration", () => {
           );
         }
         const text = input.prompt.includes("不过这是我的建议")
-          ? "选择权在你，我不会替你摁下决定。"
-          : "当时的板是我拍的，我不赖账。让你觉得那不是你的选择，我道歉。";
+          ? "《夜航》结尾的选择权在你。"
+          : "你没有授权我替你辞职。";
         return Promise.resolve({
           replyDecision: { text },
           worldEffects: {},
@@ -3707,7 +3707,7 @@ describe("fuzzy-life conversation integration", () => {
       "causal-guard-false-premise",
       "你上次逼我辞职以后，我一直很后悔。",
     );
-    expect(falsePremise.assistantMessage.content).toContain("影响不等于强迫");
+    expect(falsePremise.assistantMessage.content).toContain("明确授权");
     expect(falsePremise.assistantMessage.content).toContain("由你自己执行");
     expect(falsePremise.assistantMessage.metadata).toMatchObject({
       repairAttempted: true,
@@ -3721,7 +3721,7 @@ describe("fuzzy-life conversation integration", () => {
       sessionId,
       character.id,
       "causal-guard-character-owned",
-      "不过这是我的建议，不是命令。你可以接受、部分接受或拒绝，但请告诉我理由。",
+      "关于《夜航》的结尾，不过这是我的建议，不是命令。你可以接受、部分接受或拒绝，但请告诉我理由。",
     );
     expect(characterOwned.assistantMessage.content).toContain("这是我的选择");
     expect(characterOwned.assistantMessage.content).toContain("我会自己决定");

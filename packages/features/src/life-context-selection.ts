@@ -3,10 +3,6 @@ import type {
   FuzzyLifePromptContext,
 } from "@personasim/contracts";
 
-import { deriveCurrentConversationRequests } from "./conversation-requests.js";
-
-const PROGRESS_REQUEST =
-  /(?:怎么样|怎样|如何|做完了吗|画完了吗|写完了吗|完成了吗|(?:有|有什么).{0,8}(?:进展|进度|变化|消息).{0,3}(?:吗|没|呢)|(?:说说|讲讲|告诉我).{0,12}(?:进展|进度|近况)|(?:进展|进度|近况).{0,4}[?？]|how (?:is|was|did)|what happened|any (?:news|progress)|(?:is it|have you) finished)/iu;
 const OTHER_OWNER =
   /(?:别人|他人|其他人|(?:我|他|她|朋友|同事|妹妹|姐姐|弟弟|哥哥)的|(?:他|她|朋友|同事).{0,5}(?:有|画|写)|\b(?:someone else|their|her|his|my)\b)/iu;
 const EXCLUDED_LIFE =
@@ -29,16 +25,9 @@ function matchingTitles(query: string, titles: readonly string[]): string[] {
     return titles.includes(content) ? content : "";
   });
   for (const clause of activeQuery.split(/(?<=[。！？!?；;\n])/u)) {
-    const requests = deriveCurrentConversationRequests(clause);
-    const requestedHelp =
-      requests.adviceRequested ||
-      requests.detailedAnalysisRequested ||
-      /(?:还记得|记不记得|回顾|回想|do you remember|look back)/iu.test(clause);
-    if (
-      OTHER_OWNER.test(clause) ||
-      (!PROGRESS_REQUEST.test(clause) && !requestedHelp)
-    )
-      continue;
+    // Naming an existing topic is enough to select its evidence, including
+    // elliptical questions. Selection is relevance, not permission to speak.
+    if (OTHER_OWNER.test(clause)) continue;
     for (const title of titles) {
       if (title.length >= 2 && clause.includes(title)) matches.add(title);
     }
@@ -220,6 +209,22 @@ function selectRelatedContext(
   });
 }
 
+function backgroundContext(
+  context: FuzzyLifePromptContext,
+): FuzzyLifePromptContext {
+  // Keep a small factual backdrop even when lexical intent matching misses a
+  // natural question. Detailed decisions and their causal chains stay scoped.
+  return structuredClone({
+    ...selectRelatedContext(context, [], new Set()),
+    today: {
+      ...context.today,
+      intentions: context.today.intentions.slice(0, 2),
+    },
+    ongoingThreads: context.ongoingThreads.slice(0, 2),
+    verifiedRecentOutcomes: context.verifiedRecentOutcomes.slice(0, 2),
+  });
+}
+
 /** Selects expression context only. Callers retain the full snapshot for validation. */
 export function selectLifeContextForTurn(input: {
   context: FuzzyLifePromptContext;
@@ -269,7 +274,16 @@ export function selectLifeContextForTurn(input: {
     const hasSelectedEvidence = keys.some(
       (key) => Array.isArray(selected[key]) && selected[key].length > 0,
     );
-    if (!hasSelectedEvidence) return omitted();
+    if (!hasSelectedEvidence) {
+      const background = backgroundContext(context);
+      return {
+        context: background,
+        omittedSections: keys.filter(
+          (key) =>
+            JSON.stringify(context[key]) !== JSON.stringify(background[key]),
+        ),
+      };
+    }
     return {
       context: selected,
       omittedSections: keys.filter(
@@ -279,5 +293,11 @@ export function selectLifeContextForTurn(input: {
   }
   if (plan.allowCharacterLifeMention && !OTHER_OWNER.test(plan.originalQuery))
     return { context: structuredClone(context), omittedSections: [] };
-  return omitted();
+  const background = backgroundContext(context);
+  return {
+    context: background,
+    omittedSections: keys.filter(
+      (key) => JSON.stringify(context[key]) !== JSON.stringify(background[key]),
+    ),
+  };
 }

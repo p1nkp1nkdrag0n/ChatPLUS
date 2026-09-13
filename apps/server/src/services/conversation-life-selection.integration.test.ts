@@ -138,6 +138,34 @@ describe("requested life projects through HTTP generation and repair", () => {
     };
   }
 
+  it.each([
+    "今天过得怎么样？",
+    "最近还好吗？",
+    "最近忙什么呢？",
+    "城市速写呢？",
+  ])(
+    "retains persisted life in the actual generation prompt for %s",
+    async (text) => {
+      const { agentId, sessionId } = await setup();
+      const full = lifeSnapshot();
+      vi.spyOn(app.personasim.life, "promptContext").mockReturnValue(full);
+      const generate = vi.spyOn(app.personasim.llm, "generateObject");
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/messages`,
+        payload: { agentId, clientMessageId: "natural-life-query", text },
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      const prompt = generate.mock.calls.find(
+        ([input]) => input.purpose === "chat_turn",
+      )?.[0].prompt;
+      expect(prompt).toContain("LIFE_CONTEXT_JSON\n");
+      expect(prompt).toContain("城市速写");
+      expect(prompt).toContain("还没有完成");
+      if (text === "城市速写呢？") expect(prompt).not.toContain("吉他练习");
+    },
+  );
+
   it.each(["fixture", "persona"] as const)(
     "keeps selected evidence in %s repair while validating the full causal snapshot",
     async (path) => {

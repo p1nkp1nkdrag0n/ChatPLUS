@@ -47,7 +47,7 @@ const planFor = (originalQuery: string) =>
   });
 
 describe("life context for conversation", () => {
-  it("does not expose the character's goals during ordinary sharing or unrelated advice", () => {
+  it("keeps a small backdrop without injecting unrelated causal records", () => {
     for (const query of [
       "今天路边的猫在晒太阳。",
       "为什么我总把事搞砸？",
@@ -57,9 +57,31 @@ describe("life context for conversation", () => {
         context: CONTEXT,
         plan: planFor(query),
       });
-      expect(result.context).toBeUndefined();
-      expect(result.omittedSections).toContain("ongoingThreads");
+      expect(result.context?.today).toEqual(CONTEXT.today);
+      expect(result.context?.ongoingThreads.length).toBeLessThanOrEqual(2);
+      expect(result.context?.canonicalCausalFacts).toEqual([]);
     }
+  });
+  it.each([
+    "今天过得怎么样？",
+    "最近还好吗？",
+    "最近忙什么呢？",
+    "How has your week been?",
+  ])("retains a factual backdrop for natural wording: %s", (query) => {
+    const source = projectContext();
+    const result = selectLifeContextForTurn({
+      context: source,
+      plan: planFor(query),
+    });
+    expect(result.context?.today.localDate).toBe(source.today.localDate);
+    expect(result.context?.ongoingThreads).toHaveLength(2);
+    expect(result.context?.verifiedRecentOutcomes[0]?.summary).toContain(
+      "还没有完成",
+    );
+    expect(result.context?.canonicalCausalFacts).toEqual([]);
+    expect(FuzzyLifePromptContextSchema.parse(result.context)).toEqual(
+      result.context,
+    );
   });
   it("keeps the bounded snapshot intact when asked about the character's day", () => {
     const result = selectLifeContextForTurn({
@@ -86,6 +108,7 @@ describe("life context for conversation", () => {
     "城市速写完成了吗？",
     "“城市速写”画得怎么样了？",
     "城市速写进展？",
+    "城市速写呢？",
     "不用给我提建议，城市速写画得怎么样了？",
     "她说“先别聊你的项目”。城市速写画得怎么样了？",
   ])(
@@ -148,44 +171,50 @@ describe("life context for conversation", () => {
       title: "整理另一份文稿",
       currentStage: "整理中",
     });
+    const ambiguous = selectLifeContextForTurn({
+      context,
+      plan: planFor("稿子后来怎样了？"),
+    });
+    expect(ambiguous.context?.canonicalCausalFacts).toEqual([]);
+    expect(ambiguous.context?.ongoingThreads.length).toBeLessThanOrEqual(2);
+  });
+
+  it.each([
+    "先别聊你的项目。",
+    "先别聊你的城市速写最近进度。",
+    "不是问城市速写画得怎样，我想聊别的。",
+    "我没有问你城市速写的进度如何。",
+  ])("honors an explicit life-topic exclusion: %s", (query) => {
     expect(
-      selectLifeContextForTurn({ context, plan: planFor("稿子后来怎样了？") })
-        .context,
+      selectLifeContextForTurn({
+        context: projectContext(),
+        plan: planFor(query),
+      }).context,
     ).toBeUndefined();
   });
 
   it.each([
     "我看见别人有本城市速写。",
     "别人的城市速写画得怎么样了？",
-    "先别聊你的项目。",
-    "先别聊你的城市速写最近进度。",
-    "不是问城市速写画得怎样，我想聊别的。",
-    "我没有问你城市速写的进度如何。",
-    "我今天想买一本城市速写。",
     "她问我“城市速写画得怎么样了”，我觉得挺意外。",
-    "我想到城市速写这个词。",
-    "城市速写后来搁置了，我只是转述这件事。",
-    "城市速写有进展这件事让我挺意外的。",
-    "今天看见城市速写。请帮我选晚饭。",
-  ])(
-    "does not authorize project disclosure from mentions, exclusions, or other owners: %s",
-    (query) => {
-      expect(
-        selectLifeContextForTurn({
-          context: projectContext(),
-          plan: planFor(query),
-        }).context,
-      ).toBeUndefined();
-    },
-  );
+  ])("does not select another person's causal branch: %s", (query) => {
+    const selected = selectLifeContextForTurn({
+      context: projectContext(),
+      plan: planFor(query),
+    });
+    expect(selected.context?.canonicalCausalFacts).toEqual([]);
+    expect(selected.context?.recentDecisions).toEqual([]);
+  });
 
   it("does not authorize a life topic from unresolved retrieval expansions", () => {
     const plan = planFor("那件事我该怎么办？");
     plan.expandedQueries = ["城市速写画得怎么样了？"];
     plan.contextMessageIds = ["sketch-message"];
-    expect(
-      selectLifeContextForTurn({ context: projectContext(), plan }).context,
-    ).toBeUndefined();
+    const selected = selectLifeContextForTurn({
+      context: projectContext(),
+      plan,
+    });
+    expect(selected.context?.canonicalCausalFacts).toEqual([]);
   });
 
   it("keeps a proven conversational continuation within its linked causal branch", () => {

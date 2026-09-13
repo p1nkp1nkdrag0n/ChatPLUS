@@ -10,6 +10,7 @@ import {
   authoritativeImportedDraft,
   authoritativeOriginalDraft,
   buildCompilePrompt,
+  buildImportPrompt,
 } from "./character-compiler.js";
 
 const INPUT: OriginalCharacterInput = {
@@ -25,6 +26,76 @@ const INPUT: OriginalCharacterInput = {
 const POLICY = "companion_character_v2";
 
 describe("companion character compilation", () => {
+  it("asks both compilation paths for supported behavioral depth without scripts or minimum quotas", () => {
+    const sourceText = "阿澄说话直接，但看到对方难堪时会先把声音放轻。";
+    const original = buildCompilePrompt({
+      ...INPUT,
+      coreTraits: ["直接", "留意别人的反应"],
+      characterBrief: sourceText,
+    });
+    const imported = buildImportPrompt({
+      characterName: "阿澄",
+      workTitle: "街角",
+      storyStage: "第一章",
+      sourceText,
+      sourceFormat: "pasted_text",
+      tier: "daily",
+      timezone: "Asia/Shanghai",
+    });
+    for (const prompt of [original, imported]) {
+      expect(prompt).toContain(sourceText);
+      expect(prompt).toContain("observable, conditional tendencies");
+      expect(prompt).toContain("empty arrays are valid when these are unknown");
+      expect(prompt).toContain("no minimum description length");
+      expect(prompt).toContain("not invented evidence");
+      expect(prompt).toContain("not a checklist for every trait");
+    }
+    expect(original).toContain("preserve each supplied name verbatim");
+    expect(imported).toContain(
+      "model_inference only for a supported behavioral inference",
+    );
+  });
+
+  it("retains distinct generated behavioral descriptions without replacing the author's trait names", () => {
+    const input = {
+      ...INPUT,
+      coreTraits: ["直接", "关心别人，但不急着替别人做决定"],
+    };
+    const fallback = buildOriginalDraft(input, POLICY);
+    const candidate = structuredClone(fallback);
+    const behaviors = [
+      {
+        description:
+          "有不同意见时会说明自己在意的具体问题；看到对方难堪时会放轻语气，保留判断。",
+        triggers: ["需要表达不同意见时"],
+        exceptions: ["尚未弄清情况时会先听对方说完"],
+      },
+      {
+        description:
+          "更愿意记住对方自己看重的事情，回应具体处境；对方没有求助时，不把关心变成代替对方安排。",
+        triggers: [],
+        exceptions: [],
+      },
+    ];
+    candidate.persona.traits = candidate.persona.traits
+      .map((trait, index) => ({
+        ...trait,
+        ...behaviors[index]!,
+      }))
+      .reverse();
+    const result = authoritativeOriginalDraft(candidate, input, fallback);
+    expect(result.persona.traits.map((trait) => trait.name)).toEqual(
+      input.coreTraits,
+    );
+    for (const [index, behavior] of behaviors.entries()) {
+      expect(result.persona.traits[index]).toMatchObject({
+        ...behavior,
+        origin: "user_spec",
+        sourceRefs: ["original-form"],
+      });
+    }
+  });
+
   it("keeps new drafts free of placeholder goals, tensions and inferred author values", () => {
     const fallback = buildOriginalDraft(INPUT, POLICY);
     const draft = authoritativeOriginalDraft(fallback, INPUT, fallback);

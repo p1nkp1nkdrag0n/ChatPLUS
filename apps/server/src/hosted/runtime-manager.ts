@@ -125,24 +125,40 @@ export class HostedRuntimeManager {
       },
       tokenParameter: "max_tokens",
     }));
-    db.prepare(
-      `INSERT INTO llm_providers(id,name,protocol,base_url,timeout_ms,revision,models_json,credential_json,created_at_utc,updated_at_utc)
-      VALUES('hosted','可用模型','openai-compatible','https://hosted.invalid',120000,1,?,NULL,?,?)
-      ON CONFLICT(id) DO UPDATE SET models_json=excluded.models_json,updated_at_utc=excluded.updated_at_utc`,
-    ).run(JSON.stringify(publicModels), now, now);
     let defaultId = models[0]?.routeId;
     try {
       defaultId = this.options.control.resolvePurpose("chat_turn").routeId;
     } catch {
       /* no model configured yet */
     }
-    db.prepare(
-      "UPDATE llm_settings SET default_selection_json=? WHERE id=1",
-    ).run(
-      defaultId
-        ? JSON.stringify({ providerId: "hosted", modelId: defaultId })
-        : null,
-    );
+    const modelsJson = JSON.stringify(publicModels);
+    const selectionJson = defaultId
+      ? JSON.stringify({ providerId: "hosted", modelId: defaultId })
+      : null;
+    const provider = db
+      .prepare("SELECT models_json FROM llm_providers WHERE id='hosted'")
+      .get() as { models_json: string } | undefined;
+    const settings = db
+      .prepare("SELECT default_selection_json FROM llm_settings WHERE id=1")
+      .get() as { default_selection_json: string | null };
+    // Reads of the managed catalog must not turn ordinary GETs into writes.
+    // Compare the durable projection so a changed catalog or restored DB is
+    // synchronized without depending on an in-memory invalidation protocol.
+    const modelsChanged = provider?.models_json !== modelsJson;
+    const selectionChanged = settings.default_selection_json !== selectionJson;
+    if (!modelsChanged && !selectionChanged) return;
+    db.transaction(() => {
+      if (modelsChanged)
+        db.prepare(
+          `INSERT INTO llm_providers(id,name,protocol,base_url,timeout_ms,revision,models_json,credential_json,created_at_utc,updated_at_utc)
+        VALUES('hosted','可用模型','openai-compatible','https://hosted.invalid',120000,1,?,NULL,?,?)
+        ON CONFLICT(id) DO UPDATE SET models_json=excluded.models_json,updated_at_utc=excluded.updated_at_utc`,
+        ).run(modelsJson, now, now);
+      if (selectionChanged)
+        db.prepare(
+          "UPDATE llm_settings SET default_selection_json=? WHERE id=1",
+        ).run(selectionJson);
+    })();
   }
   async disconnect(userId: string): Promise<void> {
     const runtime = await this.runtimes.get(userId);

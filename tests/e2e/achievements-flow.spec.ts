@@ -248,7 +248,7 @@ test("earned collection filters, merged notification persistence, detail, retry,
   await expect(page.locator(".achievement-card")).toHaveCount(0);
 });
 
-test("six wax colors sit across the note edge on desktop and two-column mobile wall", async ({
+test("six wax colors remain intact on desktop notes and readable mobile rows", async ({
   page,
 }, testInfo) => {
   const state = await mockCollection(page);
@@ -290,7 +290,7 @@ test("six wax colors sit across the note edge on desktop and two-column mobile w
         ),
     )
     .toBe(true);
-  const verifyNotes = async (columns: number) => {
+  const verifyNotes = async (layout: "desktop" | "mobile") => {
     const geometry = await page
       .locator(".achievement-grid")
       .evaluate((grid) => ({
@@ -302,19 +302,30 @@ test("six wax colors sit across the note edge on desktop and two-column mobile w
             const seal = card
               .querySelector(".achievement-card__seal")
               .getBoundingClientRect();
+            const title = card
+              .querySelector(".achievement-card__title")
+              .getBoundingClientRect();
             const image = card.querySelector("img");
             return {
               attached: seal.top < note.top && seal.bottom > note.top,
+              inline:
+                seal.left >= note.left &&
+                seal.top >= note.top &&
+                seal.right + 8 <= title.left &&
+                seal.bottom <= note.bottom,
               contained: getComputedStyle(image).objectFit === "contain",
               width: note.width,
             };
           },
         ),
       }));
-    expect(geometry.columns).toBe(columns);
+    expect(geometry.columns).toBe(layout === "desktop" ? 3 : 1);
     expect(
       geometry.cards.every(
-        (card) => card.attached && card.contained && card.width > 130,
+        (card) =>
+          (layout === "desktop" ? card.attached : card.inline) &&
+          card.contained &&
+          card.width > 130,
       ),
     ).toBe(true);
     expect(
@@ -323,7 +334,7 @@ test("six wax colors sit across the note edge on desktop and two-column mobile w
       ),
     ).toBe(true);
   };
-  await verifyNotes(3);
+  await verifyNotes("desktop");
   await page.screenshot({
     path: join(
       tmpdir(),
@@ -331,7 +342,7 @@ test("six wax colors sit across the note edge on desktop and two-column mobile w
     ),
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await verifyNotes(2);
+  await verifyNotes("mobile");
   await page.screenshot({
     path: join(
       tmpdir(),

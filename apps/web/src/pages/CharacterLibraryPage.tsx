@@ -110,6 +110,7 @@ export default function CharacterLibraryPage() {
                 </Link>
                 <Link
                   className="button button--quiet"
+                  aria-label={`${character.status === "published" ? "继续聊天" : "继续编辑"}：${character.name}`}
                   to={
                     character.status === "published"
                       ? `/characters/${character.id}/chat`
@@ -121,7 +122,9 @@ export default function CharacterLibraryPage() {
                   ) : (
                     <ArrowRight size={16} aria-hidden="true" />
                   )}
-                  {character.status === "published" ? "继续聊天" : "继续编辑"}
+                  <span>
+                    {character.status === "published" ? "继续聊天" : "继续编辑"}
+                  </span>
                 </Link>
               </div>
             </article>

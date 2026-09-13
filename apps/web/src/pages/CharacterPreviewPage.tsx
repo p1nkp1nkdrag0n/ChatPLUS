@@ -35,7 +35,7 @@ export default function CharacterPreviewPage() {
     document.title = "读一读人物小传 · Dearvale";
   }, []);
   return (
-    <CreationDesk preview>
+    <CreationDesk preview lifted={query.isSuccess}>
       {query.isPending ? (
         <div className="creation-ready" role="status">
           <h2>正在打开这份描绘…</h2>

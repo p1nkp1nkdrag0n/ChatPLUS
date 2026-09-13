@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { LoadingBlock } from "../components/Feedback";
 import { AchievementActivity } from "../components/achievements/AchievementActivity";
+import { useMobileViewport } from "../hooks/useMobileViewport";
 import { HostedBoundary } from "../components/HostedBoundary";
 import { useHosted } from "../hooks/useHosted";
 
@@ -57,6 +58,7 @@ export const RELATIONSHIP_ARCHIVE_ROUTE_PATHS = [
 ] as const;
 
 export function App() {
+  useMobileViewport();
   return (
     <HostedBoundary>
       <DearvaleRoutes />

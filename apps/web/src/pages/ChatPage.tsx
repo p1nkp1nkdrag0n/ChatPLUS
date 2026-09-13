@@ -1,5 +1,7 @@
 import {
+  ArrowUp,
   BookOpen,
+  History,
   MessageCircleMore,
   MoreHorizontal,
   Plus,
@@ -7,6 +9,7 @@ import {
   Send,
   Smile,
   Sparkles,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -98,6 +101,7 @@ function CharacterChat({ characterId }: { characterId: string }) {
   const initialCreationRef = useRef(false);
   const mountedRef = useRef(true);
   const characterMenuRef = useRef<HTMLDetailsElement>(null);
+  const historyDialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -277,64 +281,112 @@ function CharacterChat({ characterId }: { characterId: string }) {
     );
   }
 
+  const historyContent = (
+    <>
+      <div className="chat-sessions__heading">
+        <h2>历史对话</h2>
+        <p>{character?.identity.name ?? "当前角色"}</p>
+      </div>
+      <div className="chat-session-list">
+        {sessionsQuery.isPending && published ? (
+          <p className="chat-list-note">正在翻开历史对话…</p>
+        ) : null}
+        {sessionsQuery.isError ? (
+          <ErrorBlock error={sessionsQuery.error} />
+        ) : null}
+        {sessions
+          .filter((item) => item.agentId === characterId)
+          .map((item) => (
+            <button
+              key={item.id}
+              data-session-id={item.id}
+              type="button"
+              onClick={() => {
+                showSession(item.id);
+                historyDialogRef.current?.close();
+              }}
+              className={item.id === session?.id ? "is-current" : ""}
+              aria-current={item.id === session?.id ? "page" : undefined}
+            >
+              <span>
+                {DateTime.fromISO(item.createdAtUtc)
+                  .setZone(character?.identity.timezone ?? "local")
+                  .toFormat("MM月dd日 HH:mm")}{" "}
+                的对话
+              </span>
+              {item.id === session?.id ? <small>正在阅读</small> : null}
+            </button>
+          ))}
+        {sessionsQuery.isSuccess && sessions.length === 0 ? (
+          <p className="chat-list-note">还没有历史对话。</p>
+        ) : null}
+      </div>
+      <button
+        className="chat-new-conversation"
+        type="button"
+        onClick={() => {
+          createSession();
+          historyDialogRef.current?.close();
+        }}
+        disabled={!published || createSessionMutation.isPending}
+      >
+        <Plus size={20} aria-hidden="true" />
+        {createSessionMutation.isPending ? "正在开启…" : "新建对话"}
+      </button>
+      {requestedSessionId !== null && createSessionMutation.isError ? (
+        <ErrorBlock error={createSessionMutation.error} />
+      ) : null}
+    </>
+  );
+
   return (
     <div className="dearvale-chat">
       <aside className="chat-sessions" aria-label="历史对话">
         <Link className="chat-brand" to="/welcome">
           Dearvale
         </Link>
-        <div className="chat-sessions__heading">
-          <h2>历史对话</h2>
-          <p>{character?.identity.name ?? "当前角色"}</p>
-        </div>
-        <div className="chat-session-list">
-          {sessionsQuery.isPending && published ? (
-            <p className="chat-list-note">正在翻开历史对话…</p>
-          ) : null}
-          {sessionsQuery.isError ? (
-            <ErrorBlock error={sessionsQuery.error} />
-          ) : null}
-          {sessions
-            .filter((item) => item.agentId === characterId)
-            .map((item) => (
-              <button
-                key={item.id}
-                data-session-id={item.id}
-                type="button"
-                onClick={() => showSession(item.id)}
-                className={item.id === session?.id ? "is-current" : ""}
-                aria-current={item.id === session?.id ? "page" : undefined}
-              >
-                <span>
-                  {DateTime.fromISO(item.createdAtUtc)
-                    .setZone(character?.identity.timezone ?? "local")
-                    .toFormat("MM月dd日 HH:mm")}{" "}
-                  的对话
-                </span>
-                {item.id === session?.id ? <small>正在阅读</small> : null}
-              </button>
-            ))}
-          {sessionsQuery.isSuccess && sessions.length === 0 ? (
-            <p className="chat-list-note">还没有历史对话。</p>
-          ) : null}
-        </div>
-        <button
-          className="chat-new-conversation"
-          type="button"
-          onClick={() => createSession()}
-          disabled={!published || createSessionMutation.isPending}
-        >
-          <Plus size={20} aria-hidden="true" />
-          {createSessionMutation.isPending ? "正在开启…" : "新建对话"}
-        </button>
-        {requestedSessionId !== null && createSessionMutation.isError ? (
-          <ErrorBlock error={createSessionMutation.error} />
-        ) : null}
+        {historyContent}
       </aside>
+      <dialog
+        className="mobile-history-sheet"
+        ref={historyDialogRef}
+        aria-label="历史对话"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) event.currentTarget.close();
+        }}
+      >
+        <div className="mobile-history-sheet__content">
+          <button
+            className="icon-button mobile-history-close"
+            type="button"
+            aria-label="关闭历史对话"
+            onClick={() => historyDialogRef.current?.close()}
+          >
+            <X size={22} aria-hidden="true" />
+          </button>
+          <Link className="mobile-history-brand" to="/welcome">
+            Dearvale
+          </Link>
+          {historyContent}
+        </div>
+      </dialog>
       <div className="chat-page">
         <header className="chat-header">
+          <button
+            className="icon-button mobile-history-toggle"
+            type="button"
+            aria-label="打开历史对话"
+            aria-haspopup="dialog"
+            onClick={() => historyDialogRef.current?.showModal()}
+          >
+            <History size={24} aria-hidden="true" />
+          </button>
           <div className="chat-header__identity">
-            <CharacterAvatar characterId={characterId} size={88} />
+            <CharacterAvatar
+              characterId={characterId}
+              size={88}
+              name={character?.identity.name ?? ""}
+            />
             <div>
               <h1>{character?.identity.name ?? "对话"}</h1>
               <span>
@@ -834,7 +886,8 @@ function SessionConversation({
               }
               aria-label="发送消息"
             >
-              <Send size={23} />
+              <Send className="send-icon-desktop" size={23} />
+              <ArrowUp className="send-icon-mobile" size={23} />
             </button>
           </div>
         </div>

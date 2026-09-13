@@ -158,7 +158,7 @@ export function AppShell() {
     <div
       className={`app-shell${chat ? " app-shell--chat" : ""}${achievements ? " app-shell--achievements" : ""}${hosted ? " app-shell--hosted" : ""}`}
     >
-      <aside className="app-nav" aria-label="主导航">
+      <aside className="app-nav app-nav--adaptive" aria-label="主导航">
         <NavLink
           className="app-nav__brand"
           to="/welcome"

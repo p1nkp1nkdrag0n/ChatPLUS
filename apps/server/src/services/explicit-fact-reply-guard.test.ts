@@ -233,13 +233,20 @@ describe("explicit fact reply guard", () => {
       buildExplicitFactReplyContract({
         userText: "替我核对两件旧事：我喝茶的习惯。",
       }),
-    ).toEqual({
-      kind: "abstain",
-      policy: "explicit_fact_checklist_v1",
-      reasonCode: "requested_fact_request_invalid",
-      replyText: "现有可靠事实不足以完整核对这些项目。",
-    });
+    ).toBeUndefined();
   });
+
+  it.each([
+    "帮我核对这一项：我的饮品偏好",
+    "帮我核对这两项：我的饮品偏好、我的生日",
+    "帮我核对这四项：我的饮品偏好、铁盒的标签、杯子的标签、钥匙的标签",
+    "帮我核对这两项：我喝茶的习惯、那只铁盒的标签。然后安慰我一下。",
+  ])(
+    "leaves requests outside the exact-fact fast path to grounded generation: %s",
+    (userText) => {
+      expect(buildExplicitFactReplyContract({ userText })).toBeUndefined();
+    },
+  );
 
   it.each(["selected", "abstain"] as const)(
     "resolves a %s contract with inspection and no fabricated model activity",

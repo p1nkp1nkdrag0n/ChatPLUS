@@ -47,7 +47,6 @@ export function explicitFactAbstentionReason(
 }
 
 type ExplicitFactContractReason =
-  | "requested_fact_request_invalid"
   | (typeof SELECTOR_REASON_BY_OUTCOME)[keyof typeof SELECTOR_REASON_BY_OUTCOME]
   | "requested_fact_reply_contract_unavailable"
   | "requested_fact_reply_contract_invalid";
@@ -104,11 +103,7 @@ export function buildExplicitFactReplyContract(input: {
   recall?: ExplicitFactRecallRecording;
 }): ExplicitFactReplyContract | undefined {
   const parsed = parseExplicitFactVerificationRequest(input.userText);
-  if (parsed.kind !== "valid") {
-    return parsed.kind === "invalid"
-      ? abstainContract(undefined, parsed.reason)
-      : undefined;
-  }
+  if (parsed.kind !== "valid") return undefined;
 
   const expectedFacetCount = parsed.request.expectedFacetCount as 2 | 3;
   const recall = input.recall;

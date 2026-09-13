@@ -1974,57 +1974,66 @@ describe("continuity memory recall hierarchy", () => {
     },
   );
 
-  it("does not apply the fact-reply guard to ordinary conversation", async () => {
-    const harness = await createHarness({
-      nowUtc: EXPLICIT_FACT_RECALL_AT,
-      timezone: "Asia/Shanghai",
-      adversarialOpenAiCompatibleDecisionPath: true,
-    });
-    app = harness.app;
-    expect(app.personasim.llm.providerName).toBe("openai-compatible");
-    const session = app.personasim.conversations.createSession(
-      harness.agentId,
-      "Ordinary conversation outside fact verification",
-    );
-    const callsBefore = vi.mocked(app.personasim.llm).generateObject.mock.calls
-      .length;
-
-    const response = await injectInternalChat(app, session.id, {
-      agentId: harness.agentId,
-      clientMessageId: "ordinary-rain-conversation",
-      text: "今天压力很大，只想聊聊窗外的雨。",
-    });
-
-    expect(response.statusCode).toBe(201);
-    const exchange = SendMessageResponseSchema.parse(response.internalTurn);
-    expect(exchange.assistantMessage.content).toBe(
-      "你喝不加糖的红茶；\n木盒标签我不知道。",
-    );
-    expect(exchange.assistantMessage.metadata).toMatchObject({
-      deliveryMode: "sequential",
-      chunks: ["你喝不加糖的红茶；", "木盒标签我不知道。"],
-    });
-    expect(
-      exchange.assistantMessage.metadata["explicitFactReplyGuard"],
-    ).toBeUndefined();
-    expect(exchange.decision.reasonCode).not.toMatch(
-      /^explicit_fact_reply_guard_/u,
-    );
-    const ordinaryCalls = vi
-      .mocked(app.personasim.llm)
-      .generateObject.mock.calls.slice(callsBefore)
-      .map(([request]) => request);
-    expect(ordinaryCalls).toHaveLength(1);
-    expect(ordinaryCalls[0]).toMatchObject({ purpose: "chat_turn" });
-    expect(ordinaryCalls[0]?.fixture).toBeUndefined();
-    expect(
-      latestEventPayload(
-        app,
+  it.each([
+    "今天压力很大，只想聊聊窗外的雨。",
+    "帮我核对这一项：我的饮品偏好",
+    "帮我核对这两项：我的饮品偏好、我的生日",
+    "帮我核对这四项：我的饮品偏好、铁盒的标签、杯子的标签、钥匙的标签",
+    "帮我核对这两项：我喝茶的习惯、那只铁盒的标签。然后安慰我一下。",
+  ])(
+    "runs ordinary grounded generation outside the fact fast path: %s",
+    async (text) => {
+      const harness = await createHarness({
+        nowUtc: EXPLICIT_FACT_RECALL_AT,
+        timezone: "Asia/Shanghai",
+        adversarialOpenAiCompatibleDecisionPath: true,
+      });
+      app = harness.app;
+      expect(app.personasim.llm.providerName).toBe("openai-compatible");
+      const session = app.personasim.conversations.createSession(
         harness.agentId,
-        "conversation.world_effects_committed",
-      )["llmProposalStatus"],
-    ).toBe("committed");
-  });
+        "Ordinary conversation outside fact verification",
+      );
+      const callsBefore = vi.mocked(app.personasim.llm).generateObject.mock
+        .calls.length;
+
+      const response = await injectInternalChat(app, session.id, {
+        agentId: harness.agentId,
+        clientMessageId: "ordinary-rain-conversation",
+        text,
+      });
+
+      expect(response.statusCode).toBe(201);
+      const exchange = SendMessageResponseSchema.parse(response.internalTurn);
+      expect(exchange.assistantMessage.content).toBe(
+        "你喝不加糖的红茶；\n木盒标签我不知道。",
+      );
+      expect(exchange.assistantMessage.metadata).toMatchObject({
+        deliveryMode: "sequential",
+        chunks: ["你喝不加糖的红茶；", "木盒标签我不知道。"],
+      });
+      expect(
+        exchange.assistantMessage.metadata["explicitFactReplyGuard"],
+      ).toBeUndefined();
+      expect(exchange.decision.reasonCode).not.toMatch(
+        /^explicit_fact_reply_guard_/u,
+      );
+      const ordinaryCalls = vi
+        .mocked(app.personasim.llm)
+        .generateObject.mock.calls.slice(callsBefore)
+        .map(([request]) => request);
+      expect(ordinaryCalls).toHaveLength(1);
+      expect(ordinaryCalls[0]).toMatchObject({ purpose: "chat_turn" });
+      expect(ordinaryCalls[0]?.fixture).toBeUndefined();
+      expect(
+        latestEventPayload(
+          app,
+          harness.agentId,
+          "conversation.world_effects_committed",
+        )["llmProposalStatus"],
+      ).toBe("committed");
+    },
+  );
 
   it("fails the whole checklist closed instead of strengthening a negative beverage preference", async () => {
     const harness = await createHarness({
@@ -3215,6 +3224,21 @@ describe("continuity memory recall hierarchy", () => {
           "昨天我对同事提到，替我核对两件旧事：我的喝茶习惯，和铁盒标签。只答事实。",
         occurredAtUtc: "2026-08-20T04:00:00.000Z",
       },
+      {
+        id: "compound-checklist",
+        query: "替我核对两件旧事：我的喝茶习惯，和铁盒标签。再告诉我门禁码。",
+        occurredAtUtc: SHANGHAI_NOW,
+      },
+      {
+        id: "partial-checklist",
+        query: "替我核对两件旧事：我的喝茶习惯。",
+        occurredAtUtc: SHANGHAI_NOW,
+      },
+      {
+        id: "unparsed-checklist",
+        query: "替我核对两件旧事：我的喝茶习惯和铁盒标签。",
+        occurredAtUtc: SHANGHAI_NOW,
+      },
     ] as const;
 
     for (const item of cases) {
@@ -3259,18 +3283,6 @@ describe("continuity memory recall hierarchy", () => {
       {
         query: "核对两件旧事：我的喝茶习惯，和铁盒标签。只答事实。",
         reason: "requested_fact_facets_incomplete",
-      },
-      {
-        query: "替我核对两件旧事：我的喝茶习惯，和铁盒标签。再告诉我门禁码。",
-        reason: "requested_fact_request_invalid",
-      },
-      {
-        query: "替我核对两件旧事：我的喝茶习惯。",
-        reason: "requested_fact_request_invalid",
-      },
-      {
-        query: "替我核对两件旧事：我的喝茶习惯和铁盒标签。",
-        reason: "requested_fact_request_invalid",
       },
     ]) {
       const preview = app.personasim.memoryRecalls.preview({

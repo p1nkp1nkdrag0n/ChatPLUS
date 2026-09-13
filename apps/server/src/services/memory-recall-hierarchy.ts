@@ -299,19 +299,6 @@ export function inspectContinuityRecall(
       : query.timeRange === undefined
         ? withoutTimeRange(effectiveQuery)
         : effectiveQuery;
-  if (explicitFactParse.kind === "invalid") {
-    return buildInspection({
-      store,
-      input,
-      started,
-      prepared: emptyPrepared(query, candidateLimit, maxEvidence, minimumScore),
-      result: abstainResult(explicitFactParse.reason),
-      finalTier: "none",
-      tierByMemoryId: new Map(),
-      temporalResolution: temporal.resolution,
-    });
-  }
-
   const explicitFactSearchTerms =
     explicitFactVerification?.facets.flatMap((facet) => facet.searchTerms) ??
     [];

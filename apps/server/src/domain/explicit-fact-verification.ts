@@ -34,7 +34,6 @@ export type ExplicitFactVerificationRequest = {
 
 export type ExplicitFactVerificationParse =
   | { kind: "none" | "unsupported" }
-  | { kind: "invalid"; reason: "requested_fact_request_invalid" }
   | { kind: "valid"; request: ExplicitFactVerificationRequest };
 
 export type ExplicitFactValueResolution =
@@ -104,16 +103,11 @@ export function parseExplicitFactVerificationRequest(
     parts.length === expectedFacetCount &&
     facets.length === expectedFacetCount &&
     new Set(facetKeys).size === expectedFacetCount;
-  // This selector is intentionally narrow. A checklist with no supported
-  // facets remains on the generic hierarchy, while a malformed or partially
-  // supported fact checklist must fail closed rather than silently degrading.
-  if (!supported) {
-    return facets.length === 0
-      ? { kind: "unsupported" }
-      : { kind: "invalid", reason: "requested_fact_request_invalid" };
-  }
-  if (!isAllowedExplicitFactRequestTail(tail)) {
-    return { kind: "invalid", reason: "requested_fact_request_invalid" };
+  // This is an optional exact-fact fast path, not a user-input contract.
+  // Mixed, differently sized or compound requests retain ordinary grounded
+  // retrieval and generation; parser coverage says nothing about evidence.
+  if (!supported || !isAllowedExplicitFactRequestTail(tail)) {
+    return { kind: "unsupported" };
   }
   return {
     kind: "valid",

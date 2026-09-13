@@ -1,8 +1,12 @@
 import {
   IanaTimezoneSchema,
+  LETTER_DELIVERY_METHODS,
+  LetterDeliveryMethodSchema,
   UtcDateTimeSchema,
   type FixedTransitPolicyV1Contract,
   type LetterDirection,
+  type LetterDeliveryMethod,
+  type LetterTransitPolicyVersion,
 } from "@personasim/contracts";
 import { DateTime } from "luxon";
 
@@ -17,6 +21,12 @@ export const FixedTransitPolicyV1 = Object.freeze({
 } as const satisfies FixedTransitPolicyV1Contract);
 
 export const FIXED_TRANSIT_POLICY_V1 = FixedTransitPolicyV1;
+
+export function transitPolicyVersionForDeliveryMethod(
+  deliveryMethod: LetterDeliveryMethod,
+): LetterTransitPolicyVersion {
+  return `fixed_${LETTER_DELIVERY_METHODS[LetterDeliveryMethodSchema.parse(deliveryMethod)].days}d_v1`;
+}
 
 export function transitLegForLetterDirection(
   direction: LetterDirection,
@@ -33,6 +43,7 @@ export function calculateFixedTransitArrivalUtc(
   dispatchedAtUtc: string,
   characterTimezone: string,
   leg: LetterTransitLeg,
+  deliveryMethod: LetterDeliveryMethod = "standard",
 ): string {
   UtcDateTimeSchema.parse(dispatchedAtUtc);
   IanaTimezoneSchema.parse(characterTimezone);
@@ -41,7 +52,9 @@ export function calculateFixedTransitArrivalUtc(
   const localDispatched = dispatched.setZone(characterTimezone);
   const days =
     leg === "outbound"
-      ? FixedTransitPolicyV1.outboundDays
+      ? LETTER_DELIVERY_METHODS[
+          LetterDeliveryMethodSchema.parse(deliveryMethod)
+        ].days
       : FixedTransitPolicyV1.returnDays;
   const arrival = localDispatched.plus({ days }).toUTC();
   const arrivalUtc = arrival.toISO({
@@ -59,10 +72,12 @@ export function calculateLetterArrivalDueAtUtc(
   dispatchedAtUtc: string,
   characterTimezone: string,
   direction: LetterDirection,
+  deliveryMethod: LetterDeliveryMethod = "standard",
 ): string {
   return calculateFixedTransitArrivalUtc(
     dispatchedAtUtc,
     characterTimezone,
     transitLegForLetterDirection(direction),
+    deliveryMethod,
   );
 }

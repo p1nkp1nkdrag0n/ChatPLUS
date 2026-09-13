@@ -3,6 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import {
+  LETTER_DELIVERY_METHODS,
+  type LetterDeliveryMethod,
+} from "@personasim/contracts";
+import {
   Link,
   useNavigate,
   useParams,
@@ -22,6 +26,8 @@ import {
 } from "../lib/correspondence";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
 import { persistThenSealLetter } from "../lib/correspondenceMutations";
+import { createUuid } from "../lib/uuid";
+import { LetterDeliverySelector } from "../components/correspondence/LetterDeliverySelector";
 
 export default function LetterComposePage() {
   const { characterId = "" } = useParams();
@@ -32,6 +38,8 @@ export default function LetterComposePage() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [paper, setPaper] = useState<PaperTemplate>("cotton");
+  const [deliveryMethod, setDeliveryMethod] =
+    useState<LetterDeliveryMethod>("standard");
   const [confirmingSeal, setConfirmingSeal] = useState(false);
   const initializedDraft = useRef<string | undefined>(undefined);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
@@ -77,6 +85,7 @@ export default function LetterComposePage() {
     initializedDraft.current = draftId;
     setSubject(draftQuery.data.subject ?? "");
     setBody(draftQuery.data.body);
+    setDeliveryMethod(draftQuery.data.letter.deliveryMethod ?? "standard");
   }, [draftId, draftQuery.data]);
 
   const invalidateAfterWrite = async (letterId: string) => {
@@ -99,12 +108,14 @@ export default function LetterComposePage() {
         return api.letters.updateDraft(draftId, {
           subject: subject.trim() || null,
           body,
+          deliveryMethod,
         });
       }
       return api.letters.createDraft(characterId, {
         clientRequestId: createRequestId.current,
         ...(subject.trim() ? { subject: subject.trim() } : {}),
         body,
+        deliveryMethod,
       });
     },
     onSuccess: async (detail) => {
@@ -126,11 +137,13 @@ export default function LetterComposePage() {
             ? api.letters.updateDraft(draftId, {
                 subject: subject.trim() || null,
                 body,
+                deliveryMethod,
               })
             : api.letters.createDraft(characterId, {
                 clientRequestId: createRequestId.current,
                 ...(subject.trim() ? { subject: subject.trim() } : {}),
                 body,
+                deliveryMethod,
               }),
         sealDraft: (letterId) =>
           api.letters.seal(letterId, {
@@ -157,6 +170,18 @@ export default function LetterComposePage() {
   const isValid = body.trim().length > 0 && body.length <= 50_000;
   const recipient = character?.identity.name ?? "角色";
   const timezone = character?.identity.timezone ?? "Asia/Shanghai";
+  const delivery = LETTER_DELIVERY_METHODS[deliveryMethod];
+  const estimatedArrival = arrivalEstimateLabel(
+    timezone,
+    mailboxQuery.data?.serverTimeUtc
+      ? DateTime.fromISO(mailboxQuery.data.serverTimeUtc, { zone: "utc" }).plus(
+          {
+            milliseconds: Math.max(0, Date.now() - mailboxQuery.dataUpdatedAt),
+          },
+        )
+      : DateTime.utc(),
+    deliveryMethod,
+  );
 
   useEffect(() => {
     if (!confirmingSeal) return;
@@ -269,6 +294,11 @@ export default function LetterComposePage() {
               {body.length} / 50000
             </p>
             <PaperSelector value={paper} onChange={setPaper} />
+            <LetterDeliverySelector
+              value={deliveryMethod}
+              onChange={setDeliveryMethod}
+              disabled={isBusy}
+            />
 
             {error ? <ErrorBlock error={error} /> : null}
 
@@ -277,9 +307,9 @@ export default function LetterComposePage() {
                 <AlertCircle size={17} aria-hidden="true" />
                 封缄后将无法修改
               </span>
-              <span>
+              <span aria-live="polite">
                 <Leaf size={16} aria-hidden="true" />
-                预计五天后抵达
+                {delivery.label} · 预计 {estimatedArrival} 抵达
               </span>
             </div>
             <div className="compose-actions">
@@ -340,16 +370,8 @@ export default function LetterComposePage() {
             </span>
             <h2 id="seal-dialog-title">确认封缄</h2>
             <p id="seal-dialog-description">
-              封缄后将无法修改。这封信预计于
-              {arrivalEstimateLabel(
-                timezone,
-                mailboxQuery.data?.serverTimeUtc
-                  ? DateTime.fromISO(mailboxQuery.data.serverTimeUtc, {
-                      zone: "utc",
-                    })
-                  : DateTime.utc(),
-              )}
-              抵达 {recipient}。
+              封缄后将无法修改。这封信将以{delivery.label}递送，预计
+              {delivery.days} 天后（{estimatedArrival}）抵达 {recipient}。
             </p>
             <div className="seal-dialog__actions">
               <button
@@ -382,9 +404,5 @@ export default function LetterComposePage() {
 }
 
 function makeClientRequestId(prefix: string): string {
-  const value =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}:${value}`;
+  return `${prefix}:${createUuid()}`;
 }

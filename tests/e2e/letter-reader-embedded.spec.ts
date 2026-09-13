@@ -117,7 +117,8 @@ test("reads real correspondence inside the mailbox without caching decrypted let
   ).toBeVisible();
 
   const longBody =
-    "今天路过湖边，树影落在水面上。想把这一小段日常写给你。\n\n".repeat(120);
+    "今天路过湖边，树影落在水面上。想把这一小段日常写给你。\n\n".repeat(120) +
+    "这是这封长信的最后一行。";
   await page.getByRole("link", { name: "回信", exact: true }).click();
   await page.getByLabel("主题（可选）").fill("很长的一封信");
   await page.getByLabel("正文", { exact: true }).fill(longBody);
@@ -155,18 +156,65 @@ test("reads real correspondence inside the mailbox without caching decrypted let
     `/characters/${characterId}/correspondence?letterId=${longLetter.id}`,
   );
   await expect(page.locator(".letter-paper__body")).toHaveText(longBody);
-  expect(
-    await page
-      .locator(".letter-paper__content")
-      .evaluate((element) => element.scrollHeight > element.clientHeight),
-  ).toBe(true);
+  await page.evaluate(() => document.fonts.ready);
+  const paper = page.locator(".letter-paper");
+  const pagination = page.getByRole("navigation", { name: "信纸翻页" });
+  const nextPage = pagination.getByRole("button", { name: "下一页" });
+  const previousPage = pagination.getByRole("button", { name: "上一页" });
+  await expect(nextPage).toBeEnabled();
+  const pageCount = Number(
+    (await paper.getAttribute("aria-label"))?.match(/共 (\d+) 页/u)?.[1],
+  );
+  expect(pageCount).toBeGreaterThan(1);
+  await expect(previousPage).toBeDisabled();
+  await nextPage.scrollIntoViewIfNeeded();
   const sidebarBefore = await page.locator(".mailbox-sidebar").boundingBox();
-  await page.locator(".letter-paper__content").evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  for (let current = 2; current <= pageCount; current += 1) {
+    await nextPage.click();
+    await expect(pagination.getByRole("status")).toHaveText(
+      `第 ${current} / ${pageCount} 页`,
+    );
+  }
+  await expect(nextPage).toBeDisabled();
+  // The final character must actually reach the visible paper viewport; merely
+  // retaining the full letter in off-screen DOM does not prove it is readable.
+  await expect
+    .poll(() =>
+      page.locator(".letter-paper__body").evaluate((element) => {
+        const text = element.firstChild;
+        const viewport = element
+          .closest(".letter-paper")
+          ?.querySelector(".letter-paper__viewport");
+        if (!text || !viewport || text.nodeType !== Node.TEXT_NODE)
+          return false;
+        const length = text.textContent?.length ?? 0;
+        if (length === 0) return false;
+        const range = document.createRange();
+        range.setStart(text, length - 1);
+        range.setEnd(text, length);
+        const last = range.getBoundingClientRect();
+        const bounds = viewport.getBoundingClientRect();
+        return (
+          last.width > 0 &&
+          last.height > 0 &&
+          last.left >= bounds.left - 1 &&
+          last.right <= bounds.right + 1 &&
+          last.top >= bounds.top - 1 &&
+          last.bottom <= bounds.bottom + 1
+        );
+      }),
+    )
+    .toBe(true);
+  await expect(page.locator(".letter-paper__body")).toHaveText(longBody);
   expect(await page.locator(".mailbox-sidebar").boundingBox()).toEqual(
     sidebarBefore,
   );
+  await paper.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(pagination.getByRole("status")).toHaveText(
+    `第 ${pageCount - 1} / ${pageCount} 页`,
+  );
+  await expect(nextPage).toBeEnabled();
   expect(
     await page
       .locator("body")

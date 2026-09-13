@@ -92,9 +92,14 @@ export default function CorrespondenceMailboxPage() {
     letters.find((letter) => letter.id === requestedLetterId) ?? letters[0];
   const compose = composeAvailability(mailbox);
   const openThread = mailbox?.threads.find(
-    (thread) => thread.status === "open",
+    (thread) => thread.id === selectedLetter?.threadId,
   );
-  const replyState = openThread?.replyState;
+  const projectedReplyState =
+    selectedLetter?.replyState ?? openThread?.replyState;
+  const replyState =
+    projectedReplyState?.incomingLetterId === selectedLetter?.id
+      ? projectedReplyState
+      : undefined;
   const replyRetry = useReplyGenerationRetry(characterId, replyState);
   const modeResolved = !settingsQuery.isPending && !settingsQuery.isError;
   const canCompose = settingsQuery.data?.correspondenceMode === "enforced";
@@ -102,7 +107,7 @@ export default function CorrespondenceMailboxPage() {
   const selectLetter = (letter: LetterSummaryResponse) => {
     const mobile =
       typeof window !== "undefined" &&
-      window.matchMedia?.("(max-width: 900px)").matches;
+      window.matchMedia?.("(max-width: 1100px)").matches;
     if (mobile) {
       void navigate(
         `/letters/${letter.id}?agentId=${encodeURIComponent(characterId)}`,
@@ -159,18 +164,9 @@ export default function CorrespondenceMailboxPage() {
                 className="button button--primary correspondence-compose-link"
                 type="button"
                 disabled
-                title={
-                  replyState?.kind === "failed"
-                    ? "这封回信暂时没有写成"
-                    : replyState?.kind === "retry_scheduled"
-                      ? "回信已安排重新尝试"
-                      : replyState?.kind === "waiting"
-                        ? "正在等待回信"
-                        : "这一轮往来仍在途中"
-                }
               >
                 <PenLine size={17} aria-hidden="true" />
-                {replyState?.kind === "failed" ? "回信待处理" : "等待回信"}
+                正在整理书信…
               </button>
             ) : (
               <Link

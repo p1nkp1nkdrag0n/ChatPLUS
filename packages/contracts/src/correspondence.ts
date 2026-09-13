@@ -70,14 +70,31 @@ export const TemporalTaskKindSchema = z.enum([
 ]);
 export type TemporalTaskKind = z.infer<typeof TemporalTaskKindSchema>;
 
-export const LetterTransitPolicyVersionSchema = z.literal("fixed_5d_v1");
+export const LETTER_DELIVERY_METHODS = {
+  standard: { days: 5, label: "平信" },
+  express: { days: 2, label: "快递" },
+  priority: { days: 1, label: "特快" },
+} as const;
+
+export const LetterDeliveryMethodSchema = z.enum([
+  "standard",
+  "express",
+  "priority",
+]);
+export type LetterDeliveryMethod = z.infer<typeof LetterDeliveryMethodSchema>;
+
+export const LetterTransitPolicyVersionSchema = z.enum([
+  "fixed_5d_v1",
+  "fixed_2d_v1",
+  "fixed_1d_v1",
+]);
 export type LetterTransitPolicyVersion = z.infer<
   typeof LetterTransitPolicyVersionSchema
 >;
 
 export const FixedTransitPolicyV1Schema = z
   .object({
-    version: LetterTransitPolicyVersionSchema,
+    version: z.literal("fixed_5d_v1"),
     outboundDays: z.literal(5),
     returnDays: z.literal(5),
     progressBasis: z.literal("wall_clock"),
@@ -168,6 +185,7 @@ export const LetterSchema = z
     status: LetterStatusSchema,
     subject: LetterSubjectSchema.optional(),
     body: LetterPlaintextBodySchema.optional(),
+    deliveryMethod: LetterDeliveryMethodSchema.optional(),
     contentHash: CorrespondenceSha256Schema.optional(),
     transitPolicyVersion: LetterTransitPolicyVersionSchema.optional(),
     transitTimezone: IanaTimezoneSchema.optional(),
@@ -857,12 +875,46 @@ export type LetterReplyProposal = z.infer<typeof LetterReplyProposalSchema>;
  * encryption fields. `previewText` is populated only for user-authored or
  * already-opened letters by the server projector.
  */
+/**
+ * Safe product projection for an individual incoming letter. It exposes
+ * only whether a reply is still being prepared, has been explicitly
+ * rescheduled, or needs intervention. Task/run identifiers and provider error
+ * details remain confined to the developer inspector.
+ */
+export const CorrespondenceReplyStateSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("waiting"),
+      incomingLetterId: EntityIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("retry_scheduled"),
+      incomingLetterId: EntityIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("failed"),
+      incomingLetterId: EntityIdSchema,
+      canRetry: z.boolean(),
+    })
+    .strict(),
+]);
+export type CorrespondenceReplyState = z.infer<
+  typeof CorrespondenceReplyStateSchema
+>;
+
 export const LetterSummaryResponseSchema = z
   .object({
     id: EntityIdSchema,
     threadId: EntityIdSchema,
+    replyToLetterId: EntityIdSchema.optional(),
     direction: LetterDirectionSchema,
     status: LetterStatusSchema,
+    deliveryMethod: LetterDeliveryMethodSchema.optional(),
+    replyState: CorrespondenceReplyStateSchema.optional(),
     authoredDisplayDate: LocalDateSchema,
     dispatchedAtUtc: UtcDateTimeSchema.optional(),
     arrivalDueAtUtc: UtcDateTimeSchema.optional(),
@@ -877,6 +929,18 @@ export const LetterSummaryResponseSchema = z
     const shouldBeOpenable =
       letter.direction === "agent_to_user" &&
       (letter.status === "delivered_unread" || letter.status === "read");
+    if (
+      letter.replyState !== undefined &&
+      (letter.direction !== "user_to_agent" ||
+        letter.status !== "read" ||
+        letter.replyState.incomingLetterId !== letter.id)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "replyState must describe this read incoming letter",
+        path: ["replyState"],
+      });
+    }
     if (letter.canOpen !== shouldBeOpenable) {
       context.addIssue({
         code: "custom",
@@ -936,37 +1000,6 @@ export const LetterSummaryResponseSchema = z
     }
   });
 export type LetterSummaryResponse = z.infer<typeof LetterSummaryResponseSchema>;
-
-/**
- * Safe product projection for the one active correspondence turn. It exposes
- * only whether a reply is still being prepared, has been explicitly
- * rescheduled, or needs intervention. Task/run identifiers and provider error
- * details remain confined to the developer inspector.
- */
-export const CorrespondenceReplyStateSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("waiting"),
-      incomingLetterId: EntityIdSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("retry_scheduled"),
-      incomingLetterId: EntityIdSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("failed"),
-      incomingLetterId: EntityIdSchema,
-      canRetry: z.boolean(),
-    })
-    .strict(),
-]);
-export type CorrespondenceReplyState = z.infer<
-  typeof CorrespondenceReplyStateSchema
->;
 
 export const CorrespondenceThreadSummaryResponseSchema = z
   .object({
@@ -1046,6 +1079,7 @@ export const CreateLetterDraftRequestSchema = z
     clientRequestId: CorrespondenceClientRequestIdSchema,
     subject: LetterSubjectSchema.optional(),
     body: LetterRequestBodySchema,
+    deliveryMethod: LetterDeliveryMethodSchema.optional(),
   })
   .strict();
 export type CreateLetterDraftRequest = z.infer<
@@ -1056,10 +1090,14 @@ export const UpdateLetterDraftRequestSchema = z
   .object({
     subject: LetterSubjectSchema.nullable().optional(),
     body: LetterRequestBodySchema.optional(),
+    deliveryMethod: LetterDeliveryMethodSchema.optional(),
   })
   .strict()
   .refine(
-    (request) => request.subject !== undefined || request.body !== undefined,
+    (request) =>
+      request.subject !== undefined ||
+      request.body !== undefined ||
+      request.deliveryMethod !== undefined,
     "At least one draft field must be supplied",
   );
 export type UpdateLetterDraftRequest = z.infer<

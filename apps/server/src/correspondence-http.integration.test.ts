@@ -43,6 +43,195 @@ describe("correspondence HTTP lifecycle", () => {
     directory = undefined;
   });
 
+  it("persists delivery choices across restart and freezes the selected calendar-day deadline when sealing", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-delivery-methods-"));
+    const databasePath = join(directory, "correspondence.db");
+    const clock = new FakeClock(SEPTEMBER_3);
+    app = await startApp(databasePath, "enforced", clock, []);
+    const agentId = await createPublishedAgent(app);
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/letters`,
+      payload: {
+        clientRequestId: "delivery-create",
+        body: "保存递送方式",
+        deliveryMethod: "express",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const letterId = created.json<LetterDetailResponse>().letter.id;
+    expect(created.json<LetterDetailResponse>().letter.deliveryMethod).toBe(
+      "express",
+    );
+    const changed = await app.inject({
+      method: "PATCH",
+      url: `/api/letters/${letterId}`,
+      payload: { deliveryMethod: "priority" },
+    });
+    expect(changed.statusCode).toBe(200);
+    await app.close();
+    app = await startApp(databasePath, "enforced", clock, []);
+    const restored = await app.inject({
+      method: "GET",
+      url: `/api/letters/${letterId}`,
+    });
+    expect(restored.json<LetterDetailResponse>().letter.deliveryMethod).toBe(
+      "priority",
+    );
+    const sealed = await app.inject({
+      method: "POST",
+      url: `/api/letters/${letterId}/seal`,
+      payload: { clientRequestId: "delivery-seal" },
+    });
+    expect(sealed.statusCode).toBe(200);
+    expect(sealed.json<LetterDetailResponse>().letter).toMatchObject({
+      deliveryMethod: "priority",
+      arrivalDueAtUtc: "2026-09-04T04:00:00.000Z",
+      canEdit: false,
+    });
+    const repository = app.personasim.correspondenceRepository;
+    expect(repository.getLetter(letterId)?.transitPolicyVersion).toBe(
+      "fixed_1d_v1",
+    );
+    expect(
+      repository.listTasks(agentId).find((task) => task.entityId === letterId)
+        ?.dueAtUtc,
+    ).toBe("2026-09-04T04:00:00.000Z");
+    const immutable = await app.inject({
+      method: "PATCH",
+      url: `/api/letters/${letterId}`,
+      payload: { deliveryMethod: "standard" },
+    });
+    expect(immutable.statusCode).toBe(409);
+    expect(() =>
+      app!.personasim.store.database
+        .prepare("UPDATE letters SET delivery_method = 'standard' WHERE id = ?")
+        .run(letterId),
+    ).toThrow(/immutable/iu);
+
+    const express = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/letters`,
+      payload: {
+        clientRequestId: "delivery-express",
+        body: "第二封快递信",
+        deliveryMethod: "express",
+      },
+    });
+    expect(express.statusCode).toBe(201);
+    const expressId = express.json<LetterDetailResponse>().letter.id;
+    const expressSealed = await app.inject({
+      method: "POST",
+      url: `/api/letters/${expressId}/seal`,
+      payload: { clientRequestId: "delivery-express-seal" },
+    });
+    expect(
+      expressSealed.json<LetterDetailResponse>().letter.arrivalDueAtUtc,
+    ).toBe("2026-09-05T04:00:00.000Z");
+    expect(repository.getLetter(expressId)?.transitPolicyVersion).toBe(
+      "fixed_2d_v1",
+    );
+    expect(
+      repository.listTasks(agentId).find((task) => task.entityId === expressId)
+        ?.dueAtUtc,
+    ).toBe("2026-09-05T04:00:00.000Z");
+  });
+
+  it("replies independently to concurrent letters in arrival order, with each snapshot and reply tied to its incoming letter", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-concurrent-letters-"));
+    const clock = new FakeClock(SEPTEMBER_3);
+    app = await startApp(
+      join(directory, "correspondence.db"),
+      "enforced",
+      clock,
+      [],
+    );
+    const agentId = await createPublishedAgent(app);
+    const standardBody = "先寄出的平信：我想告诉你关于海边的事。";
+    const priorityBody = "后寄出的特快：今天我收到了一束花。";
+    const standardId = await createAndSealLetter(
+      app,
+      agentId,
+      "concurrent-standard",
+      standardBody,
+    );
+    clock.setUtc("2026-09-04T04:00:00.000Z");
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/letters`,
+      payload: {
+        clientRequestId: "concurrent-priority",
+        body: priorityBody,
+        deliveryMethod: "priority",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const priorityId = created.json<LetterDetailResponse>().letter.id;
+    const sealed = await app.inject({
+      method: "POST",
+      url: `/api/letters/${priorityId}/seal`,
+      payload: { clientRequestId: "concurrent-priority-seal" },
+    });
+    expect(sealed.statusCode).toBe(200);
+    const generate = vi.spyOn(app.personasim.llm, "generateObject");
+    clock.setUtc("2026-09-05T04:00:00.000Z");
+    await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+    const repository = app.personasim.correspondenceRepository;
+    expect(repository.getLetter(standardId)?.status).toBe("in_transit");
+    expect(repository.getSnapshotForIncomingLetter(standardId)).toBeUndefined();
+    const prioritySnapshot =
+      repository.getSnapshotForIncomingLetter(priorityId);
+    expect(prioritySnapshot?.incomingLetterId).toBe(priorityId);
+    expect(
+      JSON.stringify(prioritySnapshot?.contextJson.priorCorrespondence),
+    ).not.toContain(standardBody);
+    const priorityReply = repository.findReplyToLetter(priorityId);
+    expect(priorityReply).toMatchObject({
+      replyToLetterId: priorityId,
+      arrivalDueAtUtc: "2026-09-10T04:00:00.000Z",
+    });
+
+    clock.setUtc("2026-09-08T04:00:00.000Z");
+    const mailboxResponse = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+    expect(mailboxResponse.statusCode).toBe(200);
+    const standardReply = repository.findReplyToLetter(standardId);
+    expect(standardReply).toMatchObject({
+      replyToLetterId: standardId,
+      arrivalDueAtUtc: "2026-09-13T04:00:00.000Z",
+    });
+    expect(standardReply?.id).not.toBe(priorityReply?.id);
+    expect(repository.getSnapshotForIncomingLetter(standardId)?.id).not.toBe(
+      prioritySnapshot?.id,
+    );
+    const mailbox = mailboxResponse.json<CorrespondenceMailboxResponse>();
+    expect(
+      mailbox.letters.find((letter) => letter.id === priorityReply?.id)
+        ?.replyToLetterId,
+    ).toBe(priorityId);
+    expect(
+      mailbox.letters.find((letter) => letter.id === standardReply?.id)
+        ?.replyToLetterId,
+    ).toBe(standardId);
+    const prompts = generate.mock.calls
+      .filter(([input]) => input.purpose === "letter_reply")
+      .map(([input]) => input.prompt);
+    expect(prompts).toHaveLength(2);
+    const priorityPrompt = JSON.parse(prompts[0]!) as {
+      USER_LETTER: { body: string };
+    };
+    const standardPrompt = JSON.parse(prompts[1]!) as {
+      USER_LETTER: { body: string };
+    };
+    expect(priorityPrompt.USER_LETTER.body).toBe(priorityBody);
+    expect(standardPrompt.USER_LETTER.body).toBe(standardBody);
+  }, 30_000);
+
   it("paginates beyond the legacy 500-letter cap with an agent-bound opaque cursor", async () => {
     directory = mkdtempSync(join(tmpdir(), "chatplus-correspondence-page-"));
     const databasePath = join(directory, "correspondence.db");
@@ -192,19 +381,6 @@ describe("correspondence HTTP lifecycle", () => {
     expect(createConflict.statusCode).toBe(409);
     expect(createConflict.json()).toMatchObject({
       error: { code: "idempotency_conflict" },
-    });
-
-    const activeTurnConflict = await app.inject({
-      method: "POST",
-      url: `/api/agents/${agentId}/letters`,
-      payload: {
-        clientRequestId: "create-stage4-2",
-        body: "第二封信还不能开始。",
-      },
-    });
-    expect(activeTurnConflict.statusCode).toBe(409);
-    expect(activeTurnConflict.json()).toMatchObject({
-      error: { code: "correspondence_turn_in_progress" },
     });
 
     const updated = await app.inject({
@@ -882,6 +1058,80 @@ describe("correspondence HTTP lifecycle", () => {
       ),
     ).toBe(true);
   }, 30_000);
+
+  it("keeps an earlier letter's reply recovery visible after another letter is drafted", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-concurrent-recovery-"));
+    const clock = new FakeClock(SEPTEMBER_3);
+    app = await startApp(
+      join(directory, "correspondence.db"),
+      "enforced",
+      clock,
+      [],
+    );
+    const agentId = await createPublishedAgent(app);
+    const incomingLetterId = await createAndSealLetter(
+      app,
+      agentId,
+      "earlier-failed",
+      "这封来信需要单独回复。",
+    );
+    vi.spyOn(app.personasim.llm, "generateObject").mockResolvedValueOnce({
+      subject: "无效回信",
+      salutation: "你好",
+      paragraphs: ["无效的证据引用"],
+      closing: "祝好",
+      signature: "林",
+      referencedEvidenceIds: ["out-of-scope-evidence"],
+    });
+    clock.setUtc(SEPTEMBER_9);
+    await app.inject({
+      method: "GET",
+      url: `/api/letters/${incomingLetterId}`,
+    });
+    const nextDraft = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/letters`,
+      payload: {
+        clientRequestId: "later-draft",
+        body: "另一封信也可以继续写。",
+      },
+    });
+    expect(nextDraft.statusCode).toBe(201);
+    const mailboxResponse = await app.inject({
+      method: "GET",
+      url: `/api/agents/${agentId}/correspondence`,
+    });
+    const mailbox = mailboxResponse.json<CorrespondenceMailboxResponse>();
+    expect(mailbox.threads[0]?.latestLetterId).toBe(
+      nextDraft.json<LetterDetailResponse>().letter.id,
+    );
+    expect(
+      mailbox.letters.find((letter) => letter.id === incomingLetterId)
+        ?.replyState,
+    ).toEqual({
+      kind: "failed",
+      incomingLetterId,
+      canRetry: true,
+    });
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/letters/${incomingLetterId}`,
+    });
+    expect(detail.json<LetterDetailResponse>().letter.replyState).toEqual({
+      kind: "failed",
+      incomingLetterId,
+      canRetry: true,
+    });
+    const retry = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingLetterId}/reply-generation/retry`,
+      payload: { clientRequestId: "earlier-letter-retry" },
+    });
+    expect(retry.statusCode).toBe(202);
+    expect(
+      retry.json<RetryLetterReplyGenerationResponse>().incomingLetterId,
+    ).toBe(incomingLetterId);
+  });
 
   it("projects a terminal reply failure without leaking task or model details", async () => {
     directory = mkdtempSync(join(tmpdir(), "chatplus-correspondence-failed-"));

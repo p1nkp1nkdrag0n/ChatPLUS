@@ -9,6 +9,93 @@ const NOW = "2026-09-03T12:00:00.000Z";
 const HASH = "a".repeat(64);
 
 describe("018-021 temporal correspondence migrations", () => {
+  it("upgrades existing letters without changing rowids, deadlines or related records", () => {
+    const database = openDatabase(":memory:");
+    try {
+      applyThrough017(database);
+      for (const name of readdirSync(new URL("./migrations", import.meta.url))
+        .filter(
+          (name) =>
+            /^\d+[_-].+\.sql$/.test(name) && name >= "018_" && name < "035_",
+        )
+        .sort()) {
+        database.exec(
+          readFileSync(
+            new URL(`./migrations/${name}`, import.meta.url),
+            "utf8",
+          ),
+        );
+        database
+          .prepare(
+            "INSERT INTO schema_migrations(name, applied_at_utc) VALUES (?, ?)",
+          )
+          .run(name, NOW);
+      }
+      seedAgent(database);
+      database
+        .prepare(
+          `INSERT INTO correspondence_threads(id, agent_id, status, created_at_utc, updated_at_utc)
+        VALUES ('thread-existing', 'agent-1', 'open', ?, ?)`,
+        )
+        .run(NOW, NOW);
+      database
+        .prepare(
+          `INSERT INTO letters(rowid, id, thread_id, agent_id, direction, status, body,
+        content_hash, transit_policy_version, transit_timezone, dispatched_at_utc, arrival_due_at_utc,
+        effective_author_time_utc, created_at_utc, updated_at_utc)
+        VALUES (42, 'letter-incoming', 'thread-existing', 'agent-1', 'user_to_agent', 'in_transit',
+        '旧信件仍然完整', ?, 'fixed_5d_v1', 'Asia/Shanghai', ?, '2026-09-08T12:00:00.000Z', ?, ?, ?)`,
+        )
+        .run(HASH, NOW, NOW, NOW, NOW);
+      database
+        .prepare(
+          "UPDATE correspondence_threads SET root_letter_id = 'letter-incoming', latest_letter_id = 'letter-incoming'",
+        )
+        .run();
+      insertTask(database, "existing-arrival-task");
+      const beforeLetter = database
+        .prepare("SELECT rowid, * FROM letters")
+        .get();
+      const beforeThread = database
+        .prepare("SELECT * FROM correspondence_threads")
+        .get();
+      const beforeTask = database.prepare("SELECT * FROM temporal_tasks").get();
+      const triggers = schemaObjects(database, "trigger").filter(
+        (name) => name !== "letters_one_awaiting_user_reply_insert",
+      );
+      const indexes = schemaObjects(database, "index");
+      expect(runMigrations(database)).toContain(
+        "035_letter_delivery_methods.sql",
+      );
+      expect(database.prepare("SELECT rowid, * FROM letters").get()).toEqual({
+        ...(beforeLetter as object),
+        delivery_method: "standard",
+      });
+      expect(
+        database.prepare("SELECT * FROM correspondence_threads").get(),
+      ).toEqual(beforeThread);
+      expect(database.prepare("SELECT * FROM temporal_tasks").get()).toEqual(
+        beforeTask,
+      );
+      expect(schemaObjects(database, "trigger")).toEqual(
+        expect.arrayContaining(triggers),
+      );
+      expect(schemaObjects(database, "trigger")).not.toContain(
+        "letters_one_awaiting_user_reply_insert",
+      );
+      expect(schemaObjects(database, "index")).toEqual(
+        expect.arrayContaining(indexes),
+      );
+      expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
+      expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      expect(() =>
+        database.prepare("UPDATE letters SET body = 'changed'").run(),
+      ).toThrow(/immutable/iu);
+    } finally {
+      database.close();
+    }
+  });
+
   it("applies on an empty database and remains idempotent", () => {
     const database = openDatabase(":memory:");
     try {

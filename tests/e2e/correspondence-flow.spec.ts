@@ -349,6 +349,25 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     expect(sealedResponse.ok()).toBe(true);
 
     let replyState: "failed" | "retry_scheduled" = "failed";
+    const projectReplyState = () =>
+      replyState === "failed"
+        ? { kind: "failed", incomingLetterId, canRetry: true }
+        : { kind: "retry_scheduled", incomingLetterId };
+    const projectIncomingLetter = () => ({
+      id: incomingLetterId,
+      threadId,
+      direction: "user_to_agent",
+      status: "read",
+      replyState: projectReplyState(),
+      authoredDisplayDate: "2026-09-20",
+      dispatchedAtUtc: "2026-09-15T04:00:00.000Z",
+      arrivalDueAtUtc: "2026-09-20T04:00:00.000Z",
+      progress: 1,
+      postmark: "上海 · 2026-09-15",
+      canOpen: false,
+      canEdit: false,
+      previewText: "这封信用于验证失败后的安全恢复入口。",
+    });
     let retryCalls = 0;
     const retryPayloads: Array<{ clientRequestId: string }> = [];
     let releaseRetryResponse: (() => void) | undefined;
@@ -376,37 +395,26 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
                 status: "open",
                 rootLetterId: incomingLetterId,
                 latestLetterId: incomingLetterId,
-                replyState:
-                  replyState === "failed"
-                    ? {
-                        kind: "failed",
-                        incomingLetterId,
-                        canRetry: true,
-                      }
-                    : { kind: "retry_scheduled", incomingLetterId },
+                replyState: projectReplyState(),
               },
             ],
-            letters: [
-              {
-                id: incomingLetterId,
-                threadId,
-                direction: "user_to_agent",
-                status: "read",
-                authoredDisplayDate: "2026-09-20",
-                dispatchedAtUtc: "2026-09-15T04:00:00.000Z",
-                arrivalDueAtUtc: "2026-09-20T04:00:00.000Z",
-                progress: 1,
-                postmark: "上海 · 2026-09-15",
-                canOpen: false,
-                canEdit: false,
-                previewText: "这封信用于验证失败后的安全恢复入口。",
-              },
-            ],
+            letters: [projectIncomingLetter()],
             serverTimeUtc: "2026-09-20T04:00:00.000Z",
           }),
         });
       },
     );
+    await page.route(`**/api/letters/${incomingLetterId}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          letter: projectIncomingLetter(),
+          subject: "等待一封迟到的回信",
+          body: "这封信用于验证失败后的安全恢复入口。",
+        }),
+      });
+    });
     await page.route(
       `**/api/letters/${incomingLetterId}/reply-generation/retry`,
       async (route) => {
@@ -452,8 +460,8 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
         .getByText("这封回信暂时没有写成", { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "回信待处理" }),
-    ).toBeDisabled();
+      page.getByRole("link", { name: "写一封信", exact: true }),
+    ).toHaveAttribute("href", `/characters/${agentId}/correspondence/compose`);
 
     await page.goto(
       `/letters/${incomingLetterId}?agentId=${encodeURIComponent(agentId)}`,

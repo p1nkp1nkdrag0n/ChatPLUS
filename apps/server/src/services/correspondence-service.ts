@@ -35,6 +35,7 @@ import {
   calculateFixedTransitArrivalUtc,
   canonicalLetterContent,
   deriveLetterTransitProgress,
+  transitPolicyVersionForDeliveryMethod,
 } from "@personasim/features";
 import { DateTime } from "luxon";
 
@@ -139,7 +140,6 @@ type SafeTaskState = Readonly<
  */
 export class CorrespondenceService {
   readonly #mode: CorrespondenceMode;
-  readonly #transitPolicyVersion: "fixed_5d_v1";
   readonly #crypto: CorrespondenceCryptoService | undefined;
   readonly #openService: CorrespondenceOpenService | undefined;
   #auxiliaryCatchUp:
@@ -157,7 +157,6 @@ export class CorrespondenceService {
     options: CorrespondenceServiceOptions,
   ) {
     this.#mode = options.mode;
-    this.#transitPolicyVersion = options.transitPolicyVersion ?? "fixed_5d_v1";
     this.#crypto = options.crypto;
     this.#openService = options.openService;
   }
@@ -187,11 +186,13 @@ export class CorrespondenceService {
       clientRequestId: rawInput.clientRequestId,
       ...(rawInput.subject === undefined ? {} : { subject: rawInput.subject }),
       body: rawInput.body,
+      ...(rawInput.deliveryMethod === undefined
+        ? {}
+        : { deliveryMethod: rawInput.deliveryMethod }),
     });
     this.requireCharacterTimezone(agentId);
 
-    // A prior return may have become due while the process was stopped. Catch
-    // it up before the database enforces the one-active-turn invariant.
+    // Settle any correspondence that became due while the process was stopped.
     await this.catchUpAgent(agentId);
 
     try {
@@ -205,6 +206,9 @@ export class CorrespondenceService {
           direction: "user_to_agent",
           ...(input.subject === undefined ? {} : { subject: input.subject }),
           body: input.body,
+          ...(input.deliveryMethod === undefined
+            ? {}
+            : { deliveryMethod: input.deliveryMethod }),
           clientRequestId: input.clientRequestId,
           nowUtc: this.clock.nowUtc(),
         });
@@ -225,6 +229,9 @@ export class CorrespondenceService {
     const input = UpdateLetterDraftRequestSchema.parse({
       ...(rawInput.subject === undefined ? {} : { subject: rawInput.subject }),
       ...(rawInput.body === undefined ? {} : { body: rawInput.body }),
+      ...(rawInput.deliveryMethod === undefined
+        ? {}
+        : { deliveryMethod: rawInput.deliveryMethod }),
     });
     const current = this.requireLetter(letterId);
 
@@ -233,6 +240,9 @@ export class CorrespondenceService {
         this.repository.updateDraftLetter(letterId, {
           ...(input.subject === undefined ? {} : { subject: input.subject }),
           ...(input.body === undefined ? {} : { body: input.body }),
+          ...(input.deliveryMethod === undefined
+            ? {}
+            : { deliveryMethod: input.deliveryMethod }),
           updatedAtUtc: this.clock.nowUtc(),
         }),
       );
@@ -293,6 +303,7 @@ export class CorrespondenceService {
           dispatchedAtUtc,
           transitTimezone,
           "outbound",
+          current.deliveryMethod ?? "standard",
         );
         const contentHash = sha256(
           canonicalLetterContent({
@@ -305,7 +316,9 @@ export class CorrespondenceService {
         return this.repository.sealLetter({
           letterId,
           contentHash,
-          transitPolicyVersion: this.#transitPolicyVersion,
+          transitPolicyVersion: transitPolicyVersionForDeliveryMethod(
+            current.deliveryMethod ?? "standard",
+          ),
           transitTimezone,
           dispatchedAtUtc,
           arrivalDueAtUtc,
@@ -608,11 +621,17 @@ export class CorrespondenceService {
         : letter.status === "read" && proposal !== undefined
           ? preview(proposal.paragraphs.join(" "))
           : undefined;
+    const replyState = this.projectIncomingReplyState(letter);
     return LetterSummaryResponseSchema.parse({
       id: letter.id,
       threadId: letter.threadId,
+      ...(letter.replyToLetterId === undefined
+        ? {}
+        : { replyToLetterId: letter.replyToLetterId }),
       direction: letter.direction,
       status: letter.status,
+      deliveryMethod: letter.deliveryMethod ?? "standard",
+      ...(replyState === undefined ? {} : { replyState }),
       authoredDisplayDate,
       ...(letter.dispatchedAtUtc === undefined
         ? {}
@@ -656,9 +675,15 @@ export class CorrespondenceService {
       return undefined;
     }
     const incoming = this.repository.getLetter(thread.latestLetterId);
+    if (incoming?.agentId !== thread.agentId) return undefined;
+    return this.projectIncomingReplyState(incoming);
+  }
+
+  private projectIncomingReplyState(
+    incoming: Readonly<Letter> | undefined,
+  ): CorrespondenceReplyState | undefined {
     if (
       incoming === undefined ||
-      incoming.agentId !== thread.agentId ||
       incoming.direction !== "user_to_agent" ||
       incoming.status !== "read"
     ) {

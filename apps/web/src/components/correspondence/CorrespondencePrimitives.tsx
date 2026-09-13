@@ -1,6 +1,8 @@
 import {
   Archive,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Eye,
   LockKeyhole,
@@ -14,13 +16,15 @@ import type {
   LetterSummaryResponse,
   OpenLetterResponse,
 } from "@personasim/contracts";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   formatCorrespondenceDate,
   statusLabel,
   transitPresentation,
 } from "../../lib/correspondence";
+import { useLetterPagination } from "./useLetterPagination";
+import "./letter-pagination.css";
 
 export type PaperTemplate = "cotton" | "plain" | "midnight";
 
@@ -94,40 +98,110 @@ export function LetterPaper({
   readingMode?: boolean;
   headingRef?: React.RefObject<HTMLHeadingElement | null>;
 }) {
+  const paperId = useId();
+  const pagination = useLetterPagination([
+    subject,
+    body,
+    salutation,
+    closing,
+    signature,
+    postscript,
+    recipient,
+    authoredDate,
+    children,
+    paper,
+    readingMode,
+  ]);
+
   return (
-    <article
-      className={`letter-paper letter-paper--${paper}${readingMode ? " letter-paper--clear" : ""}`}
-    >
-      <div className="letter-paper__content">
-        {subject ? (
-          <h1 ref={headingRef} tabIndex={-1} className="letter-paper__subject">
-            {subject}
-          </h1>
-        ) : null}
-        {authoredDate ? (
-          <time className="letter-paper__date" dateTime={authoredDate}>
-            {authoredDate.replaceAll("-", ".")}
-          </time>
-        ) : null}
-        {recipient ? (
-          <p className="letter-paper__recipient">{recipient}：</p>
-        ) : null}
-        {salutation ? (
-          <p className="letter-paper__salutation">{salutation}</p>
-        ) : null}
-        {body ? <div className="letter-paper__body">{body}</div> : children}
-        {closing ? <p className="letter-paper__closing">{closing}</p> : null}
-        {signature ? (
-          <p className="letter-paper__signature">{signature}</p>
-        ) : null}
-        {postscript ? (
-          <aside className="letter-paper__postscript">
-            <strong>附言</strong>
-            <p>{postscript}</p>
-          </aside>
-        ) : null}
-      </div>
-    </article>
+    <div className="letter-pagination">
+      <article
+        id={paperId}
+        tabIndex={0}
+        className={`letter-paper letter-paper--${paper}${readingMode ? " letter-paper--clear" : ""}`}
+        aria-label={`信纸，第 ${pagination.page + 1} 页，共 ${pagination.pageCount} 页`}
+        onKeyDown={(event) => {
+          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+            return;
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            pagination.turnPage(event.key === "ArrowLeft" ? -1 : 1);
+          }
+        }}
+      >
+        <div className="letter-paper__viewport" ref={pagination.viewportRef}>
+          <div
+            className="letter-paper__content"
+            ref={pagination.contentRef}
+            style={{
+              transform: `translateX(${-pagination.page * pagination.pageStep}px)`,
+            }}
+          >
+            {subject ? (
+              <h1
+                ref={headingRef}
+                tabIndex={-1}
+                className="letter-paper__subject"
+              >
+                {subject}
+              </h1>
+            ) : null}
+            {authoredDate ? (
+              <time className="letter-paper__date" dateTime={authoredDate}>
+                {authoredDate.replaceAll("-", ".")}
+              </time>
+            ) : null}
+            {recipient ? (
+              <p className="letter-paper__recipient">{recipient}：</p>
+            ) : null}
+            {salutation ? (
+              <p className="letter-paper__salutation">{salutation}</p>
+            ) : null}
+            {body ? <div className="letter-paper__body">{body}</div> : children}
+            {closing ? (
+              <p className="letter-paper__closing">{closing}</p>
+            ) : null}
+            {signature ? (
+              <p className="letter-paper__signature">{signature}</p>
+            ) : null}
+            {postscript ? (
+              <aside className="letter-paper__postscript">
+                <strong>附言</strong>
+                <p>{postscript}</p>
+              </aside>
+            ) : null}
+          </div>
+        </div>
+      </article>
+      <nav className="letter-pagination__controls" aria-label="信纸翻页">
+        <button
+          type="button"
+          aria-controls={paperId}
+          disabled={pagination.page === 0}
+          onClick={() => pagination.turnPage(-1)}
+        >
+          <ChevronLeft size={16} aria-hidden="true" />
+          上一页
+        </button>
+        <span
+          className="letter-pagination__position"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          第 {pagination.page + 1} / {pagination.pageCount} 页
+        </span>
+        <button
+          type="button"
+          aria-controls={paperId}
+          disabled={pagination.page >= pagination.pageCount - 1}
+          onClick={() => pagination.turnPage(1)}
+        >
+          下一页
+          <ChevronRight size={16} aria-hidden="true" />
+        </button>
+      </nav>
+    </div>
   );
 }
 
@@ -144,6 +218,7 @@ export function OpenedLetterPaper({
 }) {
   return (
     <LetterPaper
+      key={opened.letter.id}
       {...(paper === undefined ? {} : { paper })}
       subject={opened.subject}
       body={opened.body}

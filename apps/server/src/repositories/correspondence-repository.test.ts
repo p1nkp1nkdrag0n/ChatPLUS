@@ -379,19 +379,19 @@ describe("CorrespondenceRepository", () => {
       threadId: incoming.threadId,
       agentId: AGENT_ID,
       replyToLetterId: committed.reply.id,
-      body: "A next letter must wait until the reply is opened.",
+      body: "A next letter can be written while the reply is still traveling.",
       clientRequestId: "request-next-turn",
       nowUtc: T4,
     } as const;
-    expectRepositoryError(
-      () => repository.createDraftLetter(nextTurnDraft),
-      "invariant_violation",
-    );
+    expect(repository.createDraftLetter(nextTurnDraft)).toMatchObject({
+      id: nextTurnDraft.id,
+      status: "draft",
+    });
     repository.markDelivered(committed.reply.id, T3, T4);
-    expectRepositoryError(
-      () => repository.createDraftLetter(nextTurnDraft),
-      "invariant_violation",
-    );
+    expect(repository.createDraftLetter(nextTurnDraft)).toMatchObject({
+      id: nextTurnDraft.id,
+      status: "draft",
+    });
     const opened = repository.markOpened(committed.reply.id, T2);
     expect(
       repository.markOpened(committed.reply.id, "2026-09-15T03:00:00.000Z"),

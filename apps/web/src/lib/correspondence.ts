@@ -1,8 +1,10 @@
-import type {
-  CorrespondenceMailboxResponse,
-  LetterDetailResponse,
-  LetterStatus,
-  LetterSummaryResponse,
+import {
+  LETTER_DELIVERY_METHODS,
+  type LetterDeliveryMethod,
+  type CorrespondenceMailboxResponse,
+  type LetterDetailResponse,
+  type LetterStatus,
+  type LetterSummaryResponse,
 } from "@personasim/contracts";
 import { DateTime } from "luxon";
 
@@ -69,23 +71,19 @@ export function composeAvailability(
   mailbox: CorrespondenceMailboxResponse | undefined,
 ): ComposeAvailability {
   if (!mailbox) return { kind: "waiting" };
-  const openThread = mailbox.threads.find((thread) => thread.status === "open");
-  if (!openThread) return { kind: "new" };
-  const threadLetters = mailbox.letters.filter(
-    (letter) => letter.threadId === openThread.id,
+  const openThreadIds = new Set(
+    mailbox.threads
+      .filter((thread) => thread.status === "open")
+      .map((thread) => thread.id),
   );
-  const draft = threadLetters.find(
+  const draft = mailbox.letters.find(
     (letter) =>
-      letter.direction === "user_to_agent" && letter.status === "draft",
+      openThreadIds.has(letter.threadId) &&
+      letter.direction === "user_to_agent" &&
+      letter.status === "draft",
   );
   if (draft) return { kind: "edit", draftId: draft.id };
-  const latest =
-    threadLetters.find((letter) => letter.id === openThread.latestLetterId) ??
-    findThreadLetters(mailbox, openThread.id).at(-1);
-  if (!latest) return { kind: "new" };
-  return latest.direction === "agent_to_user" && latest.status === "read"
-    ? { kind: "new" }
-    : { kind: "waiting" };
+  return { kind: "new" };
 }
 
 /**
@@ -139,10 +137,9 @@ export function filterMailboxLetters(
     }
   });
 
-  return filtered.toSorted(
-    (left, right) =>
-      right.authoredDisplayDate.localeCompare(left.authoredDisplayDate) ||
-      right.id.localeCompare(left.id),
+  // Equal dates keep the API's newest-first order instead of sorting random IDs.
+  return filtered.toSorted((left, right) =>
+    right.authoredDisplayDate.localeCompare(left.authoredDisplayDate),
   );
 }
 
@@ -150,12 +147,12 @@ export function findThreadLetters(
   mailbox: CorrespondenceMailboxResponse,
   threadId: string,
 ): LetterSummaryResponse[] {
+  // The mailbox API orders newest first; timelines read from oldest to newest.
   return mailbox.letters
     .filter((letter) => letter.threadId === threadId)
-    .toSorted(
-      (left, right) =>
-        left.authoredDisplayDate.localeCompare(right.authoredDisplayDate) ||
-        left.id.localeCompare(right.id),
+    .toReversed()
+    .toSorted((left, right) =>
+      left.authoredDisplayDate.localeCompare(right.authoredDisplayDate),
     );
 }
 
@@ -264,10 +261,11 @@ export function formatCorrespondenceDate(
 export function arrivalEstimateLabel(
   timezone: string,
   now: DateTime = DateTime.utc(),
+  deliveryMethod: LetterDeliveryMethod = "standard",
 ): string {
   return now
     .setZone(timezone)
-    .plus({ days: 5 })
+    .plus({ days: LETTER_DELIVERY_METHODS[deliveryMethod].days })
     .setLocale("zh-CN")
     .toLocaleString({ year: "numeric", month: "long", day: "numeric" });
 }

@@ -33,6 +33,38 @@ const CREATED_AT = "2026-09-03T12:00:00.000Z";
 const ARRIVAL_AT = "2026-09-08T12:00:00.000Z";
 const PROCESSED_AT = "2026-09-09T01:00:00.000Z";
 
+describe("letter delivery method requests", () => {
+  it.each(["standard", "express", "priority"])(
+    "accepts %s for draft creation and method-only edits",
+    (deliveryMethod) => {
+      expect(
+        CreateLetterDraftRequestSchema.parse({
+          clientRequestId: "delivery-method-create",
+          body: "见字如面",
+          deliveryMethod,
+        }).deliveryMethod,
+      ).toBe(deliveryMethod);
+      expect(
+        UpdateLetterDraftRequestSchema.parse({ deliveryMethod }).deliveryMethod,
+      ).toBe(deliveryMethod);
+    },
+  );
+  it("rejects unknown methods and client-supplied transport deadlines", () => {
+    expect(
+      UpdateLetterDraftRequestSchema.safeParse({ deliveryMethod: "instant" })
+        .success,
+    ).toBe(false);
+    expect(
+      CreateLetterDraftRequestSchema.safeParse({
+        clientRequestId: "invalid-time",
+        body: "见字如面",
+        deliveryMethod: "priority",
+        arrivalDueAtUtc: ARRIVAL_AT,
+      }).success,
+    ).toBe(false);
+  });
+});
+
 const thread = {
   id: "thread-1",
   agentId: "agent-1",

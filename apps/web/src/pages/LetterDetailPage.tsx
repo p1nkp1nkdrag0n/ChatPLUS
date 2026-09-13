@@ -120,7 +120,9 @@ export function LetterReader({
     letter === undefined
       ? undefined
       : mailbox?.threads.find((item) => item.id === letter.threadId);
-  const projectedReplyState = thread?.replyState;
+  const mailboxLetter = mailbox?.letters.find((item) => item.id === letter?.id);
+  const projectedReplyState =
+    (mailboxLetter ?? letter)?.replyState ?? thread?.replyState;
   const replyState =
     projectedReplyState?.incomingLetterId === letter?.id
       ? projectedReplyState
@@ -265,6 +267,7 @@ export function LetterReader({
               />
             ) : isCachedUserLetterDetail(detail) ? (
               <LetterPaper
+                key={letter.id}
                 {...(detail.subject === undefined
                   ? {}
                   : { subject: detail.subject })}
@@ -341,7 +344,26 @@ export function LetterReader({
                   <PenLine size={17} aria-hidden="true" /> 继续编辑
                 </Link>
               ) : null}
+              {canCompose &&
+              letter.direction === "user_to_agent" &&
+              letter.status !== "draft" &&
+              agentId ? (
+                <Link
+                  className="button button--primary"
+                  to={`/characters/${agentId}/correspondence/compose`}
+                >
+                  <PenLine size={17} aria-hidden="true" /> 再写一封信
+                </Link>
+              ) : null}
             </div>
+          ) : null}
+          {letter.replyToLetterId && agentId ? (
+            <Link
+              className="text-button letter-reader__thread-link"
+              to={`/letters/${encodeURIComponent(letter.replyToLetterId)}?agentId=${encodeURIComponent(agentId)}`}
+            >
+              <Reply size={15} aria-hidden="true" /> 查看这封回信对应的来信
+            </Link>
           ) : null}
           {embedded && agentId ? (
             <Link

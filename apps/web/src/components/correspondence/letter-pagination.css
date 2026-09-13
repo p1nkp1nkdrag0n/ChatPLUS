@@ -1,0 +1,123 @@
+.letter-pagination {
+  width: 100%;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+/* The paper's dimensions depend on its available width, never its text length. */
+.letter-pagination > article.letter-paper {
+  box-sizing: border-box;
+  width: 100%;
+  height: clamp(440px, 133.333cqw, 800px);
+  min-height: 0;
+  padding: clamp(30px, 8cqw, 68px) 27% clamp(34px, 8cqw, 60px) 8%;
+  overflow: hidden;
+}
+
+.letter-pagination
+  .letter-paper:is(
+    .letter-paper--plain,
+    .letter-paper--midnight,
+    .letter-paper--clear
+  ) {
+  padding-inline: 9%;
+}
+
+.letter-pagination .letter-paper__viewport {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Native text columns preserve the complete letter, including whitespace,
+   Chinese text, emoji and signatures, while the viewport reveals one page. */
+.letter-pagination .letter-paper .letter-paper__content {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: visible;
+  column-count: 1;
+  column-gap: 32px;
+  column-fill: auto;
+  overflow-wrap: anywhere;
+  transition: transform 280ms ease;
+  orphans: 2;
+  widows: 2;
+}
+
+.letter-pagination .letter-paper__content > :first-child {
+  margin-top: 0;
+}
+
+.letter-pagination .letter-paper__content > :last-child {
+  margin-bottom: 0;
+}
+
+.letter-pagination .letter-paper__body,
+.letter-pagination .letter-paper__content > p,
+.letter-pagination .letter-paper__postscript p {
+  white-space: break-spaces;
+  overflow-wrap: anywhere;
+}
+
+.letter-pagination .letter-paper__signature {
+  break-inside: avoid;
+}
+
+.letter-pagination__controls {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 3cqw, 24px);
+  padding-top: 12px;
+  color: var(--ink-soft, #697565);
+  font-size: 13px;
+}
+
+.letter-pagination__controls button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #d9d8ce);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink, #21392f);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.letter-pagination__controls button:hover:not(:disabled) {
+  background: rgba(70, 107, 83, 0.08);
+  border-color: #78917c;
+}
+
+.letter-pagination__controls button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.letter-pagination__controls button:focus-visible,
+.letter-pagination .letter-paper:focus-visible {
+  outline: 2px solid #466b53;
+  outline-offset: 4px;
+}
+
+.letter-pagination__position {
+  min-width: 6em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .letter-pagination .letter-paper .letter-paper__content {
+    transition: none;
+  }
+}

@@ -43,10 +43,7 @@ export function useReplyGenerationRetry(
       return runReplyGenerationRetryAttempt({
         initialLease: lease,
         confirmFollowUp: () =>
-          confirmReplyGenerationStillRetryable(
-            variables.agentId,
-            variables.incomingLetterId,
-          ),
+          confirmReplyGenerationStillRetryable(variables.incomingLetterId),
         createFollowUpLease: () =>
           leaseRef.current === undefined
             ? acquireReplyGenerationRetryLease(
@@ -75,10 +72,18 @@ export function useReplyGenerationRetry(
       });
     },
     onSuccess: async (_response, variables) => {
-      await invalidateReplyGenerationQueries(queryClient, variables.agentId);
+      await invalidateReplyGenerationQueries(
+        queryClient,
+        variables.agentId,
+        variables.incomingLetterId,
+      );
     },
     onError: async (_error, variables) => {
-      await invalidateReplyGenerationQueries(queryClient, variables.agentId);
+      await invalidateReplyGenerationQueries(
+        queryClient,
+        variables.agentId,
+        variables.incomingLetterId,
+      );
     },
   });
   const resetMutation = mutation.reset;
@@ -144,25 +149,28 @@ async function submitReplyGenerationRetry(lease: ReplyGenerationRetryLease) {
   return response;
 }
 
-async function confirmReplyGenerationStillRetryable(
-  agentId: string,
+export async function confirmReplyGenerationStillRetryable(
   incomingLetterId: string,
 ): Promise<boolean> {
-  const mailbox = await api.correspondence.list(agentId);
-  return mailbox.threads.some(
-    (thread) =>
-      thread.status === "open" &&
-      thread.replyState?.kind === "failed" &&
-      thread.replyState.canRetry &&
-      thread.replyState.incomingLetterId === incomingLetterId,
+  const { letter } = await api.letters.getCacheSafe(incomingLetterId);
+  return (
+    letter.id === incomingLetterId &&
+    letter.direction === "user_to_agent" &&
+    letter.replyState?.kind === "failed" &&
+    letter.replyState.canRetry &&
+    letter.replyState.incomingLetterId === incomingLetterId
   );
 }
 
 async function invalidateReplyGenerationQueries(
   queryClient: ReturnType<typeof useQueryClient>,
   agentId: string,
+  incomingLetterId: string,
 ): Promise<void> {
   await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: correspondenceQueryKeys.letter(incomingLetterId),
+    }),
     queryClient.invalidateQueries({
       queryKey: correspondenceQueryKeys.mailbox(agentId),
     }),

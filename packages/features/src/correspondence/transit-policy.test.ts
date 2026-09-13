@@ -7,6 +7,7 @@ import {
   calculateFixedTransitArrivalUtc,
   calculateLetterArrivalDueAtUtc,
   transitLegForLetterDirection,
+  transitPolicyVersionForDeliveryMethod,
 } from "./transit-policy.js";
 import {
   calculateTransitProgress,
@@ -14,6 +15,32 @@ import {
 } from "./progress.js";
 
 describe("FixedTransitPolicyV1", () => {
+  it.each([
+    ["standard", "2026-03-12T16:00:00.000Z", "fixed_5d_v1"],
+    ["express", "2026-03-09T16:00:00.000Z", "fixed_2d_v1"],
+    ["priority", "2026-03-08T16:00:00.000Z", "fixed_1d_v1"],
+  ] as const)(
+    "uses %s calendar days across DST without changing return timing",
+    (method, arrival, version) => {
+      expect(
+        calculateLetterArrivalDueAtUtc(
+          "2026-03-07T17:00:00.000Z",
+          "America/New_York",
+          "user_to_agent",
+          method,
+        ),
+      ).toBe(arrival);
+      expect(transitPolicyVersionForDeliveryMethod(method)).toBe(version);
+      expect(
+        calculateLetterArrivalDueAtUtc(
+          "2026-03-07T17:00:00.000Z",
+          "America/New_York",
+          "agent_to_user",
+          method,
+        ),
+      ).toBe("2026-03-12T16:00:00.000Z");
+    },
+  );
   it("exposes the immutable versioned five-calendar-day policy", () => {
     expect(FixedTransitPolicyV1).toEqual({
       version: "fixed_5d_v1",

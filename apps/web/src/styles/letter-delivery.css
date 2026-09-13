@@ -1,0 +1,124 @@
+.letter-delivery {
+  min-width: 0;
+  margin: 26px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.letter-delivery legend {
+  padding: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.letter-delivery__options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.letter-delivery__option {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.letter-delivery__option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.letter-delivery__card {
+  display: flex;
+  min-height: 82px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  padding: 13px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.letter-delivery__name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.letter-delivery__name strong {
+  font-weight: 500;
+}
+
+.letter-delivery__name svg {
+  flex-shrink: 0;
+}
+
+.letter-delivery__check {
+  margin-left: auto;
+}
+
+.letter-delivery__duration {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.letter-delivery__option:hover .letter-delivery__card {
+  border-color: var(--accent);
+}
+
+.letter-delivery__option input:checked + .letter-delivery__card {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.letter-delivery__option input:focus-visible + .letter-delivery__card {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.letter-delivery:disabled .letter-delivery__option {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.letter-delivery__hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 600px) {
+  .letter-delivery__options {
+    gap: 8px;
+  }
+
+  .letter-delivery__card {
+    padding-inline: 9px;
+  }
+
+  .letter-delivery__name {
+    gap: 5px;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .letter-delivery__card {
+    transition: none;
+  }
+}

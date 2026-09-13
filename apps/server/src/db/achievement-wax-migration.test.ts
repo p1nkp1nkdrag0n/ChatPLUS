@@ -61,7 +61,10 @@ describe("achievement wax migration", () => {
       const profiles = database
         .prepare("SELECT * FROM achievement_visual_profiles")
         .all();
-      expect(runMigrations(database)).toEqual([migration]);
+      expect(runMigrations(database)).toEqual([
+        migration,
+        "035_letter_delivery_methods.sql",
+      ]);
       expect(
         database
           .prepare(

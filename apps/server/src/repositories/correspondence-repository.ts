@@ -9,6 +9,7 @@ import {
   LetterGenerationSnapshotSchema,
   LetterReplyGenerationTaskPayloadSchema,
   LetterDirectionSchema,
+  LetterDeliveryMethodSchema,
   LetterSchema,
   ReasonCodeSchema,
   RevisionSchema,
@@ -21,6 +22,7 @@ import {
   type EncryptedLetterBody,
   type Letter,
   type LetterDirection,
+  type LetterDeliveryMethod,
   type LetterGenerationRun,
   type LetterGenerationRunStatus,
   type LetterGenerationSnapshot,
@@ -33,6 +35,7 @@ import {
   calculateLetterArrivalDueAtUtc,
   canonicalCorrespondenceJson,
   canonicalLetterGenerationSnapshot,
+  transitPolicyVersionForDeliveryMethod,
 } from "@personasim/features";
 
 import type { Database } from "../db/connection.js";
@@ -93,6 +96,7 @@ export interface CreateDraftLetterInput {
   replyToLetterId?: string;
   subject?: string;
   body: string;
+  deliveryMethod?: LetterDeliveryMethod;
   clientRequestId?: string;
   nowUtc?: string;
 }
@@ -100,6 +104,7 @@ export interface CreateDraftLetterInput {
 export interface UpdateDraftLetterInput {
   subject?: string | null;
   body?: string;
+  deliveryMethod?: LetterDeliveryMethod;
   updatedAtUtc?: string;
 }
 
@@ -298,6 +303,7 @@ interface LetterRow {
   status: LetterStatus;
   subject: string | null;
   body: string | null;
+  delivery_method: LetterDeliveryMethod;
   content_hash: string | null;
   encrypted_ciphertext: string | null;
   encrypted_iv: string | null;
@@ -511,6 +517,12 @@ export class CorrespondenceRepository {
       assertEntityId(input.replyToLetterId, "replyToLetterId");
     if (input.direction !== undefined)
       assertSchemaValue(LetterDirectionSchema, input.direction, "direction");
+    if (input.deliveryMethod !== undefined)
+      assertSchemaValue(
+        LetterDeliveryMethodSchema,
+        input.deliveryMethod,
+        "deliveryMethod",
+      );
     if (input.nowUtc !== undefined) assertUtc(input.nowUtc, "nowUtc");
     if (input.body.length === 0) {
       throw domainError("invariant_violation", "A letter body cannot be empty");
@@ -553,9 +565,9 @@ export class CorrespondenceRepository {
         .prepare(
           `INSERT INTO letters(
              id, thread_id, agent_id, create_request_id, create_request_hash,
-             reply_to_letter_id, direction, status, subject, body,
+             reply_to_letter_id, direction, status, subject, body, delivery_method,
              created_at_utc, updated_at_utc
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -567,6 +579,7 @@ export class CorrespondenceRepository {
           input.direction ?? "user_to_agent",
           input.subject ?? null,
           input.body,
+          input.deliveryMethod ?? "standard",
           nowUtc,
           nowUtc,
         );
@@ -630,19 +643,25 @@ export class CorrespondenceRepository {
           : { subject: patch.subject }
         : {}),
       ...(patch.body === undefined ? {} : { body: patch.body }),
+      ...(patch.deliveryMethod === undefined
+        ? {}
+        : { deliveryMethod: patch.deliveryMethod }),
       updatedAtUtc,
     });
     this.database
       .prepare(
         `UPDATE letters
          SET subject = CASE WHEN @hasSubject = 1 THEN @subject ELSE subject END,
-             body = COALESCE(@body, body), updated_at_utc = @updatedAtUtc
+             body = COALESCE(@body, body),
+             delivery_method = COALESCE(@deliveryMethod, delivery_method),
+             updated_at_utc = @updatedAtUtc
          WHERE id = @letterId AND status = 'draft'`,
       )
       .run({
         hasSubject: hasSubject ? 1 : 0,
         subject: patch.subject ?? null,
         body: patch.body ?? null,
+        deliveryMethod: patch.deliveryMethod ?? null,
         updatedAtUtc,
         letterId,
       });
@@ -710,10 +729,15 @@ export class CorrespondenceRepository {
       }
       const effectiveAuthorTimeUtc =
         input.effectiveAuthorTimeUtc ?? input.dispatchedAtUtc;
-      if (input.transitPolicyVersion !== "fixed_5d_v1") {
+      if (
+        input.transitPolicyVersion !==
+        transitPolicyVersionForDeliveryMethod(
+          current.deliveryMethod ?? "standard",
+        )
+      ) {
         throw domainError(
           "invariant_violation",
-          "Only the frozen fixed_5d_v1 transit policy may be persisted",
+          "The frozen transit policy must match the selected delivery method",
         );
       }
       assertTransitSchedule(
@@ -721,6 +745,7 @@ export class CorrespondenceRepository {
         input.dispatchedAtUtc,
         input.transitTimezone,
         input.arrivalDueAtUtc,
+        current.deliveryMethod ?? "standard",
       );
       try {
         this.database
@@ -1709,8 +1734,7 @@ export class CorrespondenceRepository {
           incoming.direction !== "user_to_agent" ||
           incoming.status !== "read" ||
           thread.agentId !== incoming.agentId ||
-          thread.status !== "open" ||
-          thread.latestLetterId !== incoming.id
+          thread.status !== "open"
         ) {
           throw domainError(
             "generation_not_retryable",
@@ -2513,6 +2537,7 @@ function mapLetter(row: LetterRow): LetterWithEncryptedBody {
     status: row.status,
     ...(row.subject === null ? {} : { subject: row.subject }),
     ...(row.body === null ? {} : { body: row.body }),
+    deliveryMethod: row.delivery_method,
     ...(row.content_hash === null ? {} : { contentHash: row.content_hash }),
     ...(row.transit_policy_version === null
       ? {}
@@ -2805,6 +2830,10 @@ function draftCreateRequestHash(input: CreateDraftLetterInput): string {
         replyToLetterId: input.replyToLetterId ?? null,
         subject: input.subject ?? null,
         body: input.body,
+        ...(input.deliveryMethod === undefined ||
+        input.deliveryMethod === "standard"
+          ? {}
+          : { deliveryMethod: input.deliveryMethod }),
       }),
       "utf8",
     )
@@ -2816,6 +2845,7 @@ function assertTransitSchedule(
   dispatchedAtUtc: string,
   transitTimezone: string,
   arrivalDueAtUtc: string,
+  deliveryMethod: LetterDeliveryMethod = "standard",
 ): void {
   let expected: string;
   try {
@@ -2823,6 +2853,7 @@ function assertTransitSchedule(
       dispatchedAtUtc,
       transitTimezone,
       direction,
+      deliveryMethod,
     );
   } catch (error) {
     throw domainError(
@@ -2833,7 +2864,7 @@ function assertTransitSchedule(
   if (expected !== arrivalDueAtUtc) {
     throw domainError(
       "invariant_violation",
-      "Arrival due time must be calculated by fixed_5d_v1 in the persisted transit timezone",
+      "Arrival due time must match the selected delivery method in the persisted transit timezone",
       { expectedArrivalDueAtUtc: expected, arrivalDueAtUtc },
     );
   }

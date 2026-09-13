@@ -130,6 +130,58 @@ describe("correspondence API client", () => {
     );
   });
 
+  it("sends and restores the selected delivery method when saving and reopening a draft", async () => {
+    const draft = {
+      letter: {
+        id: "delivery-draft",
+        threadId: "thread-1",
+        direction: "user_to_agent",
+        status: "draft",
+        deliveryMethod: "priority",
+        authoredDisplayDate: "2026-09-03",
+        progress: 0,
+        postmark: "上海 · 2026-09-03",
+        canOpen: false,
+        canEdit: true,
+      },
+      body: "希望这封信早些到你手中。",
+    };
+    const responses = [
+      draft,
+      { ...draft, letter: { ...draft.letter, deliveryMethod: "express" } },
+      { ...draft, letter: { ...draft.letter, deliveryMethod: "express" } },
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      void input;
+      void init;
+      return Promise.resolve(jsonResponse(responses.shift()));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.letters.createDraft("agent-1", {
+      clientRequestId: "delivery-create",
+      body: draft.body,
+      deliveryMethod: "priority",
+    });
+    await api.letters.updateDraft("delivery-draft", {
+      deliveryMethod: "express",
+    });
+    const reopened = await api.letters.getCacheSafe("delivery-draft");
+
+    expect(
+      JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string),
+    ).toMatchObject({
+      deliveryMethod: "priority",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
+      deliveryMethod: "express",
+    });
+    expect(reopened).toMatchObject({
+      letter: { deliveryMethod: "express" },
+      body: draft.body,
+    });
+  });
+
   it("rejects internal recovery fields from an ordinary reply-recovery response", async () => {
     vi.stubGlobal(
       "fetch",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DateTime } from "luxon";
 import type {
   CorrespondenceMailboxResponse,
   LetterDetailResponse,
@@ -6,8 +7,10 @@ import type {
 } from "@personasim/contracts";
 import {
   correspondenceQueryKeys,
+  arrivalEstimateLabel,
   composeAvailability,
   filterMailboxLetters,
+  findThreadLetters,
   mergeCorrespondenceMailboxPages,
   phaseAfterSuccessfulOpen,
   projectLetterDetailForCache,
@@ -142,6 +145,32 @@ describe("correspondence query and privacy boundaries", () => {
 });
 
 describe("correspondence date presentation", () => {
+  it.each([
+    ["standard", "2026年9月8日"],
+    ["express", "2026年9月5日"],
+    ["priority", "2026年9月4日"],
+  ] as const)(
+    "estimates the selected %s delivery in the recipient's calendar",
+    (method, expected) => {
+      expect(
+        arrivalEstimateLabel(
+          "Asia/Shanghai",
+          DateTime.fromISO("2026-09-02T23:30:00.000Z", { zone: "utc" }),
+          method,
+        ),
+      ).toBe(expected);
+    },
+  );
+
+  it("keeps the standard five-day estimate for existing callers across DST", () => {
+    expect(
+      arrivalEstimateLabel(
+        "America/New_York",
+        DateTime.fromISO("2026-03-06T17:00:00.000Z", { zone: "utc" }),
+      ),
+    ).toBe("2026年3月11日");
+  });
+
   it("derives transit progress and day copy from dates without a countdown", () => {
     const letter: LetterSummaryResponse = {
       ...baseLetter,
@@ -182,8 +211,30 @@ describe("correspondence date presentation", () => {
   });
 });
 
-describe("one-open-turn presentation", () => {
-  it("routes back to an existing draft instead of opening a parallel turn", () => {
+describe("multiple-letter compose availability", () => {
+  it("preserves the server's sent order for multiple letters on the same date", () => {
+    const older: LetterSummaryResponse = {
+      ...baseLetter,
+      id: "z-older-letter",
+      direction: "user_to_agent",
+      status: "read",
+      canOpen: false,
+    };
+    const newer: LetterSummaryResponse = { ...older, id: "a-newer-letter" };
+    const mailbox: CorrespondenceMailboxResponse = {
+      threads: [],
+      letters: [newer, older],
+      serverTimeUtc: "2026-09-03T12:00:00.000Z",
+    };
+    expect(
+      filterMailboxLetters(mailbox.letters, "sent").map((letter) => letter.id),
+    ).toEqual([newer.id, older.id]);
+    expect(
+      findThreadLetters(mailbox, "thread-1").map((letter) => letter.id),
+    ).toEqual([older.id, newer.id]);
+  });
+
+  it("offers an existing editable draft even when another letter is in transit", () => {
     const draft: LetterSummaryResponse = {
       ...baseLetter,
       direction: "user_to_agent",
@@ -202,13 +253,16 @@ describe("one-open-turn presentation", () => {
             latestLetterId: draft.id,
           },
         ],
-        letters: [draft],
+        letters: [
+          { ...draft, id: "in-transit", status: "in_transit", canEdit: false },
+          draft,
+        ],
         serverTimeUtc: "2026-09-03T00:00:00.000Z",
       }),
     ).toEqual({ kind: "edit", draftId: draft.id });
   });
 
-  it("waits while a turn is travelling and reopens compose after a reply is read", () => {
+  it("allows another letter while a reply is travelling, waiting, failed, or read", () => {
     const travelling: LetterSummaryResponse = {
       ...baseLetter,
       direction: "agent_to_user",
@@ -230,7 +284,18 @@ describe("one-open-turn presentation", () => {
       letters: [travelling],
       serverTimeUtc: "2026-09-10T00:00:00.000Z",
     };
-    expect(composeAvailability(mailbox)).toEqual({ kind: "waiting" });
+    expect(composeAvailability(mailbox)).toEqual({ kind: "new" });
+    for (const replyState of [
+      { kind: "waiting", incomingLetterId: "sent-1" },
+      { kind: "failed", incomingLetterId: "sent-1", canRetry: true },
+    ] as const) {
+      expect(
+        composeAvailability({
+          ...mailbox,
+          threads: [{ ...mailbox.threads[0]!, replyState }],
+        }),
+      ).toEqual({ kind: "new" });
+    }
     expect(
       composeAvailability({
         ...mailbox,

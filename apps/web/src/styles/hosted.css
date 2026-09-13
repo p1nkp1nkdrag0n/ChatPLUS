@@ -1,3 +1,24 @@
+.hosted-connection-notice {
+  position: fixed;
+  z-index: 100;
+  inset: auto 16px calc(200px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  margin-inline: auto;
+  padding: 12px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 4px 24px #18392f1a;
+  color: var(--ink);
+  font-size: 13px;
+}
+
 .hosted-auth {
   min-height: var(--app-viewport-height, 100dvh);
   display: flex;

@@ -13,6 +13,22 @@ describe("hosted browser transport boundary", () => {
     vi.unstubAllGlobals();
   });
 
+  it("fetches a session's grouped billing in one request without individual turn filters", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ turns: { first: [], second: [] } })),
+      );
+    vi.stubGlobal("fetch", fetch);
+    await expect(hostedApi.sessionBilling("session / one")).resolves.toEqual({
+      turns: { first: [], second: [] },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[0]).toBe(
+      "/api/hosted/billing/sessions/session%20%2F%20one",
+    );
+  });
+
   it("uses local mode only when the hosted probe is absent", async () => {
     vi.stubGlobal(
       "fetch",

@@ -34,7 +34,15 @@ import { DateTime } from "luxon";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
 import { llmApi, sessionModelKey } from "../api/llm";
 import { ChatModelToolbar } from "../components/llm/ChatModelToolbar";
-import { ReplyUsage } from "../components/hosted/HostedBilling";
+import {
+  ReplyUsage,
+  type ReplyBillingState,
+} from "../components/hosted/HostedBilling";
+import { hostedMeKey } from "../api/hosted";
+import {
+  sessionBillingKey,
+  useSessionBilling,
+} from "../hooks/useSessionBilling";
 import type { CharacterSpec, ChatMessage, ChatSession } from "../api/types";
 import { CharacterAvatar } from "../components/CharacterAvatar";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
@@ -546,6 +554,15 @@ function SessionConversation({
     messages,
     latestSend?.input?.clientMessageId,
   );
+  const clientMessageIds = new Map(
+    messages
+      .filter((message) => message.role === "user")
+      .map((message) => [message.id, message.clientMessageId]),
+  );
+  const billing = useSessionBilling(
+    session.id,
+    messages.findLast((message) => message.role === "user")?.clientMessageId,
+  );
   const pendingUserMessage: ChatMessage | undefined =
     pendingInput && !sendReceipt.userMessage
       ? {
@@ -626,6 +643,10 @@ function SessionConversation({
     },
     onSettled: () => {
       submittingRef.current = false;
+      void queryClient.invalidateQueries({
+        queryKey: sessionBillingKey(session.id),
+      });
+      void queryClient.invalidateQueries({ queryKey: hostedMeKey });
     },
   });
 
@@ -749,31 +770,41 @@ function SessionConversation({
             <p>和{character.identity.name}聊聊今天，或是刚刚浮上心头的小事。</p>
           </div>
         ) : null}
-        {displayMessages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            clientMessageId={
-              message.role === "assistant"
-                ? messages.find(
-                    (candidate) => candidate.id === message.inReplyToMessageId,
-                  )?.clientMessageId
-                : undefined
-            }
-            characterId={characterId}
-            name={character.identity.name}
-            timezone={character.identity.timezone}
-            animateSequential={shouldAnimateLiveMessage(message, {
-              sendPending: sendPending,
-              knownMessageIdsAtSendStart,
-              explicitlyAnimatedIds: newlyArrivedSequentialIdsRef.current,
-              alreadyAnimatedIds: animatedSequentialIdsRef.current,
-            })}
-            onReveal={scrollToLatest}
-            onDeliveryStart={startSequentialDelivery}
-            onDeliveryComplete={finishSequentialDelivery}
-          />
-        ))}
+        {displayMessages.map((message) => {
+          const clientMessageId = message.inReplyToMessageId
+            ? clientMessageIds.get(message.inReplyToMessageId)
+            : undefined;
+          return (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              billing={
+                billing && clientMessageId
+                  ? {
+                      attempts: billing.data?.turns[clientMessageId] ?? [],
+                      isPending: billing.isPending,
+                      error: billing.error,
+                      retry: () => {
+                        void billing.refetch();
+                      },
+                    }
+                  : undefined
+              }
+              characterId={characterId}
+              name={character.identity.name}
+              timezone={character.identity.timezone}
+              animateSequential={shouldAnimateLiveMessage(message, {
+                sendPending: sendPending,
+                knownMessageIdsAtSendStart,
+                explicitlyAnimatedIds: newlyArrivedSequentialIdsRef.current,
+                alreadyAnimatedIds: animatedSequentialIdsRef.current,
+              })}
+              onReveal={scrollToLatest}
+              onDeliveryStart={startSequentialDelivery}
+              onDeliveryComplete={finishSequentialDelivery}
+            />
+          );
+        })}
         {awaitingReply ? (
           <div
             className="message-group message-group--assistant is-thinking"
@@ -901,7 +932,7 @@ function SessionConversation({
 
 export function MessageBubble({
   message,
-  clientMessageId,
+  billing,
   characterId,
   name,
   timezone,
@@ -911,7 +942,7 @@ export function MessageBubble({
   onDeliveryComplete,
 }: {
   message: ChatMessage;
-  clientMessageId?: string | undefined;
+  billing?: ReplyBillingState | undefined;
   characterId?: string;
   name: string;
   timezone: string;
@@ -1015,8 +1046,8 @@ export function MessageBubble({
             {formatLocalTime(message.createdAtUtc, timezone)}
           </time>
         </div>
-        {message.role === "assistant" ? (
-          <ReplyUsage clientMessageId={clientMessageId} />
+        {message.role === "assistant" && billing ? (
+          <ReplyUsage billing={billing} />
         ) : null}
         {proactive ? (
           <Link

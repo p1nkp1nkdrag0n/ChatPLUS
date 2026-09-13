@@ -77,7 +77,7 @@ export function HostedBoundary({ children }: { children: ReactNode }) {
   };
   if (info.isPending)
     return <LoadingBlock label="正在连接 Dearvale…" fullPage />;
-  if (info.error)
+  if (info.error && (!info.data || !isTransientSessionError(info.error)))
     return (
       <div className="hosted-auth">
         <ErrorBlock
@@ -94,7 +94,7 @@ export function HostedBoundary({ children }: { children: ReactNode }) {
   if (me.isPending) return <LoadingBlock label="正在验证账号…" fullPage />;
   if (me.error instanceof ApiError && me.error.status === 401)
     return <HostedAuth info={info.data} onAuthenticated={acceptSession} />;
-  if (me.error)
+  if (me.error && (!me.data || !isTransientSessionError(me.error)))
     return (
       <div className="hosted-auth">
         <ErrorBlock
@@ -133,8 +133,27 @@ export function HostedBoundary({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      {info.error || me.error ? (
+        <div className="hosted-connection-notice" role="status">
+          <span>连接暂时中断，正在保留当前页面和输入。</span>
+          <button
+            className="text-button"
+            disabled={info.isFetching || me.isFetching}
+            onClick={() => {
+              if (info.error) void info.refetch();
+              if (me.error) void me.refetch();
+            }}
+          >
+            重新连接
+          </button>
+        </div>
+      ) : null}
     </HostedContext.Provider>
   );
+}
+
+function isTransientSessionError(error: unknown): boolean {
+  return !(error instanceof ApiError) || error.status >= 500;
 }
 
 function HostedAuth({

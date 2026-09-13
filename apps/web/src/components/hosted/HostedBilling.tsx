@@ -1,16 +1,10 @@
-import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
-  hostedApi,
   formatPoints,
-  hostedMeKey,
-  type HostedMe,
   type HostedAttempt,
   type HostedLedgerEntry,
   type HostedUsage,
 } from "../../api/hosted";
-import { useHosted } from "../../hooks/useHosted";
 import {
   displayDate,
   formatTokens,
@@ -41,41 +35,14 @@ function sumUsage(
   );
 }
 
-export function ReplyUsage({
-  clientMessageId,
-}: {
-  clientMessageId: string | undefined;
-}) {
-  const hosted = useHosted();
-  if (!hosted || !clientMessageId) return null;
-  return <HostedReplyUsage clientMessageId={clientMessageId} />;
+export interface ReplyBillingState {
+  attempts: HostedAttempt[];
+  isPending: boolean;
+  error: unknown;
+  retry: () => void;
 }
 
-function HostedReplyUsage({ clientMessageId }: { clientMessageId: string }) {
-  const client = useQueryClient();
-  const [startedAt] = useState(Date.now);
-  const billing = useQuery({
-    queryKey: ["hosted", "billing", "turn", clientMessageId],
-    queryFn: () => hostedApi.billing({ clientMessageId }),
-    retry: 1,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-    refetchInterval: (query) =>
-      Date.now() - startedAt < 30_000 &&
-      (!query.state.data?.attempts.length ||
-        query.state.data.attempts.some((attempt) =>
-          ["reserved", "sent"].includes(attempt.status),
-        ))
-        ? 2500
-        : false,
-  });
-  useEffect(() => {
-    const wallet = billing.data?.wallet;
-    if (wallet)
-      client.setQueryData<HostedMe>(hostedMeKey, (previous) =>
-        previous ? { ...previous, wallet } : previous,
-      );
-  }, [billing.data?.wallet, client]);
+export function ReplyUsage({ billing }: { billing: ReplyBillingState }) {
   if (billing.isPending)
     return (
       <div className="hosted-reply-usage" role="status">
@@ -86,12 +53,12 @@ function HostedReplyUsage({ clientMessageId }: { clientMessageId: string }) {
     return (
       <div className="hosted-reply-usage">
         <span>用量暂时无法读取</span>
-        <button className="text-button" onClick={() => void billing.refetch()}>
+        <button className="text-button" onClick={billing.retry}>
           重试
         </button>
       </div>
     );
-  const attempts = billing.data?.attempts ?? [];
+  const attempts = billing.attempts;
   if (attempts.length === 0)
     return (
       <div className="hosted-reply-usage">

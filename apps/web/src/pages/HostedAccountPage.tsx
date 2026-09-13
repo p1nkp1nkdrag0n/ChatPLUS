@@ -1,12 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, RefreshCw, Wallet } from "lucide-react";
-import {
-  hostedApi,
-  hostedMeKey,
-  formatPoints,
-  type HostedMe,
-} from "../api/hosted";
+import { hostedApi, hostedMeKey, formatPoints } from "../api/hosted";
 import { useHosted } from "../hooks/useHosted";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
@@ -29,15 +24,8 @@ export default function HostedAccountPage() {
     queryFn: hostedApi.publicModels,
     enabled: Boolean(hosted),
   });
-  useEffect(() => {
-    const wallet = billing.data?.wallet;
-    if (wallet)
-      client.setQueryData<HostedMe>(hostedMeKey, (previous) =>
-        previous ? { ...previous, wallet } : previous,
-      );
-  }, [billing.data?.wallet, client]);
   if (!hosted) return null;
-  const wallet = billing.data?.wallet ?? hosted.session.wallet;
+  const wallet = hosted.session.wallet;
   return (
     <div className="page hosted-account">
       <PageHeader

@@ -212,6 +212,113 @@ afterEach(async () => {
 });
 
 describe("hosted HTTP boundaries and lifecycle", () => {
+  it("batches all visible session billing including child calls without leaking other sessions or users", async () => {
+    const { app, register } = await fixture();
+    const user = await register("session-billing-owner");
+    const other = await register("session-billing-other");
+    const generated = await user.request(
+      "POST",
+      "/api/characters/generate",
+      characterInput,
+    );
+    expect(generated.statusCode, generated.body).toBe(201);
+    const characterId = generated.json<{ character: { id: string } }>()
+      .character.id;
+    const { store } = (await app.runtimes.get(user.userId)).composition
+      .routeServices;
+    const session = store.createSession(
+      characterId,
+      "账单测试",
+      new Date().toISOString(),
+    );
+    const outside = store.createSession(
+      characterId,
+      "另一会话",
+      new Date().toISOString(),
+    );
+    for (const [clientMessageId, sessionId] of [
+      ["turn-first", session.id],
+      ["turn-empty", session.id],
+      ["turn-outside", outside.id],
+    ]) {
+      store.insertMessage({
+        id: randomUUID(),
+        sessionId: sessionId!,
+        agentId: characterId,
+        role: "user",
+        content: "fixture history",
+        messageKind: "user",
+        clientMessageId: clientMessageId!,
+        metadata: {},
+        createdAtUtc: new Date().toISOString(),
+      });
+    }
+    const modelSnapshot = app.control.resolveModel("friendly");
+    // A session response must not inherit the old per-request 100-attempt truncation.
+    for (let index = 0; index < 101; index++) {
+      app.control.reserve({
+        id: `session-attempt-${index}`,
+        userId: user.userId,
+        operationId: "chat:turn-first",
+        purpose: "chat_turn",
+        maximumCostMicros: 1,
+        modelSnapshot,
+      });
+    }
+    app.control.reserve({
+      id: "session-child",
+      userId: user.userId,
+      operationId: "child:session-first",
+      parentOperationId: "chat:turn-first",
+      purpose: "keepsake",
+      maximumCostMicros: 1,
+      modelSnapshot,
+    });
+    for (const [id, userId, operationId] of [
+      ["other-session-attempt", user.userId, "chat:turn-outside"],
+      ["other-user-attempt", other.userId, "chat:turn-first"],
+    ]) {
+      app.control.reserve({
+        id: id!,
+        userId: userId!,
+        operationId: operationId!,
+        purpose: "chat_turn",
+        maximumCostMicros: 1,
+        modelSnapshot,
+      });
+    }
+    const path = `/api/hosted/billing/sessions/${session.id}`;
+    const response = await user.request("GET", path);
+    expect(response.statusCode, response.body).toBe(200);
+    const result = response.json<{
+      turns: Record<string, Array<{ id: string }>>;
+    }>();
+    expect(Object.keys(result.turns).sort()).toEqual([
+      "turn-empty",
+      "turn-first",
+    ]);
+    expect(result.turns["turn-empty"]).toEqual([]);
+    expect(result.turns["turn-first"]).toHaveLength(102);
+    expect(result.turns["turn-first"]).toContainEqual(
+      expect.objectContaining({ id: "session-child" }),
+    );
+    expect(response.body).not.toContain("other-user-attempt");
+    expect(response.body).not.toContain("other-session-attempt");
+    for (const privateField of [
+      "wallet",
+      "entries",
+      "modelSnapshot",
+      "modelId",
+      "userId",
+    ])
+      expect(result).not.toHaveProperty(privateField);
+    expect(response.body).not.toContain("private-provider");
+    expect((await other.request("GET", path)).statusCode).toBe(404);
+    expect(
+      (await client(app.userApp, publicOrigin).request("GET", path)).statusCode,
+    ).toBe(401);
+  });
+
   it("uses each hosted model's current execution revision in UI-style chat submissions after price edits", async () => {
     const { app, adminId, register, calls } = await fixture();
     const user = await register("revision-user");

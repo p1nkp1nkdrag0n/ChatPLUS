@@ -1034,6 +1034,24 @@ export class HostedControlStore {
         .all(...values, Math.min(1000, filter.limit ?? 100)) as Row[]
     ).map(attempt);
   }
+  listAttemptsForOperations(
+    userId: string,
+    operationIds: readonly string[],
+  ): HostedAttempt[] {
+    if (operationIds.length === 0) return [];
+    const ids = JSON.stringify(operationIds);
+    return (
+      this.database
+        .prepare(
+          `SELECT * FROM attempts
+           WHERE user_id=? AND (
+             operation_id IN (SELECT value FROM json_each(?)) OR
+             parent_operation_id IN (SELECT value FROM json_each(?))
+           ) ORDER BY created_at,id`,
+        )
+        .all(userId, ids, ids) as Row[]
+    ).map(attempt);
+  }
   markAttemptSent(
     id: string,
     metadata?: { providerRequestId?: string },

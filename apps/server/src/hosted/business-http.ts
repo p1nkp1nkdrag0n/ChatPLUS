@@ -406,6 +406,39 @@ export function registerHostedBusiness(
   };
   app.patch("/api/settings", updateSettings);
   app.put("/api/settings", updateSettings);
+  app.get("/api/hosted/billing/sessions/:sessionId", async (request) => {
+    const { user } = requireHostedUser(request);
+    const { sessionId } = z
+      .object({ sessionId: z.string().min(1) })
+      .parse(request.params);
+    const { store } = (await getRuntime(request)).composition.routeServices;
+    if (!store.getSession(sessionId))
+      throw new HostedError(404, "not_found", "未找到会话。");
+    // Match the same bounded history window returned by /sessions/:id/messages.
+    const clientIds = [
+      ...new Set(
+        store
+          .listMessages(sessionId)
+          .flatMap((message) =>
+            message.role === "user" && message.clientMessageId
+              ? [message.clientMessageId]
+              : [],
+          ),
+      ),
+    ];
+    const turns: Record<string, ReturnType<typeof publicAttempt>[]> =
+      Object.fromEntries(clientIds.map((id) => [id, []]));
+    const operationIds = new Map(clientIds.map((id) => [`chat:${id}`, id]));
+    for (const attempt of control.listAttemptsForOperations(user.id, [
+      ...operationIds.keys(),
+    ])) {
+      const clientId =
+        operationIds.get(attempt.parentOperationId ?? "") ??
+        operationIds.get(attempt.operationId);
+      if (clientId) turns[clientId]!.push(publicAttempt(attempt));
+    }
+    return { turns };
+  });
   app.get("/api/hosted/billing", async (request) => {
     const { user } = requireHostedUser(request);
     const query = z

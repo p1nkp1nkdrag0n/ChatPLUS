@@ -103,6 +103,9 @@ export interface HostedBilling {
   attempts: HostedAttempt[];
   entries: HostedLedgerEntry[];
 }
+export interface HostedSessionBilling {
+  turns: Record<string, HostedAttempt[]>;
+}
 export interface HostedResearchRecord {
   id: string;
   attemptId: string | null;
@@ -227,6 +230,10 @@ export const hostedApi = {
     }),
   billing: (filters: { clientMessageId?: string; userId?: string } = {}) =>
     request<HostedBilling>(`${prefix}/billing${query(filters)}`),
+  sessionBilling: (sessionId: string) =>
+    request<HostedSessionBilling>(
+      `${prefix}/billing/sessions/${encodeURIComponent(sessionId)}`,
+    ),
   publicModels: () =>
     request<{ models: PublicHostedModel[] }>(`${prefix}/models`),
   overview: () => request<HostedOverview>(`${admin}/overview`),

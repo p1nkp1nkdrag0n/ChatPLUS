@@ -28,7 +28,7 @@ import { SharePreviewCard } from "./ArchivePrimitives";
 export function ShareComposer({
   agentId,
   archiveEntries,
-  keepsakes,
+  keepsakes: suppliedKeepsakes,
   initialLetterId,
   initialKeepsakeId,
 }: {
@@ -38,6 +38,9 @@ export function ShareComposer({
   initialLetterId?: string;
   initialKeepsakeId?: string;
 }) {
+  const keepsakes = suppliedKeepsakes.filter(
+    (keepsake) => keepsake.status === "ready",
+  );
   const envelopeLetters = useMemo(
     () => shareEnvelopeLetters(archiveEntries),
     [archiveEntries],

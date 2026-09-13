@@ -12,6 +12,7 @@ import { api, unwrapCharacter } from "../api/client";
 import { KeepsakeShelf } from "../components/archive/ArchivePrimitives";
 import { EmptyState, ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
+import { keepsakePollInterval } from "../lib/keepsakes";
 import {
   KEEPSAKE_KIND_LABELS,
   SOURCE_TYPE_LABELS,
@@ -57,6 +58,13 @@ export default function KeepsakeCabinetPage() {
         ...(period === "all" ? {} : { period }),
       }),
     enabled: Boolean(characterId),
+    refetchInterval: (query) =>
+      keepsakePollInterval(
+        query.state.data?.items.map((item) => item.status) ?? [],
+        query.state.dataUpdateCount,
+        query.state.fetchFailureCount,
+      ),
+    refetchIntervalInBackground: false,
   });
   const items = keepsakesQuery.data?.items ?? [];
   const filterOptions = keepsakesQuery.data?.filterOptions ?? {

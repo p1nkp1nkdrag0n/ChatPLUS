@@ -1,0 +1,338 @@
+.keepsake-artwork {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 0.92;
+  isolation: isolate;
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid #ded4c1;
+  border-radius: 4px;
+  background: #f3eddf;
+  color: #98694c;
+}
+
+.keepsake-artwork__paper {
+  position: absolute;
+  inset: 10%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10%;
+  padding: 12% 8%;
+  border: 1px solid #d9c9ae;
+  background: #fffbf1;
+  box-shadow: 2px 4px 9px #745c3012;
+  transform: rotate(-3deg);
+}
+
+.keepsake-artwork__eyebrow {
+  font-size: clamp(7px, 0.7vw, 11px);
+  letter-spacing: 0.14em;
+}
+
+.keepsake-artwork__symbol {
+  width: 36%;
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.keepsake-artwork__rule {
+  width: 70%;
+  border-top: 1px solid currentColor;
+  opacity: 0.25;
+}
+.keepsake-artwork__kind {
+  font-family: var(--font-editorial);
+  font-size: clamp(10px, 1vw, 17px);
+  letter-spacing: 0.22em;
+}
+.keepsake-artwork__seal {
+  position: absolute;
+  bottom: 6%;
+  right: 8%;
+  font-size: 9px;
+  color: #aa6552;
+  border: 1px solid #bc8670;
+  padding: 2px;
+  transform: rotate(8deg);
+}
+
+.keepsake-artwork--ticket_stub {
+  color: #966044;
+  background: #f3e4d3;
+}
+.keepsake-artwork--ticket_stub .keepsake-artwork__paper {
+  inset: 23% 6%;
+  gap: 8%;
+  border-style: dashed;
+  transform: rotate(-7deg);
+}
+.keepsake-artwork--ticket_stub .keepsake-artwork__eyebrow {
+  display: none;
+}
+.keepsake-artwork--ticket_stub .keepsake-artwork__symbol {
+  width: 30%;
+}
+.keepsake-artwork--pressed_flower {
+  color: #75805d;
+  background: #ecede1;
+}
+.keepsake-artwork--pressed_flower .keepsake-artwork__paper {
+  background: #f8f8ed;
+}
+.keepsake-artwork--pressed_flower .keepsake-artwork__symbol {
+  width: 49%;
+}
+.keepsake-artwork--postcard {
+  color: #66817d;
+  background: #e9eeea;
+}
+.keepsake-artwork--postcard .keepsake-artwork__paper {
+  border-top: 5px double #9fac9b;
+  transform: rotate(4deg);
+}
+.keepsake-artwork--polaroid {
+  color: #7d787a;
+  background: #e8e3df;
+}
+.keepsake-artwork--polaroid .keepsake-artwork__paper {
+  inset: 12% 12%;
+  border-bottom-width: 24px;
+  background: #deddd2;
+}
+.keepsake-artwork--sketch {
+  color: #787876;
+  background: #eeece7;
+}
+.keepsake-artwork--sketch .keepsake-artwork__paper {
+  background: #fcfaf2;
+  transform: rotate(2deg);
+}
+.keepsake-artwork--recipe_or_note_card .keepsake-artwork__paper {
+  background: repeating-linear-gradient(#fffaf0 0 18px, #eee3cc 19px 20px);
+}
+
+.keepsake-artwork .keepsake-artwork__image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  background: #f5f0e5;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+.keepsake-artwork .keepsake-artwork__image.is-ready {
+  opacity: 1;
+}
+.keepsake-artwork__notice {
+  position: absolute;
+  bottom: 0;
+  inset-inline: 0;
+  padding: 6px;
+  background: #fffbf1ee;
+  color: #796b59;
+  font-size: 10px;
+  text-align: center;
+}
+.keepsake-shelf__image > .keepsake-artwork {
+  height: 100%;
+  border: 0;
+}
+.keepsake-status {
+  color: #8c6548;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.keepsake-status[data-status="failed"] {
+  color: #926340;
+}
+.keepsake-status[data-status="ready"] {
+  color: #6c7b5e;
+}
+
+.letter-keepsakes {
+  margin: 28px auto 8px;
+  width: min(100%, 680px);
+  padding: 22px;
+  border: 1px solid #ddd3bf;
+  border-radius: 5px;
+  background: #f8f4e9;
+}
+.letter-keepsakes > header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: #956448;
+}
+.letter-keepsakes h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-editorial);
+  font-size: 16px;
+}
+.letter-keepsakes header p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.letter-keepsakes ul {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  margin: 20px 0 0;
+  list-style: none;
+}
+.letter-keepsake-card {
+  display: grid;
+  grid-template-columns: minmax(100px, 130px) minmax(0, 1fr);
+  gap: 20px;
+  color: inherit;
+  text-decoration: none;
+}
+.letter-keepsake-card:hover .letter-keepsake-card__open {
+  text-decoration: underline;
+}
+.letter-keepsake-card:focus-visible {
+  outline: 2px solid #b67249;
+  outline-offset: 6px;
+  border-radius: 3px;
+}
+.letter-keepsake-card__story {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.letter-keepsake-card__story small {
+  color: #967350;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.letter-keepsake-card__story > strong {
+  color: var(--ink);
+  font-family: var(--font-editorial);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.letter-keepsake-card__source {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.letter-keepsake-card__open {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #a2613e;
+}
+.letter-keepsakes__loading,
+.letter-keepsakes__unavailable {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.artifact-image-status {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0;
+}
+.artifact-image-status p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.artifact-share-pending {
+  max-width: 260px;
+}
+.artifact-share-pending small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+@container (max-width: 180px) {
+  .keepsake-artwork__paper {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) 1px auto;
+    justify-items: center;
+    gap: 4cqw;
+    padding: 8cqw 5cqw 18cqw;
+  }
+  .keepsake-artwork__eyebrow {
+    grid-row: 1;
+    font-size: clamp(6px, 5cqw, 9px);
+    line-height: 1.15;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .keepsake-artwork .keepsake-artwork__symbol {
+    grid-row: 2;
+    width: 32cqw;
+    height: 100%;
+    max-height: 34cqw;
+  }
+  .keepsake-artwork__rule {
+    grid-row: 3;
+  }
+  .keepsake-artwork__kind {
+    grid-row: 4;
+    font-size: clamp(8px, 7.7cqw, 12px);
+    line-height: 1.15;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  .keepsake-artwork__seal {
+    bottom: 3cqw;
+    font-size: clamp(6px, 5cqw, 8px);
+    line-height: 1;
+    padding: 1px;
+    white-space: nowrap;
+  }
+  .keepsake-artwork--ticket_stub .keepsake-artwork__paper {
+    grid-template-rows: 0 minmax(0, 1fr) 1px auto;
+    row-gap: 2cqw;
+    padding: 6cqw 5cqw 13cqw;
+  }
+  .keepsake-artwork--polaroid .keepsake-artwork__paper {
+    border-bottom-width: 8cqw;
+  }
+}
+
+@media (max-width: 600px) {
+  .letter-keepsakes {
+    padding: 16px;
+    margin-top: 20px;
+  }
+  .letter-keepsake-card {
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 13px;
+    align-items: start;
+  }
+  .letter-keepsake-card__story {
+    gap: 5px;
+  }
+  .letter-keepsake-card__story > strong {
+    font-size: 14px;
+  }
+  .artifact-share-pending {
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .keepsake-artwork .keepsake-artwork__image {
+    transition: none;
+  }
+}

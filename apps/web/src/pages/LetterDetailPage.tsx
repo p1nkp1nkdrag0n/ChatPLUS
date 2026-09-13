@@ -39,6 +39,9 @@ import {
 import { openLetterForMountedReader } from "../lib/correspondenceMutations";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useReplyGenerationRetry } from "../hooks/useReplyGenerationRetry";
+import { openedLetterKeepsakeIds } from "../lib/keepsakes";
+import { relationshipArchiveQueryKeys } from "../lib/relationshipArchive";
+import { LetterKeepsakes } from "../components/correspondence/LetterKeepsakes";
 
 export default function LetterDetailPage() {
   const { letterId = "" } = useParams();
@@ -164,6 +167,16 @@ export function LetterReader({
                 queryKey: ["agent", agentId, "timeline"],
               })
             : Promise.resolve(),
+          agentId
+            ? queryClient.invalidateQueries({
+                queryKey: ["keepsakes", agentId],
+              })
+            : Promise.resolve(),
+          agentId
+            ? queryClient.invalidateQueries({
+                queryKey: relationshipArchiveQueryKeys.root(agentId),
+              })
+            : Promise.resolve(),
         ]);
       } catch (error) {
         if (mountedRef.current) setOpenError(error);
@@ -221,6 +234,7 @@ export function LetterReader({
     setReadingMode(next);
     onReadingModeChange?.(next);
   };
+  const relatedKeepsakeIds = openedLetterKeepsakeIds(detail, opened, phase);
   const copyBody = async () => {
     if (readableBody === undefined) return;
     try {
@@ -290,6 +304,10 @@ export function LetterReader({
                   onRetry={replyRetry.retry}
                 />
               </div>
+            ) : null}
+
+            {relatedKeepsakeIds.length > 0 ? (
+              <LetterKeepsakes keepsakeIds={relatedKeepsakeIds} />
             ) : null}
 
             {letter.dispatchedAtUtc &&

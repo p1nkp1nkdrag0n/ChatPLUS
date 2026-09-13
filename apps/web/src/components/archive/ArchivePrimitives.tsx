@@ -20,6 +20,8 @@ import type {
 } from "@personasim/contracts";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
+import { KeepsakeArtwork } from "./KeepsakeArtwork";
+import { keepsakeStatusLabel } from "../../lib/keepsakes";
 import {
   SOURCE_TYPE_LABELS,
   archiveEntryDisplayTitle,
@@ -117,16 +119,12 @@ export function KeepsakeShelf({
             aria-pressed={selectedId === keepsake.id}
           >
             <span className="keepsake-shelf__image">
-              {keepsake.thumbnailUrl ? (
-                <img
-                  src={keepsake.thumbnailUrl}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : (
-                <KeepsakeGlyph kind={keepsake.kind} />
-              )}
+              <KeepsakeArtwork
+                keepsakeId={keepsake.id}
+                kind={keepsake.kind}
+                title={keepsake.title}
+                src={keepsake.thumbnailUrl}
+              />
             </span>
             <strong>{keepsake.title}</strong>
             <time dateTime={keepsake.createdEffectiveAtUtc}>
@@ -136,7 +134,9 @@ export function KeepsakeShelf({
                 false,
               )}
             </time>
-            <span>来自哪次经历</span>
+            <span className="keepsake-status" data-status={keepsake.status}>
+              {keepsakeStatusLabel(keepsake.status)}
+            </span>
           </button>
         </li>
       ))}
@@ -280,11 +280,6 @@ function keepsakeIcon(kind: KeepsakeKind): LucideIcon {
     case "sketch":
       return Sparkles;
   }
-}
-
-function KeepsakeGlyph({ kind }: { kind: KeepsakeKind }) {
-  const Icon = keepsakeIcon(kind);
-  return <Icon size={40} strokeWidth={1.2} aria-hidden="true" />;
 }
 
 function sourceIcon(type: keyof typeof SOURCE_TYPE_LABELS) {

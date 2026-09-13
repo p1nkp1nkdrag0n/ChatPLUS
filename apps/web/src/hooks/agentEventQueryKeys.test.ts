@@ -8,6 +8,7 @@ import {
 } from "./agentEventQueryKeys";
 import {
   AGENT_INVALIDATION_EVENTS,
+  keepsakeEventQueryKeys,
   letterIdFromAgentEvent,
 } from "./useAgentEvents";
 
@@ -54,8 +55,21 @@ describe("agentEventQueryKeys", () => {
         "letter.opened",
         "letter.generation.retryable",
         "keepsake.created",
+        "keepsake.updated",
       ]),
     );
+  });
+
+  it("refreshes the exact keepsake detail on image changes and letter attachment metadata only for a new gift", () => {
+    const payload = JSON.stringify({ data: { keepsakeId: "keepsake-1" } });
+    expect(keepsakeEventQueryKeys("keepsake.updated", payload)).toEqual([
+      ["keepsake", "keepsake-1"],
+    ]);
+    expect(keepsakeEventQueryKeys("keepsake.created", payload)).toEqual([
+      ["letter"],
+      ["keepsake", "keepsake-1"],
+    ]);
+    expect(keepsakeEventQueryKeys("keepsake.updated", "not-json")).toEqual([]);
   });
 
   it("extracts the letter id from the server SSE envelope", () => {

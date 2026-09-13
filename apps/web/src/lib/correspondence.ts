@@ -14,6 +14,7 @@ export interface CachedAgentLetterDetail {
   letter: Omit<LetterSummaryResponse, "direction"> & {
     direction: "agent_to_user";
   };
+  relatedKeepsakeIds?: readonly string[];
 }
 
 export interface CachedUserLetterDetail {
@@ -100,6 +101,9 @@ export function projectLetterDetailForCache(
         ...detail.letter,
         direction: "agent_to_user",
       },
+      ...(detail.letter.status === "read" && detail.relatedKeepsakeIds?.length
+        ? { relatedKeepsakeIds: [...detail.relatedKeepsakeIds] }
+        : {}),
     };
   }
 

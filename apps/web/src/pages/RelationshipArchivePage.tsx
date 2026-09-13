@@ -24,6 +24,10 @@ import {
 import { EmptyState, ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { rememberActiveCharacter } from "../lib/activeCharacter";
 import {
+  keepsakeDetailQueryOptions,
+  keepsakePollInterval,
+} from "../lib/keepsakes";
+import {
   ARCHIVE_FILTERS,
   groupArchiveByMonth,
   relationshipArchiveQueryKeys,
@@ -83,6 +87,13 @@ export default function RelationshipArchivePage() {
     queryKey: relationshipArchiveQueryKeys.keepsakes(characterId),
     queryFn: () => api.keepsakes.list(characterId, { limit: 4 }),
     enabled: Boolean(characterId),
+    refetchInterval: (query) =>
+      keepsakePollInterval(
+        query.state.data?.items.map((item) => item.status) ?? [],
+        query.state.dataUpdateCount,
+        query.state.fetchFailureCount,
+      ),
+    refetchIntervalInBackground: false,
   });
 
   const character = characterQuery.data
@@ -128,8 +139,7 @@ export default function RelationshipArchivePage() {
   const selectedKeepsake =
     keepsakes.find((item) => item.id === selectedKeepsakeId) ?? keepsakes[0];
   const selectedKeepsakeQuery = useQuery({
-    queryKey: relationshipArchiveQueryKeys.keepsake(selectedKeepsake?.id ?? ""),
-    queryFn: () => api.keepsakes.get(selectedKeepsake!.id),
+    ...keepsakeDetailQueryOptions(selectedKeepsake?.id ?? ""),
     enabled: Boolean(selectedKeepsake),
   });
 

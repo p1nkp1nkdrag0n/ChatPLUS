@@ -12,6 +12,7 @@ export const AGENT_INVALIDATION_EVENTS = [
   "letter.opened",
   "letter.generation.retryable",
   "keepsake.created",
+  "keepsake.updated",
   "message",
   "state",
   "schedule",
@@ -39,27 +40,66 @@ export function useAgentEvents(agentId: string | undefined): void {
         });
       }
     };
+    const refreshKeepsake = (event: Event) => {
+      refresh();
+      if (!(event instanceof MessageEvent)) return;
+      for (const queryKey of keepsakeEventQueryKeys(event.type, event.data)) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    };
+    const refreshConnected = () => {
+      refresh();
+      // Reconnection must also refresh mounted detail views after a missed update.
+      void queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey[0] === "keepsake" &&
+          isRecord(query.state.data) &&
+          isRecord(query.state.data["keepsake"]) &&
+          query.state.data["keepsake"]["agentId"] === agentId,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["letter"] });
+    };
+    const listenerFor = (event: string) =>
+      event.startsWith("letter.")
+        ? refreshLetter
+        : event.startsWith("keepsake.")
+          ? refreshKeepsake
+          : refresh;
     for (const event of AGENT_INVALIDATION_EVENTS) {
-      source.addEventListener(
-        event,
-        event.startsWith("letter.") ? refreshLetter : refresh,
-      );
+      source.addEventListener(event, listenerFor(event));
     }
-    source.addEventListener("ready", refresh);
-    source.onopen = refresh;
+    source.addEventListener("ready", refreshConnected);
+    source.onopen = refreshConnected;
 
     return () => {
       for (const event of AGENT_INVALIDATION_EVENTS) {
-        source.removeEventListener(
-          event,
-          event.startsWith("letter.") ? refreshLetter : refresh,
-        );
+        source.removeEventListener(event, listenerFor(event));
       }
-      source.removeEventListener("ready", refresh);
+      source.removeEventListener("ready", refreshConnected);
       source.onopen = null;
       source.close();
     };
   }, [agentId, queryClient]);
+}
+
+export function keepsakeEventQueryKeys(
+  eventType: string,
+  value: unknown,
+): string[][] {
+  const keys: string[][] = eventType === "keepsake.created" ? [["letter"]] : [];
+  if (typeof value !== "string") return keys;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!isRecord(parsed)) return keys;
+    const nested = isRecord(parsed["data"]) ? parsed["data"] : undefined;
+    const keepsakeId = nested?.["keepsakeId"] ?? parsed["keepsakeId"];
+    if (typeof keepsakeId === "string" && keepsakeId.length > 0) {
+      keys.push(["keepsake", keepsakeId]);
+    }
+  } catch {
+    // Invalidations carry no authoritative product state.
+  }
+  return keys;
 }
 
 export function letterIdFromAgentEvent(value: unknown): string | undefined {

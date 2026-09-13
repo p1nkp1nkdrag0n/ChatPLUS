@@ -43,6 +43,20 @@ const keepsake: KeepsakeSummaryResponse = {
 };
 
 describe("ShareComposer privacy defaults", () => {
+  it("does not offer an unfinished keepsake for export even when selected through a direct URL", () => {
+    const markup = renderToStaticMarkup(
+      <ShareComposer
+        agentId="agent-1"
+        archiveEntries={[]}
+        keepsakes={[
+          { ...keepsake, status: "pending", title: "PENDING_KEEPSAKE" },
+        ]}
+        initialKeepsakeId={keepsake.id}
+      />,
+    );
+    expect(markup).not.toContain("PENDING_KEEPSAKE");
+    expect(markup).not.toContain("/api/keepsakes/keepsake-1/thumbnail");
+  });
   it("allows unopened envelope metadata but disables excerpt sharing", () => {
     const markup = renderToStaticMarkup(
       <ShareComposer

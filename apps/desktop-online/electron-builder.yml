@@ -1,0 +1,29 @@
+appId: com.dearvale.online
+productName: Dearvale Online
+directories:
+  app: apps/desktop-online
+  buildResources: apps/desktop/build
+  output: artifacts/desktop-online
+files:
+  - dist/**
+  - package.json
+asar: true
+npmRebuild: false
+electronDist: node_modules/electron/dist
+win:
+  icon: icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: "Dearvale-Online-${version}-Setup.${ext}"
+nsis:
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+publish: null

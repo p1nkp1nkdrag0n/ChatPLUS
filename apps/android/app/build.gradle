@@ -1,0 +1,41 @@
+plugins { id 'com.android.application' }
+def dearvaleOnline = providers.gradleProperty('dearvaleOnline').orElse('false').get() == 'true'
+
+android {
+    namespace 'app.dearvale.mobile'
+    compileSdk 35
+    buildFeatures { buildConfig true }
+    defaultConfig {
+        applicationId dearvaleOnline ? 'app.dearvale.mobile.online' : 'app.dearvale.mobile'
+        minSdk 26
+        targetSdk 35
+        versionCode dearvaleOnline ? 2 : 3
+        versionName dearvaleOnline ? '0.1.1' : '0.1.2'
+        manifestPlaceholders = [mainActivity: dearvaleOnline ? '.OnlineActivity' : '.MainActivity', appLabel: dearvaleOnline ? 'Dearvale Online' : 'Dearvale', allowCleartext: dearvaleOnline ? 'false' : 'true']
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    signingConfigs {
+        release {
+            def storePath = System.getenv('DEARVALE_ANDROID_KEYSTORE')
+            if (storePath) {
+                storeFile file(storePath)
+                storePassword System.getenv('DEARVALE_ANDROID_STORE_PASSWORD')
+                keyAlias System.getenv('DEARVALE_ANDROID_KEY_ALIAS') ?: 'dearvale'
+                keyPassword System.getenv('DEARVALE_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv('DEARVALE_ANDROID_KEYSTORE')) signingConfig signingConfigs.release
+        }
+    }
+    lint { abortOnError true }
+    if (dearvaleOnline) sourceSets.main.assets.srcDirs = []
+}
+
+dependencies { testImplementation 'junit:junit:4.13.2' }

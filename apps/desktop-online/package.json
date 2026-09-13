@@ -1,0 +1,12 @@
+{
+  "name": "@personasim/desktop-online",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Dearvale Online testing client",
+  "author": "Dearvale",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

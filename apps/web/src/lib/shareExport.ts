@@ -298,5 +298,10 @@ function downloadBlob(blob: Blob, filename: string): void {
   anchor.download = filename;
   anchor.rel = "noopener";
   anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  // Android's DownloadListener reads the blob asynchronously before opening
+  // the system save picker. Keep the URL alive until the native read completes.
+  const revokeDelay = navigator.userAgent.includes("DearvaleAndroid/")
+    ? 60_000
+    : 0;
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), revokeDelay);
 }

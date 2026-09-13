@@ -16,11 +16,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, parse, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import BetterSqlite3 from "better-sqlite3";
 import { canonicalCorrespondenceJson } from "@personasim/features";
 import { z } from "zod";
+import { resolveMigrationDirectory } from "../db/migrations.js";
 
 import { deriveCorrespondenceInstanceSecretFingerprint } from "../services/correspondence-instance-secret.js";
 import {
@@ -656,9 +656,7 @@ function assertSameDatabaseInspection(
 }
 
 function assertSupportedSchema(schemaMigrations: readonly string[]): void {
-  const migrationDirectory = fileURLToPath(
-    new URL("../db/migrations/", import.meta.url),
-  );
+  const migrationDirectory = resolveMigrationDirectory();
   const supported = readdirSync(migrationDirectory)
     .filter((name) => MIGRATION_NAME_PATTERN.test(name))
     .sort(compareCodeUnits);

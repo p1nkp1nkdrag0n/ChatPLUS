@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connect">连接 Dearvale</string>
+    <string name="http_consent">我确认仅在可信局域网内使用 HTTP</string>
+</resources>

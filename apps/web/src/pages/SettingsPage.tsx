@@ -1,6 +1,8 @@
 import {
   Check,
+  ChevronRight,
   MessageCircleMore,
+  Server,
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -51,6 +53,16 @@ export default function SettingsPage() {
             : "配置模型、回复体验与本地偏好。"
         }
       />
+      {navigator.userAgent.includes("DearvaleAndroid/") ? (
+        <a className="settings-connection-link" href="dearvale://connection">
+          <Server size={23} aria-hidden="true" />
+          <span>
+            <strong>服务器连接</strong>
+            <small>更改电脑或服务器地址</small>
+          </span>
+          <ChevronRight size={20} aria-hidden="true" />
+        </a>
+      ) : null}
       {!hosted ? (
         <>
           <ProviderSettings />

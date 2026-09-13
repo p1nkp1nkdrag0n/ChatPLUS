@@ -1,0 +1,36 @@
+appId: com.dearvale.desktop
+productName: Dearvale
+directories:
+  app: apps/desktop
+  buildResources: apps/desktop/build
+  output: artifacts/desktop
+files:
+  - dist/main.cjs
+  - package.json
+extraResources:
+  - from: apps/desktop/dist/runtime
+    to: runtime
+    filter:
+      - "**/*"
+asar: true
+# The server runs in the bundled standard Node runtime, so its native modules
+# must keep the Node ABI used by desktop-build instead of being rebuilt for Electron.
+npmRebuild: false
+electronDist: node_modules/electron/dist
+win:
+  icon: icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: "${productName}-${version}-Setup.${ext}"
+nsis:
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+publish: null

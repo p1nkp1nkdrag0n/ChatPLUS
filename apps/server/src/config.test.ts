@@ -65,8 +65,8 @@ describe("server configuration", () => {
   it("uses the canonical conversation retention defaults", () => {
     expect(readConfig().conversationRetention).toEqual({
       fullVerbatimHours: 24,
-      softTokenLimit: 8_000,
-      hardTokenLimit: 12_000,
+      softTokenLimit: 200_000,
+      hardTokenLimit: 232_000,
       minimumTailTokens: 3_000,
       minimumRecentTurns: 12,
     });

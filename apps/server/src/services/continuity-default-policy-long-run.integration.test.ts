@@ -18,10 +18,10 @@ import type { GenerateObjectInput, LlmService } from "./llm-service.js";
 
 const START_UTC = "2026-08-01T09:00:00.000Z";
 const DAYS = 30;
-// Mirrors the shipped config defaults (.env.example): 24h verbatim, 8k soft,
-// 12k hard, 3k tail, 12 recent turns. Passed explicitly so ambient env vars
-// cannot silently shrink the run.
-const DEFAULT_RETENTION = {
+// Exercise checkpointing under an explicitly constrained deployment window.
+// The expanded default keeps this short corpus verbatim and correctly does not
+// checkpoint it yet; retention/default-budget tests cover that behavior.
+const SMALL_WINDOW_RETENTION = {
   fullVerbatimHours: 24,
   softTokenLimit: 8_000,
   hardTokenLimit: 12_000,
@@ -49,7 +49,7 @@ type ChatObservation = {
 const activeApps = new Set<PersonaSimApp>();
 const temporaryDirectories: string[] = [];
 
-describe("P1 default-policy 30-day continuity long run", () => {
+describe("P1 small-window 30-day continuity long run", () => {
   afterEach(async () => {
     for (const app of [...activeApps]) await app.close();
     activeApps.clear();
@@ -353,7 +353,7 @@ async function openTrackedApp(
     liveWorldEffectsMode: "enforced",
     memoryRecallMode: "enforced",
     autobiographyMode: "enforced",
-    conversationRetention: DEFAULT_RETENTION,
+    conversationRetention: SMALL_WINDOW_RETENTION,
     llm: {
       provider: "openai-compatible",
       baseUrl: "https://example.invalid",

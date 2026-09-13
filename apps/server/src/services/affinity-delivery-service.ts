@@ -3,6 +3,7 @@ import type { ReplyStrategy } from "@personasim/features";
 import { estimatePromptTokens } from "@personasim/kernel";
 import type { AgentTurnDecision } from "../domain/schemas.js";
 import { resolveChatOutputTokenBudget } from "./chat-output-budget.js";
+import { CHAT_CONTEXT_WINDOW_TOKENS } from "./llm-prompt-headroom.js";
 import type { LlmService } from "./llm-service.js";
 import { replyTextHash } from "./semantic-reply-guard.js";
 import type { TurnLlmCallBudget } from "./turn-llm-call-budget.js";
@@ -113,7 +114,10 @@ export class AffinityDeliveryService {
           candidate: input.decision.reply.text,
         });
         const available =
-          (input.llm.capabilities.maxContextTokens ?? 32_000) -
+          Math.min(
+            input.llm.capabilities.maxContextTokens ?? 32_000,
+            CHAT_CONTEXT_WINDOW_TOKENS,
+          ) -
           estimatePromptTokens(REWRITE_SYSTEM + prompt) -
           2_000;
         const preferred = resolveChatOutputTokenBudget(

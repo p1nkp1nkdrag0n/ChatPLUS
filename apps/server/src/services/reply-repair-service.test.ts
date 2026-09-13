@@ -3,9 +3,11 @@ import {
   buildConversationContextPlan,
   deriveReplyStrategy,
 } from "@personasim/features";
+import { estimatePromptTokens } from "@personasim/kernel";
 import { describe, expect, it } from "vitest";
 
 import { buildOriginalDraft } from "../domain/defaults.js";
+import type { AgentTurnDecision } from "../domain/schemas.js";
 import { CHARACTER_COMPILATION_POLICY_VERSION } from "./character-compiler.js";
 import type { GenerateObjectInput, LlmService } from "./llm-service.js";
 import { ReplyRepairService } from "./reply-repair-service.js";
@@ -30,6 +32,90 @@ const spec = CharacterSpecSchema.parse({
   createdAtUtc: "2026-09-13T12:00:00.000Z",
   updatedAtUtc: "2026-09-13T12:00:00.000Z",
 });
+
+describe.each(["persona", "fixture"] as const)(
+  "%s repair context headroom",
+  (entrypoint) => {
+    it.each([
+      { contextTokens: 32_000, totalWindow: 32_000 },
+      { contextTokens: 1_000_000, totalWindow: 258_000 },
+    ])(
+      "preserves grounding or skips before dispatch under a $totalWindow total window",
+      async ({ contextTokens, totalWindow }) => {
+        const calls: GenerateObjectInput<unknown>[] = [];
+        const llm = {
+          capabilities: {
+            structuredOutputMode: "prompt_json",
+            supportsThinkingControl: false,
+            supportsStreaming: false,
+            maxContextTokens: contextTokens,
+            maxOutputTokens: 8_192,
+          },
+          generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+            calls.push(input);
+            return Promise.resolve(
+              input.schema.parse(input.fixture ?? { text: "修复后的回复。" }),
+            );
+          },
+        } satisfies Pick<LlmService, "capabilities" | "generateObject">;
+        // Use the execution override's window, not the constructor service's.
+        const service = new ReplyRepairService({
+          ...llm,
+          capabilities: { ...llm.capabilities, maxContextTokens: 1_000_000 },
+        } as LlmService);
+        const fallback: AgentTurnDecision = {
+          reply: { text: "原始保底。", chunks: ["原始保底。"], toneTags: [] },
+          scheduleEffects: [],
+          memoryCandidates: [],
+          reasonCode: "test",
+          reasonSummary: "Test repair fallback.",
+        };
+        const budget = { remaining: 2, attempts: 0 };
+        const run = (replyGrounding: string) => {
+          const common = {
+            spec,
+            llmExecution: llm as LlmService,
+            userText: "今天想聊两句。",
+            issues: ["Unsupported claim"],
+            replyGrounding,
+            repairBudget: budget,
+          };
+          return entrypoint === "fixture"
+            ? service.repairFixtureDecision({
+                ...common,
+                invalidDecision: undefined,
+                fallback,
+              })
+            : service.repairPersonaReply({
+                ...common,
+                invalidResponse: undefined,
+                replyStrategy: deriveReplyStrategy(
+                  common.userText,
+                  spec.dialogue,
+                ),
+              });
+        };
+        const retained = "证".repeat((totalWindow - 18_000) / 2);
+        expect(await run(retained)).toBeDefined();
+        expect(calls).toHaveLength(1);
+        const call = calls[0]!;
+        expect(call.prompt).toContain(retained);
+        expect(call.maxOutputTokens).toBe(8_192);
+        expect(
+          estimatePromptTokens(call.system + call.prompt) +
+            call.maxOutputTokens! +
+            2_000,
+        ).toBeLessThanOrEqual(totalWindow);
+
+        // The text alone fits, but borrowing its output reservation is forbidden.
+        const result = await run("证".repeat((totalWindow - 8_000) / 2));
+        expect(result).toBe(entrypoint === "fixture" ? fallback : undefined);
+        expect(calls).toHaveLength(1);
+        expect(budget).toEqual({ remaining: 1, attempts: 1 });
+      },
+    );
+  },
+);
 
 const SOURCE_FACT = "陈雨喜欢留意花店里来往客人的小趣事。";
 const RECENT_CONTEXT = "刚才说的花是向日葵。";

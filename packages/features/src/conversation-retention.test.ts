@@ -10,6 +10,22 @@ import {
 const NOW = "2026-08-21T10:00:00.000Z";
 
 describe("conversation retention", () => {
+  it("keeps a substantial recent conversation under the expanded default window", () => {
+    const messages = Array.from({ length: 240 }, (_, index) =>
+      message(
+        `expanded-${index}`,
+        index % 2 === 0 ? "user" : "assistant",
+        "当天记录中的具体安排和已经确认的信息。".repeat(8),
+        index,
+      ),
+    );
+    const selected = selectConversationRetention({ messages, nowUtc: NOW });
+    expect(selected.estimatedTokens).toBeGreaterThan(12_000);
+    expect(selected.messages).toEqual(messages);
+    expect(selected.omittedMessageCount).toBe(0);
+    expect(selected.checkpointThroughMessageId).toBeUndefined();
+  });
+
   it("uses the shared conservative Unicode estimate for retained conversation", () => {
     expect(estimateConversationTokens("hello")).toBe(2);
     expect(estimateConversationTokens("\u4f60\u597dabcde")).toBe(6);

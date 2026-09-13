@@ -2,6 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  DEFAULT_CONVERSATION_RETENTION_POLICY,
   ConversationRetentionPolicySchema,
   LlmCapabilityProfileSchema,
   ReasoningEffortSchema,
@@ -247,12 +248,12 @@ const envSchema = z.object({
     .number()
     .int()
     .positive()
-    .default(8_000),
+    .default(DEFAULT_CONVERSATION_RETENTION_POLICY.softTokenLimit),
   CONVERSATION_HARD_TOKEN_LIMIT: z.coerce
     .number()
     .int()
     .positive()
-    .default(12_000),
+    .default(DEFAULT_CONVERSATION_RETENTION_POLICY.hardTokenLimit),
   CONVERSATION_MINIMUM_TAIL_TOKENS: z.coerce
     .number()
     .int()

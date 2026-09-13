@@ -7,6 +7,7 @@ import { estimatePromptTokens } from "@personasim/kernel";
 import { ApiError } from "../domain/errors.js";
 import type { AgentTurnDecision } from "../domain/schemas.js";
 import { resolveChatOutputTokenBudget } from "./chat-output-budget.js";
+import { CHAT_CONTEXT_WINDOW_TOKENS } from "./llm-prompt-headroom.js";
 import type { LlmService } from "./llm-service.js";
 import { replyTextHash } from "./semantic-reply-guard.js";
 
@@ -176,7 +177,10 @@ function outputBudget(
   minimum: number,
 ): number {
   // Never silently remove grounding just to make the review fit.
-  const limit = llm.capabilities.maxContextTokens ?? 32_000;
+  const limit = Math.min(
+    llm.capabilities.maxContextTokens ?? 32_000,
+    CHAT_CONTEXT_WINDOW_TOKENS,
+  );
   const available = limit - estimatePromptTokens(system + prompt) - 2_000;
   const preferred = resolveChatOutputTokenBudget(llm.capabilities, target);
   if (available < Math.min(minimum, preferred))

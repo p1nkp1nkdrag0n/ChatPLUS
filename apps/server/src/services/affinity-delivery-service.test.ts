@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { deriveReplyStrategy, type ReplyStrategy } from "@personasim/features";
+import { estimatePromptTokens } from "@personasim/kernel";
 import type { AgentTurnDecision } from "../domain/schemas.js";
 import type { LlmService } from "./llm-service.js";
+import type { GenerateObjectInput } from "./llm-service.js";
 import { replyTextHash } from "./semantic-reply-guard.js";
 import { TurnLlmCallBudget } from "./turn-llm-call-budget.js";
 import {
@@ -21,10 +23,10 @@ function decision(text = LONG): AgentTurnDecision {
     reasonSummary: "测试角色对话",
   };
 }
-function setup(limit = 12) {
+function setup(limit = 12, contextTokens = 131_072) {
   const generateObject = vi.fn().mockResolvedValue({ text: SHORT });
   const captured = {
-    capabilities: { maxContextTokens: 131_072, maxOutputTokens: 32_768 },
+    capabilities: { maxContextTokens: contextTokens, maxOutputTokens: 32_768 },
     generateObject,
   } as unknown as LlmService;
   const budget = new TurnLlmCallBudget(limit);
@@ -145,6 +147,46 @@ describe("single-affinity final delivery", () => {
     });
     expect(result.audit.rewriteStatus).toBe("budget_exhausted");
     expect(generateObject).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { contextTokens: 32_000, totalWindow: 32_000 },
+    { contextTokens: 1_000_000, totalWindow: 258_000 },
+  ])(
+    "preserves the original when a $totalWindow total window has no rewrite headroom",
+    async ({ contextTokens, totalWindow }) => {
+      const { input, generateObject, budget } = setup(12, contextTokens);
+      input.generationPrompt = "证".repeat((totalWindow - 2_000) / 2);
+      const result = await new AffinityDeliveryService().resolve(input);
+      expect(result.decision).toBe(input.decision);
+      expect(result.audit).toMatchObject({
+        rewriteStatus: "budget_exhausted",
+        rewriteAttempted: false,
+      });
+      expect(generateObject).not.toHaveBeenCalled();
+      expect(budget.used).toBe(0);
+    },
+  );
+
+  it("reserves output inside the application window without trimming grounding", async () => {
+    const { input, generateObject } = setup(12, 1_000_000);
+    input.generationPrompt = "证".repeat((258_000 - 12_000) / 2);
+    const result = await new AffinityDeliveryService().resolve(input);
+    expect(result.audit.rewriteStatus).toBe("rewritten");
+    expect(generateObject).toHaveBeenCalledOnce();
+    const call = generateObject.mock
+      .calls[0]![0] as GenerateObjectInput<unknown>;
+    const parsed = JSON.parse(call.prompt) as {
+      contextAlreadyDeliveredForThisTurn: string;
+    };
+    expect(parsed.contextAlreadyDeliveredForThisTurn).toBe(
+      input.generationPrompt,
+    );
+    expect(
+      estimatePromptTokens(call.system + call.prompt) +
+        call.maxOutputTokens! +
+        2_000,
+    ).toBeLessThanOrEqual(258_000);
   });
 
   it("does not expand a high-affinity short reply or rewrite explicit requested detail", async () => {

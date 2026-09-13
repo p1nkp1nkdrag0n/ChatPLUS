@@ -17,6 +17,7 @@ import {
   replyStrategyPromptView,
   type ReplyStrategy,
 } from "@personasim/features";
+import { estimatePromptTokens } from "@personasim/kernel";
 
 import {
   agentTurnDecisionSchema,
@@ -27,6 +28,7 @@ import {
   REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
   resolveChatOutputTokenBudget,
 } from "./chat-output-budget.js";
+import { calculateLlmPromptTokenBudget } from "./llm-prompt-headroom.js";
 import type { LlmService } from "./llm-service.js";
 import type { ReplyRepairBudget } from "./semantic-reply-guard.js";
 
@@ -106,12 +108,16 @@ export class ReplyRepairService {
     issues: unknown;
     fallback: AgentTurnDecision;
   }): Promise<AgentTurnDecision> {
-    if (!reserveRepair(input.repairBudget)) return input.fallback;
     try {
-      return await (input.llmExecution ?? this.llm).generateObject({
-        purpose: "repair_chat_turn",
+      const llm = input.llmExecution ?? this.llm;
+      const request = {
+        purpose: "repair_chat_turn" as const,
         agentId: input.spec.id,
         maxRetries: 0,
+        maxOutputTokens: resolveChatOutputTokenBudget(
+          llm.capabilities,
+          REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
+        ),
         system:
           "Repair a fictional character turn. Preserve a truthful reply, remove or correct invalid schedule effects, and return only the requested JSON object.",
         prompt: `${repairGroundingContext(input.replyGrounding)}User message: ${input.userText}\nInvalid decision: ${JSON.stringify(
@@ -144,7 +150,15 @@ export class ReplyRepairService {
         )}`,
         schema: agentTurnDecisionSchema,
         fixture: input.fallback,
-      });
+      };
+      // Repair must see the complete admitted grounding; skip rather than trim it.
+      if (
+        estimatePromptTokens(request.system + request.prompt) >
+        calculateLlmPromptTokenBudget(llm.capabilities, request.maxOutputTokens)
+      )
+        return input.fallback;
+      if (!reserveRepair(input.repairBudget)) return input.fallback;
+      return await llm.generateObject(request);
     } catch {
       return input.fallback;
     }
@@ -164,14 +178,14 @@ export class ReplyRepairService {
     issues: unknown;
     replyStrategy: ReplyStrategy;
   }): Promise<PersonaChatResponse | undefined> {
-    if (!reserveRepair(input.repairBudget)) return undefined;
     try {
-      const repaired = await (input.llmExecution ?? this.llm).generateObject({
-        purpose: "repair_chat_turn",
+      const llm = input.llmExecution ?? this.llm;
+      const request = {
+        purpose: "repair_chat_turn" as const,
         agentId: input.spec.id,
         maxRetries: 0,
         maxOutputTokens: resolveChatOutputTokenBudget(
-          (input.llmExecution ?? this.llm).capabilities,
+          llm.capabilities,
           REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
           input.replyStrategy.maxOutputTokens,
         ),
@@ -211,7 +225,14 @@ export class ReplyRepairService {
           `Soft reply strategy: ${JSON.stringify(replyStrategyPromptView(input.replyStrategy))}\n` +
           'Return at minimum {"text":"the complete repaired in-character reply"}. You may add toneTags and deliveryMode. Add chunks only when deliveryMode is sequential; omit chunks for single_block.',
         schema: PersonaChatResponseSchema,
-      });
+      };
+      if (
+        estimatePromptTokens(request.system + request.prompt) >
+        calculateLlmPromptTokenBudget(llm.capabilities, request.maxOutputTokens)
+      )
+        return undefined;
+      if (!reserveRepair(input.repairBudget)) return undefined;
+      const repaired = await llm.generateObject(request);
       return PersonaChatResponseSchema.parse(repaired);
     } catch {
       return undefined;

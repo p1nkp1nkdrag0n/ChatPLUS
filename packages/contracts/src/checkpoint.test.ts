@@ -28,7 +28,8 @@ describe("checkpoint contracts", () => {
     expect(
       ConversationRetentionPolicySchema.safeParse({
         ...DEFAULT_CONVERSATION_RETENTION_POLICY,
-        minimumTailTokens: 9_000,
+        minimumTailTokens:
+          DEFAULT_CONVERSATION_RETENTION_POLICY.softTokenLimit + 1,
       }).success,
     ).toBe(false);
   });

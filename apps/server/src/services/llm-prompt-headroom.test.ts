@@ -13,14 +13,29 @@ const BASE_CAPABILITIES = {
 };
 
 describe("calculateLlmPromptTokenBudget", () => {
-  it("caps ample provider headroom at 24,000 tokens", () => {
+  it("uses the smaller provider window after reserving normal chat output", () => {
     expect(
       calculateLlmPromptTokenBudget({
         ...BASE_CAPABILITIES,
         maxContextTokens: 128_000,
         maxOutputTokens: 64_000,
       }),
-    ).toBe(24_000);
+    ).toBe(101_424);
+  });
+
+  it("caps a large provider at a 258,000-token total application window", () => {
+    const budget = resolveChatTurnTokenBudget({
+      ...BASE_CAPABILITIES,
+      maxContextTokens: 1_000_000,
+      maxOutputTokens: 32_768,
+    });
+    expect(budget).toEqual({
+      maxInputTokens: 231_424,
+      maxOutputTokens: 24_576,
+    });
+    expect(budget.maxInputTokens + budget.maxOutputTokens + 2_000).toBe(
+      258_000,
+    );
   });
 
   it("uses exactly context minus output minus the reserved allowance", () => {
@@ -83,7 +98,7 @@ describe("calculateLlmPromptTokenBudget", () => {
         maxContextTokens: 65_536,
         maxOutputTokens: 64_000,
       }),
-    ).toEqual({ maxInputTokens: 24_000, maxOutputTokens: 24_576 });
+    ).toEqual({ maxInputTokens: 38_960, maxOutputTokens: 24_576 });
   });
 
   it("uses one capability-clamped output allowance for both sides of the budget", () => {

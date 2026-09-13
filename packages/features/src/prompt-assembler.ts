@@ -662,7 +662,13 @@ export function assembleChatPrompt(
     0,
     5,
   );
-  const maximumRecentMessages = boundedCount(input.maxRecentMessages, 20, 200);
+  // The server already selects a token-bounded chronological window. Do not
+  // silently reduce it to 20 messages (or cap an explicit caller at 200).
+  const maximumRecentMessages = boundedCount(
+    input.maxRecentMessages,
+    input.recentMessages.length,
+    input.recentMessages.length,
+  );
   const recentMessages =
     maximumRecentMessages === 0
       ? []
@@ -1024,22 +1030,30 @@ export function assembleChatPrompt(
   ) as DefaultPromptContext;
   const registry = new PromptSegmentRegistry<DefaultPromptContext>(
     createDefaultPromptSegments().map((segment) =>
-      segment.id === "16_user_message" ||
-      segment.id === "08_runtime_state" ||
-      segment.id === "10_current_time" ||
-      segment.id === "15_reply_strategy"
+      segment.id === "14_recent_verbatim" && input.maxInputTokens !== undefined
         ? {
             ...segment,
-            // Reserve this turn's actual payload, not a larger global context.
-            // Runtime state/time are bounded canonical projections. Preserve
-            // their authority/semantics and the strategy's finite controls before
-            // global admission instead of clipping them to their legacy slots.
-            tokenBudget: Math.max(
-              segment.tokenBudget,
-              estimatePromptTokens(segment.render(promptSafeContext) ?? ""),
-            ),
+            // History may use the remaining global allowance. Required
+            // instructions and higher-priority evidence are admitted first;
+            // the registry trims only complete messages when it must fit.
+            tokenBudget: input.maxInputTokens,
           }
-        : segment,
+        : segment.id === "16_user_message" ||
+            segment.id === "08_runtime_state" ||
+            segment.id === "10_current_time" ||
+            segment.id === "15_reply_strategy"
+          ? {
+              ...segment,
+              // Reserve this turn's actual payload, not a larger global context.
+              // Runtime state/time are bounded canonical projections. Preserve
+              // their authority/semantics and the strategy's finite controls before
+              // global admission instead of clipping them to their legacy slots.
+              tokenBudget: Math.max(
+                segment.tokenBudget,
+                estimatePromptTokens(segment.render(promptSafeContext) ?? ""),
+              ),
+            }
+          : segment,
     ),
   );
   if (input.followUpContext !== undefined) {

@@ -45,8 +45,11 @@ export type ConversationRetentionPolicy = z.infer<
 export const DEFAULT_CONVERSATION_RETENTION_POLICY: ConversationRetentionPolicy =
   {
     fullVerbatimHours: 24,
-    softTokenLimit: 8_000,
-    hardTokenLimit: 12_000,
+    // Raw conversation selection precedes the model-aware prompt budget.
+    // Leave room for character, controls and output in the 258k chat window;
+    // prompt assembly still clamps this history for smaller model windows.
+    softTokenLimit: 200_000,
+    hardTokenLimit: 232_000,
     minimumTailTokens: 3_000,
     minimumRecentTurns: 12,
   };

@@ -4,6 +4,7 @@ import {
   ReplyGoalReviewSchema,
   ReplyGoalRewriteSchema,
 } from "@personasim/contracts";
+import { estimatePromptTokens } from "@personasim/kernel";
 import type { AgentTurnDecision } from "../domain/schemas.js";
 import type { LlmService } from "./llm-service.js";
 import { ReplyGoalReviewService } from "./reply-goal-review-service.js";
@@ -214,6 +215,57 @@ describe("bounded reply goal review", () => {
     });
     expect(generateObject).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { contextTokens: 32_000, totalWindow: 32_000 },
+    { contextTokens: 1_000_000, totalWindow: 258_000 },
+  ])(
+    "keeps complete context, output and reserve inside a $totalWindow total window",
+    async ({ contextTokens, totalWindow }) => {
+      const { input, service, generateObject } = setup(
+        [fail, { text: "新回复。" }, pass],
+        { contextTokens },
+      );
+      input.generationPrompt = "证".repeat((totalWindow - 12_000) / 2);
+      await service.resolve(input);
+      expect(generateObject).toHaveBeenCalledTimes(3);
+      for (const [call] of generateObject.mock.calls as unknown as [
+        { system: string; prompt: string; maxOutputTokens: number },
+      ][]) {
+        const parsed = JSON.parse(call.prompt) as {
+          context?: { contextAlreadyDeliveredForThisTurn: string };
+          contextAlreadyDeliveredForThisTurn?: string;
+        };
+        const context = parsed.context ?? parsed;
+        expect(context.contextAlreadyDeliveredForThisTurn).toBe(
+          input.generationPrompt,
+        );
+        expect(
+          estimatePromptTokens(call.system + call.prompt) +
+            call.maxOutputTokens +
+            2_000,
+        ).toBeLessThanOrEqual(totalWindow);
+      }
+    },
+  );
+
+  it.each([
+    { contextTokens: 32_000, totalWindow: 32_000 },
+    { contextTokens: 1_000_000, totalWindow: 258_000 },
+  ])(
+    "fails closed before dispatch when a $totalWindow total window has no output headroom",
+    async ({ contextTokens, totalWindow }) => {
+      const { input, service, generateObject } = setup([pass], {
+        contextTokens,
+      });
+      input.generationPrompt = "证".repeat((totalWindow - 2_000) / 2);
+      await expect(service.resolve(input)).rejects.toMatchObject({
+        code: "reply_goal_review_context_exceeded",
+      });
+      expect(generateObject).not.toHaveBeenCalled();
+      expect(input.decision.reply.text).toBe("原始候选。");
+    },
+  );
 
   it("uses a provider-compatible object schema with runtime verdict consistency", () => {
     expect(z.toJSONSchema(ReplyGoalReviewSchema).type).toBe("object");

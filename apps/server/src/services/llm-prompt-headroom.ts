@@ -5,8 +5,9 @@ import {
 } from "./chat-output-budget.js";
 
 const DEFAULT_CONTEXT_TOKENS = 32_000;
+/** Application total window, including the requested output and transport reserve. */
+export const CHAT_CONTEXT_WINDOW_TOKENS = 258_000;
 const RESERVED_TOKENS = 2_000;
-const MAXIMUM_PROMPT_TOKENS = 24_000;
 const MINIMUM_PROMPT_TOKENS = 4_000;
 
 export interface LlmPromptHeadroomDetails {
@@ -39,8 +40,10 @@ export function calculateLlmPromptTokenBudget(
     CHAT_TURN_OUTPUT_TOKEN_TARGET,
   ),
 ): number {
-  const maxContextTokens =
-    capabilities.maxContextTokens ?? DEFAULT_CONTEXT_TOKENS;
+  const maxContextTokens = Math.min(
+    capabilities.maxContextTokens ?? DEFAULT_CONTEXT_TOKENS,
+    CHAT_CONTEXT_WINDOW_TOKENS,
+  );
   const maxOutputTokens = resolveChatOutputTokenBudget(
     capabilities,
     requestedOutputTokens,
@@ -58,7 +61,7 @@ export function calculateLlmPromptTokenBudget(
     });
   }
 
-  return Math.min(MAXIMUM_PROMPT_TOKENS, availablePromptTokens);
+  return availablePromptTokens;
 }
 
 /** Freeze the same output allowance for prompt assembly and the provider call. */

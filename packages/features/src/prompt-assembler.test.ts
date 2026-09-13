@@ -1009,6 +1009,30 @@ describe("reply length steering ablation", () => {
 });
 
 describe("assembleChatPrompt registry integration", () => {
+  it("retains more than 200 complete messages when the model input budget has room", () => {
+    const history = Array.from({ length: 240 }, (_, index) => ({
+      role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+      content:
+        `history-${index}:` +
+        "记录当天讨论的具体安排与已经确认的信息。".repeat(8),
+    }));
+    const result = assembleChatPrompt(
+      baseInput({ recentMessages: history, maxInputTokens: 231_424 }),
+    );
+    expect(promptSegmentJson(result.prompt, "RECENT_VERBATIM_JSON")).toEqual(
+      history,
+    );
+    expect(result.segmentTrace.estimatedInputTokens).toBeGreaterThan(24_000);
+    expect(result.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(
+      231_424,
+    );
+    expect(
+      result.segmentTrace.segments.find(
+        (segment) => segment.id === "14_recent_verbatim",
+      ),
+    ).toMatchObject({ included: true, truncated: false });
+  });
+
   it.each(["reply_only", "schedule_negotiation", "legacy_effects"] as const)(
     "keeps the system stable when authoritative memory evidence appears and disappears (%s)",
     (decisionMode) => {

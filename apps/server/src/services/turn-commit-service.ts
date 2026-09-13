@@ -247,23 +247,7 @@ export class TurnCommitService {
           }
           effectsToApply = finalValidation.accepted;
         }
-        if (
-          input.retrievalRun !== undefined &&
-          (input.retrievalRun.agentId !== input.command.agentId ||
-            input.retrievalRun.inputSnapshot.agentId !== input.command.agentId)
-        ) {
-          throw new TypeError(
-            "Prepared retrieval run agent must match the chat turn agent",
-          );
-        }
         this.store.insertMessage(userMessage);
-        if (input.retrievalRun !== undefined) {
-          this.retrievalRuns.create({
-            ...input.retrievalRun,
-            sessionId: input.sessionId,
-            sourceMessageId: userMessage.id,
-          });
-        }
         this.audits.persistRecallAudit(input, userMessage);
         personalIntentIds = fuzzyLifeEnabled
           ? []
@@ -416,6 +400,7 @@ export class TurnCommitService {
       throw error;
     }
 
+    this.recordRetrievalDiagnostics(input, userMessage.id);
     await this.commitContinuity({
       ...input,
       userMessage,
@@ -445,6 +430,40 @@ export class TurnCommitService {
         chunks: input.world.decision.reply.chunks,
       },
     };
+  }
+
+  private recordRetrievalDiagnostics(
+    input: TurnCommitInput,
+    sourceMessageId: string,
+  ): void {
+    try {
+      const run = input.prepareRetrievalRun?.();
+      if (
+        run !== undefined &&
+        (run.agentId !== input.command.agentId ||
+          run.inputSnapshot.agentId !== input.command.agentId)
+      ) {
+        throw new TypeError(
+          "Retrieval diagnostic agent must match the committed turn",
+        );
+      }
+      this.store.transaction(() => {
+        if (run !== undefined)
+          this.retrievalRuns.create({
+            ...run,
+            sessionId: input.sessionId,
+            sourceMessageId,
+          });
+        this.retrievalRuns.pruneByAgent(input.command.agentId, input.nowUtc);
+      });
+    } catch {
+      // The reply and its authoritative evidence have already committed.
+      // Never expose prompts or candidate contents in this operational warning.
+      console.warn("Retrieval diagnostics could not be recorded or pruned", {
+        agentId: input.command.agentId,
+        sourceMessageId,
+      });
+    }
   }
 
   private persistPersonalIntents(

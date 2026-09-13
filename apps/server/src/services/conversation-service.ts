@@ -81,6 +81,8 @@ export type { ChatTurnDecisionPath };
 export type ChatTurnResult = CommittedChatTurnResult;
 
 export interface ConversationServiceOptions {
+  /** Full replay diagnostics are opt-in; normal turns retain compact evidence IDs. */
+  recordMemoryRecallDiagnostics?: boolean;
   chatEffectsMode?: "off" | "gated";
   scheduleNegotiationMode?: "off" | "legacy" | "shadow" | "enforced";
   liveWorldEffectsMode?: "off" | "shadow" | "enforced";
@@ -376,18 +378,21 @@ export class ConversationService {
     const memoryRecallMode = this.options.memoryRecallMode ?? "legacy";
     const recallRecording =
       capabilities.longTermMemory && memoryRecallMode !== "legacy"
-        ? this.memoryRecalls.preparePreviewRecording({
-            agentId: input.agentId,
-            sessionId,
-            query: input.text,
-            nowUtc,
-            timezone: spec.identity.timezone,
-            requireDurableEvidence: memoryRecallMode === "enforced",
-            suppressedMemoryIds: effectivePersona?.suppressedMemoryIds ?? [],
-            ...(appliedContextPlan === undefined
-              ? {}
-              : { contextPlan: appliedContextPlan }),
-          })
+        ? this.memoryRecalls.prepareTurn(
+            {
+              agentId: input.agentId,
+              sessionId,
+              query: input.text,
+              nowUtc,
+              timezone: spec.identity.timezone,
+              requireDurableEvidence: memoryRecallMode === "enforced",
+              suppressedMemoryIds: effectivePersona?.suppressedMemoryIds ?? [],
+              ...(appliedContextPlan === undefined
+                ? {}
+                : { contextPlan: appliedContextPlan }),
+            },
+            this.options.recordMemoryRecallDiagnostics === true,
+          )
         : undefined;
     const recallPreview = recallRecording?.preview;
     const selectedRecallMemories =
@@ -454,9 +459,9 @@ export class ConversationService {
       memoryRecallMode === "enforced"
         ? buildExplicitFactReplyContract({
             userText: input.text,
-            ...(recallRecording === undefined
+            ...(recallRecording?.verification === undefined
               ? {}
-              : { recall: recallRecording.retrievalRun }),
+              : { recall: recallRecording.verification }),
           })
         : undefined;
     const consentModalityGuardContract =
@@ -927,9 +932,9 @@ export class ConversationService {
       ...(effectivePersona === undefined ? {} : { effectivePersona }),
       nowUtc,
       userMessageId,
-      ...(recallRecording === undefined
+      ...(recallRecording?.prepareRecording === undefined
         ? {}
-        : { retrievalRun: recallRecording.retrievalRun }),
+        : { prepareRetrievalRun: recallRecording.prepareRecording }),
       assistantMessageId,
       capabilities,
       ...(recallDiagnostic === undefined ? {} : { recallDiagnostic }),

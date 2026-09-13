@@ -149,6 +149,8 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 
 普通 HTTP 和 SSE 始终使用公开字段投影，即使开启开发者模式也不夹带原始状态或内部诊断。旧说明中助手消息的 `companionContext`、`personaRuntime` 等 metadata 应通过开发者记录检查。
 
+普通聊天仅保留紧凑的召回策略、选中记忆与来源标识；完整检索候选、阶段与回放快照在开发者模式下记录，并在聊天提交成功后独立保存，诊断失败不会撤回回复。检索诊断按角色保留最近 30 天、最多 100 条，在后续聊天或开发者预览时清理；该保留策略不删除聊天原文、记忆或事实来源。
+
 ## 自托管、数据与备份
 
 开发模式默认只允许回环地址。项目也支持显式的单实例生产部署：同一镜像提供 Web 和 Fastify，由 Caddy 处理 HTTPS 与 Basic Auth，应用端口只在 Compose 私网内开放。

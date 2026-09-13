@@ -1909,7 +1909,7 @@ describe("continuity memory recall hierarchy", () => {
         harness.agentId,
         "Fact turn with stale provenance",
       );
-      const prepare = app.personasim.memoryRecalls.preparePreviewRecording.bind(
+      const prepare = app.personasim.memoryRecalls.prepareTurn.bind(
         app.personasim.memoryRecalls,
       );
       const publish = vi.spyOn(app.personasim.sse, "publish");
@@ -1918,9 +1918,9 @@ describe("continuity memory recall hierarchy", () => {
       let expectedState = store.getRuntimeState(harness.agentId);
       vi.spyOn(
         app.personasim.memoryRecalls,
-        "preparePreviewRecording",
-      ).mockImplementationOnce((input) => {
-        const prepared = prepare(input);
+        "prepareTurn",
+      ).mockImplementationOnce((input, recordDiagnostics) => {
+        const prepared = prepare(input, recordDiagnostics);
         expect(prepared.preview.result.abstained).toBe(false);
         if (conflict === "source_deleted") {
           store.database

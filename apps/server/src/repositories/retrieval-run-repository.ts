@@ -3289,6 +3289,23 @@ export class RetrievalRunRepository {
           JSON.parse(row.input_snapshot_json) as unknown,
         );
   }
+
+  /** Replay diagnostics are disposable; original messages and evidence are not. */
+  pruneByAgent(agentId: string, nowUtc: string): number {
+    const cutoff = new Date(Date.parse(nowUtc) - 30 * 86_400_000).toISOString();
+    return this.database
+      .prepare(
+        `
+      DELETE FROM retrieval_runs WHERE agent_id = @agentId AND (
+        created_at_utc < @cutoff OR id IN (
+          SELECT id FROM retrieval_runs WHERE agent_id = @agentId
+          ORDER BY created_at_utc DESC, rowid DESC LIMIT -1 OFFSET 100
+        )
+      )
+    `,
+      )
+      .run({ agentId, cutoff }).changes;
+  }
 }
 
 function toParameters(run: RetrievalRun): Record<string, unknown> {

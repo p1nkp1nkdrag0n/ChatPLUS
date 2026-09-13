@@ -379,6 +379,7 @@ export async function composeServer(
             config.lifePlanningMode,
           );
     const conversationOptions = {
+      recordMemoryRecallDiagnostics: config.developerRoutes,
       ...(replySteeringMode === undefined ? {} : { replySteeringMode }),
       chatEffectsMode: config.chatEffectsMode,
       lifePlanningMode: config.lifePlanningMode,

@@ -37,7 +37,7 @@ export interface TurnCommitInput {
   personaRuntimeDiagnostic?: unknown;
   nowUtc: string;
   userMessageId: string;
-  retrievalRun?: CreateRetrievalRunInput;
+  prepareRetrievalRun?: () => CreateRetrievalRunInput;
   assistantMessageId: string;
   capabilities: SimulationCapabilities;
   recallDiagnostic?: MemoryRecallRuntimeDiagnostic;

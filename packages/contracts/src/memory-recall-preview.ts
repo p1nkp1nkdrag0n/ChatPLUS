@@ -105,6 +105,7 @@ export type MemoryRecallPreviewResponse = z.infer<
 
 export const MemoryRecallRuntimeDiagnosticSchema = z
   .object({
+    strategyVersion: MemoryRecallPreviewStrategySchema.shape.name.optional(),
     rolloutMode: MemoryRecallRolloutModeSchema,
     promptStrategy: z.enum(["legacy_active", "evidence_selected"]),
     legacyPromptMemoryIds: z.array(EntityIdSchema).max(12),

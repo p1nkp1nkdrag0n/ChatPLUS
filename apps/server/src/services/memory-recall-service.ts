@@ -45,6 +45,8 @@ const DEFAULT_MEMORY_RECALL_MAX_EVIDENCE = 3;
 const MAX_PREVIEW_EVIDENCE_IDS_PER_MEMORY = 20;
 
 export type AgentMemoryRecallInput = {
+  /** Developer inspection only; ordinary turns skip per-candidate rescoring. */
+  includeDiagnostics?: boolean;
   sessionId?: string;
   agentId: string;
   query: string | MemoryRecallQuery;
@@ -77,6 +79,12 @@ export type PreparedMemoryRecallPreview = {
   preview: MemoryRecallPreview;
   retrievalRun: CreateRetrievalRunInput;
 };
+
+export interface PreparedMemoryRecallTurn {
+  preview: MemoryRecallPreview;
+  verification?: Pick<CreateRetrievalRunInput, "inputSnapshot" | "result">;
+  prepareRecording?: () => CreateRetrievalRunInput;
+}
 
 export function recallAgentMemories(
   store: DatabaseStore,
@@ -115,7 +123,41 @@ export class MemoryRecallService {
   preview(input: AgentMemoryRecallInput): MemoryRecallPreview {
     const prepared = this.preparePreviewRecording(input);
     this.retrievalRuns.create(prepared.retrievalRun);
+    this.retrievalRuns.pruneByAgent(input.agentId, input.nowUtc);
     return prepared.preview;
+  }
+
+  prepareTurn(
+    input: AgentMemoryRecallInput,
+    recordDiagnostics = false,
+  ): PreparedMemoryRecallTurn {
+    const turnInput = { ...input, includeDiagnostics: recordDiagnostics };
+    const inspection =
+      this.continuity === undefined
+        ? inspectAgentMemoryRecall(this.store, turnInput)
+        : inspectContinuityRecall(this.store, this.continuity, turnInput);
+    const relationshipScore = recordDiagnostics
+      ? runtimeRelationshipScore(this.store, input.agentId)
+      : undefined;
+    return {
+      preview: inspection.preview,
+      ...(inspection.hierarchy?.selectorAudit === undefined
+        ? {}
+        : {
+            verification: {
+              inputSnapshot: toReplayInput(input, inspection),
+              result: inspection.preview.result,
+            },
+          }),
+      ...(recordDiagnostics
+        ? {
+            // Assemble expensive replay/stage projections only after the chat has
+            // committed. Their validity cannot become a condition for sending it.
+            prepareRecording: () =>
+              toRetrievalRunInput(input, inspection, relationshipScore),
+          }
+        : {}),
+    };
   }
 
   preparePreviewRecording(
@@ -127,7 +169,11 @@ export class MemoryRecallService {
         : inspectContinuityRecall(this.store, this.continuity, input);
     return {
       preview: inspection.preview,
-      retrievalRun: toRetrievalRunInput(this.store, input, inspection),
+      retrievalRun: toRetrievalRunInput(
+        input,
+        inspection,
+        runtimeRelationshipScore(this.store, input.agentId),
+      ),
     };
   }
 
@@ -166,54 +212,57 @@ function inspectAgentMemoryRecall(
   const rawEvidenceByMemory = groupEvidenceByMemory(prepared.rawEvidence);
   const candidateBreakdowns = new Map<string, RetrievalScoreBreakdown>();
 
-  const candidates = prepared.memories.map((memory) => {
-    const candidateEvidence = evidenceByMemory.get(memory.id) ?? [];
-    const individual = recallMemory({
-      query: prepared.query,
-      memories: [withoutLegacyEvidenceFallback(memory)],
-      evidence: candidateEvidence,
-      nowUtc: input.nowUtc,
-      minimumScore: prepared.minimumScore,
-      maxEvidence: 1,
-    });
-    const diagnostic = individual.abstained
-      ? recallMemory({
-          query: prepared.query,
-          memories: [withoutLegacyEvidenceFallback(memory)],
-          evidence: candidateEvidence,
-          nowUtc: input.nowUtc,
-          minimumScore: 0,
-          maxEvidence: 1,
-        })
-      : individual;
-    candidateBreakdowns.set(
-      memory.id,
-      diagnostic.abstained
-        ? zeroScoreBreakdown()
-        : (diagnostic.evidenceBundle.evidence[0]?.scoreBreakdown ??
-            zeroScoreBreakdown()),
-    );
-    const selected = selectedIds.has(memory.id);
-    const rejectionReason = selected
-      ? undefined
-      : candidateRejectionReason(
-          individual,
-          rawEvidenceByMemory.get(memory.id) ?? [],
-          candidateEvidence,
-        );
-    return {
-      memoryId: memory.id,
-      content: memory.content,
-      namespace: memory.namespace ?? "runtime_simulation",
-      temporalStatus:
-        (memory.temporalMetadata ?? memory.temporal)?.temporalStatus ??
-        "unknown",
-      evidenceIds: candidateEvidence.map((item) => item.id),
-      score: individual.score,
-      selected,
-      ...(rejectionReason === undefined ? {} : { rejectionReason }),
-    };
-  });
+  const candidates =
+    input.includeDiagnostics === false
+      ? []
+      : prepared.memories.map((memory) => {
+          const candidateEvidence = evidenceByMemory.get(memory.id) ?? [];
+          const individual = recallMemory({
+            query: prepared.query,
+            memories: [withoutLegacyEvidenceFallback(memory)],
+            evidence: candidateEvidence,
+            nowUtc: input.nowUtc,
+            minimumScore: prepared.minimumScore,
+            maxEvidence: 1,
+          });
+          const diagnostic = individual.abstained
+            ? recallMemory({
+                query: prepared.query,
+                memories: [withoutLegacyEvidenceFallback(memory)],
+                evidence: candidateEvidence,
+                nowUtc: input.nowUtc,
+                minimumScore: 0,
+                maxEvidence: 1,
+              })
+            : individual;
+          candidateBreakdowns.set(
+            memory.id,
+            diagnostic.abstained
+              ? zeroScoreBreakdown()
+              : (diagnostic.evidenceBundle.evidence[0]?.scoreBreakdown ??
+                  zeroScoreBreakdown()),
+          );
+          const selected = selectedIds.has(memory.id);
+          const rejectionReason = selected
+            ? undefined
+            : candidateRejectionReason(
+                individual,
+                rawEvidenceByMemory.get(memory.id) ?? [],
+                candidateEvidence,
+              );
+          return {
+            memoryId: memory.id,
+            content: memory.content,
+            namespace: memory.namespace ?? "runtime_simulation",
+            temporalStatus:
+              (memory.temporalMetadata ?? memory.temporal)?.temporalStatus ??
+              "unknown",
+            evidenceIds: candidateEvidence.map((item) => item.id),
+            score: individual.score,
+            selected,
+            ...(rejectionReason === undefined ? {} : { rejectionReason }),
+          };
+        });
 
   const selectedItems = result.abstained ? [] : result.evidenceBundle.evidence;
   const evidenceById = new Map(
@@ -262,12 +311,11 @@ function inspectAgentMemoryRecall(
   return { preview, prepared, candidateBreakdowns };
 }
 
-function toRetrievalRunInput(
-  store: DatabaseStore,
+function toReplayInput(
   input: AgentMemoryRecallInput,
   inspection: MemoryRecallInspection,
-): CreateRetrievalRunInput {
-  const inputSnapshot: RetrievalReplayInput = {
+): RetrievalReplayInput {
+  return {
     agentId: input.agentId,
     query: inspection.prepared.query,
     nowUtc: input.nowUtc,
@@ -293,12 +341,19 @@ function toRetrievalRunInput(
       ? {}
       : { selectorAuditInput: inspection.selectorAuditInput }),
   };
+}
+
+function toRetrievalRunInput(
+  input: AgentMemoryRecallInput,
+  inspection: MemoryRecallInspection,
+  relationshipScore: number | undefined,
+): CreateRetrievalRunInput {
+  const inputSnapshot = toReplayInput(input, inspection);
   const strategyName =
     inspection.prepared.query.contextPlan?.policyVersion ??
     (inspection.hierarchy === undefined
       ? "keyword_evidence_v1"
       : "continuity_hierarchy_v1");
-  const relationshipScore = runtimeRelationshipScore(store, input.agentId);
   const renderedPromptFragment = renderRetrievalPromptFragment(
     inspection.preview.result,
   );

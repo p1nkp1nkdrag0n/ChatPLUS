@@ -61,7 +61,9 @@ describe("018-021 temporal correspondence migrations", () => {
         .get();
       const beforeTask = database.prepare("SELECT * FROM temporal_tasks").get();
       const triggers = schemaObjects(database, "trigger").filter(
-        (name) => name !== "letters_one_awaiting_user_reply_insert",
+        (name) =>
+          name !== "letters_one_awaiting_user_reply_insert" &&
+          name !== "retrieval_runs_immutable_delete",
       );
       const indexes = schemaObjects(database, "index");
       expect(runMigrations(database)).toContain(
@@ -82,6 +84,12 @@ describe("018-021 temporal correspondence migrations", () => {
       );
       expect(schemaObjects(database, "trigger")).not.toContain(
         "letters_one_awaiting_user_reply_insert",
+      );
+      expect(schemaObjects(database, "trigger")).not.toContain(
+        "retrieval_runs_immutable_delete",
+      );
+      expect(schemaObjects(database, "trigger")).toContain(
+        "retrieval_runs_immutable_update",
       );
       expect(schemaObjects(database, "index")).toEqual(
         expect.arrayContaining(indexes),

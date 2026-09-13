@@ -354,7 +354,7 @@ describe("memory recall runtime integration", () => {
     },
   );
 
-  it("rejects a prepared retrieval run owned by another agent", async () => {
+  it("discards a diagnostic owned by another agent without rolling back the reply", async () => {
     const created = await createTestApp(true, "enforced");
     app = created.app;
     const calls: Array<GenerateObjectInput<unknown>> = [];
@@ -367,30 +367,22 @@ describe("memory recall runtime integration", () => {
       character.id,
       "mismatched retrieval owner",
     );
-    const preparePreviewRecording =
-      app.personasim.memoryRecalls.preparePreviewRecording.bind(
-        app.personasim.memoryRecalls,
-      );
-    vi.spyOn(
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const prepareTurn = app.personasim.memoryRecalls.prepareTurn.bind(
       app.personasim.memoryRecalls,
-      "preparePreviewRecording",
-    ).mockImplementation((input) => {
-      const prepared = preparePreviewRecording(input);
-      return {
-        ...prepared,
-        retrievalRun: {
-          ...prepared.retrievalRun,
-          agentId: otherCharacter.id,
-          inputSnapshot: {
-            ...prepared.retrievalRun.inputSnapshot,
-            agentId: otherCharacter.id,
-            memories: prepared.retrievalRun.inputSnapshot.memories.map(
-              (memory) => ({ ...memory, agentId: otherCharacter.id }),
-            ),
+    );
+    vi.spyOn(app.personasim.memoryRecalls, "prepareTurn").mockImplementation(
+      (input, recordDiagnostics) => {
+        const prepared = prepareTurn(input, recordDiagnostics);
+        return {
+          ...prepared,
+          prepareRecording: () => {
+            const run = prepared.prepareRecording!();
+            return { ...run, agentId: otherCharacter.id };
           },
-        },
-      };
-    });
+        };
+      },
+    );
 
     const response = await injectInternalChat(app, session.id, {
       agentId: character.id,
@@ -398,13 +390,87 @@ describe("memory recall runtime integration", () => {
       text: QUERY,
     });
 
-    expect(response.statusCode).toBe(500);
-    expect(app.personasim.store.listMessages(session.id)).toHaveLength(0);
+    expect(response.statusCode).toBe(201);
+    expect(app.personasim.store.listMessages(session.id)).toHaveLength(2);
+    expect(warning).toHaveBeenCalledOnce();
     const retrievalRuns = new RetrievalRunRepository(
       app.personasim.store.database,
     );
     expect(retrievalRuns.listByAgent(character.id)).toHaveLength(0);
     expect(retrievalRuns.listByAgent(otherCharacter.id)).toHaveLength(0);
+  });
+
+  it("keeps ordinary evidence recall and idempotency without full diagnostic snapshots", async () => {
+    ({ app } = await createTestApp(false, "enforced"));
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls);
+    const character = await createAndPublish(app);
+    seedRecallMemories(app, character.id);
+    const input = {
+      agentId: character.id,
+      query: QUERY,
+      nowUtc: NOW,
+      requireDurableEvidence: true,
+    };
+    const compact = app.personasim.memoryRecalls.prepareTurn(input);
+    const detailed =
+      app.personasim.memoryRecalls.preparePreviewRecording(input);
+    expect(compact.preview.result).toEqual(detailed.preview.result);
+    expect(compact.preview.candidates).toEqual([]);
+    expect(compact.prepareRecording).toBeUndefined();
+    const session = app.personasim.conversations.createSession(
+      character.id,
+      "normal recall",
+    );
+    const payload = {
+      agentId: character.id,
+      clientMessageId: "compact-recall",
+      text: QUERY,
+    };
+    const first = await injectInternalChat(app, session.id, payload);
+    const second = await injectInternalChat(app, session.id, payload);
+    expect(first.statusCode, first.body).toBe(201);
+    expect(second.statusCode, second.body).toBe(200);
+    expect(app.personasim.store.listMessages(session.id)).toHaveLength(2);
+    expect(
+      new RetrievalRunRepository(app.personasim.store.database).listByAgent(
+        character.id,
+      ),
+    ).toEqual([]);
+    const recall = first.internalTurn?.memoryRecall;
+    expect(recall?.selectedEvidenceIds.length).toBeGreaterThan(0);
+    expect(recall?.strategyVersion).toBe("continuity_hierarchy_v1");
+  });
+
+  it("keeps a committed reply when full diagnostic serialization fails", async () => {
+    ({ app } = await createTestApp(true, "enforced"));
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls);
+    const character = await createAndPublish(app);
+    const prepareTurn = app.personasim.memoryRecalls.prepareTurn.bind(
+      app.personasim.memoryRecalls,
+    );
+    vi.spyOn(app.personasim.memoryRecalls, "prepareTurn").mockImplementation(
+      (input, record) => ({
+        ...prepareTurn(input, record),
+        prepareRecording: () => {
+          throw new Error("synthetic diagnostic failure");
+        },
+      }),
+    );
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const session = app.personasim.conversations.createSession(
+      character.id,
+      "diagnostic failure",
+    );
+    const response = await injectInternalChat(app, session.id, {
+      agentId: character.id,
+      clientMessageId: "diagnostic-failure",
+      text: "你好",
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    expect(app.personasim.store.listMessages(session.id)).toHaveLength(2);
+    expect(warning).toHaveBeenCalledOnce();
   });
 
   it("keeps one retrieval run across an idempotent client-message replay", async () => {
@@ -980,6 +1046,7 @@ async function runTurn(
       liveWorldEffectsMode: "off",
       memoryRecallMode: mode,
       lifePlanningMode: "fuzzy",
+      recordMemoryRecallDiagnostics: true,
     },
     undefined,
     undefined,

@@ -89,7 +89,28 @@ describe("RetrievalRunRepository", () => {
       database
         .prepare("DELETE FROM retrieval_runs WHERE id = ?")
         .run(created.id),
-    ).toThrow(/immutable/iu);
+    ).not.toThrow();
+  });
+
+  it("bounds diagnostic retention by age and count without deleting source messages", () => {
+    const input = replayInput();
+    const result = evaluate(input);
+    for (let index = 0; index < 102; index += 1) {
+      repository.create(createRunInput(`retention_${index}`, input, result));
+    }
+    expect(repository.pruneByAgent(AGENT_ID, NOW)).toBe(2);
+    expect(repository.findById("retention_0")).toBeUndefined();
+    expect(repository.findById("retention_101")).toBeDefined();
+    expect(repository.pruneByAgent(AGENT_ID, "2026-09-22T04:00:00.000Z")).toBe(
+      100,
+    );
+    expect(repository.listByAgent(AGENT_ID)).toEqual([]);
+    expect(
+      database.prepare("SELECT id FROM messages WHERE id = ?").get(MESSAGE_ID),
+    ).toBeDefined();
+    expect(
+      database.prepare("SELECT id FROM memories WHERE id = ?").get(MEMORY_ID),
+    ).toBeDefined();
   });
 
   it("lists same-timestamp runs in insertion order with the newest first", () => {

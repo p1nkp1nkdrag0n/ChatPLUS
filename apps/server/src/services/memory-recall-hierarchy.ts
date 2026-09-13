@@ -2071,62 +2071,65 @@ function buildInspection(input: {
           item,
         ]),
   );
-  const candidates = input.prepared.memories.map((memory) => {
-    const candidateEvidence = evidenceByMemory.get(memory.id) ?? [];
-    const tier = input.tierByMemoryId.get(memory.id) ?? "event_card";
-    const individual = evaluateTier(
-      {
-        ...input.prepared,
-        memories: [memory],
-        rawEvidence: rawEvidenceByMemory.get(memory.id) ?? [],
-        evidence: candidateEvidence,
-      },
-      input.input.nowUtc,
-      tier,
-    );
-    const diagnostic = individual.abstained
-      ? forceMode(
-          recallMemory({
-            query: input.prepared.query,
-            memories: [memory],
-            evidence: candidateEvidence,
-            nowUtc: input.input.nowUtc,
-            minimumScore: 0,
-            maxEvidence: 1,
-          }),
-          tier,
-        )
-      : individual;
-    const selectedItem = selectedItemByMemory.get(memory.id);
-    const breakdown =
-      selectedItem?.scoreBreakdown ??
-      (diagnostic.abstained
-        ? zeroScoreBreakdown()
-        : diagnostic.evidenceBundle.evidence[0]?.scoreBreakdown) ??
-      zeroScoreBreakdown();
-    candidateBreakdowns.set(memory.id, breakdown);
-    const selected = selectedIds.has(memory.id);
-    const rejectionReason = selected
-      ? undefined
-      : hierarchyRejectionReason(
-          memory,
-          individual,
-          rawEvidenceByMemory.get(memory.id) ?? [],
-          candidateEvidence,
-        );
-    return {
-      memoryId: memory.id,
-      content: memory.content,
-      namespace: memory.namespace ?? "runtime_simulation",
-      temporalStatus:
-        (memory.temporalMetadata ?? memory.temporal)?.temporalStatus ??
-        "unknown",
-      evidenceIds: candidateEvidence.map((item) => item.id),
-      score: selectedItem?.score ?? diagnostic.score,
-      selected,
-      ...(rejectionReason === undefined ? {} : { rejectionReason }),
-    };
-  });
+  const candidates =
+    input.input.includeDiagnostics === false
+      ? []
+      : input.prepared.memories.map((memory) => {
+          const candidateEvidence = evidenceByMemory.get(memory.id) ?? [];
+          const tier = input.tierByMemoryId.get(memory.id) ?? "event_card";
+          const individual = evaluateTier(
+            {
+              ...input.prepared,
+              memories: [memory],
+              rawEvidence: rawEvidenceByMemory.get(memory.id) ?? [],
+              evidence: candidateEvidence,
+            },
+            input.input.nowUtc,
+            tier,
+          );
+          const diagnostic = individual.abstained
+            ? forceMode(
+                recallMemory({
+                  query: input.prepared.query,
+                  memories: [memory],
+                  evidence: candidateEvidence,
+                  nowUtc: input.input.nowUtc,
+                  minimumScore: 0,
+                  maxEvidence: 1,
+                }),
+                tier,
+              )
+            : individual;
+          const selectedItem = selectedItemByMemory.get(memory.id);
+          const breakdown =
+            selectedItem?.scoreBreakdown ??
+            (diagnostic.abstained
+              ? zeroScoreBreakdown()
+              : diagnostic.evidenceBundle.evidence[0]?.scoreBreakdown) ??
+            zeroScoreBreakdown();
+          candidateBreakdowns.set(memory.id, breakdown);
+          const selected = selectedIds.has(memory.id);
+          const rejectionReason = selected
+            ? undefined
+            : hierarchyRejectionReason(
+                memory,
+                individual,
+                rawEvidenceByMemory.get(memory.id) ?? [],
+                candidateEvidence,
+              );
+          return {
+            memoryId: memory.id,
+            content: memory.content,
+            namespace: memory.namespace ?? "runtime_simulation",
+            temporalStatus:
+              (memory.temporalMetadata ?? memory.temporal)?.temporalStatus ??
+              "unknown",
+            evidenceIds: candidateEvidence.map((item) => item.id),
+            score: selectedItem?.score ?? diagnostic.score,
+            selected,
+            ...(rejectionReason === undefined ? {} : { rejectionReason }),
+          };
+        });
   const evidenceById = new Map(
     input.prepared.evidence.map((item) => [item.id, item]),
   );

@@ -74,6 +74,7 @@ export function buildMemoryRecallDiagnostic(
 ): MemoryRecallRuntimeDiagnostic {
   const result = preview.result;
   return MemoryRecallRuntimeDiagnosticSchema.parse({
+    strategyVersion: preview.strategy.name,
     rolloutMode: mode,
     promptStrategy: mode === "enforced" ? "evidence_selected" : "legacy_active",
     legacyPromptMemoryIds: legacyMemories

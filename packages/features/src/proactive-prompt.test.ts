@@ -226,7 +226,7 @@ describe("prompt and persona guard", () => {
     );
     expect(assembled.prompt).toContain("For single_block, omit chunks");
     expect(assembled.prompt).toContain("REPLY_STRATEGY_JSON");
-    expect(assembled.prompt).toContain("softTargetCharacters");
+    expect(assembled.prompt).not.toContain("softTargetCharacters");
     expect(assembled.prompt).toContain("not a quota");
     expect(assembled.prompt).not.toContain(scheduleId);
     expect(assembled.prompt).not.toContain(memoryId);

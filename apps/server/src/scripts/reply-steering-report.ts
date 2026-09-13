@@ -13,6 +13,13 @@ import {
 
 export type { ReplySteeringMode };
 
+export interface ReplySteeringIntervention {
+  policyVersion: string | null;
+  configuredFields: string[];
+  removedFields: string[];
+  unchangedFromBaseline: boolean;
+}
+
 export interface ReplySteeringResult {
   id: string;
   profile: string;
@@ -36,6 +43,8 @@ export interface ReplySteeringResult {
   error: string | null;
   promptSha256: string | null;
   nonTargetPromptSha256: string | null;
+  /** Absent in historical artifacts; actual prompt changes must not be inferred. */
+  steeringIntervention?: ReplySteeringIntervention;
   /** Raw-to-final text difference, including delivery formatting, not repair attribution. */
   repairChanged: boolean;
   fallback: boolean;
@@ -139,16 +148,29 @@ export function renderReplySteeringReport(
     "",
     "## 本次模式与干预边界",
     "",
-    "历史 no_length_steering 同时移除长度、气泡数量与投递偏好，不能归因为单独的长度效应。各独立模式只移除下列字段；其余主提示、输出预算与服务器修复策略保持一致。",
+    "历史 no_length_steering 同时移除长度、气泡数量与投递偏好，不能归因为单独的长度效应。配置字段是候选移除项，实际干预取决于当轮基线中存在的字段；其余主提示、输出预算与服务器修复策略在配对内保持一致。",
     "",
-    "| 模式 | 从主生成提示移除的字段 |",
-    "| --- | --- |",
-    ...[...new Set(results.map((row) => row.mode))]
-      .sort()
-      .map(
-        (mode) =>
-          `| ${mode} | ${REPLY_STEERING_REMOVED_FIELDS[mode].join(", ") || "无（基线）"} |`,
-      ),
+    "| 模式 | 配置的候选移除字段 | 实际移除字段（按记录分组） | 与基线提示相同 / 已核验记录 |",
+    "| --- | --- | --- | --- |",
+    ...[...new Set(results.map((row) => row.mode))].sort().map((mode) => {
+      const rows = results.filter((row) => row.mode === mode);
+      const verified = rows.flatMap((row) =>
+        row.steeringIntervention ? [row.steeringIntervention] : [],
+      );
+      const removals = new Map<string, number>();
+      for (const evidence of verified) {
+        const fields = evidence.removedFields.join(", ") || "无";
+        removals.set(fields, (removals.get(fields) ?? 0) + 1);
+      }
+      const actual = [...removals].map(
+        ([fields, count]) => `${fields}（${count} 条）`,
+      );
+      if (verified.length < rows.length)
+        actual.push(`未记录（${rows.length - verified.length} 条）`);
+      return `| ${mode} | ${REPLY_STEERING_REMOVED_FIELDS[mode].join(", ") || "无（基线）"} | ${actual.join("；")} | ${verified.filter((row) => row.unchangedFromBaseline).length} / ${verified.length} |`;
+    }),
+    "",
+    "与基线提示相同的消融是无干预对照，不能把输出差异归因于该引导字段；旧记录缺少逐轮干预证据时标记为未记录，不从模式名称推断实际移除。",
     "",
     "## 相同六场景、首次重复的比较集",
     "",

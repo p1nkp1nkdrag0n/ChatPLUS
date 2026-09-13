@@ -39,8 +39,9 @@ export interface ReplyStrategy {
   lengthGuidance: string;
   deliveryGuidance: string;
   stateGuidance: string;
-  affinityPolicyVersion: "single_affinity_v1";
+  affinityPolicyVersion: "single_affinity_v1" | "persona_expression_v2";
   affinityGuidance: string;
+  /** Historical length-curve eligibility; v2 uses affinity only for relational expression. */
   affinityApplied: boolean;
   lengthOverride:
     "none" | "greeting" | "explicit_brief" | "requested_detail" | "listen";
@@ -137,26 +138,22 @@ export function deriveReplyStrategy(
   const verbosity = clamp(dialogue.verbosity ?? 0.5, 0, 1);
   const averageLength = clamp(
     Math.round(dialogue.averageMessageLength ?? 140),
-    24,
+    8,
     1_200,
   );
   const personaBaseline = averageLength * (0.7 + verbosity * 0.9);
   let target = targetFor(complexity, personaBaseline);
   const affinity = clamp(context.relationship?.closeness ?? 0.1, 0, 1);
-  const affinityApplied = complexity === "standard" && !listening;
   const lengthOverride: ReplyStrategy["lengthOverride"] = greeting
     ? "greeting"
     : explicitBrief
       ? "explicit_brief"
       : listening
         ? "listen"
-        : complexity === "complex" || complexity === "deep"
+        : explicitDetail || explicitDeep || currentStructuredTask
           ? "requested_detail"
           : "none";
-  if (affinityApplied) {
-    const smooth = affinity * affinity * (3 - 2 * affinity);
-    target = Math.round(clamp(personaBaseline, 40, 120) * (0.5 + 1.8 * smooth));
-  } else if (greeting) {
+  if (greeting) {
     target = clamp(Math.round(personaBaseline * 0.22), 8, 24);
   } else if (explicitBrief || listening) {
     target = clamp(Math.round(personaBaseline * 0.4), 16, 48);
@@ -235,30 +232,61 @@ export function deriveReplyStrategy(
     maxOutputTokens: clamp(Math.ceil(range.maximum * 2.2 + 600), 2_000, 8_000),
     deliveryPreference,
     preferredChunkCount,
-    lengthGuidance: lengthGuidanceFor(complexity, range.minimum, range.maximum),
-    deliveryGuidance: deliveryGuidanceFor(
-      deliveryPreference,
-      preferredChunkCount,
-    ),
+    lengthGuidance:
+      lengthOverride === "none"
+        ? "Let the current exchange and the character's own cadence determine how much to say. A complete reaction may be short; an engaging detail may deserve more room. The persona's average length is a tendency, not a quota for each turn. Do not pad, repeat a response template, or cut a useful thought to match a length."
+        : lengthGuidanceFor(complexity, range.minimum, range.maximum),
+    deliveryGuidance: deliveryGuidanceFor(deliveryPreference),
     stateGuidance: stateGuidanceFor(runtime),
-    affinityPolicyVersion: "single_affinity_v1",
+    affinityPolicyVersion: "persona_expression_v2",
     affinityGuidance: affinityGuidanceFor(affinity),
-    affinityApplied,
+    affinityApplied: false,
     lengthOverride,
     reviewUpperChars: Math.max(Math.ceil(target * 1.6), target + 16),
+  };
+}
+
+/** Share expression controls with generation and repair, keeping planning and
+ * audit numbers out of ordinary conversation. Explicit turn needs still have
+ * soft budgets; an authored average is never a fixed per-turn bubble count. */
+export function replyStrategyPromptView(
+  strategy: ReplyStrategy,
+): Record<string, unknown> {
+  const legacy = strategy.affinityPolicyVersion === "single_affinity_v1";
+  return {
+    complexity: strategy.complexity,
+    ...(legacy || strategy.lengthOverride !== "none"
+      ? {
+          softTargetCharacters: {
+            minimum: strategy.targetMinChars,
+            ideal: strategy.targetChars,
+            maximum: strategy.targetMaxChars,
+          },
+        }
+      : {}),
+    ...(legacy ? { preferredChunkCount: strategy.preferredChunkCount } : {}),
+    deliveryPreference: strategy.deliveryPreference,
+    lengthGuidance: strategy.lengthGuidance,
+    deliveryGuidance: strategy.deliveryGuidance,
+    stateGuidance: strategy.stateGuidance,
+    affinityPolicyVersion: strategy.affinityPolicyVersion,
+    affinityGuidance: strategy.affinityGuidance,
+    ...(legacy ? { affinityApplied: strategy.affinityApplied } : {}),
+    lengthOverride: strategy.lengthOverride,
+    ...(legacy ? { reviewUpperChars: strategy.reviewUpperChars } : {}),
   };
 }
 
 function affinityGuidanceFor(affinity: number): string {
   const expression =
     affinity < 0.25
-      ? "Keep polite personal distance. Acknowledge the current point with one short, complete thought; do not volunteer several topics, advice branches or questions."
+      ? "Respect that you are still getting acquainted: avoid assumed intimacy or unearned personal disclosure. The character may still be lively, curious, playful or reserved according to their own personality."
       : affinity < 0.55
-        ? "Speak with growing ease. You may add one relevant thought or gentle follow-up when it fits the user's request."
+        ? "Speak with growing ease while letting personal disclosure and forms of address fit what the relationship has actually established."
         : affinity < 0.8
-          ? "Show comfortable personal concern. Follow the same topic one layer further and express a grounded personal attitude when useful."
-          : "Speak with relaxed familiarity and willingness to engage. You may share a grounded attitude or specific concern and develop the current topic naturally, without repetitive reassurance or padding.";
-  return `${expression} This is present relational expression, not a replacement personality. Preserve the character's own warmth, vocabulary and boundaries. High affinity does not imply agreement, trust in unsupported claims, consent, romance or invented shared history. Explicit brevity, requested detail, quiet companionship and current capacity take priority. Never force nicknames, questions or extra words, and never reveal scores or stages.`;
+          ? "Let established familiarity support comfortable personal concern and an honest personal attitude."
+          : "Speak with relaxed familiarity, allowing personal openness that is grounded in the actual relationship.";
+  return `${expression} Familiarity shapes relational expression, not reply length or bubble count. Preserve the character's own warmth, vocabulary and boundaries. High affinity does not imply agreement, trust in unsupported claims, consent, romance or invented shared history. Explicit brevity, requested detail, quiet companionship and current capacity take priority. Never force nicknames, questions or extra words, and never reveal scores or stages.`;
 }
 
 function stateGuidanceFor(state: ReplyStrategyContext["state"]): string {
@@ -296,7 +324,7 @@ function stateGuidanceFor(state: ReplyStrategyContext["state"]): string {
       : socialBattery < 0.25
         ? "Social capacity is low; be more restrained and avoid stacking questions"
         : "Current capacity supports an ordinary conversational rhythm";
-  return `${affect}. ${attention}. ${capacity}. Express these authoritative present-moment conditions softly and naturally, but do not claim the opposite current condition. If this turn itself plausibly changes the condition, make that transition natural and propose the causal stateDelta. Never recite metrics, force stock wording, or turn runtime state into permanent personality facts.`;
+  return `${affect}. ${attention}. ${capacity}. Express these authoritative present-moment conditions softly and naturally, but do not claim the opposite current condition. If this turn itself plausibly changes the condition, make that transition natural. Never recite metrics, force stock wording, or turn runtime state into permanent personality facts.`;
 }
 
 function targetFor(
@@ -307,7 +335,9 @@ function targetFor(
     case "brief":
       return clamp(Math.round(personaBaseline * 0.6), 30, 160);
     case "standard":
-      return clamp(Math.round(personaBaseline * 1.25), 80, 420);
+      // A planning estimate only. Preserve short and talkative authored styles
+      // instead of flattening them at shared floors or a relationship curve.
+      return Math.max(8, Math.round(personaBaseline));
     case "complex":
       return clamp(Math.round(personaBaseline * 3.2), 220, 900);
     case "deep":
@@ -372,18 +402,16 @@ function lengthGuidanceFor(
   return `${intent} A natural soft target is about ${minimum}-${maximum} characters in the character's primary language. This is guidance, not a quota: answer completely, stop when the thought is complete, and never pad, repeat, or cut off useful substance merely to hit the range.`;
 }
 
-function deliveryGuidanceFor(
-  preference: ReplyDeliveryPreference,
-  preferredChunkCount: number,
-): string {
+function deliveryGuidanceFor(preference: ReplyDeliveryPreference): string {
   const personaHint = {
     prefer_single_block:
       "This character usually sends one coherent block, but may split an unusually spontaneous exchange when that feels more authentic.",
-    prefer_sequential: `This character often chats in a message-by-message rhythm (typically around ${preferredChunkCount} chunks), but may use one coherent block for a connected explanation.`,
+    prefer_sequential:
+      "This character often chats in a message-by-message rhythm, but may use one coherent block for a connected thought.",
     choose_naturally:
       "This character has no strong default; choose the delivery that best fits their persona and this moment.",
   }[preference];
-  return `${personaHint} Use single_block for one continuous message. Use sequential when the character would naturally send several separate chat bubbles, with each chunk containing one complete short beat or sentence. Delivery is a style decision, not a way to shorten the answer.`;
+  return `${personaHint} Use single_block for one continuous message. Use sequential for separate conversational beats; keep connected sentences together in the same bubble. Do not aim for a fixed bubble count or split merely at punctuation. Delivery is a style decision, not a way to shorten the answer.`;
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

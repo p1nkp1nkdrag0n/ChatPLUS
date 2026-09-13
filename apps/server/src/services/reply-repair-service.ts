@@ -14,6 +14,7 @@ import {
   deriveAdvicePolicy,
   interactionEvidencePromptView,
   turnExpressionPromptView,
+  replyStrategyPromptView,
   type ReplyStrategy,
 } from "@personasim/features";
 
@@ -207,18 +208,7 @@ export class ReplyRepairService {
           `User message: ${JSON.stringify(input.userText)}\n` +
           `Invalid reply: ${JSON.stringify(input.invalidResponse ?? null)}\n` +
           `Persona guard issues to fix: ${JSON.stringify(input.issues)}\n` +
-          `Soft reply strategy: ${JSON.stringify({
-            complexity: input.replyStrategy.complexity,
-            targetMinChars: input.replyStrategy.targetMinChars,
-            targetMaxChars: input.replyStrategy.targetMaxChars,
-            deliveryPreference: input.replyStrategy.deliveryPreference,
-            preferredChunkCount: input.replyStrategy.preferredChunkCount,
-            affinityPolicyVersion: input.replyStrategy.affinityPolicyVersion,
-            affinityGuidance: input.replyStrategy.affinityGuidance,
-            affinityApplied: input.replyStrategy.affinityApplied,
-            lengthOverride: input.replyStrategy.lengthOverride,
-            reviewUpperChars: input.replyStrategy.reviewUpperChars,
-          })}\n` +
+          `Soft reply strategy: ${JSON.stringify(replyStrategyPromptView(input.replyStrategy))}\n` +
           'Return at minimum {"text":"the complete repaired in-character reply"}. You may add toneTags and deliveryMode. Add chunks only when deliveryMode is sequential; omit chunks for single_block.',
         schema: PersonaChatResponseSchema,
       });

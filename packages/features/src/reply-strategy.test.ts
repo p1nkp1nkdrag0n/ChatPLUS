@@ -3,6 +3,7 @@ import { buildConversationContextPlan } from "./conversation-context-plan.js";
 
 import {
   deriveReplyStrategy,
+  replyStrategyPromptView,
   type ReplyStrategyContext,
 } from "./reply-strategy.js";
 
@@ -14,22 +15,84 @@ describe("deriveReplyStrategy", () => {
   ) =>
     deriveReplyStrategy(text, affinityStyle, { relationship: { closeness } });
 
-  it("makes the published single-affinity curve monotone without the old 80-character floor", () => {
-    expect(
-      [0.1, 0.3, 0.5, 0.7, 0.9].map((a) => affinityStrategy(a).targetChars),
-    ).toEqual([26, 42, 67, 91, 107]);
+  it("lets familiarity change relational expression without setting the reply length", () => {
     const targets = Array.from(
       { length: 101 },
       (_, n) => affinityStrategy(n / 100).targetChars,
     );
-    expect(
-      targets.every((target, i) => i === 0 || target >= targets[i - 1]!),
-    ).toBe(true);
-    expect(affinityStrategy(0.1).targetMaxChars).toBeLessThan(80);
+    expect(new Set(targets).size).toBe(1);
+    expect(affinityStrategy(0.1).affinityApplied).toBe(false);
     expect(affinityStrategy(0.1).affinityGuidance).not.toBe(
       affinityStrategy(0.9).affinityGuidance,
     );
+    expect(affinityStrategy(0.1).affinityGuidance).not.toContain(
+      "one short, complete thought",
+    );
   });
+
+  it("preserves both short and talkative authored baselines in ordinary planning", () => {
+    const targets = [18, 30, 140, 300, 600].map(
+      (averageMessageLength) =>
+        deriveReplyStrategy(
+          "今天在路上看到一只猫。",
+          { averageMessageLength, verbosity: 0.5 },
+          { relationship: { closeness: 0.1 } },
+        ).targetChars,
+    );
+    expect(targets[0]).toBeLessThan(30);
+    expect(
+      targets.every((target, i) => i === 0 || target > targets[i - 1]!),
+    ).toBe(true);
+    expect(targets.at(-1)).toBeGreaterThan(600);
+  });
+
+  it("keeps ordinary planning numbers out of the model-visible strategy", () => {
+    const strategy = affinityStrategy(0.1);
+    const view = replyStrategyPromptView(strategy);
+    expect(view).toMatchObject({
+      affinityPolicyVersion: "persona_expression_v2",
+      lengthOverride: "none",
+    });
+    for (const key of [
+      "softTargetCharacters",
+      "preferredChunkCount",
+      "reviewUpperChars",
+      "affinityApplied",
+    ])
+      expect(view).not.toHaveProperty(key);
+    expect(strategy.lengthGuidance).not.toContain("characters");
+    expect(strategy.deliveryGuidance).not.toMatch(/\d+ chunks/u);
+    expect(
+      replyStrategyPromptView(affinityStrategy(0.1, "只用一句话告诉我。")),
+    ).toHaveProperty("softTargetCharacters");
+  });
+
+  it.each([
+    "今天工作碰到了一点问题。",
+    "朋友说他最近不知道如何是好。",
+    "猫今天趴在窗边，一点也不关心世界的问题。",
+  ])(
+    "does not turn analytical vocabulary into a requested length quota: %s",
+    (text) => {
+      for (const conversationPlan of [
+        undefined,
+        buildConversationContextPlan({
+          originalQuery: text,
+          agentId: "agent-test",
+          sessionId: "session-test",
+          recentMessages: [],
+        }),
+      ]) {
+        const strategy = deriveReplyStrategy(text, affinityStyle, {
+          ...(conversationPlan === undefined ? {} : { conversationPlan }),
+        });
+        expect(strategy.lengthOverride).toBe("none");
+        expect(replyStrategyPromptView(strategy)).not.toHaveProperty(
+          "softTargetCharacters",
+        );
+      }
+    },
+  );
 
   it.each([
     "晚安",

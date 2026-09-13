@@ -92,8 +92,7 @@ describe("complete evidence budgets", () => {
     });
     const strategy = promptSegmentJson(result.prompt, "REPLY_STRATEGY_JSON");
     expect(strategy).toMatchObject({
-      affinityPolicyVersion: "single_affinity_v1",
-      affinityApplied: true,
+      affinityPolicyVersion: "persona_expression_v2",
     });
     expect(() => assembleChatPrompt({ ...input, maxInputTokens: 512 })).toThrow(
       PromptSegmentRegistryError,
@@ -378,6 +377,58 @@ function promptSegmentJson(prompt: string, label: string): unknown {
 }
 
 describe("one admitted conversation history", () => {
+  it("keeps a sequential exchange available without restoring fixed casual length or bubble quotas", () => {
+    const exchanges = [
+      ["今天在路上看到一只猫。", "它是不是也在等红灯？"],
+      ["它躺在店门口，老板给它扇风。", "这待遇。我都想去门口躺一会儿了。"],
+      ["哈哈，你也想当猫吗？", "只想领它那份午休福利，捉老鼠的事免谈。"],
+      ["我刚给它拍了张照。", "看来它今天还顺便营业当了模特。"],
+      ["对了，我买了点面包。", "我也馋那股刚出炉的香味。你挑了哪种？"],
+      ["一只红豆包，热乎乎的。", "那得趁热吃。红豆馅烫嘴，小心第一口。"],
+    ];
+    const history: AssemblePromptInput["recentMessages"][number][] = [];
+    for (const [userMessage, reply] of exchanges) {
+      const input = baseInput({
+        userMessage: userMessage!,
+        recentMessages: history,
+      });
+      input.character.dialogue = {
+        ...input.character.dialogue,
+        averageMessageLength: 300,
+        verbosity: 0.8,
+        averageChunksPerTurn: 2,
+      };
+      const result = assembleChatPrompt(input);
+      expect(promptSegmentJson(result.prompt, "RECENT_VERBATIM_JSON")).toEqual(
+        history,
+      );
+      expect(
+        promptSegmentJson(result.system, "CORE_PERSONA_JSON"),
+      ).toMatchObject({
+        dialogue: {
+          averageMessageLength: 300,
+          verbosity: 0.8,
+          averageChunksPerTurn: 2,
+        },
+      });
+      const strategy = promptSegmentJson(result.prompt, "REPLY_STRATEGY_JSON");
+      expect(strategy).toMatchObject({
+        lengthOverride: "none",
+        affinityPolicyVersion: "persona_expression_v2",
+      });
+      for (const field of [
+        "softTargetCharacters",
+        "preferredChunkCount",
+        "reviewUpperChars",
+      ])
+        expect(strategy).not.toHaveProperty(field);
+      history.push(
+        { role: "user", content: userMessage! },
+        { role: "assistant", content: reply! },
+      );
+    }
+  });
+
   const current = "好呀很高兴与你聊天";
   function planFor(text: string) {
     return buildConversationContextPlan({
@@ -747,7 +798,7 @@ describe("reply length steering ablation", () => {
     },
   );
 
-  it("removes exactly five model-visible fields and retains derived strategy", () => {
+  it("removes only present steering fields and retains the planning strategy", () => {
     const { current, experimental } = expectOnlySteeringRemoved(baseInput());
     const original = promptSegmentJson(
       current.prompt,
@@ -758,16 +809,14 @@ describe("reply length steering ablation", () => {
       "REPLY_STRATEGY_JSON",
     ) as Record<string, unknown>;
     expect(Object.keys(original).filter((key) => !(key in strategy))).toEqual(
-      removedFields,
+      removedFields.filter((field) => Object.hasOwn(original, field)),
     );
     expect(strategy).toEqual({
       complexity: original.complexity,
       stateGuidance: original.stateGuidance,
       affinityPolicyVersion: original.affinityPolicyVersion,
       affinityGuidance: original.affinityGuidance,
-      affinityApplied: original.affinityApplied,
       lengthOverride: original.lengthOverride,
-      reviewUpperChars: original.reviewUpperChars,
     });
     expect(current.replyStrategy.targetChars).toBeGreaterThan(0);
     expect(experimental.segmentTrace.estimatedInputTokens).toBeLessThan(
@@ -814,7 +863,8 @@ describe("reply length steering ablation", () => {
         expect(strategy.helpTiming).toBe("after_user_finishes");
         for (const field of removedFields) {
           expect(Object.hasOwn(strategy, field)).toBe(
-            !(fields as readonly string[]).includes(field),
+            field !== "preferredChunkCount" &&
+              !(fields as readonly string[]).includes(field),
           );
         }
       }

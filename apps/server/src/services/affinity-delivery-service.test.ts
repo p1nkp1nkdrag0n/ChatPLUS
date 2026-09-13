@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { deriveReplyStrategy } from "@personasim/features";
+import { deriveReplyStrategy, type ReplyStrategy } from "@personasim/features";
 import type { AgentTurnDecision } from "../domain/schemas.js";
 import type { LlmService } from "./llm-service.js";
 import { replyTextHash } from "./semantic-reply-guard.js";
@@ -34,11 +34,18 @@ function setup(limit = 12) {
     userText: "今天想跟你聊两句。",
     generationSystem: "固定人格",
     generationPrompt: "固定历史",
-    strategy: deriveReplyStrategy(
-      "今天想跟你聊两句。",
-      { averageMessageLength: 45, verbosity: 0.4 },
-      { relationship: { closeness: 0.1 } },
-    ),
+    // Frozen legacy eligibility tests exercise the historical bounded rewrite.
+    strategy: {
+      ...deriveReplyStrategy(
+        "今天想跟你聊两句。",
+        { averageMessageLength: 45, verbosity: 0.4 },
+        { relationship: { closeness: 0.1 } },
+      ),
+      affinityPolicyVersion: "single_affinity_v1",
+      affinityApplied: true,
+      targetChars: 26,
+      reviewUpperChars: 42,
+    } satisfies ReplyStrategy,
     decision: decision(),
     authoritativeEffects: { frozen: true },
     allowRewrite: true,
@@ -52,6 +59,29 @@ function setup(limit = 12) {
 }
 
 describe("single-affinity final delivery", () => {
+  it("preserves a v2 ordinary reply beyond its planning estimate without a length rewrite", async () => {
+    const { input, generateObject } = setup();
+    const strategy = deriveReplyStrategy(
+      input.userText,
+      { averageMessageLength: 18, verbosity: 0.4 },
+      { relationship: { closeness: 0.1 } },
+    );
+    expect(visibleReplyCharacters(input.decision.reply.text)).toBeGreaterThan(
+      strategy.reviewUpperChars,
+    );
+    const result = await new AffinityDeliveryService().resolve({
+      ...input,
+      strategy,
+    });
+    expect(result.decision).toBe(input.decision);
+    expect(result.audit).toMatchObject({
+      policyVersion: "persona_expression_v2",
+      rewriteStatus: "ineligible",
+      rewriteAttempted: false,
+    });
+    expect(generateObject).not.toHaveBeenCalled();
+  });
+
   it("counts complete visible Unicode graphemes across bubbles, without counting whitespace twice", () => {
     expect(visibleReplyCharacters("你\n 好 👨‍👩‍👧‍👦 e\u0301")).toBe(4);
   });

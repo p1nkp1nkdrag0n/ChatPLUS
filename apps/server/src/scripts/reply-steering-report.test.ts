@@ -132,6 +132,40 @@ describe("reply-steering observational reporting", () => {
       ),
     ).toMatchObject({ repairs: 1, repairChangedCount: 1, fallbackCount: 1 });
   });
+
+  it("distinguishes actual v2 removals, unchanged controls and unknown historical evidence", () => {
+    const markdown = renderReplySteeringReport([
+      result({
+        mode: "no_length_only_steering",
+        steeringIntervention: {
+          policyVersion: "persona_expression_v2",
+          configuredFields: ["softTargetCharacters", "lengthGuidance"],
+          removedFields: ["lengthGuidance"],
+          unchangedFromBaseline: false,
+        },
+      }),
+      result({
+        mode: "no_chunk_count_steering",
+        steeringIntervention: {
+          policyVersion: "persona_expression_v2",
+          configuredFields: ["preferredChunkCount"],
+          removedFields: [],
+          unchangedFromBaseline: true,
+        },
+      }),
+      result({ mode: "no_delivery_steering" }),
+    ]);
+    expect(markdown).toContain(
+      "| no_length_only_steering | softTargetCharacters, lengthGuidance | lengthGuidance（1 条） | 0 / 1 |",
+    );
+    expect(markdown).toContain(
+      "| no_chunk_count_steering | preferredChunkCount | 无（1 条） | 1 / 1 |",
+    );
+    expect(markdown).toContain(
+      "| no_delivery_steering | deliveryPreference, deliveryGuidance | 未记录（1 条） | 0 / 0 |",
+    );
+    expect(markdown).toContain("不能把输出差异归因于该引导字段");
+  });
 });
 
 describe("reply-steering blind review exports", () => {

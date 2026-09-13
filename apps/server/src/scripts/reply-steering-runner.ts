@@ -49,6 +49,7 @@ import {
 import {
   buildBlindReview,
   renderReplySteeringReport,
+  type ReplySteeringIntervention,
   type ReplySteeringResult,
 } from "./reply-steering-report.js";
 
@@ -197,9 +198,12 @@ export function assertPromptPair(
     maxOutputTokens?: number | null;
   },
   mode: ReplySteeringMode = "no_length_steering",
-): void {
+): ReplySteeringIntervention {
   const { strategy } = admittedStrategy(current.prompt);
-  if (!STEERING_FIELDS.every((field) => Object.hasOwn(strategy, field)))
+  if (
+    strategy.affinityPolicyVersion !== "persona_expression_v2" &&
+    !STEERING_FIELDS.every((field) => Object.hasOwn(strategy, field))
+  )
     throw new Error("Baseline missing targeted steering fields");
   if (
     current.system !== experimental.system ||
@@ -212,6 +216,17 @@ export function assertPromptPair(
     (current.maxOutputTokens ?? null) !== (experimental.maxOutputTokens ?? null)
   )
     throw new Error("Output budgets differ");
+  return {
+    policyVersion:
+      typeof strategy.affinityPolicyVersion === "string"
+        ? strategy.affinityPolicyVersion
+        : null,
+    configuredFields: [...REPLY_STEERING_REMOVED_FIELDS[mode]],
+    removedFields: REPLY_STEERING_REMOVED_FIELDS[mode].filter((field) =>
+      Object.hasOwn(strategy, field),
+    ),
+    unchangedFromBaseline: current.prompt === experimental.prompt,
+  };
 }
 
 export function resolveSteeringProfile(
@@ -701,9 +716,11 @@ export async function runReplySteering(
       experiment: {
         kind: "reply_steering_ablation_model_personality_matrix",
         options: { ...options, modes },
-        modeRemovedFields: Object.fromEntries(
+        modeConfiguredFields: Object.fromEntries(
           modes.map((mode) => [mode, REPLY_STEERING_REMOVED_FIELDS[mode]]),
         ),
+        interventionPolicy:
+          "Configured fields are candidates for removal. Each prompt-pair proof and result records the fields actually present and removed; unchanged prompts are no-op controls, not evidence of a steering effect. Historical artifacts without this evidence retain unknown intervention status.",
         baseDeploymentConfig,
         effectiveEvaluationConfigs: Object.fromEntries(
           effectiveEvaluationConfigs,
@@ -718,7 +735,7 @@ export async function runReplySteering(
           spec: buildReplySteeringCharacter(id),
         })),
         repairPolicy:
-          "Production repair is unchanged across arms; each mode removes only its declared main-prompt fields. The legacy no_length_steering arm combines length, chunk-count and delivery interventions.",
+          "Production repair is unchanged across arms; each mode removes only its configured main-prompt fields that exist in this baseline. The legacy no_length_steering name denotes a combined candidate set; actual interventions and no-op controls are recorded per prompt pair.",
         interpretation:
           "Synthetic screening only; model identity is provider-reported; profile settings differ across models; no automatic quality ranking.",
       },
@@ -793,11 +810,15 @@ export async function runReplySteering(
           const proofs = modes
             .filter((mode) => mode !== "current")
             .map((mode) => {
-              assertPromptPair(preflight.current!, preflight[mode]!, mode);
+              const intervention = assertPromptPair(
+                preflight.current!,
+                preflight[mode]!,
+                mode,
+              );
               return {
                 baseline: "current",
                 mode,
-                removedFields: REPLY_STEERING_REMOVED_FIELDS[mode],
+                ...intervention,
                 nonTargetPromptSha256: hash(
                   preflight.current!.system +
                     withoutSteeringFields(preflight.current!.prompt, mode),
@@ -811,7 +832,7 @@ export async function runReplySteering(
             modes,
             proofs,
             proof:
-              "Each ablation is compared with current: exact system and non-target prompt equality, only declared fields omitted, identical output cap",
+              "Each ablation is compared with current: exact system and non-target prompt equality, only configured fields that were present are omitted, identical output cap. removedFields records actual changes; unchangedFromBaseline identifies no-op controls.",
           });
           for (let repeat = 1; repeat <= (short ? 1 : repeats); repeat++) {
             const orderedModes = steeringModeOrder(
@@ -819,6 +840,11 @@ export async function runReplySteering(
               `${profile}/${persona}/${scenario.id}/${repeat}`,
             );
             for (const mode of orderedModes) {
+              const steeringIntervention = assertPromptPair(
+                preflight.current!,
+                preflight[mode]!,
+                mode,
+              );
               const id = `${profile}_${persona}_${scenario.id}_r${repeat}_${mode}`;
               const runDir = join(directory, id);
               const config = turnConfig(profile, runDir);
@@ -911,6 +937,7 @@ export async function runReplySteering(
                     preflight[mode]!.system +
                       withoutLengthSteering(preflight[mode]!.prompt),
                   ),
+                  steeringIntervention,
                   repairChanged:
                     accounting.rawVisibleReplies.length > 0 &&
                     accounting.rawVisibleReplies[0] !== finalText,
@@ -953,6 +980,7 @@ export async function runReplySteering(
                   error: error instanceof Error ? error.message : String(error),
                   promptSha256: null,
                   nonTargetPromptSha256: null,
+                  steeringIntervention,
                   repairChanged: false,
                   fallback: false,
                 };

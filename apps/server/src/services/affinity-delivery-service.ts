@@ -18,7 +18,7 @@ export type AffinityRewriteStatus =
   | "rewrite_rejected";
 
 export interface AffinityDeliveryAudit {
-  policyVersion: "single_affinity_v1";
+  policyVersion: ReplyStrategy["affinityPolicyVersion"];
   targetCharacters: number;
   reviewUpperCharacters: number;
   lengthOverride: ReplyStrategy["lengthOverride"];
@@ -91,7 +91,13 @@ export class AffinityDeliveryService {
     let status: AffinityRewriteStatus = "not_needed";
     let decision = input.decision;
     let attempted = false;
-    if (!input.strategy.affinityApplied) status = "ineligible";
+    // V2 keeps these estimates for diagnostics; they are not rewrite limits.
+    // Preserve the bounded legacy path for historical strategies only.
+    if (
+      input.strategy.affinityPolicyVersion !== "single_affinity_v1" ||
+      !input.strategy.affinityApplied
+    )
+      status = "ineligible";
     else if (!input.allowRewrite) status = "authoritative_presentation";
     else if (initialCharacters > input.strategy.reviewUpperChars) {
       if (input.qualityRepairAttempted) status = "quality_repair_precedence";

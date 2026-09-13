@@ -135,6 +135,64 @@ describe("reply steering experiment integrity", () => {
     expect(effective.llm.model).toBe("isolated-evaluation-model");
     expect(base).toEqual(original);
   });
+  it("records only present v2 fields and identifies unchanged controls", () => {
+    const baseline = {
+      system: "fixed",
+      prompt: `REPLY_STRATEGY_JSON\n${JSON.stringify({
+        affinityPolicyVersion: "persona_expression_v2",
+        complexity: "standard",
+        advicePolicy: "none_now",
+        lengthGuidance: "Respond naturally and completely.",
+        deliveryPreference: "choose_naturally",
+        deliveryGuidance: "Use natural conversational beats.",
+      })}`,
+      maxOutputTokens: 123,
+    };
+    const length = assertPromptPair(
+      baseline,
+      {
+        ...baseline,
+        prompt: withoutSteeringFields(
+          baseline.prompt,
+          "no_length_only_steering",
+        ),
+      },
+      "no_length_only_steering",
+    );
+    expect(length).toEqual({
+      policyVersion: "persona_expression_v2",
+      configuredFields: ["softTargetCharacters", "lengthGuidance"],
+      removedFields: ["lengthGuidance"],
+      unchangedFromBaseline: false,
+    });
+    expect(
+      assertPromptPair(baseline, baseline, "no_chunk_count_steering"),
+    ).toMatchObject({
+      configuredFields: ["preferredChunkCount"],
+      removedFields: [],
+      unchangedFromBaseline: true,
+    });
+    expect(() =>
+      assertPromptPair(
+        baseline,
+        {
+          ...baseline,
+          prompt: baseline.prompt.replace("none_now", "allowed"),
+        },
+        "no_chunk_count_steering",
+      ),
+    ).toThrow("outside approved fields");
+    expect(() =>
+      assertPromptPair(
+        baseline,
+        {
+          ...baseline,
+          maxOutputTokens: 124,
+        },
+        "no_chunk_count_steering",
+      ),
+    ).toThrow("Output budgets differ");
+  });
   it("rejects differences to grounding, controls or the output protocol", () => {
     const strategy = {
       complexity: "simple",
@@ -215,7 +273,7 @@ describe("reply steering experiment integrity", () => {
       });
       expect(results).toHaveLength(5);
       expect(results.every((row) => row.success)).toBe(true);
-      expect(new Set(results.map((row) => row.promptSha256)).size).toBe(5);
+      expect(new Set(results.map((row) => row.promptSha256)).size).toBe(4);
       expect(
         new Set(results.map((row) => row.nonTargetPromptSha256)).size,
       ).toBe(1);
@@ -248,13 +306,36 @@ describe("reply steering experiment integrity", () => {
           ),
           "utf8",
         ),
-      ) as { proofs: { mode: ReplySteeringMode; removedFields: string[] }[] };
+      ) as {
+        proofs: {
+          mode: ReplySteeringMode;
+          configuredFields: string[];
+          removedFields: string[];
+          unchangedFromBaseline: boolean;
+        }[];
+      };
       expect(artifact.proofs).toHaveLength(4);
       expect(
         artifact.proofs.find(
           (proof) => proof.mode === "no_length_only_steering",
         )?.removedFields,
-      ).toEqual(["softTargetCharacters", "lengthGuidance"]);
+      ).toEqual(["lengthGuidance"]);
+      expect(
+        artifact.proofs.find(
+          (proof) => proof.mode === "no_chunk_count_steering",
+        ),
+      ).toMatchObject({
+        configuredFields: ["preferredChunkCount"],
+        removedFields: [],
+        unchangedFromBaseline: true,
+      });
+      expect(
+        results.find((row) => row.mode === "no_chunk_count_steering")
+          ?.steeringIntervention,
+      ).toMatchObject({
+        removedFields: [],
+        unchangedFromBaseline: true,
+      });
       const key = JSON.parse(
         readFileSync(join(directory, "blind-key.json"), "utf8"),
       ) as ReplySteeringBlindReviewKey;

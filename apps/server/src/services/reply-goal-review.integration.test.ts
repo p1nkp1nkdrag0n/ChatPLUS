@@ -279,10 +279,9 @@ describe("reply goal review on the production HTTP chat path", () => {
     expect(calls).toHaveLength(before);
   });
 
-  it("styles before final goal review, commits effects once, and audits the exact final text", async () => {
+  it("reviews the complete v2 reply without a length rewrite, commits effects once, and audits final text", async () => {
     await setup(true);
     candidate = "我想慢慢听你聊聊今天的事情。".repeat(40);
-    affinityRewrites.push({ text: "今天也想听听你的近况。" });
     const finalText = "今天过得还算平静。你想聊什么？";
     reviews.push(fail, pass);
     rewrites.push({ text: finalText });
@@ -301,20 +300,24 @@ describe("reply goal review on the production HTTP chat path", () => {
     );
     expect(phases.map((call) => call.purpose)).toEqual([
       "chat_turn",
-      "rewrite_reply_affinity",
       "review_reply_goal",
       "rewrite_reply_goal",
       "review_reply_goal",
     ]);
-    expect((JSON.parse(phases[2]!.prompt) as ReviewPrompt).candidate.text).toBe(
-      "今天也想听听你的近况。",
-    );
+    expect(
+      (JSON.parse(phases[1]!.prompt) as ReviewPrompt).candidate.text.replaceAll(
+        "\n",
+        "",
+      ),
+    ).toBe(candidate);
     expect(result.assistantMessage.content.replaceAll("\n", "")).toBe(
       finalText,
     );
     const actualFinal = result.assistantMessage.content;
     expect(result.assistantMessage.metadata["affinityDelivery"]).toMatchObject({
-      rewriteStatus: "rewritten",
+      policyVersion: "persona_expression_v2",
+      rewriteStatus: "ineligible",
+      rewriteAttempted: false,
       finalTextSha256: replyTextHash(actualFinal),
       finalCharacters: visibleReplyCharacters(actualFinal),
     });

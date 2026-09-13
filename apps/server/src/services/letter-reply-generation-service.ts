@@ -66,11 +66,17 @@ export interface LetterReplyModelRequest<T> {
   agentId: string;
   maxRetries?: number;
   maxOutputTokens?: number;
+  operationId?: string;
 }
 
 export interface LetterReplyModel {
+  readonly durableReplay?: boolean;
   generateObject<T>(input: LetterReplyModelRequest<T>): Promise<T>;
-  captureDefault?(): LetterReplyModel & {
+  captureDefault?(context?: {
+    purpose: "letter_reply";
+    operationId: string;
+    agentId: string;
+  }): LetterReplyModel & {
     providerName: string;
     modelName: string;
   };
@@ -308,7 +314,11 @@ export class LetterReplyGenerationService {
       );
     }
 
-    const execution = this.llm.captureDefault?.();
+    const execution = this.llm.captureDefault?.({
+      purpose: "letter_reply",
+      operationId: `letter:${incomingLetter.id}:${snapshotHash}:${payload.generationEpoch}`,
+      agentId: task.agentId,
+    });
     const run = this.repository.claimGenerationRun({
       incomingLetterId: incomingLetter.id,
       snapshotId: snapshot.id,
@@ -394,7 +404,17 @@ export class LetterReplyGenerationService {
         contentHash: incomingLetter.contentHash,
       },
       strategy,
-      referenceScope: randomBytes(8).toString("hex"),
+      // Recovery reuses the saved provider response, so its source references
+      // must keep the same mapping for every claim of this logical generation.
+      referenceScope: (execution ?? this.llm).durableReplay
+        ? sha256(
+            JSON.stringify([
+              incomingLetter.id,
+              snapshotHash,
+              payload.generationEpoch,
+            ]),
+          ).slice(0, 16)
+        : randomBytes(8).toString("hex"),
     });
     const prepared = Object.freeze({
       status: "claimed",
@@ -421,6 +441,7 @@ export class LetterReplyGenerationService {
         this.#executions.get(prepared) ?? this.llm
       ).generateObject({
         purpose: "letter_reply",
+        operationId: `letter:${prepared.incomingLetter.id}:${prepared.snapshotHash}:${prepared.payload.generationEpoch}`,
         system: prepared.prompt.system,
         prompt: prepared.prompt.prompt,
         schema: LetterReplyProposalSchema,

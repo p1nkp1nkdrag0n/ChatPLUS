@@ -38,6 +38,10 @@ import type {
 } from "./types";
 import { ApiError } from "./types";
 import { projectLetterDetailForCache } from "../lib/correspondence";
+import {
+  hostedRequestHeaders,
+  notifyHostedSessionExpired,
+} from "../lib/hostedSession";
 
 interface ErrorEnvelope {
   error?: {
@@ -74,9 +78,14 @@ export async function request<T>(
     headers.set("content-type", "application/json");
   }
   headers.set("accept", "application/json");
+  for (const [name, value] of Object.entries(
+    hostedRequestHeaders(init.method, init.body),
+  ))
+    if (!headers.has(name)) headers.set(name, value);
 
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
+    notifyHostedSessionExpired(path, response.status);
     let payload: ErrorEnvelope = {};
     try {
       payload = (await response.json()) as ErrorEnvelope;

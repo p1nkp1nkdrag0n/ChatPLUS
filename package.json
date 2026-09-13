@@ -78,7 +78,13 @@
     "sim:user-followup": "tsx apps/server/src/scenarios/run-p1-scenario.ts user-followup",
     "sim:30-day-life": "tsx apps/server/src/scenarios/run-p1-scenario.ts 30-day-life",
     "sim:checkpoint-conflict": "tsx apps/server/src/scenarios/run-p1-scenario.ts checkpoint-conflict",
-    "sim:date-recall": "tsx apps/server/src/scenarios/run-p1-scenario.ts date-recall"
+    "sim:date-recall": "tsx apps/server/src/scenarios/run-p1-scenario.ts date-recall",
+    "hosted:start": "tsx apps/server/src/hosted/bootstrap.ts",
+    "hosted:stop": "tsx scripts/hosted-stop.ts",
+    "hosted:serve": "pnpm --filter @personasim/web build && pnpm hosted:start",
+    "hosted:restore": "tsx scripts/hosted-restore.ts",
+    "hosted:extract-research": "tsx scripts/hosted-extract-research.ts",
+    "test:hosted": "cross-env PERSONASIM_LOAD_ENV=false vitest run apps/server/src/hosted apps/desktop-online/src"
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",

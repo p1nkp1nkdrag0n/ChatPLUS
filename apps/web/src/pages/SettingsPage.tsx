@@ -1,4 +1,8 @@
-import { Check, MessageCircleMore, ShieldCheck } from "lucide-react";
+import {
+  Check,
+  MessageCircleMore,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -8,8 +12,10 @@ import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
 import { ProviderSettings } from "../components/llm/ProviderSettings";
 import { BadgeImageSettings } from "../components/achievements/BadgeImageSettings";
+import { useHosted } from "../hooks/useHosted";
 
 export default function SettingsPage() {
+  const hosted = useHosted();
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["settings"], queryFn: api.settings.get });
   const [form, setForm] = useState<AppSettings>();
@@ -33,16 +39,28 @@ export default function SettingsPage() {
       <PageHeader
         title="设置"
         actions={
-          query.data?.developerMode ? (
+          query.data?.developerMode && !hosted ? (
             <Link className="button button--secondary" to="/developer">
               开发者工具
             </Link>
           ) : null
         }
-        description="配置模型、回复体验与本地偏好。"
+        description={
+          hosted
+            ? "调整回复体验，管理你的账号。"
+            : "配置模型、回复体验与本地偏好。"
+        }
       />
-      <ProviderSettings />
-      <BadgeImageSettings />
+      {!hosted ? (
+        <>
+          <ProviderSettings />
+          <BadgeImageSettings />
+        </>
+      ) : (
+        <Link className="button button--secondary" to="/account">
+          账号、积分与账单
+        </Link>
+      )}
       {query.isPending ? <LoadingBlock label="正在读取本地设置…" /> : null}
       {query.isError ? <ErrorBlock error={query.error} /> : null}
       {form ? (

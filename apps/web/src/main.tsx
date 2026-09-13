@@ -18,6 +18,7 @@ import "./styles/llm-settings.css";
 import "./styles/achievements.css";
 import "./styles/creation.css";
 import "./styles/api-setup.css";
+import "./styles/hosted.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root mount point");

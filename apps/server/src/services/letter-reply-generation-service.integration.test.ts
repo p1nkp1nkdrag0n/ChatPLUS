@@ -49,6 +49,7 @@ const proposal: LetterReplyProposal = {
 
 interface RecordedModelCall {
   readonly purpose: string;
+  readonly operationId?: string;
   readonly system: string;
   readonly prompt: string;
   readonly agentId: string;
@@ -70,6 +71,9 @@ class ScriptedLetterReplyModel implements LetterReplyModel {
   async generateObject<T>(input: LetterReplyModelRequest<T>): Promise<T> {
     const call: RecordedModelCall = {
       purpose: input.purpose,
+      ...(input.operationId === undefined
+        ? {}
+        : { operationId: input.operationId }),
       system: input.system,
       prompt: input.prompt,
       agentId: input.agentId,
@@ -656,6 +660,44 @@ describe("LetterReplyGenerationService", () => {
         repository.getGenerationRunForEpoch(seeded.incoming.id, 0),
       ),
     ).not.toContain(proposal.paragraphs[0]);
+  });
+
+  it("keeps prompt references and model operation stable when a generation claim is recovered", async () => {
+    const seeded = seedReadyGeneration(repository);
+    const model = Object.assign(new ScriptedLetterReplyModel(() => proposal), {
+      durableReplay: true,
+    });
+    const generation = createGenerationService(model, new FixtureEncryptor());
+    const firstTask = claimTask(
+      repository,
+      seeded.task.id,
+      PROCESSED,
+      RETRY_DUE,
+      "first-claim",
+    );
+    const first = generation.preflight({
+      task: firstTask,
+      observedNowUtc: PROCESSED,
+    });
+    expect(first.status).toBe("claimed");
+    await generation.compose(first);
+    retryRunAndTask(repository, first, firstTask, RETRY_DUE, PROCESSED);
+    const secondTask = claimTask(
+      repository,
+      seeded.task.id,
+      SECOND_OBSERVED,
+      THIRD_DUE,
+      "recovered-claim",
+    );
+    const second = generation.preflight({
+      task: secondTask,
+      observedNowUtc: SECOND_OBSERVED,
+    });
+    await generation.compose(second);
+    expect(model.calls).toHaveLength(2);
+    expect(model.calls[1]?.prompt).toBe(model.calls[0]?.prompt);
+    expect(model.calls[1]?.operationId).toBe(model.calls[0]?.operationId);
+    expect(model.calls[0]?.operationId).toMatch(/^letter:.*:0$/);
   });
 
   it("atomically reaps a crashed final task attempt and its generating run", async () => {

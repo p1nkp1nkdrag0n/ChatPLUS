@@ -8,6 +8,7 @@ import type {
   LlmSelection,
   LlmExecutionSelection,
   LlmProviderView,
+  LlmSessionModel,
 } from "@personasim/contracts";
 import {
   createFixtureLlmProvider,
@@ -15,6 +16,7 @@ import {
   createManagedLlmProvider,
   type LlmMetricSink,
   type LlmProvider,
+  type ImageGenerationProvider,
 } from "@personasim/providers";
 import type { ZodType } from "zod";
 
@@ -43,6 +45,8 @@ export type GenerateObjectInput<T> = {
   maxRetries?: number;
   maxOutputTokens?: number;
   fixture?: T;
+  /** Stable source/task identity for resumable background generation. */
+  operationId?: string;
 };
 
 export type LlmLogicalCallEvent =
@@ -75,12 +79,45 @@ export interface LlmServiceObservationOptions {
   onMetric?: LlmMetricSink;
   promptDiagnostics?: boolean;
   onLogicalCall?: (event: LlmLogicalCallEvent) => void;
+  /** Hosted execution is authoritative; it never falls back to local credentials. */
+  executionResolver?: (
+    purpose: LlmPurpose,
+    selection?: LlmSelection,
+    context?: { operationId?: string; agentId?: string },
+  ) => HostedLlmExecution;
+  imageProviderFactory?: (context: {
+    purpose: "achievement_badge" | "image_probe";
+    generationId: string;
+    agentId?: string;
+  }) => ImageGenerationProvider;
+  onImageAsset?: (
+    attemptId: string,
+    asset: {
+      storageKey: string;
+      thumbnailStorageKey?: string;
+      sha256: string;
+      width?: number;
+      height?: number;
+      mimeType?: string;
+    },
+  ) => void;
+}
+
+export interface HostedLlmExecution {
+  provider: LlmProvider;
+  protocol: LlmProtocol;
+  selection: LlmExecutionSelection;
+  displayName: string;
 }
 
 const REDACTED_LETTER_REPLY_OBSERVATION = "[redacted:letter_reply]";
 const CAPTURED_EXECUTION = Symbol("captured-llm-execution");
 
 export class LlmService {
+  /** Hosted transport can recover an earlier response for the same task. */
+  get durableReplay(): boolean {
+    return this.observation.executionResolver !== undefined;
+  }
   private readonly initialProviderName: "fixture" | LlmProtocol;
   private readonly initialProfileName: string;
   private readonly initialModelName: string;
@@ -153,6 +190,7 @@ export class LlmService {
 
   private currentView():
     { provider: LlmProviderView; modelId: string } | undefined {
+    if (this.observation.executionResolver) return undefined;
     if (!this.settings) return undefined;
     const catalog = this.settings.catalog();
     const provider = catalog.providers.find(
@@ -189,14 +227,64 @@ export class LlmService {
     return this.capabilities.reasoningRequestFormat;
   }
 
-  captureDefault(): LlmService {
-    return this.captureSelection();
+  captureDefault(context?: {
+    purpose: LlmPurpose;
+    operationId?: string;
+    agentId?: string;
+  }): LlmService {
+    return this.captureSelection(undefined, undefined, context);
+  }
+
+  sessionModel(sessionId: string): LlmSessionModel | undefined {
+    const session = this.settings?.sessionModel(sessionId);
+    if (!session?.effective || !this.observation.executionResolver)
+      return session;
+    if (session.effective.providerId !== "hosted")
+      return { ...session, effective: null, error: "model_unavailable" };
+    // Hosted's local provider is only a catalog container. Every public model
+    // has its own central execution revision, which the client must echo back.
+    const execution = this.observation.executionResolver(
+      "chat_turn",
+      session.effective,
+    );
+    return { ...session, effective: execution.selection };
   }
 
   captureSelection(
     selection?: LlmSelection,
     expectedRevision?: number,
+    context?: { purpose: LlmPurpose; operationId?: string; agentId?: string },
   ): LlmService {
+    if (this.observation.executionResolver) {
+      const resolved = this.observation.executionResolver(
+        context?.purpose ?? "chat_turn",
+        selection,
+        context,
+      );
+      if (
+        expectedRevision !== undefined &&
+        resolved.selection.revision !== expectedRevision
+      )
+        throw new LlmServiceError(
+          "The selected model changed. Please refresh.",
+          "model_revision_changed",
+        );
+      const captured = new LlmService(
+        {
+          provider: "fixture",
+          model: resolved.displayName,
+          baseUrl: "",
+          timeoutMs: 120000,
+          maxRetries: 0,
+        },
+        this.store,
+        this.clock,
+        this.observation,
+        resolved,
+      );
+      captured.origin = this;
+      return captured;
+    }
     if (!this.settings) return this;
     const resolved = this.settings.resolve(selection, expectedRevision);
     const key = JSON.stringify(resolved.selection);
@@ -280,6 +368,13 @@ export class LlmService {
     sessionId: string,
     expected?: LlmExecutionSelection,
   ): LlmService {
+    if (this.observation.executionResolver) {
+      const selection =
+        expected ??
+        this.settings?.sessionModel(sessionId).selection ??
+        undefined;
+      return this.captureSelection(selection, expected?.revision);
+    }
     if (expected)
       return this.captureSelection(
         { providerId: expected.providerId, modelId: expected.modelId },
@@ -302,6 +397,8 @@ export class LlmService {
       Object.defineProperty(command, CAPTURED_EXECUTION, { value: this });
       return this.origin.generateObject(command);
     }
+    if (this.observation.executionResolver)
+      return this.generateCapturedObject(input);
     if (this.settings)
       return this.captureDefault().generateCapturedObject(input);
     return this.generateCapturedObject(input);
@@ -310,20 +407,29 @@ export class LlmService {
   private async generateCapturedObject<T>(
     input: GenerateObjectInput<T>,
   ): Promise<T> {
+    const hosted = this.observation.executionResolver?.(
+      input.purpose,
+      this.selection,
+      {
+        ...(input.operationId === undefined
+          ? {}
+          : { operationId: input.operationId }),
+        ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
+      },
+    );
     const logicalCallIndex = ++this.logicalCallSequence;
+    const privateWriting = input.purpose === "letter_reply";
+    const redactedWriting =
+      input.purpose === "letter_reply"
+        ? REDACTED_LETTER_REPLY_OBSERVATION
+        : `[redacted:${input.purpose}]`;
     this.emitLogicalCall({
       stage: "started",
       index: logicalCallIndex,
       purpose: input.purpose,
       ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
-      system:
-        input.purpose === "letter_reply"
-          ? REDACTED_LETTER_REPLY_OBSERVATION
-          : input.system,
-      prompt:
-        input.purpose === "letter_reply"
-          ? REDACTED_LETTER_REPLY_OBSERVATION
-          : input.prompt,
+      system: privateWriting ? redactedWriting : input.system,
+      prompt: privateWriting ? redactedWriting : input.prompt,
       ...(input.maxRetries === undefined
         ? {}
         : { maxRetries: input.maxRetries }),
@@ -338,7 +444,7 @@ export class LlmService {
     let outputTokens = 0;
     let parsedOutput: unknown;
     try {
-      const provider = this.fixtureProvider(input);
+      const provider = hosted?.provider ?? this.fixtureProvider(input);
       const result = await provider.generateObject({
         purpose: input.purpose,
         system: input.system,
@@ -371,7 +477,7 @@ export class LlmService {
         purpose: input.purpose,
         ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
         success,
-        ...(parsedOutput === undefined || input.purpose === "letter_reply"
+        ...(parsedOutput === undefined || privateWriting
           ? {}
           : { parsedOutput }),
         ...(errorCode === undefined ? {} : { errorCode }),
@@ -381,9 +487,9 @@ export class LlmService {
       this.store.recordLlmCall({
         ...(input.agentId ? { agentId: input.agentId } : {}),
         purpose: input.purpose,
-        provider: this.providerName,
-        providerProfile: this.profileName,
-        model: this.modelName,
+        provider: hosted?.protocol ?? this.providerName,
+        providerProfile: hosted?.selection.providerId ?? this.profileName,
+        model: hosted?.displayName ?? this.modelName,
         ...(this.selection === undefined
           ? this.providerName === "fixture"
             ? { configRevision: 1 }

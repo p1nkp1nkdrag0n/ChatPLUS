@@ -2,6 +2,7 @@ import { ChevronDown, Check, Search } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { LlmProviderView, LlmSelection } from "@personasim/contracts";
 import { sameSelection, selectionKey } from "../../lib/llmSettings";
+import { useHosted } from "../../hooks/useHosted";
 
 interface Props {
   label: string;
@@ -22,6 +23,7 @@ export function ModelSelect({
   allowDefault = false,
   defaultLabel,
 }: Props) {
+  const hosted = useHosted();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [active, setActive] = useState(0);
@@ -31,7 +33,9 @@ export function ModelSelect({
   const provider = providers.find((item) => item.id === value?.providerId);
   const selected = provider?.models.find((item) => item.id === value?.modelId);
   const caption = value
-    ? `${provider?.name ?? "供应商不可用"} / ${selected?.label || value.modelId}`
+    ? hosted
+      ? selected?.label || "模型暂不可用"
+      : `${provider?.name ?? "供应商不可用"} / ${selected?.label || value.modelId}`
     : allowDefault
       ? `跟随全局默认${defaultLabel ? ` · ${defaultLabel}` : ""}`
       : "选择模型";
@@ -55,8 +59,12 @@ export function ModelSelect({
         .map((model) => ({
           key: selectionKey({ providerId: item.id, modelId: model.id }),
           selection: { providerId: item.id, modelId: model.id },
-          label: model.label ? `${model.label} · ${model.id}` : model.id,
-          group: item.name,
+          label: hosted
+            ? model.label || "未命名模型"
+            : model.label
+              ? `${model.label} · ${model.id}`
+              : model.id,
+          group: hosted ? "可选模型" : item.name,
         })),
     ),
   ];

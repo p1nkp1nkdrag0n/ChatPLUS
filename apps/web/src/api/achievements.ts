@@ -5,6 +5,10 @@ import type {
   AchievementPage,
 } from "@personasim/contracts";
 import { ApiError } from "./types";
+import {
+  hostedRequestHeaders,
+  notifyHostedSessionExpired,
+} from "../lib/hostedSession";
 
 export type AchievementCategory = "all" | "global" | "character";
 export interface AchievementFilters {
@@ -23,11 +27,13 @@ async function request<T>(
     method,
     headers: {
       accept: "application/json",
+      ...hostedRequestHeaders(method, input),
       ...(input === undefined ? {} : { "content-type": "application/json" }),
     },
     ...(input === undefined ? {} : { body: JSON.stringify(input) }),
   });
   if (!response.ok) {
+    notifyHostedSessionExpired(path, response.status);
     const payload = (await response.json().catch(() => ({}))) as {
       error?: { code?: string; message?: string };
     };

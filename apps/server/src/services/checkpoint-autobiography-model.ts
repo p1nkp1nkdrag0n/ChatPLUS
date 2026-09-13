@@ -145,6 +145,7 @@ export class LlmCheckpointAutobiographyModel implements CheckpointAutobiographyM
         const draft = schema.parse(
           await this.llm.generateObject({
             purpose: "checkpoint_autobiography",
+            operationId: `checkpoint:${input.checkpointId}:attempt:${attempt}`,
             system: SYSTEM,
             prompt: JSON.stringify({
               outputContractVersion: "checkpoint_atomic_reports_v2",

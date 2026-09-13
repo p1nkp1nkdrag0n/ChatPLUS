@@ -99,12 +99,15 @@ export function registerAchievementRoutes(
   });
   app.get("/api/achievements/events", (_request, reply) => {
     reply.hijack();
-    reply.raw.writeHead(200, {
+    const headers: Record<string, string | number | string[] | undefined> = {
+      ...reply.getHeaders(),
       "content-type": "text/event-stream",
-      "cache-control": "no-cache, no-transform",
+      "cache-control":
+        reply.getHeader("cache-control") ?? "no-cache, no-transform",
       connection: "keep-alive",
       "x-accel-buffering": "no",
-    });
+    };
+    reply.raw.writeHead(200, headers);
     let revision = service.revision();
     reply.raw.write(`event: achievements.changed\ndata: {}\n\n`);
     const timer = setInterval(() => {

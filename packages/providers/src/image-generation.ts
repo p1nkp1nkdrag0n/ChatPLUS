@@ -18,6 +18,8 @@ export interface GeneratedImageAsset {
     "image/svg+xml" | "image/png" | "image/webp" | "image/jpeg";
   readonly width: number;
   readonly height: number;
+  /** Server-only metering reference; never a provider credential or public URL. */
+  readonly meteringId?: string;
 }
 
 export interface ImageGenerationProvider {

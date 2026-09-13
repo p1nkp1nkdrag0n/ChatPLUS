@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { LoadingBlock } from "../components/Feedback";
 import { AchievementActivity } from "../components/achievements/AchievementActivity";
+import { HostedBoundary } from "../components/HostedBoundary";
+import { useHosted } from "../hooks/useHosted";
 
 const CharacterLibraryPage = lazy(
   () => import("../pages/CharacterLibraryPage"),
@@ -37,6 +39,8 @@ const RelationshipArchivePage = lazy(
 const KeepsakeCabinetPage = lazy(() => import("../pages/KeepsakeCabinetPage"));
 const ArtifactDetailPage = lazy(() => import("../pages/ArtifactDetailPage"));
 const ShareComposerPage = lazy(() => import("../pages/ShareComposerPage"));
+const HostedAccountPage = lazy(() => import("../pages/HostedAccountPage"));
+const HostedAdminPage = lazy(() => import("../pages/HostedAdminPage"));
 
 export const CORRESPONDENCE_ROUTE_PATHS = [
   "/characters/:characterId/correspondence",
@@ -53,6 +57,26 @@ export const RELATIONSHIP_ARCHIVE_ROUTE_PATHS = [
 ] as const;
 
 export function App() {
+  return (
+    <HostedBoundary>
+      <DearvaleRoutes />
+    </HostedBoundary>
+  );
+}
+
+function DearvaleRoutes() {
+  const hosted = useHosted();
+  if (hosted?.info.surface === "admin")
+    return (
+      <Suspense
+        fallback={<LoadingBlock label="正在打开管理控制台…" fullPage />}
+      >
+        <Routes>
+          <Route path="/admin/*" element={<HostedAdminPage />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Routes>
+      </Suspense>
+    );
   return (
     <>
       <AchievementActivity />
@@ -119,8 +143,13 @@ export function App() {
               element={<TimelinePage />}
             />
             <Route path="/settings" element={<SettingsPage />} />
+            {hosted ? (
+              <Route path="/account" element={<HostedAccountPage />} />
+            ) : null}
             <Route path="/achievements" element={<AchievementsPage />} />
-            <Route path="/developer" element={<DeveloperPage />} />
+            {!hosted ? (
+              <Route path="/developer" element={<DeveloperPage />} />
+            ) : null}
             <Route path="*" element={<Navigate to="/characters" replace />} />
           </Route>
         </Routes>

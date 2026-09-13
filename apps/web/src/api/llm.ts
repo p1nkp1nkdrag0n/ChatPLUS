@@ -9,6 +9,10 @@ import type {
   LlmTarget,
 } from "@personasim/contracts";
 import { ApiError } from "./types";
+import {
+  hostedRequestHeaders,
+  notifyHostedSessionExpired,
+} from "../lib/hostedSession";
 
 async function request<T>(
   path: string,
@@ -20,12 +24,14 @@ async function request<T>(
     method,
     headers: {
       accept: "application/json",
+      ...hostedRequestHeaders(method, input),
       ...(input === undefined ? {} : { "content-type": "application/json" }),
     },
     ...(input === undefined ? {} : { body: JSON.stringify(input) }),
     ...(signal ? { signal } : {}),
   });
   if (!response.ok) {
+    notifyHostedSessionExpired(path, response.status);
     const payload = (await response.json().catch(() => ({}))) as {
       error?: {
         code?: string;

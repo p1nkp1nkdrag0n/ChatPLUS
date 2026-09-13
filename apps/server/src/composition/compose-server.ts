@@ -122,6 +122,12 @@ export async function composeServer(
       ...(options.llmObservation?.fetch
         ? { fetch: options.llmObservation.fetch }
         : {}),
+      ...(options.llmObservation?.imageProviderFactory
+        ? { imageProviderFactory: options.llmObservation.imageProviderFactory }
+        : {}),
+      ...(options.llmObservation?.onImageAsset
+        ? { onImageAsset: options.llmObservation.onImageAsset }
+        : {}),
     },
   );
   achievements.start();

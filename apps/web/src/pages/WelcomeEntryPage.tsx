@@ -5,10 +5,16 @@ import { llmApi, llmCatalogKey } from "../api/llm";
 import { configuredDefault } from "../lib/apiSetup";
 import type { LlmCatalog } from "@personasim/contracts";
 import WelcomePage from "./WelcomePage";
+import { useHosted } from "../hooks/useHosted";
 
 const ApiSetupWizard = lazy(() => import("../components/setup/ApiSetupWizard"));
 
 export default function WelcomeEntryPage() {
+  const hosted = useHosted();
+  return hosted ? <WelcomePage /> : <LocalWelcomeEntry />;
+}
+
+function LocalWelcomeEntry() {
   const [entry, setEntry] = useState<"checking" | "welcome" | LlmCatalog>(
     "checking",
   );

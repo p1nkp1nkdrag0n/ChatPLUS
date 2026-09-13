@@ -419,6 +419,7 @@ export class SettlementService {
     try {
       const enriched = await this.llm.generateObject({
         purpose: "enrich_activity",
+        operationId: `activity-enrichment:${spec.id}:${completedActivities.map((activity) => activity.eventId).sort().join(":")}`,
         agentId: spec.id,
         system:
           "Briefly enrich completed fictional activities. Add only plausible low-stakes details, never contradict the schedule, and do not expose hidden reasoning.",

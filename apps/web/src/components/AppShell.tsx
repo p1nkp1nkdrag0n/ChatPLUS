@@ -1,4 +1,11 @@
-import { Award, Mail, MessageCircle, Settings, UserRound } from "lucide-react";
+import {
+  Award,
+  Mail,
+  MessageCircle,
+  Settings,
+  UserRound,
+  Wallet,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -10,6 +17,8 @@ import {
   readActiveCharacter,
   subscribeActiveCharacter,
 } from "../lib/activeCharacter";
+import { useHosted } from "../hooks/useHosted";
+import { formatPoints } from "../api/hosted";
 
 interface NavigationItem {
   to: string;
@@ -51,6 +60,7 @@ function NavItem({
 }
 
 export function AppShell() {
+  const hosted = useHosted();
   const queryClient = useQueryClient();
   const location = useLocation();
   const [activeCharacterId, setActiveCharacterId] =
@@ -136,7 +146,7 @@ export function AppShell() {
 
   return (
     <div
-      className={`app-shell${chat ? " app-shell--chat" : ""}${achievements ? " app-shell--achievements" : ""}`}
+      className={`app-shell${chat ? " app-shell--chat" : ""}${achievements ? " app-shell--achievements" : ""}${hosted ? " app-shell--hosted" : ""}`}
     >
       <aside className="app-nav" aria-label="主导航">
         <NavLink
@@ -157,6 +167,22 @@ export function AppShell() {
             ))}
           </div>
           <div className="app-nav__group app-nav__group--secondary">
+            {hosted ? (
+              <Link
+                to="/account"
+                className="hosted-wallet-link"
+                aria-label="账户"
+                title="账户"
+              >
+                <Wallet size={20} aria-hidden="true" />
+                <span className="hosted-wallet-link__mobile-label">账户</span>
+                <span>{hosted.session.user.username}</span>
+                <strong>
+                  {formatPoints(hosted.session.wallet.availableMicros)} 积分
+                </strong>
+                <small>余额与账单</small>
+              </Link>
+            ) : null}
             {SECONDARY_NAVIGATION.map((item) => (
               <NavItem key={item.to} {...item} />
             ))}

@@ -30,6 +30,7 @@ import { DateTime } from "luxon";
 import { api, unwrapCharacter, unwrapList } from "../api/client";
 import { llmApi, sessionModelKey } from "../api/llm";
 import { ChatModelToolbar } from "../components/llm/ChatModelToolbar";
+import { ReplyUsage } from "../components/hosted/HostedBilling";
 import type { CharacterSpec, ChatMessage, ChatSession } from "../api/types";
 import { CharacterAvatar } from "../components/CharacterAvatar";
 import { ErrorBlock, LoadingBlock } from "../components/Feedback";
@@ -691,6 +692,13 @@ function SessionConversation({
           <MessageBubble
             key={message.id}
             message={message}
+            clientMessageId={
+              message.role === "assistant"
+                ? messages.find(
+                    (candidate) => candidate.id === message.inReplyToMessageId,
+                  )?.clientMessageId
+                : undefined
+            }
             characterId={characterId}
             name={character.identity.name}
             timezone={character.identity.timezone}
@@ -831,6 +839,7 @@ function SessionConversation({
 
 export function MessageBubble({
   message,
+  clientMessageId,
   characterId,
   name,
   timezone,
@@ -840,6 +849,7 @@ export function MessageBubble({
   onDeliveryComplete,
 }: {
   message: ChatMessage;
+  clientMessageId?: string | undefined;
   characterId?: string;
   name: string;
   timezone: string;
@@ -943,6 +953,9 @@ export function MessageBubble({
             {formatLocalTime(message.createdAtUtc, timezone)}
           </time>
         </div>
+        {message.role === "assistant" ? (
+          <ReplyUsage clientMessageId={clientMessageId} />
+        ) : null}
         {proactive ? (
           <Link
             className="message-origin-link"

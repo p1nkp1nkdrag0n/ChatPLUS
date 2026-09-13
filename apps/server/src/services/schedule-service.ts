@@ -179,6 +179,7 @@ export class ScheduleService {
     try {
       plan = await this.llm.generateObject({
         purpose: "plan_schedule",
+        operationId: `schedule:${agentId}:${cursor.scheduleHorizonEndUtc}:${targetEndUtc}`,
         agentId,
         system:
           "Plan only the missing part of a fictional character schedule. Use UTC ISO instants, preserve fixed items, include sleep and meals, avoid overlaps, and never alter historical activities.",

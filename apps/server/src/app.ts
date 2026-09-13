@@ -16,6 +16,7 @@ import { ApiError } from "./domain/errors.js";
 import { registerRoutes, type RouteServices } from "./http/routes.js";
 import { registerLlmRoutes } from "./http/llm-routes.js";
 import { registerAchievementRoutes } from "./http/achievement-routes.js";
+import { registerDesktopSession } from "./http/desktop-session.js";
 import { publicLlmProviderError } from "./http/llm-provider-error.js";
 import type { Clock } from "./runtime/clock.js";
 import type { HourlyScheduler } from "./runtime/hourly-scheduler.js";
@@ -30,6 +31,8 @@ export type BuildAppOptions = {
   seedDemo?: boolean;
   startScheduler?: boolean;
   logger?: boolean;
+  /** Private desktop HTTP session; the Electron main process supplies it. */
+  desktopSessionToken?: string;
   llmObservation?: LlmServiceObservationOptions;
   fixtureTurnBehavior?: FixtureTurnBehavior;
   /** Development/evaluation only; not an HTTP or persisted user setting. */
@@ -83,6 +86,9 @@ export async function buildApp(
       await composition.dispose("fastify_close");
     });
 
+    if (options.desktopSessionToken !== undefined) {
+      registerDesktopSession(app, options.desktopSessionToken);
+    }
     await app.register(cors, {
       origin: config.webOrigin.split(",").map((origin) => origin.trim()),
       credentials: false,
@@ -212,6 +218,7 @@ export async function buildApp(
       });
     });
 
+    app.get("/api/hosted/info", () => ({ hosted: false }));
     registerRoutes(app, services);
     registerLlmRoutes(app, services, options.llmObservation?.fetch);
     registerAchievementRoutes(app, services);

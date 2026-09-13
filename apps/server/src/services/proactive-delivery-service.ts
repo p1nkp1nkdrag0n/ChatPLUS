@@ -99,6 +99,7 @@ export class ProactiveDeliveryService {
           const nowUtc = this.clock.nowUtc();
           const proposal = await this.llm.generateObject({
             purpose: "compose_proactive_message",
+            operationId: `proactive:${agentId}:${context.subject.kind}:${context.subject.id}`,
             agentId,
             system:
               "Write one concise, natural proactive message grounded only in the supplied delivery subject. A follow_up is due now: execute the check-in as a direct present-tense question. Never promise to ask or remind later, and never repeat an old relative date as if it were still future. Do not invent an outcome or imply that a planned event occurred.",

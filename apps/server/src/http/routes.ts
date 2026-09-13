@@ -456,12 +456,15 @@ export function registerRoutes(
     const { id } = idParamsSchema.parse(request.params);
     if (!store.getCharacterSummary(id)) throw notFound("Character");
     reply.hijack();
-    reply.raw.writeHead(200, {
+    const headers: Record<string, string | number | string[] | undefined> = {
+      ...reply.getHeaders(),
       "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
+      "cache-control":
+        reply.getHeader("cache-control") ?? "no-cache, no-transform",
       connection: "keep-alive",
       "x-accel-buffering": "no",
-    });
+    };
+    reply.raw.writeHead(200, headers);
     reply.raw.flushHeaders();
     const unsubscribe = sse.subscribe(id, reply.raw);
     request.raw.once("close", unsubscribe);
@@ -472,7 +475,7 @@ export function registerRoutes(
     return {
       sessions: conversations.listSessions(id).map((session) => ({
         ...session,
-        model: llm.settings?.sessionModel(session.id),
+        model: llm.sessionModel(session.id),
       })),
     };
   });
@@ -484,7 +487,7 @@ export function registerRoutes(
       .parse(request.body ?? {});
     const session = conversations.createSession(id, body.title);
     return reply.code(201).send({
-      session: { ...session, model: llm.settings?.sessionModel(session.id) },
+      session: { ...session, model: llm.sessionModel(session.id) },
     });
   });
 
@@ -1132,7 +1135,9 @@ async function relationshipArchiveApi<T>(
   }
 }
 
-async function readImportInput(request: FastifyRequest): Promise<unknown> {
+export async function readImportInput(
+  request: FastifyRequest,
+): Promise<unknown> {
   if (!request.isMultipart())
     return importedCharacterInputSchema.parse(request.body);
   const fields: Record<string, string> = {};

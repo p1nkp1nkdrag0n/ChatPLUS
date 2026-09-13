@@ -17,6 +17,7 @@ import {
   RemoteImageGenerationProvider,
   ImageProviderError,
   normalizeImageBaseUrl,
+  type ImageGenerationProvider,
 } from "@personasim/providers";
 import type { Database } from "../db/connection.js";
 import type { Clock } from "../runtime/clock.js";
@@ -60,6 +61,25 @@ interface BadgeJob {
   visual_version: number;
   request_id: string;
 }
+export interface AchievementServiceOptions {
+  databasePath: string;
+  assetRoot: string;
+  fetch?: typeof fetch;
+  developerMode?: boolean;
+  imageProviderFactory?: (context: {
+    purpose: "achievement_badge" | "image_probe";
+    generationId: string;
+    agentId?: string;
+  }) => ImageGenerationProvider;
+  onImageAsset?: (attemptId: string, asset: {
+    storageKey: string;
+    thumbnailStorageKey?: string;
+    sha256: string;
+    width?: number;
+    height?: number;
+    mimeType?: string;
+  }) => void;
+}
 
 /** Collection projections never expose achievement definitions or runtime state.
  * Business unlocks live in migration 032's transactional fact triggers. */
@@ -68,27 +88,18 @@ export class AchievementService {
   private readonly credentials: LlmCredentialService;
   private timer: ReturnType<typeof setInterval> | undefined;
   private running: Promise<void> | undefined;
+  private paused = false;
   private readonly controller = new AbortController();
   constructor(
     readonly database: Database,
     private readonly clock: Clock,
-    options: {
-      databasePath: string;
-      assetRoot: string;
-      fetch?: typeof fetch;
-      developerMode?: boolean;
-    },
+    options: AchievementServiceOptions,
   ) {
     this.assets = new KeepsakeAssetStore(options.assetRoot);
     this.credentials = new LlmCredentialService(database, options.databasePath);
     this.options = options;
   }
-  private readonly options: {
-    databasePath: string;
-    assetRoot: string;
-    fetch?: typeof fetch;
-    developerMode?: boolean;
-  };
+  private readonly options: AchievementServiceOptions;
 
   visit(): { serverTimeUtc: string } {
     const now = this.clock.nowUtc();
@@ -279,7 +290,8 @@ export class AchievementService {
     return this.imageSettings();
   }
   async testImageSettings(): Promise<{ success: true }> {
-    const provider = this.provider();
+    const generationId = `image-test:${randomUUID()}`;
+    const provider = this.options.imageProviderFactory?.({ purpose: "image_probe", generationId }) ?? this.provider();
     const asset = await provider.generate({
       visualSpec: {
         version: "achievement_badge_v2",
@@ -292,7 +304,7 @@ export class AchievementService {
       },
       width: 1024,
       height: 1024,
-      idempotencyKey: `image-test:${randomUUID()}`,
+      idempotencyKey: generationId,
     });
     await assertTransparentWax(asset.bytes);
     const saved = await this.assets.persist({
@@ -311,10 +323,10 @@ export class AchievementService {
     this.database
       .prepare(
         `UPDATE achievement_badge_jobs SET status='pending',attempts=0,next_attempt_at_utc=?,
-      request_id=CASE WHEN error_code IN ('image_outcome_unknown','image_request_failed') THEN request_id ELSE NULL END,
+      request_id=CASE WHEN error_code IN ('image_outcome_unknown','image_request_failed') OR (?=1 AND error_code<>'image_transparency_required') THEN request_id ELSE NULL END,
       error_code=NULL,claim_token=NULL,lease_until_utc=NULL,updated_at_utc=? WHERE achievement_id=? AND status='failed'`,
       )
-      .run(now, now, id);
+      .run(now, Number(Boolean(this.options.imageProviderFactory)), now, id);
     this.wake();
     return this.get(id);
   }
@@ -338,13 +350,14 @@ export class AchievementService {
   }
 
   start(): void {
-    if (this.timer) return;
+    if (this.timer || this.controller.signal.aborted) return;
+    this.paused = false;
     this.timer = setInterval(() => this.wake(), 2000);
     this.timer.unref();
     this.wake();
   }
   wake(): void {
-    if (this.controller.signal.aborted || this.running !== undefined) return;
+    if (this.paused || this.controller.signal.aborted || this.running !== undefined) return;
     this.running = this.processNext()
       .catch(() => undefined)
       .finally(() => {
@@ -353,13 +366,21 @@ export class AchievementService {
   }
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    this.paused = true;
     this.controller.abort();
+    await this.running;
+  }
+  async pause(): Promise<void> {
+    this.paused = true;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
     await this.running;
   }
   /** Public for deterministic integration tests and the independent worker. */
   async processNext(): Promise<void> {
     const settings = this.settingsRow();
-    if (!settings.enabled) return;
+    if (!settings.enabled && !this.options.imageProviderFactory) return;
     const now = this.clock.nowUtc();
     // A lost lease can mean the provider already rendered an image. Do not
     // automatically issue another paid request after an uncertain interruption.
@@ -442,7 +463,8 @@ export class AchievementService {
         job.badge_key,
         job.visual_version,
       );
-      const generated = await this.provider().generate({
+      const provider = this.options.imageProviderFactory?.({ purpose: "achievement_badge", generationId: job.request_id, agentId: job.agent_id }) ?? this.provider();
+      const generated = await provider.generate({
         visualSpec,
         width: 1024,
         height: 1024,
@@ -513,6 +535,15 @@ export class AchievementService {
         await this.assets.removeIfCreated(files, (key) =>
           this.assetReferenced(key),
         );
+      else if (generated.meteringId)
+        this.options.onImageAsset?.(generated.meteringId, {
+          storageKey: saved.storageKey,
+          thumbnailStorageKey: saved.thumbnailStorageKey,
+          sha256: saved.sha256,
+          width: saved.width,
+          height: saved.height,
+          mimeType: "image/webp",
+        });
     } catch (error) {
       if (files)
         await this.assets.removeIfCreated(files, (key) =>

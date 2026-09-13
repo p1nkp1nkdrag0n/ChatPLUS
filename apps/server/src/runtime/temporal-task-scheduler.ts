@@ -1,4 +1,5 @@
 import {
+  EntityIdSchema,
   UtcDateTimeSchema,
   type TemporalTask,
   type TemporalTaskKind,
@@ -44,6 +45,12 @@ interface AgentBackoff {
   readonly untilUtc: string;
 }
 
+interface AgentPass {
+  observedNowUtc: string;
+  readonly result: Promise<boolean>;
+  readonly completion: Promise<void>;
+}
+
 /**
  * Database-driven resident/worker driver for the shared catch-up service.
  *
@@ -59,8 +66,10 @@ export class TemporalTaskScheduler {
   readonly #maxErrorBackoffMs: number;
   readonly #maxAgentPassesPerCycle: number;
   readonly #agentBackoffs = new Map<string, AgentBackoff>();
+  readonly #agentPasses = new Map<string, AgentPass>();
   #timer: NodeJS.Timeout | undefined;
   #running = false;
+  #acceptingRequests = true;
   #tail: Promise<void> = Promise.resolve();
   #nextWakeAtUtc: string | undefined;
 
@@ -110,6 +119,7 @@ export class TemporalTaskScheduler {
 
   /** Starts with an immediate global database scan. */
   start(): Promise<void> {
+    this.#acceptingRequests = true;
     if (this.#execution === "lazy") return Promise.resolve();
     if (this.#running) return this.#tail;
     this.#running = true;
@@ -126,8 +136,30 @@ export class TemporalTaskScheduler {
     return this.tick();
   }
 
+  /**
+   * Runs one managed, coalesced pass without requiring a resident loop. The
+   * returned promise always settles successfully after operational failures
+   * are logged; HTTP callers may safely leave it running in the background.
+   */
+  requestAgentCatchUp(
+    agentIdInput: string,
+    observedNowUtc = this.clock.nowUtc(),
+  ): Promise<void> {
+    if (!this.#acceptingRequests) return Promise.resolve();
+    const agentId = EntityIdSchema.parse(agentIdInput);
+    UtcDateTimeSchema.parse(observedNowUtc);
+    const pass = this.#runAgentPass(agentId, observedNowUtc);
+    // Do not queue this pass behind a resident cycle: that cycle may already
+    // need to await the same agent. Both are still drained before disposal.
+    this.#tail = Promise.all([this.#tail, pass.completion]).then(
+      () => undefined,
+    );
+    return pass.completion;
+  }
+
   /** Runs one serialized global scheduling cycle. */
   tick(): Promise<void> {
+    if (!this.#acceptingRequests) return Promise.resolve();
     const cycle = this.#tail
       .catch(() => undefined)
       .then(() => this.#runCycle());
@@ -136,6 +168,7 @@ export class TemporalTaskScheduler {
   }
 
   stop(): void {
+    this.#acceptingRequests = false;
     this.#running = false;
     this.#clearTimer();
     this.#nextWakeAtUtc = undefined;
@@ -147,6 +180,7 @@ export class TemporalTaskScheduler {
   }
 
   async #runCycle(): Promise<void> {
+    if (!this.#acceptingRequests) return;
     const observedNowUtc = UtcDateTimeSchema.parse(this.clock.nowUtc());
     const observedNowMs = Date.parse(observedNowUtc);
     const excludedAgents = new Set<string>();
@@ -159,7 +193,7 @@ export class TemporalTaskScheduler {
     let futureWakeAtUtc: string | undefined;
     let passes = 0;
     try {
-      while (passes < this.#maxAgentPassesPerCycle) {
+      while (this.#acceptingRequests && passes < this.#maxAgentPassesPerCycle) {
         const candidate = this.repository.findNextTemporalTask(
           observedNowUtc,
           this.#taskKinds,
@@ -173,25 +207,13 @@ export class TemporalTaskScheduler {
         }
 
         passes += 1;
-        try {
-          await this.catchUp.catchUpAgent(candidate.agentId, observedNowUtc);
-          this.#agentBackoffs.delete(candidate.agentId);
-        } catch (error) {
-          const backoff = this.#recordAgentFailure(
-            candidate.agentId,
-            observedNowUtc,
-          );
+        const succeeded = await this.#runAgentPass(
+          candidate.agentId,
+          observedNowUtc,
+          candidate,
+        ).result;
+        if (!succeeded) {
           excludedAgents.add(candidate.agentId);
-          this.logger.error(
-            {
-              agentId: candidate.agentId,
-              taskId: candidate.id,
-              taskKind: candidate.kind,
-              retryAtUtc: backoff.untilUtc,
-              errorCode: safeErrorCode(error),
-            },
-            "temporal correspondence scheduler pass failed",
-          );
         }
       }
       if (passes >= this.#maxAgentPassesPerCycle) {
@@ -221,6 +243,62 @@ export class TemporalTaskScheduler {
         );
       }
     }
+  }
+
+  #runAgentPass(
+    agentId: string,
+    observedNowUtc: string,
+    task?: Readonly<TemporalTask>,
+  ): AgentPass {
+    const existing = this.#agentPasses.get(agentId);
+    if (existing !== undefined) {
+      if (observedNowUtc > existing.observedNowUtc) {
+        existing.observedNowUtc = observedNowUtc;
+      }
+      return existing;
+    }
+    const result = Promise.resolve().then(async () => {
+      try {
+        for (;;) {
+          const passNowUtc = pass.observedNowUtc;
+          const backoff = this.#agentBackoffs.get(agentId);
+          if (backoff !== undefined && backoff.untilUtc > passNowUtc) {
+            return false;
+          }
+          try {
+            await this.catchUp.catchUpAgent(agentId, passNowUtc);
+            this.#agentBackoffs.delete(agentId);
+          } catch (error) {
+            const retry = this.#recordAgentFailure(agentId, passNowUtc);
+            this.logger.error(
+              {
+                agentId,
+                ...(task === undefined
+                  ? {}
+                  : { taskId: task.id, taskKind: task.kind }),
+                retryAtUtc: retry.untilUtc,
+                errorCode: safeErrorCode(error),
+              },
+              "temporal correspondence scheduler pass failed",
+            );
+            return false;
+          }
+          if (pass.observedNowUtc === passNowUtc) return true;
+        }
+      } finally {
+        this.#agentPasses.delete(agentId);
+      }
+    });
+    const pass: AgentPass = {
+      observedNowUtc,
+      result,
+      completion: result.then(
+        () => undefined,
+        () => undefined,
+      ),
+    };
+    this.#agentPasses.set(agentId, pass);
+    return pass;
   }
 
   #recordAgentFailure(agentId: string, observedNowUtc: string): AgentBackoff {
@@ -313,5 +391,7 @@ function safeErrorCode(error: unknown): string {
   ) {
     return error.code;
   }
-  return error instanceof Error ? error.name : "unknown_error";
+  return error instanceof Error && /^[A-Za-z0-9_-]{1,64}$/u.test(error.name)
+    ? error.name
+    : "unknown_error";
 }

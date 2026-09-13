@@ -29,6 +29,24 @@ import type { Database } from "../db/connection.js";
 import { projectFuzzyLifeEffectiveAtUtc } from "../domain/fuzzy-life-effective-time.js";
 import { createEntityId } from "../domain/id.js";
 
+/** Shared by every public projection; image readiness alone never grants access. */
+export const RECEIVED_KEEPSAKE_SQL = `
+  keepsake.given_to = 'user' AND keepsake.gifted_at_utc IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM keepsake_letter_links receipt_link
+    JOIN letters receipt_letter ON receipt_letter.id = receipt_link.reply_letter_id
+    WHERE receipt_link.keepsake_id = keepsake.id
+      AND (receipt_letter.status <> 'read' OR receipt_letter.opened_at_utc IS NULL)
+  )
+  AND (
+    NOT EXISTS (SELECT 1 FROM keepsake_sources receipt_source
+      WHERE receipt_source.keepsake_id = keepsake.id AND receipt_source.source_type = 'letter')
+    OR EXISTS (SELECT 1 FROM keepsake_letter_links receipt_link
+      JOIN letters receipt_letter ON receipt_letter.id = receipt_link.reply_letter_id
+      WHERE receipt_link.keepsake_id = keepsake.id
+        AND receipt_letter.status = 'read' AND receipt_letter.opened_at_utc IS NOT NULL)
+  )`;
+
 export interface KeepsakeSourceProjection extends KeepsakeSourceCandidate {
   readonly label: string;
   readonly summary: string;
@@ -66,6 +84,8 @@ export interface CommitKeepsakeGenerationInput {
   readonly model: string;
   readonly resultHash: string;
   readonly nowUtc: string;
+  /** Keep claim fencing independent from image completion timestamps. */
+  readonly claimObservedAtUtc?: string;
 }
 
 export interface RecordKeepsakeFailureInput {
@@ -449,8 +469,12 @@ export class KeepsakeRepository {
              AND status = 'claimed' AND claim_token = ?
              AND lease_expires_at_utc > ?`,
         )
-        .get(input.taskId, input.keepsakeId, input.claimToken, input.nowUtc) as
-        { agent_id: string } | undefined;
+        .get(
+          input.taskId,
+          input.keepsakeId,
+          input.claimToken,
+          input.claimObservedAtUtc ?? input.nowUtc,
+        ) as { agent_id: string } | undefined;
       const run = this.#requireGenerationByTask(input.taskId);
       const keepsake = this.require(input.keepsakeId);
       if (
@@ -507,11 +531,11 @@ export class KeepsakeRepository {
       this.database
         .prepare(
           `UPDATE keepsakes
-           SET status = 'ready', primary_asset_id = ?, given_to = 'user',
-               gifted_at_utc = ?, updated_at_utc = ?
+           SET status = 'ready', primary_asset_id = ?,
+               updated_at_utc = MAX(updated_at_utc, ?)
            WHERE id = ? AND status = 'generating'`,
         )
-        .run(asset.id, input.nowUtc, input.nowUtc, keepsake.id);
+        .run(asset.id, input.nowUtc, keepsake.id);
       this.database
         .prepare(
           `UPDATE temporal_tasks
@@ -520,32 +544,28 @@ export class KeepsakeRepository {
            WHERE id = ? AND status = 'claimed' AND claim_token = ?`,
         )
         .run(input.nowUtc, input.nowUtc, input.taskId, input.claimToken);
-      this.database
-        .prepare(
-          `INSERT INTO domain_events(
-             id, agent_id, stream_type, stream_id, stream_version, event_type,
-             recorded_at_utc, effective_at_utc, payload_json,
-             correlation_id, causation_id, idempotency_key
-           ) VALUES (?, ?, 'keepsake', ?, 1, 'keepsake.created', ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          createEntityId("event"),
-          keepsake.agentId,
-          keepsake.id,
-          input.nowUtc,
-          keepsake.createdEffectiveAtUtc,
-          JSON.stringify({
-            keepsakeId: keepsake.id,
-            sourceIds: [
-              ...keepsake.sourceEventIds,
-              ...keepsake.sourceMemoryIds,
-              ...keepsake.sourceLetterIds,
-            ],
-          }),
-          input.taskId,
-          run.id,
-          `keepsake-created:${keepsake.id}:v1`,
-        );
+      this.#recordEvent(keepsake, "keepsake.image_ready", input.nowUtc);
+      // Letter attachments are received by opening the reply. Standalone
+      // artifacts keep their existing receive-on-ready behavior.
+      const isLetter =
+        this.database
+          .prepare(
+            `SELECT 1 FROM keepsake_sources WHERE keepsake_id = ? AND source_type = 'letter'`,
+          )
+          .get(keepsake.id) !== undefined;
+      if (!isLetter) {
+        this.#receive(keepsake, input.nowUtc);
+      } else {
+        // Recover older installations where an already-open reply predated
+        // receipt handling while its image task was still pending.
+        const link = this.database
+          .prepare(
+            "SELECT reply_letter_id FROM keepsake_letter_links WHERE keepsake_id = ?",
+          )
+          .get(keepsake.id) as { reply_letter_id: string } | undefined;
+        if (link !== undefined)
+          this.receiveForOpenedLetter(link.reply_letter_id, input.nowUtc);
+      }
       return this.require(keepsake.id);
     });
     return transaction.immediate();
@@ -579,10 +599,10 @@ export class KeepsakeRepository {
         );
       this.database
         .prepare(
-          `UPDATE keepsakes SET status = 'failed', updated_at_utc = ?
+          `UPDATE keepsakes SET status = ?, updated_at_utc = MAX(updated_at_utc, ?)
            WHERE id = ? AND status = 'generating'`,
         )
-        .run(input.nowUtc, input.keepsakeId);
+        .run(retryable ? "pending" : "failed", input.nowUtc, input.keepsakeId);
       this.database
         .prepare(
           `UPDATE temporal_tasks
@@ -614,6 +634,16 @@ export class KeepsakeRepository {
     const value = this.get(id);
     if (value === undefined) throw new Error(`Keepsake ${id} was not found`);
     return value;
+  }
+
+  isReceived(id: string): boolean {
+    return (
+      this.database
+        .prepare(
+          `SELECT 1 FROM keepsakes keepsake WHERE keepsake.id = ? AND ${RECEIVED_KEEPSAKE_SQL}`,
+        )
+        .get(id) !== undefined
+    );
   }
 
   getByIdempotencyKey(idempotencyKey: string): Keepsake | undefined {
@@ -705,7 +735,7 @@ export class KeepsakeRepository {
       this.database
         .prepare(
           `SELECT keepsake.* FROM keepsakes keepsake
-            WHERE keepsake.agent_id = ? AND keepsake.status = 'ready'
+            WHERE keepsake.agent_id = ? AND ${RECEIVED_KEEPSAKE_SQL}
               ${predicates.map((predicate) => `AND ${predicate}`).join("\n")}
             ORDER BY keepsake.created_effective_at_utc DESC, keepsake.id DESC
             LIMIT ?`,
@@ -719,8 +749,8 @@ export class KeepsakeRepository {
     const kinds = this.database
       .prepare(
         `SELECT DISTINCT kind
-           FROM keepsakes
-          WHERE agent_id = ? AND status = 'ready'
+           FROM keepsakes keepsake
+          WHERE agent_id = ? AND ${RECEIVED_KEEPSAKE_SQL}
           ORDER BY kind`,
       )
       .all(agentId) as Array<{ kind: unknown }>;
@@ -731,15 +761,15 @@ export class KeepsakeRepository {
            JOIN keepsakes keepsake
              ON keepsake.id = source.keepsake_id
             AND keepsake.agent_id = source.agent_id
-          WHERE keepsake.agent_id = ? AND keepsake.status = 'ready'
+          WHERE keepsake.agent_id = ? AND ${RECEIVED_KEEPSAKE_SQL}
           ORDER BY source.source_type`,
       )
       .all(agentId) as Array<{ sourceType: unknown }>;
     const periods = this.database
       .prepare(
         `SELECT DISTINCT substr(created_effective_at_utc, 1, 7) AS period
-           FROM keepsakes
-          WHERE agent_id = ? AND status = 'ready'
+           FROM keepsakes keepsake
+          WHERE agent_id = ? AND ${RECEIVED_KEEPSAKE_SQL}
           ORDER BY period DESC`,
       )
       .all(agentId) as Array<{ period: unknown }>;
@@ -776,7 +806,7 @@ export class KeepsakeRepository {
     incomingLetterIdInput: string,
     replyLetterIdInput: string,
     createdAtUtcInput: string,
-  ): void {
+  ): readonly Keepsake[] {
     const keepsakeId = EntityIdSchema.parse(keepsakeIdInput);
     const incomingLetterId = EntityIdSchema.parse(incomingLetterIdInput);
     const replyLetterId = EntityIdSchema.parse(replyLetterIdInput);
@@ -785,54 +815,151 @@ export class KeepsakeRepository {
     if (keepsake === undefined) {
       throw new TypeError("Cannot link an unknown keepsake to a reply");
     }
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO keepsake_letter_links(
+    const transaction = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT OR IGNORE INTO keepsake_letter_links(
            reply_letter_id, incoming_letter_id, keepsake_id, agent_id,
            created_at_utc
          ) VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(
-        replyLetterId,
-        incomingLetterId,
-        keepsakeId,
-        keepsake.agentId,
-        createdAtUtc,
-      );
+        )
+        .run(
+          replyLetterId,
+          incomingLetterId,
+          keepsakeId,
+          keepsake.agentId,
+          createdAtUtc,
+        );
 
-    const linked = this.database
-      .prepare(
-        `SELECT incoming_letter_id, keepsake_id, agent_id
+      const linked = this.database
+        .prepare(
+          `SELECT incoming_letter_id, keepsake_id, agent_id
            FROM keepsake_letter_links WHERE reply_letter_id = ?`,
-      )
-      .get(replyLetterId) as
-      | {
-          incoming_letter_id: string;
-          keepsake_id: string;
-          agent_id: string;
-        }
-      | undefined;
-    if (
-      linked?.incoming_letter_id !== incomingLetterId ||
-      linked.keepsake_id !== keepsakeId ||
-      linked.agent_id !== keepsake.agentId
-    ) {
-      throw new Error("Reply already has a different keepsake association");
-    }
+        )
+        .get(replyLetterId) as
+        | {
+            incoming_letter_id: string;
+            keepsake_id: string;
+            agent_id: string;
+          }
+        | undefined;
+      if (
+        linked?.incoming_letter_id !== incomingLetterId ||
+        linked.keepsake_id !== keepsakeId ||
+        linked.agent_id !== keepsake.agentId
+      ) {
+        throw new Error("Reply already has a different keepsake association");
+      }
+      return this.receiveForOpenedLetter(replyLetterId, createdAtUtc);
+    });
+    return transaction.immediate();
+  }
+
+  receiveForOpenedLetter(
+    replyLetterIdInput: string,
+    nowUtcInput: string,
+  ): readonly Keepsake[] {
+    const replyLetterId = EntityIdSchema.parse(replyLetterIdInput);
+    const nowUtc = UtcDateTimeSchema.parse(nowUtcInput);
+    return this.database
+      .transaction(() => {
+        const reply = this.database
+          .prepare(
+            `SELECT opened_at_utc FROM letters WHERE id = ?
+          AND direction = 'agent_to_user' AND status = 'read'
+          AND opened_at_utc IS NOT NULL`,
+          )
+          .get(replyLetterId) as { opened_at_utc: string } | undefined;
+        if (reply === undefined) return [];
+        const rows = this.database
+          .prepare(
+            `SELECT keepsake.* FROM keepsakes keepsake
+          JOIN keepsake_letter_links link ON link.keepsake_id = keepsake.id
+          WHERE link.reply_letter_id = ?`,
+          )
+          .all(replyLetterId) as KeepsakeRow[];
+        return rows.flatMap((row) => {
+          const keepsake = mapKeepsake(row);
+          // A delayed enqueue may occur after opening. It still receives one
+          // artifact, at the first time both the letter and artifact exist.
+          const receivedAt = [reply.opened_at_utc, keepsake.createdAtUtc]
+            .sort()
+            .at(-1)!;
+          const received = this.#receive(keepsake, receivedAt, nowUtc);
+          return received === undefined ? [] : [received];
+        });
+      })
+      .immediate();
   }
 
   listReadyKeepsakeIdsForLetter(replyLetterIdInput: string): string[] {
     const replyLetterId = EntityIdSchema.parse(replyLetterIdInput);
     const rows = this.database
       .prepare(
-        `SELECT artifact.id
+        `SELECT keepsake.id
            FROM keepsake_letter_links link
-           JOIN keepsakes artifact ON artifact.id = link.keepsake_id
-          WHERE link.reply_letter_id = ? AND artifact.status = 'ready'
-          ORDER BY artifact.created_effective_at_utc, artifact.id`,
+           JOIN keepsakes keepsake ON keepsake.id = link.keepsake_id
+          WHERE link.reply_letter_id = ? AND ${RECEIVED_KEEPSAKE_SQL}
+          ORDER BY keepsake.created_effective_at_utc, keepsake.id`,
       )
       .all(replyLetterId) as Array<{ id: string }>;
     return rows.map((row) => EntityIdSchema.parse(row.id));
+  }
+
+  #receive(
+    keepsake: Keepsake,
+    receivedAtUtc: string,
+    nowUtc = receivedAtUtc,
+  ): Keepsake | undefined {
+    const result = this.database
+      .prepare(
+        `UPDATE keepsakes SET given_to = 'user', gifted_at_utc = ?,
+        updated_at_utc = MAX(updated_at_utc, ?)
+       WHERE id = ? AND gifted_at_utc IS NULL`,
+      )
+      .run(receivedAtUtc, nowUtc, keepsake.id);
+    if (result.changes === 0) return undefined;
+    this.#recordEvent(keepsake, "keepsake.created", nowUtc, receivedAtUtc);
+    return this.require(keepsake.id);
+  }
+
+  #recordEvent(
+    keepsake: Keepsake,
+    eventType: "keepsake.created" | "keepsake.image_ready",
+    nowUtc: string,
+    effectiveAtUtc = nowUtc,
+  ): void {
+    this.database
+      .prepare(
+        `INSERT INTO domain_events(
+        id, agent_id, stream_type, stream_id, stream_version, event_type,
+        recorded_at_utc, effective_at_utc, payload_json,
+        correlation_id, causation_id, idempotency_key
+      ) VALUES (?, ?, 'keepsake', ?,
+        (SELECT COALESCE(MAX(stream_version), 0) + 1 FROM domain_events
+          WHERE stream_type = 'keepsake' AND stream_id = ?), ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(idempotency_key) DO NOTHING`,
+      )
+      .run(
+        createEntityId("event"),
+        keepsake.agentId,
+        keepsake.id,
+        keepsake.id,
+        eventType,
+        nowUtc,
+        effectiveAtUtc,
+        JSON.stringify({
+          keepsakeId: keepsake.id,
+          sourceIds: [
+            ...keepsake.sourceEventIds,
+            ...keepsake.sourceMemoryIds,
+            ...keepsake.sourceLetterIds,
+          ],
+        }),
+        keepsake.id,
+        keepsake.id,
+        `${eventType.replace(".", "-")}:${keepsake.id}:v1`,
+      );
   }
 
   #requireGenerationByTask(taskId: string): GenerationRow {
@@ -888,7 +1015,8 @@ export class KeepsakeRepository {
       existing.description === proposed.description &&
       existing.createdBy === proposed.createdBy &&
       existing.ownedBy === proposed.ownedBy &&
-      existing.givenTo === proposed.givenTo &&
+      (proposed.givenTo === undefined ||
+        existing.givenTo === proposed.givenTo) &&
       existing.canonicality === proposed.canonicality &&
       existing.createdEffectiveAtUtc === proposed.createdEffectiveAtUtc &&
       existing.visualSpecHash === proposed.visualSpecHash &&

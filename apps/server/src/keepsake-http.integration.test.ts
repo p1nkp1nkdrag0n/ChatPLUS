@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp, type PersonaSimApp } from "./app.js";
 import { readConfig } from "./config.js";
+import { runMigrations } from "./db/migrations.js";
 import { FakeClock } from "./runtime/clock.js";
 import { SseHub } from "./sse/hub.js";
 import { CorrespondenceRepository } from "./repositories/correspondence-repository.js";
@@ -278,7 +279,10 @@ describe("keepsake HTTP lifecycle", () => {
     expect(createdEvents).toHaveLength(1);
     expect(createdEvents[0]?.data).toEqual({
       keepsakeId: enqueued.keepsake.id,
-      invalidates: [["keepsakes", draft.id]],
+      invalidates: [
+        ["keepsakes", draft.id],
+        ["keepsake", enqueued.keepsake.id],
+      ],
     });
     expect(JSON.stringify(createdEvents)).not.toMatch(
       /雨夜|电影|description|visualSpec|storageKey|sourceIds/iu,
@@ -450,13 +454,8 @@ describe("keepsake HTTP lifecycle", () => {
     ]);
     expect(firstPage.nextCursor).toBeDefined();
     expect(firstPage.filterOptions).toEqual({
-      kinds: ["postcard", "recipe_or_note_card", "sketch", "ticket_stub"],
-      sourceTypes: [
-        "letter",
-        "life_outcome",
-        "reflection",
-        "relationship_milestone",
-      ],
+      kinds: ["postcard", "recipe_or_note_card", "sketch"],
+      sourceTypes: ["life_outcome", "reflection", "relationship_milestone"],
       periods: ["2026-10", "2026-09"],
     });
 
@@ -494,7 +493,7 @@ describe("keepsake HTTP lifecycle", () => {
     });
     expect(
       periodFiltered.json<KeepsakePageResponse>().items.map((item) => item.id),
-    ).toEqual(["keepsake-filter-a5", "keepsake-filter-a4"]);
+    ).toEqual(["keepsake-filter-a5"]);
 
     const combined = await app.inject({
       method: "GET",
@@ -670,166 +669,636 @@ describe("keepsake HTTP lifecycle", () => {
     );
   }, 30_000);
 
-  it("uses the read incoming letter to enqueue at most one keepsake after reply commit", async () => {
-    directory = mkdtempSync(join(tmpdir(), "chatplus-keepsake-letter-hook-"));
-    const assetPath = join(directory, "assets");
-    const clock = new FakeClock(NOW);
-    app = await buildApp({
-      config: readConfig({
-        nodeEnv: "test",
-        profile: "keepsake-letter-hook",
-        databasePath: join(directory, "hook.db"),
-        assetStoragePath: assetPath,
-        clockMode: "fake",
-        fakeClockStart: NOW,
+  it.each([
+    "pending",
+    "ready",
+    "failed",
+    "late",
+    "retryable",
+    "slow",
+    "legacy_pending",
+    "legacy_failed",
+    "legacy_unread_ready",
+  ] as const)(
+    "receives a %s letter attachment only on opening and updates the same artifact",
+    async (imageState) => {
+      if (imageState === "late") {
+        vi.spyOn(
+          KeepsakeService.prototype,
+          "enqueueLetterKeepsakeNonBlocking",
+        ).mockImplementationOnce(() => undefined);
+      }
+      // Exercise receipt independently from the worker's speed or scheduling.
+      vi.spyOn(
+        KeepsakeService.prototype,
+        "processDueForAgent",
+      ).mockResolvedValue([]);
+      directory = mkdtempSync(join(tmpdir(), "chatplus-keepsake-letter-hook-"));
+      const assetPath = join(directory, "assets");
+      const clock = new FakeClock(NOW);
+      app = await buildApp({
+        config: readConfig({
+          nodeEnv: "test",
+          profile: "keepsake-letter-hook",
+          databasePath: join(directory, "hook.db"),
+          assetStoragePath: assetPath,
+          clockMode: "fake",
+          fakeClockStart: NOW,
+          seedDemo: false,
+          developerRoutes: true,
+          lifePlanningMode: "fuzzy",
+          correspondenceMode: "enforced",
+          correspondenceExecution: "lazy",
+          correspondenceTransitPolicy: "fixed_5d_v1",
+          correspondenceGenerationLeaseMs: 300_000,
+          correspondenceMaxOpenThreads: 1,
+          keepsakeMode: "enforced",
+          instanceSecret: INSTANCE_SECRET,
+          llm: {
+            provider: "fixture",
+            baseUrl: "https://example.invalid",
+            model: "personasim-fixture-v1",
+            timeoutMs: 1_000,
+            maxRetries: 0,
+          },
+        }),
+        clock,
         seedDemo: false,
-        developerRoutes: true,
-        lifePlanningMode: "fuzzy",
-        correspondenceMode: "enforced",
-        correspondenceExecution: "lazy",
-        correspondenceTransitPolicy: "fixed_5d_v1",
-        correspondenceGenerationLeaseMs: 300_000,
-        correspondenceMaxOpenThreads: 1,
-        keepsakeMode: "enforced",
-        instanceSecret: INSTANCE_SECRET,
-        llm: {
-          provider: "fixture",
-          baseUrl: "https://example.invalid",
-          model: "personasim-fixture-v1",
-          timeoutMs: 1_000,
-          maxRetries: 0,
+        startScheduler: false,
+        logger: false,
+      });
+      const draft = app.personasim.characters.createDemoCharacter();
+      app.personasim.characters.publish(draft.id);
+      const created = await app.inject({
+        method: "POST",
+        url: `/api/agents/${draft.id}/letters`,
+        payload: {
+          clientRequestId: "keepsake-hook-create",
+          subject: "厨房里的那张便笺",
+          body: "这是一封会在抵达后成为纪念物证据的信。",
         },
-      }),
-      clock,
-      seedDemo: false,
-      startScheduler: false,
-      logger: false,
-    });
-    const draft = app.personasim.characters.createDemoCharacter();
-    app.personasim.characters.publish(draft.id);
-    const created = await app.inject({
-      method: "POST",
-      url: `/api/agents/${draft.id}/letters`,
-      payload: {
-        clientRequestId: "keepsake-hook-create",
-        subject: "厨房里的那张便笺",
-        body: "这是一封会在抵达后成为纪念物证据的信。",
-      },
-    });
-    const incomingLetterId = created.json<{ letter: { id: string } }>().letter
-      .id;
-    const sealed = await app.inject({
-      method: "POST",
-      url: `/api/letters/${incomingLetterId}/seal`,
-      payload: { clientRequestId: "keepsake-hook-seal" },
-    });
-    expect(sealed.statusCode).toBe(200);
+      });
+      const incomingLetterId = created.json<{ letter: { id: string } }>().letter
+        .id;
+      const sealed = await app.inject({
+        method: "POST",
+        url: `/api/letters/${incomingLetterId}/seal`,
+        payload: { clientRequestId: "keepsake-hook-seal" },
+      });
+      expect(sealed.statusCode).toBe(200);
 
-    clock.setUtc("2026-09-26T12:00:00.000Z");
-    const caughtUp = await app.inject({
-      method: "GET",
-      url: `/api/letters/${incomingLetterId}`,
-    });
-    expect(caughtUp.statusCode).toBe(200);
-    await Promise.resolve();
-    await Promise.resolve();
+      clock.setUtc("2026-09-26T12:00:00.000Z");
+      const caughtUp = await app.inject({
+        method: "GET",
+        url: `/api/letters/${incomingLetterId}`,
+      });
+      expect(caughtUp.statusCode).toBe(200);
+      await Promise.resolve();
+      await Promise.resolve();
 
-    const replies = app.personasim.store.database
-      .prepare(
-        `SELECT id, status FROM letters
+      const replies = app.personasim.store.database
+        .prepare(
+          `SELECT id, status FROM letters
          WHERE reply_to_letter_id = ? AND direction = 'agent_to_user'`,
-      )
-      .all(incomingLetterId) as Array<{ id: string; status: string }>;
-    expect(replies).toHaveLength(1);
-    expect(replies[0]?.status).toBe("in_transit");
-    const relationshipArtifacts =
-      app.personasim.keepsakes.relationshipArtifactsPromptContext(
-        draft.id,
-        clock.nowUtc(),
+        )
+        .all(incomingLetterId) as Array<{ id: string; status: string }>;
+      expect(replies).toHaveLength(1);
+      expect(replies[0]?.status).toBe("in_transit");
+      if (imageState === "late") {
+        clock.setUtc("2026-10-02T12:00:00.000Z");
+        const opened = await app.inject({
+          method: "POST",
+          url: `/api/letters/${replies[0]!.id}/open`,
+          payload: {},
+        });
+        expect(opened.statusCode).toBe(200);
+        expect(opened.json()).toMatchObject({ relatedKeepsakeIds: [] });
+        const publish = vi.spyOn(SseHub.prototype, "publish");
+        clock.setUtc("2026-10-02T12:01:00.000Z");
+        app.personasim.keepsakes.enqueueLetterKeepsakeNonBlocking(
+          draft.id,
+          incomingLetterId,
+          replies[0]!.id,
+        );
+        const received = app.personasim.keepsakes.list(draft.id).items[0]!;
+        expect(received).toMatchObject({
+          status: "pending",
+          giftedAtUtc: clock.nowUtc(),
+        });
+        expect(
+          app.personasim.keepsakes.listReadyForReply(replies[0]!.id),
+        ).toEqual([received.id]);
+        const detail = app.personasim.keepsakes.getDetail(received.id);
+        expect(detail.assets).toEqual([]);
+        const task = app.personasim.store.database
+          .prepare(
+            "SELECT id FROM temporal_tasks WHERE kind = 'keepsake.generate' AND entity_id = ?",
+          )
+          .get(received.id) as { id: string };
+        clock.setUtc("2026-10-02T12:02:00.000Z");
+        await app.personasim.keepsakes.processTask(task.id);
+        app.personasim.keepsakes.enqueueLetterKeepsakeNonBlocking(
+          draft.id,
+          incomingLetterId,
+          replies[0]!.id,
+        );
+        const reopened = await app.inject({
+          method: "POST",
+          url: `/api/letters/${replies[0]!.id}/open`,
+          payload: {},
+        });
+        expect(reopened.statusCode).toBe(200);
+        expect(reopened.json()).toMatchObject({
+          relatedKeepsakeIds: [received.id],
+        });
+        expect(
+          app.personasim.keepsakes.getDetail(received.id).keepsake,
+        ).toMatchObject({
+          id: received.id,
+          status: "ready",
+          giftedAtUtc: received.giftedAtUtc,
+        });
+        expect(
+          publish.mock.calls
+            .map(([event]) => event)
+            .filter((event) => event.type === "keepsake.created"),
+        ).toHaveLength(1);
+        expect(
+          app.personasim.store.database
+            .prepare("SELECT COUNT(*) AS count FROM keepsakes")
+            .get(),
+        ).toEqual({ count: 1 });
+        return;
+      }
+      const relationshipArtifacts =
+        app.personasim.keepsakes.relationshipArtifactsPromptContext(
+          draft.id,
+          clock.nowUtc(),
+        );
+      expect(relationshipArtifacts.correspondence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: incomingLetterId,
+            direction: "user_to_agent",
+            status: "read",
+          }),
+          expect.objectContaining({
+            id: replies[0]!.id,
+            direction: "agent_to_user",
+            status: "in_transit",
+          }),
+        ]),
       );
-    expect(relationshipArtifacts.correspondence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: incomingLetterId,
-          direction: "user_to_agent",
-          status: "read",
-        }),
-        expect.objectContaining({
-          id: replies[0]!.id,
-          direction: "agent_to_user",
-          status: "in_transit",
-        }),
-      ]),
-    );
-    expect(JSON.stringify(relationshipArtifacts)).not.toContain(
-      "这是一封会在抵达后成为纪念物证据的信。",
-    );
-    expect(JSON.stringify(relationshipArtifacts.correspondence)).not.toContain(
-      "厨房里的那张便笺",
-    );
-    const sourceRows = app.personasim.store.database
-      .prepare(
-        `SELECT keepsake_id AS keepsakeId, source_type AS sourceType,
+      expect(JSON.stringify(relationshipArtifacts)).not.toContain(
+        "这是一封会在抵达后成为纪念物证据的信。",
+      );
+      expect(
+        JSON.stringify(relationshipArtifacts.correspondence),
+      ).not.toContain("厨房里的那张便笺");
+      const sourceRows = app.personasim.store.database
+        .prepare(
+          `SELECT keepsake_id AS keepsakeId, source_type AS sourceType,
                 source_id AS sourceId
          FROM keepsake_sources WHERE source_type = 'letter' AND source_id = ?`,
-      )
-      .all(incomingLetterId) as Array<{
-      keepsakeId: string;
-      sourceType: string;
-      sourceId: string;
-    }>;
-    expect(sourceRows).toHaveLength(1);
-    const letterKeepsake = app.personasim.keepsakes.getDetail(
-      sourceRows[0]!.keepsakeId,
-    ).keepsake;
-    expect(letterKeepsake.visualSpecJson.templateVersion).toBe(
-      `${letterKeepsake.kind}-v2`,
-    );
-    expect(letterKeepsake.visualSpecJson.caption).toContain("已读的书信");
-    expect(letterKeepsake.visualSpecJson.caption).not.toBe(
-      letterKeepsake.visualSpecJson.theme,
-    );
-    expect(JSON.stringify(letterKeepsake.visualSpecJson)).not.toContain(
-      "这是一封会在抵达后成为纪念物证据的信。",
-    );
-    expect(sourceRows[0]).toMatchObject({
-      sourceType: "letter",
-      sourceId: incomingLetterId,
-    });
-    expect(
-      app.personasim.store.database
+        )
+        .all(incomingLetterId) as Array<{
+        keepsakeId: string;
+        sourceType: string;
+        sourceId: string;
+      }>;
+      expect(sourceRows).toHaveLength(1);
+      const repository = new KeepsakeRepository(app.personasim.store.database);
+      const letterKeepsake = repository.require(sourceRows[0]!.keepsakeId);
+      const task = app.personasim.store.database
         .prepare(
-          `SELECT incoming_letter_id AS incomingLetterId,
+          `SELECT id FROM temporal_tasks WHERE kind = 'keepsake.generate' AND entity_id = ?`,
+        )
+        .get(letterKeepsake.id) as { id: string };
+      const expectedImageState =
+        imageState === "retryable" || imageState === "legacy_pending"
+          ? "pending"
+          : imageState === "legacy_failed"
+            ? "failed"
+            : imageState === "legacy_unread_ready"
+              ? "ready"
+              : imageState === "slow"
+                ? "generating"
+                : imageState;
+      if (expectedImageState === "ready")
+        await app.personasim.keepsakes.processTask(task.id);
+      if (expectedImageState === "failed") {
+        vi.spyOn(KeepsakeAssetStore.prototype, "persist").mockRejectedValueOnce(
+          Object.assign(new Error("fixture persistence outage"), {
+            retryable: false,
+          }),
+        );
+        await expect(
+          app.personasim.keepsakes.processTask(task.id),
+        ).rejects.toThrow("fixture persistence outage");
+      }
+      expect(repository.require(letterKeepsake.id).status).toBe(
+        imageState === "slow" ? "pending" : expectedImageState,
+      );
+      const assertUnreceived = async () => {
+        for (const suffix of ["", "/asset", "/thumbnail"]) {
+          const response = await app!.inject({
+            method: "GET",
+            url: `/api/keepsakes/${letterKeepsake.id}${suffix}`,
+          });
+          expect(response.statusCode).toBe(404);
+        }
+        const page = app!.personasim.keepsakes.list(draft.id);
+        expect(page.items).toEqual([]);
+        expect(page.filterOptions).toEqual({
+          kinds: [],
+          sourceTypes: [],
+          periods: [],
+        });
+        expect(
+          app!.personasim.keepsakes.listReadyForReply(replies[0]!.id),
+        ).toEqual([]);
+        expect(
+          app!.personasim.keepsakes.relationshipArtifactsPromptContext(
+            draft.id,
+            clock.nowUtc(),
+          ).readyKeepsakes,
+        ).toEqual([]);
+        const archive = await app!.inject({
+          method: "GET",
+          url: `/api/agents/${draft.id}/relationship-archive?filter=keepsakes`,
+        });
+        expect(archive.statusCode).toBe(200);
+        expect(archive.json<{ items: unknown[] }>().items).toEqual([]);
+        const share = await app!.inject({
+          method: "POST",
+          url: `/api/agents/${draft.id}/relationship-share/preview`,
+          payload: {
+            templateVersion: "relationship-share-v1",
+            keepsakeId: letterKeepsake.id,
+            includeKeepsake: true,
+            includeEnvelope: false,
+            includePostmark: false,
+            includeWaitingDays: false,
+          },
+        });
+        expect(share.statusCode).toBe(409);
+      };
+      await assertUnreceived();
+      const prematureOpen = await app.inject({
+        method: "POST",
+        url: `/api/letters/${replies[0]!.id}/open`,
+        payload: {},
+      });
+      expect(prematureOpen.statusCode).toBe(409);
+      expect(repository.require(letterKeepsake.id).giftedAtUtc).toBeUndefined();
+      expect(letterKeepsake.visualSpecJson.templateVersion).toBe(
+        `${letterKeepsake.kind}-v2`,
+      );
+      expect(letterKeepsake.visualSpecJson.caption).toContain("已读的书信");
+      expect(letterKeepsake.visualSpecJson.caption).not.toBe(
+        letterKeepsake.visualSpecJson.theme,
+      );
+      expect(JSON.stringify(letterKeepsake.visualSpecJson)).not.toContain(
+        "这是一封会在抵达后成为纪念物证据的信。",
+      );
+      expect(sourceRows[0]).toMatchObject({
+        sourceType: "letter",
+        sourceId: incomingLetterId,
+      });
+      expect(
+        app.personasim.store.database
+          .prepare(
+            `SELECT incoming_letter_id AS incomingLetterId,
                   reply_letter_id AS replyLetterId,
                   keepsake_id AS keepsakeId
              FROM keepsake_letter_links`,
-        )
-        .get(),
-    ).toEqual({
-      incomingLetterId,
-      replyLetterId: replies[0]!.id,
-      keepsakeId: sourceRows[0]!.keepsakeId,
-    });
-    expect(
-      app.personasim.store.database
-        .prepare("SELECT COUNT(*) AS count FROM keepsakes")
-        .get(),
-    ).toEqual({ count: 1 });
+          )
+          .get(),
+      ).toEqual({
+        incomingLetterId,
+        replyLetterId: replies[0]!.id,
+        keepsakeId: sourceRows[0]!.keepsakeId,
+      });
+      expect(
+        app.personasim.store.database
+          .prepare("SELECT COUNT(*) AS count FROM keepsakes")
+          .get(),
+      ).toEqual({ count: 1 });
 
-    // Re-entering catch-up cannot create a second attachment candidate.
-    await app.inject({
-      method: "GET",
-      url: `/api/agents/${draft.id}/keepsakes`,
-    });
-    expect(app.personasim.keepsakes.listReadyForReply(replies[0]!.id)).toEqual([
-      sourceRows[0]!.keepsakeId,
-    ]);
-    expect(
-      app.personasim.store.database
-        .prepare("SELECT COUNT(*) AS count FROM keepsakes")
-        .get(),
-    ).toEqual({ count: 1 });
-  }, 30_000);
+      clock.setUtc("2026-10-02T12:00:00.000Z");
+      const arrived = await app.inject({
+        method: "GET",
+        url: `/api/letters/${replies[0]!.id}`,
+      });
+      expect(arrived.statusCode).toBe(200);
+      expect(arrived.json<{ letter: { status: string } }>().letter.status).toBe(
+        "delivered_unread",
+      );
+      await assertUnreceived();
+      if (
+        imageState === "legacy_pending" ||
+        imageState === "legacy_failed" ||
+        imageState === "legacy_unread_ready"
+      ) {
+        const database = app.personasim.store.database;
+        const migrateReceipts = () => {
+          database
+            .prepare(
+              "DELETE FROM schema_migrations WHERE name = '037_keepsake_retry_receipt.sql'",
+            )
+            .run();
+          expect(runMigrations(database)).toEqual([
+            "037_keepsake_retry_receipt.sql",
+          ]);
+          expect(runMigrations(database)).toEqual([]);
+        };
+        if (imageState === "legacy_unread_ready") {
+          // The old release gifted a ready image while its letter was sealed.
+          database
+            .prepare(
+              "UPDATE keepsakes SET given_to = 'user', gifted_at_utc = created_at_utc WHERE id = ?",
+            )
+            .run(letterKeepsake.id);
+          database
+            .prepare(
+              `INSERT INTO domain_events(id, agent_id, stream_type, stream_id, stream_version, event_type,
+            recorded_at_utc, effective_at_utc, payload_json, correlation_id, causation_id, idempotency_key)
+            SELECT 'event-legacy-received', agent_id, stream_type, stream_id, stream_version + 1, 'keepsake.created',
+              recorded_at_utc, effective_at_utc, payload_json, correlation_id, causation_id, 'keepsake-created:' || stream_id || ':v1'
+            FROM domain_events WHERE stream_id = ? AND event_type = 'keepsake.image_ready'`,
+            )
+            .run(letterKeepsake.id);
+          migrateReceipts();
+          expect(
+            repository.require(letterKeepsake.id).giftedAtUtc,
+          ).toBeUndefined();
+          await assertUnreceived();
+        } else {
+          // Reproduce an old client opening a reply without receipt handling.
+          vi.spyOn(
+            KeepsakeService.prototype,
+            "receiveForOpenedLetter",
+          ).mockImplementationOnce(() => () => undefined);
+        }
+        const legacyOpen = await app.inject({
+          method: "POST",
+          url: `/api/letters/${replies[0]!.id}/open`,
+          payload: {},
+        });
+        expect(legacyOpen.statusCode).toBe(200);
+        if (imageState !== "legacy_unread_ready") {
+          expect(legacyOpen.json()).toMatchObject({ relatedKeepsakeIds: [] });
+          expect(
+            repository.require(letterKeepsake.id).giftedAtUtc,
+          ).toBeUndefined();
+          migrateReceipts();
+        }
+        const recovered = app.personasim.keepsakes.getDetail(letterKeepsake.id);
+        expect(recovered.keepsake).toMatchObject({
+          id: letterKeepsake.id,
+          status: expectedImageState,
+          givenTo: "user",
+          giftedAtUtc: clock.nowUtc(),
+        });
+        expect(
+          app.personasim.keepsakes.list(draft.id).items.map((item) => item.id),
+        ).toEqual([letterKeepsake.id]);
+        expect(
+          app.personasim.keepsakes.listReadyForReply(replies[0]!.id),
+        ).toEqual([letterKeepsake.id]);
+        const repeated = await app.inject({
+          method: "POST",
+          url: `/api/letters/${replies[0]!.id}/open`,
+          payload: {},
+        });
+        expect(repeated.statusCode).toBe(200);
+        expect(
+          database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM domain_events WHERE event_type = 'keepsake.created' AND stream_id = ?",
+            )
+            .get(letterKeepsake.id),
+        ).toEqual({ count: 1 });
+        return;
+      }
+      const publish = vi.spyOn(SseHub.prototype, "publish");
+      let releaseGeneration: (() => void) | undefined;
+      let slowGeneration:
+        ReturnType<KeepsakeService["processTask"]> | undefined;
+      if (imageState === "slow") {
+        let notifyPersistStarted!: () => void;
+        const persistedStarted = new Promise<void>((resolve) => {
+          notifyPersistStarted = resolve;
+        });
+        const blocked = new Promise<void>((resolve) => {
+          releaseGeneration = resolve;
+        });
+        const backingAssetStore = new KeepsakeAssetStore(assetPath);
+        const originalPersist =
+          backingAssetStore.persist.bind(backingAssetStore);
+        vi.spyOn(
+          KeepsakeAssetStore.prototype,
+          "persist",
+        ).mockImplementationOnce(async function (
+          this: KeepsakeAssetStore,
+          input,
+        ) {
+          notifyPersistStarted();
+          await blocked;
+          return originalPersist(input);
+        });
+        slowGeneration = app.personasim.keepsakes.processTask(task.id);
+        await persistedStarted;
+        clock.setUtc("2026-10-02T12:01:00.000Z");
+      }
+      if (imageState === "pending") {
+        app.personasim.store.database
+          .exec(`CREATE TEMP TRIGGER reject_keepsake_receipt
+        BEFORE INSERT ON domain_events WHEN NEW.event_type = 'keepsake.created'
+        BEGIN SELECT RAISE(ABORT, 'fixture receipt write failed'); END;`);
+        const rejectedOpen = await app.inject({
+          method: "POST",
+          url: `/api/letters/${replies[0]!.id}/open`,
+          payload: {},
+        });
+        expect(rejectedOpen.statusCode).toBe(500);
+        expect(
+          app.personasim.store.database
+            .prepare("SELECT status FROM letters WHERE id = ?")
+            .get(replies[0]!.id),
+        ).toEqual({ status: "delivered_unread" });
+        expect(
+          repository.require(letterKeepsake.id).giftedAtUtc,
+        ).toBeUndefined();
+        expect(
+          publish.mock.calls
+            .map(([event]) => event)
+            .filter((event) => event.type === "keepsake.created"),
+        ).toEqual([]);
+        app.personasim.store.database.exec(
+          "DROP TRIGGER reject_keepsake_receipt",
+        );
+      }
+      const opened = await app.inject({
+        method: "POST",
+        url: `/api/letters/${replies[0]!.id}/open`,
+        payload: {},
+      });
+      expect(opened.statusCode).toBe(200);
+      expect(opened.json()).toMatchObject({
+        relatedKeepsakeIds: [letterKeepsake.id],
+      });
+      const firstReceived = app.personasim.keepsakes.getDetail(
+        letterKeepsake.id,
+      );
+      expect(firstReceived.keepsake).toMatchObject({
+        id: letterKeepsake.id,
+        status: expectedImageState,
+        givenTo: "user",
+        giftedAtUtc: clock.nowUtc(),
+      });
+      expect(firstReceived.assets).toHaveLength(imageState === "ready" ? 1 : 0);
+      expect(app.personasim.keepsakes.list(draft.id).items).toEqual([
+        expect.objectContaining({
+          id: letterKeepsake.id,
+          status: expectedImageState,
+          giftedAtUtc: clock.nowUtc(),
+        }),
+      ]);
+      if (imageState !== "ready")
+        expect(
+          app.personasim.keepsakes.list(draft.id).items[0],
+        ).not.toHaveProperty("thumbnailUrl");
+      const secondOpened = await app.inject({
+        method: "POST",
+        url: `/api/letters/${replies[0]!.id}/open`,
+        payload: {},
+      });
+      expect(secondOpened.statusCode).toBe(200);
+      if (imageState === "retryable") {
+        vi.spyOn(KeepsakeAssetStore.prototype, "persist").mockRejectedValueOnce(
+          new Error("transient fixture outage"),
+        );
+        await expect(
+          app.personasim.keepsakes.processTask(task.id),
+        ).rejects.toThrow("transient fixture outage");
+        expect(
+          app.personasim.keepsakes.getDetail(letterKeepsake.id).keepsake,
+        ).toMatchObject({
+          status: "pending",
+          giftedAtUtc: firstReceived.keepsake.giftedAtUtc,
+        });
+        expect(
+          app.personasim.store.database
+            .prepare("SELECT status FROM temporal_tasks WHERE id = ?")
+            .get(task.id),
+        ).toEqual({ status: "retryable" });
+        // Simulate the previous release's failed projection for an active
+        // retry. Upgrade preserves receipt identity and does not emit gifts.
+        const database = app.personasim.store.database;
+        database
+          .prepare("UPDATE keepsakes SET status = 'generating' WHERE id = ?")
+          .run(letterKeepsake.id);
+        database
+          .prepare("UPDATE keepsakes SET status = 'failed' WHERE id = ?")
+          .run(letterKeepsake.id);
+        database
+          .prepare(
+            "DELETE FROM schema_migrations WHERE name = '037_keepsake_retry_receipt.sql'",
+          )
+          .run();
+        expect(runMigrations(database)).toEqual([
+          "037_keepsake_retry_receipt.sql",
+        ]);
+        expect(runMigrations(database)).toEqual([]);
+        expect(
+          app.personasim.keepsakes.getDetail(letterKeepsake.id).keepsake,
+        ).toMatchObject({
+          status: "pending",
+          givenTo: "user",
+          giftedAtUtc: firstReceived.keepsake.giftedAtUtc,
+        });
+        expect(
+          database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM domain_events WHERE event_type = 'keepsake.created' AND stream_id = ?",
+            )
+            .get(letterKeepsake.id),
+        ).toEqual({ count: 1 });
+      }
+      if (imageState === "slow") {
+        clock.setUtc("2026-10-02T12:02:00.000Z");
+        releaseGeneration!();
+        await slowGeneration;
+        const completed = app.personasim.keepsakes.getDetail(letterKeepsake.id);
+        expect(completed.assets[0]?.createdAtUtc).toBe(clock.nowUtc());
+        expect(databaseImageReadyTime(app, letterKeepsake.id)).toBe(
+          clock.nowUtc(),
+        );
+        expect(
+          app.personasim.keepsakes.relationshipArtifactsPromptContext(
+            draft.id,
+            "2026-10-02T12:01:30.000Z",
+          ).readyKeepsakes,
+        ).toEqual([]);
+        expect(
+          publish.mock.calls
+            .map(([event]) => event)
+            .filter((event) => event.type === "keepsake.updated"),
+        ).toEqual([expect.objectContaining({ occurredAtUtc: clock.nowUtc() })]);
+      } else if (imageState !== "ready" && imageState !== "failed") {
+        clock.setUtc("2026-10-02T12:02:00.000Z");
+        await app.personasim.keepsakes.processTask(task.id);
+      }
+      const final = app.personasim.keepsakes.getDetail(letterKeepsake.id);
+      expect(final.keepsake).toMatchObject({
+        id: letterKeepsake.id,
+        status: imageState === "failed" ? "failed" : "ready",
+        giftedAtUtc: firstReceived.keepsake.giftedAtUtc,
+      });
+      expect(final.assets).toHaveLength(imageState === "failed" ? 0 : 1);
+      expect(
+        publish.mock.calls
+          .map(([event]) => event)
+          .filter((event) => event.type === "keepsake.created"),
+      ).toHaveLength(1);
+      expect(
+        publish.mock.calls
+          .map(([event]) => event)
+          .filter((event) => event.type === "keepsake.updated"),
+      ).toHaveLength(
+        imageState === "retryable"
+          ? 2
+          : imageState === "ready" || imageState === "failed"
+            ? 0
+            : 1,
+      );
+      expect(
+        app.personasim.store.database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM domain_events WHERE event_type = 'keepsake.created' AND stream_id = ?`,
+          )
+          .get(letterKeepsake.id),
+      ).toEqual({ count: 1 });
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: `/api/keepsakes/${letterKeepsake.id}/asset`,
+          })
+        ).statusCode,
+      ).toBe(imageState === "failed" ? 404 : 200);
+      expect(
+        app.personasim.keepsakes.listReadyForReply(replies[0]!.id),
+      ).toEqual([sourceRows[0]!.keepsakeId]);
+      expect(
+        app.personasim.store.database
+          .prepare("SELECT COUNT(*) AS count FROM keepsakes")
+          .get(),
+      ).toEqual({ count: 1 });
+    },
+    30_000,
+  );
 
   it.each(["lazy", "resident", "worker"] as const)(
     "%s execution drives keepsake.generate without routing it through letter handlers",
@@ -867,6 +1336,13 @@ describe("keepsake HTTP lifecycle", () => {
       } else {
         await app.personasim.temporalTaskScheduler.wake();
       }
+      await vi.waitFor(() => {
+        expect(
+          new KeepsakeRepository(app!.personasim.store.database).require(
+            enqueued.keepsake!.id,
+          ).status,
+        ).toBe("ready");
+      });
       expect(
         app.personasim.keepsakes.getDetail(enqueued.keepsake!.id).keepsake,
       ).toMatchObject({
@@ -876,6 +1352,19 @@ describe("keepsake HTTP lifecycle", () => {
     30_000,
   );
 });
+
+function databaseImageReadyTime(
+  app: PersonaSimApp,
+  keepsakeId: string,
+): string {
+  return (
+    app.personasim.store.database
+      .prepare(
+        "SELECT recorded_at_utc FROM domain_events WHERE event_type = 'keepsake.image_ready' AND stream_id = ?",
+      )
+      .get(keepsakeId) as { recorded_at_utc: string }
+  ).recorded_at_utc;
+}
 
 function seedFutureEffectiveSources(app: PersonaSimApp, agentId: string): void {
   const session = app.personasim.store.createSession(
@@ -1052,8 +1541,8 @@ function seedReadyKeepsake(
            canonicality, status, visual_spec_json, visual_spec_hash,
            primary_asset_id, created_effective_at_utc, gifted_at_utc,
                    idempotency_key, created_at_utc, updated_at_utc
-         ) VALUES (?, ?, ?, ?, ?, 'agent', 'user', NULL, ?, '[]', ?, ?, ?,
-                   'evidence_derived', 'ready', ?, ?, ?, ?, NULL, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, 'agent', 'user', 'user', ?, '[]', ?, ?, ?,
+                   'evidence_derived', 'ready', ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -1075,6 +1564,7 @@ function seedReadyKeepsake(
         }),
         "f".repeat(64),
         `asset-filter-${agentId}-${input.index}`,
+        input.createdAtUtc,
         input.createdAtUtc,
         `filter-idempotency:${agentId}:${input.index}`,
         input.createdAtUtc,

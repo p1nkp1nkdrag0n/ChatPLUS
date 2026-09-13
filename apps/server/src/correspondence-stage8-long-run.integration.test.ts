@@ -540,6 +540,12 @@ describe("Stage 8 correspondence long-run matrix", () => {
     expect(secondFingerprint.fingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(firstFingerprint).not.toEqual(secondFingerprint);
 
+    // Cabinet reads return snapshots while managed image work continues.
+    // Wait for each instance's own pass before inspecting its asset root.
+    await Promise.all([
+      first.personasim.temporalTaskScheduler.requestAgentCatchUp(firstAgent),
+      second.personasim.temporalTaskScheduler.requestAgentCatchUp(secondAgent),
+    ]);
     const firstFiles = assetFiles(firstAssets);
     const secondFiles = assetFiles(secondAssets);
     expect(firstFiles.filter((path) => path.endsWith(".webp"))).toHaveLength(2);

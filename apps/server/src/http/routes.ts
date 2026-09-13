@@ -687,15 +687,23 @@ export function registerRoutes(
   app.get("/api/agents/:agentId/keepsakes", async (request, reply) => {
     const { agentId } = agentIdParamsSchema.parse(request.params);
     const query = KeepsakeListQuerySchema.parse(request.query);
-    await correspondence.catchUpAgent(agentId);
+    if (!store.getCharacterSummary(agentId)) throw notFound("Character");
+    const page = await keepsakeApi(() => keepsakes.list(agentId, query));
+    void services.temporalTaskScheduler.requestAgentCatchUp(agentId);
     reply.header("cache-control", "no-store");
-    return keepsakeApi(() => keepsakes.list(agentId, query));
+    return page;
   });
 
-  app.get("/api/keepsakes/:id", (request, reply) => {
+  app.get("/api/keepsakes/:id", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const detail = await keepsakeApi(() => keepsakes.getDetail(id));
+    if (detail.keepsake.status !== "ready") {
+      void services.temporalTaskScheduler.requestAgentCatchUp(
+        detail.keepsake.agentId,
+      );
+    }
     reply.header("cache-control", "no-store");
-    return keepsakeApi(() => keepsakes.getDetail(id));
+    return detail;
   });
 
   app.get("/api/keepsakes/:id/thumbnail", async (request, reply) => {

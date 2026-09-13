@@ -26,6 +26,7 @@ import { canonicalLetterContent } from "@personasim/features";
 import { DateTime } from "luxon";
 
 import type { Database } from "../db/connection.js";
+import { RECEIVED_KEEPSAKE_SQL } from "../repositories/keepsake-repository.js";
 import { registerFuzzyLifeEffectiveAtSqlFunction } from "../domain/fuzzy-life-effective-time.js";
 import type { Clock } from "../runtime/clock.js";
 import type { CorrespondenceCryptoService } from "./correspondence-crypto-service.js";
@@ -299,6 +300,7 @@ WITH archive AS (
   WHERE @includeKeepsakes = 1
     AND keepsake.agent_id = @agentId
     AND keepsake.status = 'ready'
+    AND ${RECEIVED_KEEPSAKE_SQL}
 )
 SELECT *
 FROM archive
@@ -510,7 +512,8 @@ export class RelationshipArchiveService {
       const row = this.database
         .prepare(
           `SELECT id, agent_id, title, kind, status, primary_asset_id
-           FROM keepsakes WHERE id = ? AND agent_id = ?`,
+           FROM keepsakes keepsake WHERE id = ? AND agent_id = ?
+             AND ${RECEIVED_KEEPSAKE_SQL}`,
         )
         .get(selection.keepsakeId, agentId) as KeepsakeShareRow | undefined;
       if (

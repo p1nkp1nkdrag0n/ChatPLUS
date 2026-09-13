@@ -38,9 +38,10 @@ import {
 import type { DatabaseStore } from "../db/store.js";
 import { createEntityId } from "../domain/id.js";
 import type { CorrespondenceRepository } from "../repositories/correspondence-repository.js";
-import type {
-  KeepsakeRepository,
-  KeepsakeSourceProjection,
+import {
+  RECEIVED_KEEPSAKE_SQL,
+  type KeepsakeRepository,
+  type KeepsakeSourceProjection,
 } from "../repositories/keepsake-repository.js";
 import type { Clock } from "../runtime/clock.js";
 import type { SseHub } from "../sse/hub.js";
@@ -251,12 +252,18 @@ export class KeepsakeService {
     );
     let stored: StoredKeepsakeAssetFiles | undefined;
     let committed: Keepsake;
+    let receivedBeforeCommit = false;
+    let completedAtUtc = observedNowUtc;
     try {
       const rendered = await this.#render(generation.keepsake);
       stored = await this.assets.persist({
         agentId: generation.keepsake.agentId,
         bytes: rendered.asset.bytes,
       });
+      completedAtUtc = this.#completionTime(
+        generation.keepsake.id,
+        observedNowUtc,
+      );
       const asset = {
         id: createEntityId("keepsake_asset"),
         keepsakeId: generation.keepsake.id,
@@ -271,8 +278,9 @@ export class KeepsakeService {
         model: rendered.model,
         promptSpecHash: generation.keepsake.visualSpecHash,
         generationRunId: generation.runId,
-        createdAtUtc: observedNowUtc,
+        createdAtUtc: completedAtUtc,
       };
+      receivedBeforeCommit = this.repository.isReceived(generation.keepsake.id);
       committed = this.repository.commitGeneration({
         taskId: claimed.id,
         claimToken,
@@ -282,7 +290,8 @@ export class KeepsakeService {
         provider: rendered.provider,
         model: rendered.model,
         resultHash: stored.sha256,
-        nowUtc: observedNowUtc,
+        nowUtc: completedAtUtc,
+        claimObservedAtUtc: observedNowUtc,
       });
     } catch (error) {
       if (stored !== undefined) {
@@ -290,30 +299,35 @@ export class KeepsakeService {
           this.repository.isStorageKeyReferenced(key),
         );
       }
+      completedAtUtc = this.#completionTime(
+        generation.keepsake.id,
+        observedNowUtc,
+      );
       this.repository.recordFailure({
         taskId: claimed.id,
         claimToken,
         runId: generation.runId,
         keepsakeId: generation.keepsake.id,
         errorCode: safeErrorCode(error),
-        nowUtc: observedNowUtc,
-        nextDueAtUtc: addMs(observedNowUtc, this.#retryDelayMs),
+        nowUtc: completedAtUtc,
+        nextDueAtUtc: addMs(completedAtUtc, this.#retryDelayMs),
         retryable: isRetryable(error),
       });
+      this.#publishKeepsakeEvent(
+        this.repository.require(generation.keepsake.id),
+        "keepsake.updated",
+        completedAtUtc,
+      );
       throw error;
     }
     // Notification is intentionally after the durable commit and outside the
     // retry block. A disconnected SSE client must never roll back or retry a
     // successfully created keepsake.
-    this.sse.publish({
-      type: "keepsake.created",
-      agentId: committed.agentId,
-      occurredAtUtc: observedNowUtc,
-      data: {
-        keepsakeId: committed.id,
-        invalidates: [["keepsakes", committed.agentId]],
-      },
-    });
+    this.#publishKeepsakeEvent(
+      committed,
+      receivedBeforeCommit ? "keepsake.updated" : "keepsake.created",
+      completedAtUtc,
+    );
     return committed;
   }
 
@@ -353,12 +367,18 @@ export class KeepsakeService {
         sourceId: incomingLetterId,
       });
       if (result.keepsake !== undefined) {
-        this.repository.linkToReply(
+        const received = this.repository.linkToReply(
           result.keepsake.id,
           incomingLetterId,
           replyLetterId,
           this.clock.nowUtc(),
         );
+        for (const keepsake of received)
+          this.#publishKeepsakeEvent(
+            keepsake,
+            "keepsake.created",
+            this.clock.nowUtc(),
+          );
       }
     } catch (error) {
       this.#onBackgroundError?.(safeErrorCode(error));
@@ -367,6 +387,51 @@ export class KeepsakeService {
 
   listReadyForReply(replyLetterId: string): readonly string[] {
     return this.repository.listReadyKeepsakeIdsForLetter(replyLetterId);
+  }
+
+  /** Called inside the letter-open transaction; notifications run after commit. */
+  receiveForOpenedLetter(
+    replyLetterId: string,
+    openedAtUtc: string,
+  ): () => void {
+    const received = this.repository.receiveForOpenedLetter(
+      replyLetterId,
+      openedAtUtc,
+    );
+    return () => {
+      for (const keepsake of received)
+        this.#publishKeepsakeEvent(keepsake, "keepsake.created", openedAtUtc);
+    };
+  }
+
+  #completionTime(keepsakeId: string, startedAtUtc: string): string {
+    return [
+      startedAtUtc,
+      this.clock.nowUtc(),
+      this.repository.require(keepsakeId).updatedAtUtc,
+    ].reduce((latest, candidate) =>
+      Date.parse(candidate) > Date.parse(latest) ? candidate : latest,
+    );
+  }
+
+  #publishKeepsakeEvent(
+    keepsake: Keepsake,
+    type: "keepsake.created" | "keepsake.updated",
+    nowUtc: string,
+  ): void {
+    if (!this.repository.isReceived(keepsake.id)) return;
+    this.sse.publish({
+      type,
+      agentId: keepsake.agentId,
+      occurredAtUtc: nowUtc,
+      data: {
+        keepsakeId: keepsake.id,
+        invalidates: [
+          ["keepsakes", keepsake.agentId],
+          ["keepsake", keepsake.id],
+        ],
+      },
+    });
   }
 
   list(
@@ -406,7 +471,11 @@ export class KeepsakeService {
         ...(keepsake.giftedAtUtc === undefined
           ? {}
           : { giftedAtUtc: keepsake.giftedAtUtc }),
-        thumbnailUrl: `/api/keepsakes/${encodeURIComponent(keepsake.id)}/thumbnail`,
+        ...(keepsake.status === "ready"
+          ? {
+              thumbnailUrl: `/api/keepsakes/${encodeURIComponent(keepsake.id)}/thumbnail`,
+            }
+          : {}),
       }),
     );
     const last = items.at(-1);
@@ -427,7 +496,7 @@ export class KeepsakeService {
 
   getDetail(keepsakeId: string): KeepsakeDetailResponse {
     const detail = this.repository.getDetail(keepsakeId);
-    if (detail === undefined || detail.keepsake.status !== "ready") {
+    if (detail === undefined || !this.repository.isReceived(keepsakeId)) {
       throw new KeepsakeServiceError("not_found", "Keepsake was not found");
     }
     return KeepsakeDetailResponseSchema.parse(detail);
@@ -522,6 +591,8 @@ export class KeepsakeService {
              FROM keepsakes keepsake
              JOIN keepsake_assets asset ON asset.id = keepsake.primary_asset_id
             WHERE keepsake.agent_id = ? AND keepsake.status = 'ready'
+              AND ${RECEIVED_KEEPSAKE_SQL}
+              AND julianday(keepsake.gifted_at_utc) <= julianday(?)
               AND julianday(keepsake.created_at_utc) <= julianday(?)
               AND julianday(keepsake.created_effective_at_utc) <= julianday(?)
               AND julianday(asset.created_at_utc) <= julianday(?)
@@ -529,7 +600,7 @@ export class KeepsakeService {
                      asset.created_at_utc DESC, keepsake.id DESC
             LIMIT 6`,
         )
-        .all(agentId, nowUtc, nowUtc, nowUtc) as Array<{
+        .all(agentId, nowUtc, nowUtc, nowUtc, nowUtc) as Array<{
         id: string;
         title: string;
         kind: string;

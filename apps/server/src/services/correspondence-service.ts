@@ -146,6 +146,9 @@ export class CorrespondenceService {
     ((agentId: string, observedNowUtc: string) => Promise<unknown>) | undefined;
   #relatedKeepsakeIds:
     ((replyLetterId: string) => readonly string[]) | undefined;
+  #openedLetterHandler:
+    | ((replyLetterId: string, openedAtUtc: string) => (() => void) | void)
+    | undefined;
 
   constructor(
     private readonly repository: CorrespondenceRepository,
@@ -175,6 +178,15 @@ export class CorrespondenceService {
     resolver: (replyLetterId: string) => readonly string[],
   ): void {
     this.#relatedKeepsakeIds = resolver;
+  }
+
+  setOpenedLetterHandler(
+    handler: (
+      replyLetterId: string,
+      openedAtUtc: string,
+    ) => (() => void) | void,
+  ): void {
+    this.#openedLetterHandler = handler;
   }
 
   async createDraftLetter(
@@ -443,13 +455,25 @@ export class CorrespondenceService {
     }
 
     try {
-      const opened = await this.actors.runExclusive(initial.agentId, () =>
-        openService.openLetter({
-          letterId,
-          agentId: initial.agentId,
-          openedAtUtc: UtcDateTimeSchema.parse(this.clock.nowUtc()),
-        }),
+      const { opened, afterCommit } = await this.actors.runExclusive(
+        initial.agentId,
+        () =>
+          this.store.database
+            .transaction(() => {
+              const opened = openService.openLetter({
+                letterId,
+                agentId: initial.agentId,
+                openedAtUtc: UtcDateTimeSchema.parse(this.clock.nowUtc()),
+              });
+              const afterCommit = this.#openedLetterHandler?.(
+                letterId,
+                opened.openedAtUtc,
+              );
+              return { opened, afterCommit };
+            })
+            .immediate(),
       );
+      afterCommit?.();
       const letter = this.requireLetter(letterId);
       const response = projectOpenLetter(
         this.projectLetterSummary(

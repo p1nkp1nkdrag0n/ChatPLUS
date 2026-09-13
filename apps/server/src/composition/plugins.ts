@@ -475,19 +475,9 @@ function createDomainPlugin(
           },
         },
       );
-      correspondence.setAuxiliaryCatchUp(async (agentId, observedNowUtc) => {
-        try {
-          return await keepsakes.processDueForAgent(agentId, observedNowUtc);
-        } catch (error) {
-          // A generation failure is durably transitioned to retryable/failed
-          // by KeepsakeService. It must never make a committed/read letter or
-          // chat request fail at the shared temporal-work boundary.
-          context.logger.warn("Background keepsake generation failed", {
-            errorName: error instanceof Error ? error.name : "unknown",
-          });
-          return [];
-        }
-      });
+      correspondence.setOpenedLetterHandler((replyLetterId, openedAtUtc) =>
+        keepsakes.receiveForOpenedLetter(replyLetterId, openedAtUtc),
+      );
       correspondence.setRelatedKeepsakeResolver((replyLetterId) =>
         keepsakes.listReadyForReply(replyLetterId),
       );
@@ -752,9 +742,18 @@ function createSchedulerPlugin(): KernelPlugin<ServerKernelEvents> {
       );
       const config = context.services.resolve(SERVER_CONFIG_TOKEN);
       const correspondenceMode = config.correspondenceMode ?? "off";
+      const correspondence = context.services.resolve(
+        CORRESPONDENCE_SERVICE_TOKEN,
+      );
+      const keepsakes = context.services.resolve(KEEPSAKE_SERVICE_TOKEN);
       const temporalTaskScheduler = new TemporalTaskScheduler(
         context.services.resolve(CORRESPONDENCE_REPOSITORY_TOKEN),
-        context.services.resolve(CORRESPONDENCE_SERVICE_TOKEN),
+        {
+          catchUpAgent: async (agentId, observedNowUtc) => {
+            await correspondence.catchUpAgent(agentId, observedNowUtc);
+            await keepsakes.processDueForAgent(agentId, observedNowUtc);
+          },
+        },
         context.services.resolve(SERVER_CLOCK_TOKEN),
         optionsLogger(context.logger),
         {
@@ -779,6 +778,12 @@ function createSchedulerPlugin(): KernelPlugin<ServerKernelEvents> {
           ],
         },
       );
+      correspondence.setAuxiliaryCatchUp((agentId, observedNowUtc) => {
+        // Foreground reading only requests managed work. Requests from within
+        // this scheduler's own pass coalesce using the same observed instant.
+        void temporalTaskScheduler.requestAgentCatchUp(agentId, observedNowUtc);
+        return Promise.resolve();
+      });
       context.services.provide(SCHEDULER_SERVICE_TOKEN, scheduler);
       context.services.provide(
         TEMPORAL_TASK_SCHEDULER_TOKEN,

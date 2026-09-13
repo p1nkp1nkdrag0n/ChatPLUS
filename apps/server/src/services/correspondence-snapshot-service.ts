@@ -24,6 +24,7 @@ import { DateTime } from "luxon";
 
 import type { Database } from "../db/connection.js";
 import type { DatabaseStore } from "../db/store.js";
+import { RECEIVED_KEEPSAKE_SQL } from "../repositories/keepsake-repository.js";
 import {
   CURRENT_PRESSURE_PROJECTION_SQL,
   CURRENT_PRESSURE_INTERVENTION_SQL,
@@ -1267,6 +1268,8 @@ function selectReadyKeepsakes(
          FROM keepsakes keepsake
          JOIN keepsake_assets asset ON asset.id = keepsake.primary_asset_id
         WHERE keepsake.agent_id = ? AND keepsake.status = 'ready'
+          AND ${RECEIVED_KEEPSAKE_SQL}
+          AND julianday(keepsake.gifted_at_utc) <= julianday(?)
           AND julianday(keepsake.created_at_utc) <= julianday(?)
           AND julianday(keepsake.created_effective_at_utc) <= julianday(?)
           AND julianday(asset.created_at_utc) <= julianday(?)
@@ -1276,6 +1279,7 @@ function selectReadyKeepsakes(
     )
     .all(
       agentId,
+      effectiveAtUtc,
       effectiveAtUtc,
       effectiveAtUtc,
       effectiveAtUtc,

@@ -40,6 +40,8 @@ export const LlmPurposeSchema = z.enum([
   "compose_proactive_message",
   "checkpoint_autobiography",
   "letter_reply",
+  "diary_generation",
+  "diary_review",
 ]);
 export const LLMPurposeSchema = LlmPurposeSchema;
 export type LlmPurpose = z.infer<typeof LlmPurposeSchema>;

@@ -15,6 +15,7 @@ import type { TemporalTaskScheduler } from "../runtime/temporal-task-scheduler.j
 import type { LlmServiceObservationOptions } from "../services/llm-service.js";
 import type { FixtureTurnBehavior } from "../services/turn-decision-service.js";
 import { AchievementService } from "../services/achievement-service.js";
+import { DiaryService } from "../services/diary-service.js";
 import { resolveServerBundle, type ServerSimulationBundle } from "./bundles.js";
 import {
   createKernelLogger,
@@ -134,6 +135,11 @@ export async function composeServer(
 
   const routeServices: RouteServices = {
     achievements,
+    diaries: new DiaryService(
+      registry.resolve(STORE_TOKEN),
+      registry.resolve(SERVER_CLOCK_TOKEN),
+      registry.resolve(SERVER_LLM_SERVICE_TOKEN),
+    ),
     config: registry.resolve(SERVER_CONFIG_TOKEN),
     store: registry.resolve(STORE_TOKEN),
     clock: registry.resolve(SERVER_CLOCK_TOKEN),

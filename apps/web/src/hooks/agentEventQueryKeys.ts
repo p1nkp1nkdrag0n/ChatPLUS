@@ -23,5 +23,7 @@ export function agentEventQueryKeys(
     ["correspondence", agentId],
     ["relationship-archive", agentId],
     ["keepsakes", agentId],
+    ["diaries", "entries", agentId],
+    ["diaries", "volumes"],
   ];
 }

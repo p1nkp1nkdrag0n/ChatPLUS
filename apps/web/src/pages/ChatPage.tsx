@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   MessageCircleMore,
   MoreHorizontal,
   Plus,
@@ -342,6 +343,14 @@ function CharacterChat({ characterId }: { characterId: string }) {
             </div>
           </div>
           <div className="chat-header__context">
+            <Link
+              className="icon-button"
+              to={`/characters/${encodeURIComponent(characterId)}/memory-library?compose=1`}
+              aria-label="写进日记"
+              title="写进日记"
+            >
+              <BookOpen size={22} aria-hidden="true" />
+            </Link>
             <details
               className="chat-character-menu"
               ref={characterMenuRef}

@@ -7,6 +7,8 @@ export * from "./character-interview.js";
 export * from "./checkpoint.js";
 export * from "./correspondence.js";
 export * from "./conversation-context-plan.js";
+export * from "./diary.js";
+export * from "./diary-review.js";
 export * from "./event-card.js";
 export * from "./events.js";
 export * from "./follow-up.js";
@@ -59,4 +61,5 @@ export {
 } from "./llm.js";
 export { ServerChatMessageInputSchema as chatMessageInputSchema } from "./messages.js";
 export * from "./interaction-evidence.js";
+export * from "./interaction-appraisal.js";
 export * from "./llm-settings.js";

@@ -1,0 +1,19 @@
+{
+  "method": "Built-in imagegen",
+  "generatedAt": "2026-09-13",
+  "assets": [
+    {
+      "file": "cabinet-botanical-v1.png",
+      "references": ["../desk.png", "../botanical.png"],
+      "prompt": "Use case: style-transfer. Transform the supplied Dearvale website desk illustration into a production raster background texture for the BACK WALL INSIDE A BOOKCASE in the same visual world. Reference image 1 is style/material reference: preserve its hand-painted gouache strokes, cream plaster, golden afternoon light, soft olive foliage shadows and charming white daisies. Reference image 2 is botanical style reference. Output one flat FRONT-ON wide rectangular painted wall/backboard, landscape approx 3:2, fully opaque, edge-to-edge. Center 65 percent must be mostly quiet warm ivory plaster with delicate visible paint and paper grain, very pale dappled leaf shadows. At far left and far right margins only, sparse olive green climbing stems and small white daisies gently frame the quiet center; plants occupy at most 15 percent width per side. Stronger delicate foliage toward lower side corners, light irregular gouache edges. Restrained cream, ochre, sage, muted yellow-green. It must visibly share the painterly sunlit atmosphere of the supplied website image. This will sit behind REAL HTML book spines, so absolutely NO books, shelves, lettering, words, numbers, UI, borders, frame, table, room perspective, window, furniture or objects in the center. No mockup: deliver just the usable wall surface, not a picture of a page. Avoid photorealistic textures, dark vignette, heavy grunge or vector-flat art."
+    },
+    {
+      "file": "bookcloth-v1.png",
+      "prompt": "Use case: stylized-concept. Asset type: seamless square tile of clothbound antique book cover material for a hand-painted illustrated reading app. Primary request: a 1024x1024 fully opaque, seamless, edge-to-edge texture of very fine old linen bookcloth, neutral pale warm grey/ivory tones so CSS multiply blending can tint it forest green, muted rose, blue-grey or ochre. Delicate irregular woven fibers, soft hand-painted gouache grain and very faint brushed pigment variation. Elegant tactile vintage stationery, clean and cared for, soft even lighting. Material only; no book shape, no embossing, no floral pattern, no border, no lighting direction, no shadows, no gradient, no lettering, no watermark, no heavy scratches or stains. The weave must be fine, subtle and uniformly distributed, not harsh or coarse fabric. This is a texture tile used on book spines and covers, not a product photograph or a UI mockup."
+    },
+    {
+      "file": "diary-paper-v1.png",
+      "prompt": "Use case: stylized-concept. Asset type: seamless square texture tile of warm ivory handmade writing paper for a painterly storybook diary UI. Primary request: a fully opaque edge-to-edge square image of gently textured fine stationery paper, near #faf4e4, extremely subtle translucent paper fibers and delicate gouache dry-brush marks, naturally warm from soft daylight. Bright clean center and uniform texture across whole tile so it can repeat invisibly. It must stay easy to read dark Chinese typography on it. Do not add a paper silhouette or border: only flat material, no perspective, no objects, no flowers, no folds, no stains, no large marks, no writing, no text, no watermarks, no yellow or brown aging, no vignetting. Soft warm white base with low contrast microscopic grain, beautiful handmade book paper."
+    }
+  ]
+}

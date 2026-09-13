@@ -1,0 +1,1285 @@
+.memory-library {
+  color-scheme: light;
+  --ml-bg: #f5f1e8;
+  --ml-rail: #faf8f1;
+  --ml-ink: #18392f;
+  --ml-muted: #727969;
+  --ml-line: #d9d4c3;
+  --ml-wall: #e9e2d2;
+  --ml-wood: #bbaa84;
+  --ml-gold: #b59659;
+  --ml-shadow: #46381e26;
+  --ml-green: #4b6854;
+  --ml-rose: #906859;
+  --ml-paper: #faf4e4;
+  --ml-paper-ink: #374536;
+  --ml-veil: #f5f1e8e8;
+  font:
+    14px/1.65 "Noto Serif SC",
+    "Songti SC",
+    SimSun,
+    serif;
+  color: var(--ml-ink);
+  width: 100%;
+}
+.memory-library * {
+  box-sizing: border-box;
+}
+.memory-library [hidden] {
+  display: none !important;
+}
+.memory-library button,
+.memory-library select {
+  font: inherit;
+}
+.memory-library button {
+  cursor: pointer;
+}
+.memory-library button:disabled {
+  cursor: default;
+}
+.memory-library .ml-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 32px 21px;
+  border-bottom: 1px solid var(--ml-line);
+}
+.memory-library .ml-header h2 {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 3px;
+  margin: 0;
+}
+.memory-library .ml-header small {
+  display: block;
+  font:
+    10px/1.5 Georgia,
+    serif;
+  letter-spacing: 3px;
+  color: var(--ml-muted);
+  margin-top: 5px;
+}
+.memory-library .ml-views {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  isolation: isolate;
+}
+.memory-library .ml-view {
+  grid-area: 1/1;
+  min-width: 0;
+  min-height: 650px;
+}
+.memory-library .ml-shelf-view {
+  padding: 23px 32px 26px;
+}
+.memory-library .ml-shelf-view.is-background {
+  pointer-events: none;
+}
+.memory-library .ml-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 23px;
+}
+.memory-library .ml-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ml-muted);
+  font-size: 13px;
+}
+.memory-library select {
+  border: 1px solid var(--ml-line);
+  background: var(--ml-rail);
+  color: var(--ml-ink);
+  border-radius: 6px;
+  min-height: 38px;
+  padding: 5px 25px 5px 10px;
+  max-width: 100%;
+}
+.memory-library .ml-cabinet {
+  background:
+    linear-gradient(#faf5e82b, #faf5e80d),
+    url("/dearvale/art/memory-library/cabinet-botanical-v1.webp") center top /
+      100% auto repeat-y,
+    var(--ml-wall);
+  border: 1px solid var(--ml-line);
+  border-radius: 60px 60px 4px 4px;
+  padding: 26px 25px 4px;
+  box-shadow:
+    inset 4px 0 12px #8068461f,
+    inset -4px 0 12px #8068461f;
+}
+.memory-library .ml-shelf-row {
+  position: relative;
+  padding: 0 13px 16px;
+  margin-bottom: 23px;
+}
+.memory-library .ml-shelf-row::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -14px;
+  right: -14px;
+  height: 11px;
+  border-radius: 2px;
+  background-color: #b3996c;
+  background-image:
+    linear-gradient(#e2cc9c8f, transparent 35%, #735b3447),
+    url("/dearvale/art/memory-library/bookcloth-v1.webp");
+  background-size:
+    100% 100%,
+    760px 42px;
+  background-blend-mode: normal, multiply;
+  box-shadow:
+    inset 0 1px #fff4d87a,
+    0 7px 10px #6b54362e;
+}
+.memory-library .ml-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 15px;
+  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--ml-muted);
+}
+.memory-library .ml-row-heading span:last-child {
+  font:
+    10px/1.5 Georgia,
+    serif;
+  letter-spacing: 2px;
+}
+.memory-library .ml-books {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 9px;
+  min-height: 211px;
+  padding: 0 6px;
+}
+.memory-library .ml-book-slot {
+  position: relative;
+  flex: 0 1 54px;
+  min-width: 35px;
+  height: var(--book-height, 210px);
+}
+.memory-library .ml-book-slot.is-out::before {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  border: 1px dashed var(--ml-line);
+  border-radius: 5px;
+  background: var(--ml-shadow);
+}
+.memory-library .ml-spine-button {
+  --cover: var(--ml-green);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 5px 5px 2px 2px;
+  padding: 13px 4px 10px;
+  background-color: var(--cover);
+  background-image:
+    linear-gradient(
+      90deg,
+      #00000033,
+      transparent 20%,
+      #ffffff0b 55%,
+      #00000030
+    ),
+    url("/dearvale/art/memory-library/bookcloth-v1.webp");
+  background-size:
+    100% 100%,
+    256px 256px;
+  background-blend-mode: normal, multiply;
+  color: #f3e6c5;
+  box-shadow:
+    3px 1px 2px #30251935,
+    6px 2px 8px var(--ml-shadow);
+  transition: transform 170ms ease;
+}
+.memory-library .ml-spine-button::before,
+.memory-library .ml-spine-button::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-block: 1px solid #d9c3936b;
+}
+.memory-library .ml-spine-button::before {
+  top: 38px;
+}
+.memory-library .ml-spine-button::after {
+  bottom: 34px;
+}
+.memory-library .ml-spine-button:hover {
+  transform: translateY(-5px);
+}
+.memory-library .ml-spine-button[data-role="知夏"] {
+  --cover: var(--ml-rose);
+}
+.memory-library .ml-spine-button.is-out {
+  visibility: hidden;
+}
+.memory-library .ml-spine-year {
+  font:
+    10px/1.5 Georgia,
+    serif;
+  letter-spacing: 1px;
+}
+.memory-library .ml-spine-title {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-size: 17px;
+  letter-spacing: 4px;
+  margin: auto 0;
+}
+.memory-library .ml-spine-writer {
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.memory-library .ml-footnote {
+  margin: 19px 0 0;
+  text-align: center;
+  color: var(--ml-muted);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+.memory-library .ml-held-view {
+  position: relative;
+  z-index: 4;
+  background: var(--ml-veil);
+  padding: 19px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.memory-library .ml-held-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+}
+.memory-library .ml-plain {
+  border: 0;
+  background: transparent;
+  color: var(--ml-ink);
+  padding: 8px 5px;
+  min-height: 42px;
+}
+.memory-library .ml-plain:disabled {
+  opacity: 0.5;
+}
+.memory-library .ml-held-kicker {
+  color: var(--ml-muted);
+  font-size: 12px;
+}
+.memory-library .ml-held-area {
+  width: 100%;
+  min-height: 440px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1800px;
+}
+.memory-library .ml-cover-button {
+  display: block;
+  position: relative;
+  width: 224px;
+  height: 320px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f3e6c5;
+  transform-style: preserve-3d;
+  flex: none;
+}
+.memory-library .ml-book3d {
+  --cover: var(--ml-green);
+  --thickness: 66px;
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform: rotateY(0deg);
+}
+.memory-library .ml-cover-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 22px;
+  color: #f3e6c5;
+  background-color: var(--cover, var(--ml-green));
+  background-image:
+    linear-gradient(
+      90deg,
+      #00000035,
+      transparent 9%,
+      #ffffff0d 13%,
+      transparent 17%
+    ),
+    url("/dearvale/art/memory-library/bookcloth-v1.webp");
+  background-size:
+    100% 100%,
+    256px 256px;
+  background-blend-mode: normal, multiply;
+  border-radius: 2px 7px 7px 2px;
+  backface-visibility: hidden;
+  box-shadow: 1px 2px 0 #e7dcc0;
+}
+.memory-library .ml-cover-face::after {
+  content: "";
+  position: absolute;
+  inset: 14px 13px 14px 20px;
+  border: 1px solid #dec89875;
+  pointer-events: none;
+}
+.memory-library .ml-front {
+  transform: translateZ(33px);
+  box-shadow:
+    5px 5px 0 -2px #e7dcc0,
+    8px 8px 0 -3px var(--cover),
+    15px 22px 30px var(--ml-shadow);
+}
+.memory-library .ml-back-cover {
+  transform: rotateY(180deg) translateZ(33px);
+}
+.memory-library .ml-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 66px;
+  left: 0;
+  transform: translateX(-50%) rotateY(-90deg);
+  backface-visibility: hidden;
+  background-color: var(--cover);
+  background-image:
+    linear-gradient(90deg, #00000028, transparent, #00000028),
+    url("/dearvale/art/memory-library/bookcloth-v1.webp");
+  background-size:
+    100% 100%,
+    256px 256px;
+  background-blend-mode: normal, multiply;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  letter-spacing: 5px;
+  font-size: 20px;
+  border-block: 2px solid #bea36b80;
+}
+.memory-library .ml-paper-edge {
+  position: absolute;
+  left: 100%;
+  top: 3px;
+  bottom: 3px;
+  width: 62px;
+  transform: translateX(-50%) rotateY(90deg);
+  backface-visibility: hidden;
+  background: repeating-linear-gradient(90deg, #e8dec3 0 2px, #cfc4a7 2px 3px);
+}
+.memory-library .ml-cover-year {
+  font:
+    11px/1.5 Georgia,
+    serif;
+  letter-spacing: 3px;
+  margin-bottom: 29px;
+}
+.memory-library .ml-cover-title {
+  font-size: 31px;
+  font-weight: 400;
+  letter-spacing: 4px;
+}
+.memory-library .ml-cover-rule {
+  width: 31px;
+  height: 1px;
+  background: #e2cea175;
+  margin: 22px 0;
+}
+.memory-library .ml-cover-writer {
+  font-size: 15px;
+  letter-spacing: 4px;
+}
+.memory-library .ml-cover-subtitle {
+  font-size: 11px;
+  letter-spacing: 2px;
+  margin-top: 30px;
+  opacity: 0.85;
+}
+.memory-library .ml-held-caption {
+  text-align: center;
+  margin: 0;
+  color: var(--ml-ink);
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+.memory-library .ml-held-caption small {
+  display: block;
+  font-size: 12px;
+  color: var(--ml-muted);
+  letter-spacing: 1px;
+  margin-top: 8px;
+}
+.memory-library .ml-reader-view {
+  position: relative;
+  z-index: 5;
+  padding: 17px 24px 23px;
+  background:
+    linear-gradient(#f5f1e8ed, #f5f1e8ed),
+    url("/dearvale/art/memory-library/cabinet-botanical-v1.webp") center / cover,
+    var(--ml-bg);
+}
+.memory-library .ml-reader-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.memory-library .ml-reader-title {
+  font-size: 12px;
+  color: var(--ml-muted);
+}
+.memory-library .ml-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 12px 0;
+  border-block: 1px solid var(--ml-line);
+  margin: 0 0 18px;
+}
+.memory-library .ml-toc button {
+  background: var(--ml-rail);
+  border: 1px solid var(--ml-line);
+  color: var(--ml-ink);
+  font-size: 12px;
+  border-radius: 5px;
+  padding: 8px 10px;
+}
+.memory-library .ml-toc button[aria-current="page"] {
+  border-color: var(--ml-gold);
+  box-shadow: inset 0 -2px var(--ml-gold);
+}
+.memory-library .ml-spread {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 760px;
+  min-height: 450px;
+  width: 100%;
+  margin: 0 auto;
+  perspective: 1800px;
+  isolation: isolate;
+  background: var(--ml-paper);
+  border-radius: 4px;
+  box-shadow:
+    0 20px 28px var(--ml-shadow),
+    0 3px 0 2px #d7caae,
+    0 6px 0 4px var(--ml-green);
+}
+.memory-library .ml-paper {
+  position: relative;
+  min-width: 0;
+  min-height: 450px;
+  padding: 29px 28px 42px;
+  background: var(--ml-paper);
+  color: var(--ml-paper-ink);
+  border-radius: 3px;
+}
+.memory-library .ml-paper.left {
+  background:
+    linear-gradient(90deg, transparent 88%, #88764420),
+    url("/dearvale/art/memory-library/diary-paper-v1.webp") left top / 384px
+      384px repeat,
+    var(--ml-paper);
+}
+.memory-library .ml-paper.right {
+  background:
+    linear-gradient(90deg, #7769431c, transparent 12%),
+    url("/dearvale/art/memory-library/diary-paper-v1.webp") right top / 384px
+      384px repeat,
+    var(--ml-paper);
+}
+.memory-library .ml-page-date {
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin-bottom: 23px;
+  color: #747863;
+}
+.memory-library .ml-paper h3 {
+  font-size: 22px;
+  font-weight: 500;
+  margin: 0 0 22px;
+  letter-spacing: 1px;
+}
+.memory-library .ml-paper p {
+  font-size: 15px;
+  line-height: 2;
+  margin: 0 0 19px;
+  text-align: justify;
+}
+.memory-library .ml-running-head {
+  font-size: 11px;
+  color: #747863;
+  letter-spacing: 2px;
+  margin-bottom: 27px;
+}
+.memory-library .ml-signature {
+  text-align: right;
+  font-size: 14px;
+  letter-spacing: 3px;
+  margin-top: 27px;
+}
+.memory-library .ml-page-number {
+  position: absolute;
+  bottom: 13px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font:
+    11px/1.5 Georgia,
+    serif;
+  color: #7d7d67;
+}
+.memory-library .ml-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 7px);
+  width: 14px;
+  background: linear-gradient(90deg, transparent, #675c4020, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+.memory-library .ml-ribbon {
+  position: absolute;
+  right: 24px;
+  top: 0;
+  width: 15px;
+  height: 42px;
+  background: var(--ml-rose);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+  z-index: 3;
+}
+.memory-library .ml-flipper {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  transform-style: preserve-3d;
+  z-index: 7;
+  pointer-events: none;
+}
+.memory-library .ml-flipper.next {
+  left: 50%;
+  transform-origin: left center;
+}
+.memory-library .ml-flipper.prev {
+  left: 0;
+  transform-origin: right center;
+}
+.memory-library .ml-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+}
+.memory-library .ml-face.back {
+  transform: rotateY(180deg);
+}
+.memory-library .ml-face .ml-paper {
+  height: 100%;
+}
+.memory-library .ml-face .ml-cover-face {
+  --cover: var(--selected-cover, var(--ml-green));
+  box-shadow: 8px 8px 20px var(--ml-shadow);
+}
+.memory-library .ml-open-carrier {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 8;
+  transform-origin: center;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+.memory-library .ml-open-carrier .ml-flipper {
+  width: 100%;
+  left: 0;
+}
+.memory-library .ml-reader-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 24px;
+}
+.memory-library .ml-turn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--ml-line);
+  background: var(--ml-rail);
+  color: var(--ml-ink);
+  font:
+    20px/1 Georgia,
+    serif;
+}
+.memory-library .ml-turn:disabled {
+  opacity: 0.3;
+}
+.memory-library .ml-position {
+  font-size: 12px;
+  color: var(--ml-muted);
+  min-width: 80px;
+  text-align: center;
+}
+.memory-library .ml-reader-hint {
+  font-size: 11px;
+  color: var(--ml-muted);
+  text-align: center;
+  margin: 9px 0 0;
+}
+@media (max-width: 700px) {
+  .memory-library .ml-header {
+    padding: 21px;
+  }
+  .memory-library .ml-shelf-view {
+    padding: 20px;
+  }
+  .memory-library .ml-cabinet {
+    padding: 25px 15px 4px;
+  }
+  .memory-library .ml-books {
+    gap: 7px;
+    padding-inline: 0;
+  }
+  .memory-library .ml-book-slot {
+    flex-basis: 48px;
+  }
+  .memory-library .ml-shelf-row {
+    padding-inline: 5px;
+  }
+  .memory-library .ml-shelf-row::after {
+    left: -9px;
+    right: -9px;
+  }
+  .memory-library .ml-paper {
+    padding: 25px 20px 40px;
+  }
+  .memory-library .ml-paper p {
+    font-size: 14px;
+  }
+}
+@media (max-width: 520px) {
+  .memory-library .ml-header {
+    padding: 19px 17px;
+  }
+  .memory-library .ml-header h2 {
+    font-size: 21px;
+  }
+  .memory-library .ml-shelf-view {
+    padding: 18px 15px;
+  }
+  .memory-library .ml-view {
+    min-height: 650px;
+  }
+  .memory-library .ml-filters {
+    gap: 11px;
+  }
+  .memory-library .ml-filters label {
+    font-size: 12px;
+    gap: 5px;
+  }
+  .memory-library select {
+    font-size: 16px;
+    padding: 5px 18px 5px 7px;
+  }
+  .memory-library .ml-cabinet {
+    padding: 23px 10px 4px;
+    border-radius: 40px 40px 3px 3px;
+  }
+  .memory-library .ml-books {
+    gap: 5px;
+  }
+  .memory-library .ml-book-slot {
+    flex-basis: 44px;
+    min-width: 30px;
+  }
+  .memory-library .ml-spine-title {
+    font-size: 16px;
+    letter-spacing: 3px;
+  }
+  .memory-library .ml-held-view {
+    padding: 16px;
+  }
+  .memory-library .ml-reader-view {
+    padding: 15px 12px 25px;
+  }
+  .memory-library .ml-reader-toolbar {
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .memory-library .ml-reader-title {
+    font-size: 11px;
+  }
+  .memory-library .ml-paper {
+    min-height: 480px;
+    padding: 24px 13px 35px;
+  }
+  .memory-library .ml-paper p {
+    font-size: 13px;
+    line-height: 1.95;
+    margin-bottom: 15px;
+  }
+  .memory-library .ml-paper h3 {
+    font-size: 18px;
+    margin-bottom: 19px;
+  }
+  .memory-library .ml-page-date {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  .memory-library .ml-running-head {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  .memory-library .ml-ribbon {
+    width: 10px;
+    height: 29px;
+    right: 10px;
+  }
+  .memory-library .ml-signature {
+    font-size: 12px;
+  }
+}
+@media (pointer: coarse) {
+  .memory-library .ml-turn {
+    width: 44px;
+    height: 44px;
+  }
+  .memory-library .ml-plain {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .memory-library *,
+  .memory-library *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .memory-library .ml-spine-button:hover {
+    transform: none;
+  }
+}
+/* The approved library scene shares Dearvale's editorial type and controls. */
+.memory-library {
+  min-width: 0;
+  min-height: 100%;
+  background: var(--ml-bg);
+  font-family: var(--font-editorial);
+}
+.memory-library button:focus-visible,
+.memory-library select:focus-visible,
+.memory-library input:focus-visible,
+.memory-library a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.memory-library .ml-header h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: 3px;
+}
+.memory-library .ml-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 9px 17px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fffaf0;
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.memory-library .ml-primary:disabled {
+  opacity: 0.55;
+}
+.memory-library .ml-plain {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+.memory-library .ml-composer-wrap {
+  position: relative;
+  padding: 0 32px;
+}
+.memory-library .ml-composer {
+  padding: 23px 0;
+  border-bottom: 1px solid var(--ml-line);
+}
+.memory-library .ml-composer-heading {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  padding-right: 30px;
+}
+.memory-library .ml-composer h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+}
+.memory-library .ml-composer-heading p {
+  margin: 5px 0 20px;
+  color: var(--ml-muted);
+  font-size: 12px;
+}
+.memory-library .ml-composer form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.memory-library .ml-composer label {
+  display: grid;
+  gap: 6px;
+  color: var(--ml-muted);
+  font-size: 12px;
+  min-width: 0;
+}
+.memory-library .ml-composer select,
+.memory-library .ml-composer input {
+  min-height: 42px;
+  border: 1px solid var(--ml-line);
+  border-radius: 6px;
+  background: var(--ml-rail);
+  color: var(--ml-ink);
+  font: inherit;
+  padding: 7px 11px;
+  max-width: 100%;
+}
+.memory-library .ml-composer-close {
+  position: absolute;
+  right: 29px;
+  top: 16px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--ml-muted);
+}
+.memory-library .ml-composer-note,
+.memory-library .ml-composer-success,
+.memory-library .ml-form-error {
+  font-size: 12px;
+  margin: 15px 0 0;
+}
+.memory-library .ml-composer-note {
+  color: var(--ml-muted);
+}
+.memory-library .ml-composer-success {
+  color: var(--accent);
+}
+.memory-library .ml-form-error {
+  color: var(--danger);
+}
+.memory-library .ml-form-error button {
+  color: inherit;
+  border: 0;
+  text-decoration: underline;
+  background: transparent;
+  margin-left: 10px;
+}
+.memory-library .ml-shelf-view {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 660px;
+}
+.memory-library .ml-filters {
+  align-items: center;
+}
+.memory-library .ml-filters select {
+  max-width: min(230px, 45vw);
+}
+.memory-library .ml-refreshing {
+  margin-left: auto;
+  color: var(--ml-muted);
+  font-size: 11px;
+}
+.memory-library .ml-row-heading {
+  gap: 10px;
+}
+.memory-library .ml-row-heading h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.memory-library .ml-row-heading h2,
+.memory-library .ml-row-heading > span {
+  padding: 3px 8px;
+  color: #545c43;
+  background: #fff8e9e0;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px #80623b14;
+}
+.memory-library .ml-books {
+  justify-content: center;
+  gap: clamp(6px, 2vw, 16px);
+}
+.memory-library .ml-book-slot {
+  position: relative;
+  flex: 0 1 58px;
+  min-width: 30px;
+  height: var(--book-height, 214px);
+}
+.memory-library .ml-book-slot.is-out::before {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  background: var(--ml-shadow);
+  border: 1px dashed var(--ml-line);
+  border-radius: 4px;
+}
+.memory-library .ml-spine-button {
+  --cover: inherit;
+}
+.memory-library .ml-spine-writer {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+.memory-library .ml-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 410px;
+  padding: 35px 20px;
+  text-align: center;
+  color: var(--ml-muted);
+}
+.memory-library .ml-empty h2 {
+  font-size: 21px;
+  font-weight: 400;
+  color: var(--ml-ink);
+  margin: 22px 0 12px;
+}
+.memory-library .ml-empty p {
+  font-size: 13px;
+  margin: 0 0 24px;
+  max-width: 370px;
+}
+.memory-library .ml-book-stage {
+  grid-area: 1 / 1;
+  display: grid;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  z-index: 4;
+}
+.memory-library .ml-held-view,
+.memory-library .ml-reader-view {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 670px;
+}
+.memory-library .ml-held-view[aria-hidden="true"],
+.memory-library .ml-reader-view[aria-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.memory-library .ml-held-toolbar > span {
+  font-size: 12px;
+  color: var(--ml-muted);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.memory-library .ml-book3d {
+  --cover: inherit;
+}
+.memory-library .ml-cover-writer {
+  text-align: center;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.memory-library .ml-cover-subtitle {
+  text-align: center;
+}
+.memory-library .ml-reader-title {
+  font-size: 12px;
+  font-weight: 400;
+  margin: 0;
+  text-align: center;
+}
+.memory-library .ml-reader-title:focus {
+  outline: none;
+}
+.memory-library .ml-toc {
+  max-height: 170px;
+  overflow-y: auto;
+}
+.memory-library .ml-toc button {
+  display: inline-flex;
+  gap: 8px;
+  text-align: left;
+  max-width: 100%;
+}
+.memory-library .ml-toc time {
+  white-space: nowrap;
+}
+.memory-library .ml-toc span {
+  overflow-wrap: anywhere;
+}
+.memory-library .ml-spread {
+  min-height: 0;
+}
+.memory-library .ml-paper {
+  height: clamp(360px, calc(100dvh - 350px), 530px);
+  min-height: 0;
+  padding: 29px 28px 64px;
+}
+.memory-library .ml-page-flow {
+  height: 100%;
+  overflow: hidden;
+}
+.memory-library .ml-page-title {
+  margin: 0 0 22px;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  overflow-wrap: anywhere;
+}
+.memory-library .ml-page-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 2;
+}
+.memory-library .ml-signature {
+  position: absolute;
+  bottom: 31px;
+  left: 20px;
+  right: 20px;
+  margin: 0;
+  text-align: right;
+  font-size: 12px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.memory-library .ml-page-number {
+  bottom: 10px;
+}
+.memory-library .ml-blank-page {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #c5b89b;
+  font-size: 22px;
+}
+.memory-library .ml-measurement {
+  position: absolute;
+  width: 50%;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+.memory-library .ml-measurement .ml-paper {
+  background: transparent;
+}
+.memory-library .ml-face .ml-cover-face {
+  --cover: inherit;
+}
+.memory-library .ml-entry-actions {
+  max-width: 760px;
+  margin: 15px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.memory-library .ml-entry-actions p {
+  margin: 0 auto 0 0;
+  color: var(--ml-muted);
+  font-size: 12px;
+}
+.memory-library .ml-entry-actions .ml-plain {
+  font-size: 12px;
+}
+.memory-library .ml-turn {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+@media (min-width: 701px) {
+  .memory-library {
+    overflow-anchor: none;
+  }
+}
+@media (max-width: 700px) {
+  .memory-library .ml-header {
+    padding: 22px 20px;
+  }
+  .memory-library .ml-header h1 {
+    font-size: 23px;
+  }
+  .memory-library .ml-composer-wrap {
+    padding: 0 20px;
+  }
+  .memory-library .ml-composer-close {
+    right: 16px;
+  }
+  .memory-library .ml-paper {
+    padding: 25px 20px 60px;
+  }
+  .memory-library .ml-page-body {
+    font-size: 14px;
+  }
+}
+@media (max-width: 520px) {
+  .memory-library {
+    width: 100%;
+    overflow-x: clip;
+  }
+  .memory-library .ml-header {
+    padding: 20px 15px;
+    gap: 8px;
+  }
+  .memory-library .ml-header h1 {
+    font-size: 21px;
+    letter-spacing: 2px;
+  }
+  .memory-library .ml-header small {
+    letter-spacing: 2px;
+  }
+  .memory-library .ml-header .ml-primary {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .memory-library .ml-composer-wrap {
+    padding: 0 15px;
+  }
+  .memory-library .ml-composer form {
+    gap: 12px;
+  }
+  .memory-library .ml-composer label {
+    flex: 1 1 120px;
+  }
+  .memory-library .ml-composer select,
+  .memory-library .ml-composer input {
+    font-size: 16px;
+    width: 100%;
+  }
+  .memory-library .ml-composer form > button {
+    width: 100%;
+  }
+  .memory-library .ml-filters {
+    column-gap: 12px;
+    row-gap: 10px;
+  }
+  .memory-library .ml-filters label {
+    gap: 6px;
+  }
+  .memory-library .ml-book-slot {
+    flex-basis: 44px;
+    min-width: 27px;
+  }
+  .memory-library .ml-books {
+    gap: 5px;
+  }
+  .memory-library .ml-cabinet {
+    padding-inline: 9px;
+  }
+  .memory-library .ml-held-view {
+    padding: 16px 12px;
+  }
+  .memory-library .ml-reader-view {
+    padding: 16px 10px 25px;
+  }
+  .memory-library .ml-reader-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .memory-library .ml-reader-title {
+    order: 3;
+    flex-basis: 100%;
+    margin-top: 3px;
+  }
+  .memory-library .ml-reader-toolbar > button:last-child {
+    margin-left: auto;
+  }
+  .memory-library .ml-paper {
+    min-height: 0;
+    height: 500px;
+    padding: 23px 12px 57px;
+  }
+  .memory-library .ml-page-title {
+    font-size: 18px;
+    margin-bottom: 18px;
+  }
+  .memory-library .ml-page-body {
+    font-size: 13px;
+    line-height: 1.95;
+  }
+  .memory-library .ml-page-date {
+    font-size: 10px;
+    margin-bottom: 18px;
+    letter-spacing: 0;
+  }
+  .memory-library .ml-running-head {
+    font-size: 10px;
+    margin-bottom: 18px;
+    letter-spacing: 0;
+  }
+  .memory-library .ml-toc {
+    max-height: 145px;
+  }
+  .memory-library .ml-toc button {
+    width: 100%;
+    font-size: 12px;
+  }
+  .memory-library .ml-held-caption {
+    font-size: 14px;
+  }
+  .memory-library .ml-held-caption small {
+    font-size: 11px;
+  }
+  .memory-library .ml-signature {
+    left: 9px;
+    right: 9px;
+    font-size: 11px;
+  }
+}

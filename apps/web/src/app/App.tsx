@@ -22,6 +22,7 @@ const CharacterImportPage = lazy(() => import("../pages/CharacterImportPage"));
 const CharacterEditorPage = lazy(() => import("../pages/CharacterEditorPage"));
 const ChatPage = lazy(() => import("../pages/ChatPage"));
 const TimelinePage = lazy(() => import("../pages/TimelinePage"));
+const MemoryLibraryPage = lazy(() => import("../pages/MemoryLibraryPage"));
 const SettingsPage = lazy(() => import("../pages/SettingsPage"));
 const DeveloperPage = lazy(() => import("../pages/DeveloperPage"));
 const AchievementsPage = lazy(() => import("../pages/AchievementsPage"));
@@ -138,6 +139,11 @@ function DearvaleRoutes() {
               element={<ShareComposerPage />}
             />
             <Route path="/timeline" element={<TimelinePage />} />
+            <Route path="/memory-library" element={<MemoryLibraryPage />} />
+            <Route
+              path="/characters/:characterId/memory-library"
+              element={<MemoryLibraryPage />}
+            />
             <Route
               path="/characters/:characterId/timeline"
               element={<TimelinePage />}

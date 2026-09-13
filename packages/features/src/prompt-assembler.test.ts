@@ -52,6 +52,31 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
 };
 
 describe("complete evidence budgets", () => {
+  it.each([undefined, 3_000, 4_000])(
+    "keeps the complete optional reaction contract with existing affinity and state at %s tokens",
+    (maxInputTokens) => {
+      const result = assembleChatPrompt(
+        baseInput({
+          userMessage: "我想聊一件私人的事情。",
+          ...(maxInputTokens === undefined ? {} : { maxInputTokens }),
+        }),
+      );
+      expect(result.prompt).toContain(
+        "optional top-level interactionAppraisal",
+      );
+      expect(result.prompt).toContain("Low closeness does not imply dislike");
+      expect(result.prompt).toContain(
+        "Private or intimate disclosure is not inherently offensive",
+      );
+      expect(result.prompt).toContain(
+        "subjective reaction alone cannot justify a relationshipDelta deduction",
+      );
+      expect(result.prompt).toContain("need_more_space");
+      expect(result.prompt).toContain("appreciate_trust");
+      expect(result.prompt).toContain("RELATIONSHIP_JSON");
+      expect(result.prompt).toContain("RUNTIME_STATE_JSON");
+    },
+  );
   it("sends one current affinity authority and rejects budgets that would clip its controls", () => {
     const input = baseInput({ userMessage: "今天想随便聊聊。" });
     input.character.userRelationship = {

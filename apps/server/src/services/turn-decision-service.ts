@@ -4,6 +4,7 @@ import type {
   EffectivePersonaSnapshot,
   FuzzyLifePromptContext,
   InteractionEvidenceSnapshot,
+  InteractionAppraisalCandidate,
 } from "@personasim/contracts";
 import { DateTime } from "luxon";
 import {
@@ -92,6 +93,12 @@ export interface TurnDecisionServiceOptions {
 }
 
 export interface FixtureTurnBehavior {
+  interactionAppraisal?(input: {
+    userText: string;
+    replyText: string;
+    system: string;
+    prompt: string;
+  }): InteractionAppraisalCandidate | undefined;
   selectDelegatedDecision?(input: {
     userText: string;
     causalContext?: unknown;
@@ -195,6 +202,12 @@ export interface ConsentModalityGuardAudit {
 }
 
 export type ResolvedTurn = {
+  /** Same-generation subjective metadata, validated against the final committed
+   * reply separately from world effects; never a relationship mutation. */
+  interactionAppraisal?: {
+    candidate: unknown;
+    generatedReplyText: string;
+  };
   affinityDeliveryAudit?: AffinityDeliveryAudit;
   decision: AgentTurnDecision;
   inspection: DecisionInspection;
@@ -459,6 +472,12 @@ export class TurnDecisionService {
     const deterministicEnvelope = fixtureProviderEnvelope(
       input.fixture,
       worldEffectsEnabled,
+      this.options.fixtureTurnBehavior?.interactionAppraisal?.({
+        userText: input.userText,
+        replyText: input.fixture.reply.text,
+        system: input.system,
+        prompt: input.prompt,
+      }),
     );
     try {
       providerEnvelope = StrictPersonaTurnProviderEnvelopeSchema.parse(
@@ -612,6 +631,9 @@ export class TurnDecisionService {
     }
     const scheduleAction = fixtureScheduleNegotiationAction(input);
     return {
+      ...appraisalFromEnvelope(
+        effectsEnforced ? deterministicEnvelope : providerEnvelope,
+      ),
       decision,
       inspection,
       repairAttempted,
@@ -928,6 +950,7 @@ export class TurnDecisionService {
       });
     }
     return {
+      ...appraisalFromEnvelope(envelopeResponse),
       decision,
       inspection,
       repairAttempted,
@@ -1380,8 +1403,10 @@ function sanitizeModelMemoryCandidates(
 function fixtureProviderEnvelope(
   decision: AgentTurnDecision,
   includeWorldEffects = true,
+  interactionAppraisal?: InteractionAppraisalCandidate,
 ): PersonaTurnProviderEnvelope {
   return StrictPersonaTurnProviderEnvelopeSchema.parse({
+    ...(interactionAppraisal === undefined ? {} : { interactionAppraisal }),
     replyDecision: decision.reply,
     worldEffects: includeWorldEffects
       ? {
@@ -1404,6 +1429,21 @@ function fixtureProviderEnvelope(
       : {},
     scheduleEffects: decision.scheduleEffects,
   });
+}
+
+function appraisalFromEnvelope(
+  envelope: PersonaTurnProviderEnvelope | undefined,
+): Pick<ResolvedTurn, "interactionAppraisal"> {
+  if (envelope?.interactionAppraisal === undefined) return {};
+  const reply = PersonaChatDecisionSchema.safeParse(envelope.replyDecision);
+  return reply.success
+    ? {
+        interactionAppraisal: {
+          candidate: envelope.interactionAppraisal,
+          generatedReplyText: reply.data.text,
+        },
+      }
+    : {};
 }
 
 function materializeFixtureProviderDecision(

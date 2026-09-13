@@ -64,6 +64,7 @@ describe("achievement wax migration", () => {
       expect(runMigrations(database)).toEqual([
         migration,
         "035_letter_delivery_methods.sql",
+        "036_memory_diaries.sql",
       ]);
       expect(
         database

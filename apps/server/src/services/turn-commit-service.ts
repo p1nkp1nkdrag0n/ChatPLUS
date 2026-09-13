@@ -12,6 +12,7 @@ import { validateMergeAndPersistMemories } from "./memory-service.js";
 import type { MemoryReconciliationResult } from "./memory-lifecycle-service.js";
 import type { PersonaRuntimeService } from "./persona-runtime-service.js";
 import { MemoryValidityRepository } from "../repositories/memory-validity-repository.js";
+import { InteractionAppraisalService } from "./interaction-appraisal-service.js";
 import type { PersonalIntentService } from "./personal-intent-service.js";
 import type { ScheduleService } from "./schedule-service.js";
 import { deliveryModeForDecision } from "./turn-decision-service.js";
@@ -323,6 +324,26 @@ export class TurnCommitService {
           this.contexts?.reconcileMemories(input.command.agentId, memoryIds) ??
           [];
         this.store.insertMessage(assistantMessage);
+        if (
+          contentDerivedSemanticsAllowed &&
+          !input.turn.usedFallback &&
+          !input.world.usedFallback &&
+          input.turn.interactionAppraisal !== undefined
+        ) {
+          new InteractionAppraisalService(this.store).recordForTurn({
+            ...input.turn.interactionAppraisal,
+            character: input.spec,
+            stateBefore: currentState,
+            userMessageId: userMessage.id,
+            assistantMessageId: assistantMessage.id,
+            nowUtc: input.nowUtc,
+            ...(input.effectivePersona === undefined
+              ? {}
+              : {
+                  effectivePersonaRevision: input.effectivePersona.revision,
+                }),
+          });
+        }
         if (
           this.options.personaRuntimeMode !== undefined &&
           this.options.personaRuntimeMode !== "off" &&

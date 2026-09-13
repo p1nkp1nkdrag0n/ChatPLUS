@@ -276,7 +276,8 @@ WITH archive AS (
   WHERE @includeLife = 1
     AND event.agent_id = @agentId
     AND event.stream_type NOT IN (
-      'correspondence_letter', 'correspondence_thread', 'keepsake'
+      'correspondence_letter', 'correspondence_thread', 'keepsake',
+      'interaction_appraisal'
     )
 
   UNION ALL

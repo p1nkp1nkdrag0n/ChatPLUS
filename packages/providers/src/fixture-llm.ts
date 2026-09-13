@@ -808,6 +808,38 @@ function letterReplyFixture(request: LLMRequest): JsonValue {
   };
 }
 
+function diaryFixture(request: LLMRequest): JsonValue {
+  const prompt = parseFixturePrompt(asRecord(request.payload)["prompt"]);
+  const messages = Array.isArray(prompt["sourceMessages"])
+    ? prompt["sourceMessages"].map(asRecord)
+    : [];
+  const source = messages.find(
+    (message) =>
+      message["role"] === "user" && message["includedAsDaySource"] === true,
+  );
+  if (source === undefined || typeof source["id"] !== "string")
+    throw new Error(
+      "The diary fixture requires an actual day-source user message.",
+    );
+  const content = stringValue(source["content"], "");
+  return {
+    title: "今天留下的一页",
+    paragraphs: [
+      {
+        text:
+          content.length <= 1_600
+            ? `我记下了今天听到的这段话：“${content}”`
+            : "今天的交谈里有一段很长的讲述。我不打算逐字抄写，先把这次交谈留在这一页。",
+        sourceMessageIds: [source["id"]],
+      },
+      {
+        text: "写到这里，我想先保留自己的感受，不急着替这件事下结论。有些想法还没有整理好，就让这一页停在这里。",
+        sourceMessageIds: [source["id"]],
+      },
+    ],
+  };
+}
+
 const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   compile_character: compileFixture,
   character_interview: () => ({
@@ -837,6 +869,9 @@ const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
   compose_proactive_message: proactiveFixture,
   checkpoint_autobiography: checkpointAutobiographyFixture,
   letter_reply: letterReplyFixture,
+  diary_generation: diaryFixture,
+  // The fixture exercises the review protocol; it performs no semantic judgment.
+  diary_review: () => ({ valid: true, issues: [] }),
 };
 
 function tokenEstimate(value: string): number {

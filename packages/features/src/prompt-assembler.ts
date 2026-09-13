@@ -8,6 +8,11 @@ import type {
   EffectivePersonaSnapshot,
   InteractionEvidenceSnapshot,
 } from "@personasim/contracts";
+import {
+  INTERACTION_PRIVATE_VIEW_TEXT,
+  InteractionAttitudeSchema,
+  InteractionFeelingSchema,
+} from "@personasim/contracts";
 
 import { deriveAdvicePolicy } from "./advice-policy.js";
 import { isFactHistoryQuery } from "./current-fact-projection.js";
@@ -740,6 +745,13 @@ export function assembleChatPrompt(
           : []),
       ];
 
+  const appraisalInstructions = [
+    "For meaningful reactions, an optional top-level interactionAppraisal may accompany this SAME generation. Omit ordinary/unclear reactions. It is subjective character data for a user-visible diary, never reasoning or factual memory.",
+    "Exactly: triggerQuote=verbatim current-user excerpt; feelings=1-3 codes; attitude=one code; publicExpression=verbatim replyDecision.text excerpt; privateView=1-3 codes. No IDs, times, scores, invented actions, user motives, past boundaries, or explanations.",
+    `feelings: ${InteractionFeelingSchema.options.join(",")}. attitude: ${InteractionAttitudeSchema.options.join(",")}. privateView: ${Object.keys(INTERACTION_PRIVATE_VIEW_TEXT).join(",")}.`,
+    "Use this interaction, persona, RELATIONSHIP_JSON closeness and RUNTIME_STATE_JSON capacity. Low closeness does not imply dislike; high closeness permits discomfort. Private or intimate disclosure is not inherently offensive. Consider pace and willingness without inventing prior boundary violations.",
+    "Polite listening may coexist with discomfort; mixed feelings and expressed dislike are allowed. Do not contradict enthusiastic invitations with invented secret dislike. A subjective reaction alone cannot justify a relationshipDelta deduction.",
+  ].join("\n");
   const commonPolicy = [
     "Portray the identity supplied in CHARACTER_IDENTITY_JSON as one consistent fictional or simulated character.",
     "Follow the supplied character persona and dialogue or language style strictly, including its vocabulary, cadence, formality, emotional expression and avoided phrases.",
@@ -798,6 +810,11 @@ export function assembleChatPrompt(
           ? " Top-level scheduleEffects is optional under the appended legacy contract."
           : " Omit top-level scheduleEffects."
       }`;
+  const baseOutputContract = [
+    outputContract,
+    outputGuidance +
+      ' For single_block, omit chunks. For sequential, set deliveryMode to "sequential" and you may add 2-12 chunks that faithfully preserve the complete text; each chunk should be a natural separate chat bubble.',
+  ].join("\n");
   const selectedCharacter = selectCharacterContextForTurn(
     input.effectivePersona === undefined
       ? input.character
@@ -1003,11 +1020,7 @@ export function assembleChatPrompt(
       reviewUpperChars: replyStrategy.reviewUpperChars,
     },
     userMessage: { content: input.userMessage },
-    outputContract: [
-      outputContract,
-      outputGuidance +
-        ' For single_block, omit chunks. For sequential, set deliveryMode to "sequential" and you may add 2-12 chunks that faithfully preserve the complete text; each chunk should be a natural separate chat bubble.',
-    ].join("\n"),
+    outputContract: [baseOutputContract, appraisalInstructions].join("\n"),
     ...(input.calendarContext === undefined
       ? {}
       : { calendarContext: input.calendarContext }),
@@ -1123,12 +1136,29 @@ export function assembleChatPrompt(
         }),
     });
   }
-  const admitted = registry.render(
-    promptSafeContext,
+  const renderOptions =
     input.maxInputTokens === undefined
       ? {}
-      : { maxInputTokens: input.maxInputTokens },
-  );
+      : { maxInputTokens: input.maxInputTokens };
+  let admitted = registry.render(promptSafeContext, renderOptions);
+  let completeControls = true;
+  try {
+    assertTurnControlDelivered(
+      admitted,
+      promptSafeContext.replyStrategy as Record<string, unknown>,
+    );
+  } catch (error) {
+    if (!(error instanceof PromptSegmentRegistryError)) throw error;
+    completeControls = false;
+  }
+  if (!completeControls || !admitted.prompt.includes(appraisalInstructions)) {
+    // Optional reaction authoring is all-or-nothing. Under a small budget keep
+    // the core chat contract rather than asking with clipped evidence rules.
+    admitted = registry.render(
+      { ...promptSafeContext, outputContract: baseOutputContract },
+      renderOptions,
+    );
+  }
   assertTurnControlDelivered(
     admitted,
     promptSafeContext.replyStrategy as Record<string, unknown>,

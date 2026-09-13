@@ -124,10 +124,11 @@ export function buildTimelineResponse(
   // matters for migrated databases: a stale exact plan must not become visible
   // again merely because the user opens the shared-experience timeline.
   const scheduleItems = fuzzyLife ? [] : store.listSchedule(agentId);
-  const domainEvents = (
-    publicOnly
-      ? listPublicTimelineDomainEvents(store, agentId, limit)
-      : store.listDomainEvents(agentId, limit)
+  const domainEvents = listTimelineDomainEvents(
+    store,
+    agentId,
+    limit,
+    publicOnly,
   )
     .map((event) => ApiDomainEventSchema.parse(event))
     .filter(
@@ -207,10 +208,11 @@ export function buildTimelineResponse(
   };
 }
 
-function listPublicTimelineDomainEvents(
+function listTimelineDomainEvents(
   store: DatabaseStore,
   agentId: string,
   limit: number,
+  publicOnly: boolean,
 ): Array<Record<string, unknown>> {
   // Filter the durable source before LIMIT: private background events must not
   // consume the user's history window, even when they outnumber public events.
@@ -222,10 +224,15 @@ function listPublicTimelineDomainEvents(
       payload_json AS payloadJson, correlation_id AS correlationId,
       causation_id AS causationId, idempotency_key AS idempotencyKey
      FROM domain_events WHERE agent_id = ?
-       AND event_type IN (${PUBLIC_TIMELINE_DOMAIN_EVENT_TYPES.map(() => "?").join(",")})
+       AND stream_type <> 'interaction_appraisal'
+       ${publicOnly ? `AND event_type IN (${PUBLIC_TIMELINE_DOMAIN_EVENT_TYPES.map(() => "?").join(",")})` : ""}
      ORDER BY recorded_at_utc DESC, rowid DESC LIMIT ?`,
     )
-    .all(agentId, ...PUBLIC_TIMELINE_DOMAIN_EVENT_TYPES, limit)
+    .all(
+      agentId,
+      ...(publicOnly ? PUBLIC_TIMELINE_DOMAIN_EVENT_TYPES : []),
+      limit,
+    )
     .map((row) => {
       const { payloadJson, ...event } = row as Record<string, unknown>;
       return { ...event, payload: JSON.parse(String(payloadJson)) as unknown };

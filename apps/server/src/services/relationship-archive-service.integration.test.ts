@@ -10,6 +10,7 @@ import { canonicalLetterContent } from "@personasim/features";
 
 import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
+import { DatabaseStore } from "../db/store.js";
 import { FakeClock } from "../runtime/clock.js";
 import {
   CorrespondenceCryptoService,
@@ -52,6 +53,35 @@ describe("RelationshipArchiveService SQLite integration", () => {
   });
 
   afterEach(() => database.close());
+
+  it("does not expose private interaction appraisals as relationship history", () => {
+    const store = new DatabaseStore(database);
+    store.insertDomainEvent({
+      agentId: AGENT_ID,
+      streamType: "interaction_appraisal",
+      streamId: AGENT_ID,
+      streamVersion: 1,
+      eventType: "interaction.appraisal.recorded",
+      recordedAtUtc: NOW,
+      payload: { privateView: "PRIVATE_SUBJECTIVE_VIEW" },
+      idempotencyKey: "private-appraisal-archive",
+    });
+    const event = store
+      .listDomainEvents(AGENT_ID)
+      .find((row) => row["idempotencyKey"] === "private-appraisal-archive");
+    expect(event).toBeDefined();
+    for (const publicOnly of [false, true]) {
+      const page = service.listPage(
+        AGENT_ID,
+        {
+          entryId: `domain_event:${String(event!["id"])}`,
+          filter: "life",
+        },
+        publicOnly,
+      );
+      expect(page.items).toEqual([]);
+    }
+  });
 
   it("pages 100+ durable items with a stable effective-time/id cursor and traceable links", () => {
     const collected: RelationshipArchiveEntry[] = [];

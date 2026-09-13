@@ -135,6 +135,7 @@ describe("LLM HTTP smoke flow", () => {
       "replyDecision",
       "worldEffects",
       "scheduleEffects",
+      "interactionAppraisal",
     ]);
     expect(schema.properties).not.toHaveProperty("text");
     expect(schema.properties).not.toHaveProperty("reasonCode");

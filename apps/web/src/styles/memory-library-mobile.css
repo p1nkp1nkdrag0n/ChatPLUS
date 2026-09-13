@@ -1,0 +1,391 @@
+.memory-library .ml-hint-mobile {
+  display: none;
+}
+
+/* Portrait composition, designed at 402 × 874 logical pixels.
+   The phone reader uses one page; the desktop keeps its two-page book. */
+@media (max-width: 700px) {
+  .memory-library {
+    --ml-phone-gutter: clamp(14px, 4.5vw, 22px);
+    --ml-phone-page-height: clamp(
+      330px,
+      calc(
+        var(--app-viewport-height, 100dvh) - 360px -
+          env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+      ),
+      560px
+    );
+    font-family: "Noto Serif SC", "Songti SC", SimSun, serif;
+    overflow-anchor: none;
+    overflow-x: clip;
+  }
+
+  .memory-library .ml-header {
+    padding: 24px var(--ml-phone-gutter) 18px;
+    border-bottom: 0;
+    gap: 10px;
+  }
+  .memory-library .ml-header h1 {
+    font-size: clamp(22px, 5.8vw, 27px);
+    line-height: 1.4;
+    letter-spacing: 2px;
+  }
+  .memory-library .ml-header small {
+    font-size: 9px;
+    letter-spacing: 2px;
+    margin-top: 6px;
+  }
+  .memory-library .ml-header .ml-primary {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 13px;
+    border-radius: 8px;
+    background: #4b6854;
+    border-color: #4b6854;
+  }
+  .memory-library .ml-shelf-view {
+    padding: 6px var(--ml-phone-gutter) 20px;
+    min-height: 0;
+  }
+  .memory-library .ml-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 12px;
+    margin-bottom: 20px;
+  }
+  .memory-library .ml-filters label {
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid var(--ml-line);
+    border-radius: 8px;
+    background: #fffdf7;
+    font-size: 12px;
+    color: #626858;
+  }
+  .memory-library .ml-filters label:first-child {
+    grid-column: 1 / -1;
+  }
+  .memory-library .ml-filters select {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    min-height: 42px;
+    padding: 6px 0;
+    border: 0;
+    background: transparent;
+    font-size: 14px;
+    text-overflow: ellipsis;
+  }
+  .memory-library .ml-refreshing {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .memory-library .ml-cabinet {
+    padding: 18px 12px 3px;
+    border-radius: 38px 38px 4px 4px;
+    background-size:
+      auto,
+      100% auto,
+      auto;
+  }
+  .memory-library .ml-shelf-row {
+    padding: 0 0 13px;
+    margin-bottom: 14px;
+  }
+  .memory-library .ml-shelf-row:last-child {
+    margin-bottom: 9px;
+  }
+  .memory-library .ml-row-heading {
+    gap: 12px;
+    margin: 0 3px 9px;
+    letter-spacing: 1px;
+  }
+  .memory-library .ml-row-heading h2 {
+    font-size: 13px;
+    max-width: 75%;
+  }
+  .memory-library .ml-books {
+    justify-content: flex-start;
+    align-items: flex-end;
+    min-height: 0;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 5px;
+    padding: 8px 5px 5px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .memory-library .ml-books::-webkit-scrollbar {
+    display: none;
+  }
+  .memory-library .ml-book-slot {
+    flex: 0 0 64px;
+    min-width: 64px;
+    height: calc(var(--book-height, 214px) - 48px);
+    scroll-snap-align: start;
+  }
+  .memory-library .ml-spine-button {
+    padding: 12px 5px 10px;
+    border-radius: 5px 5px 2px 2px;
+  }
+  .memory-library .ml-spine-title {
+    font-size: 18px;
+    letter-spacing: 3px;
+  }
+  .memory-library .ml-spine-writer {
+    font-size: 11px;
+  }
+  .memory-library .ml-shelf-row::after {
+    left: -7px;
+    right: -7px;
+    height: 9px;
+  }
+  .memory-library .ml-footnote {
+    margin-top: 15px;
+    font-size: 11px;
+    line-height: 1.9;
+    letter-spacing: 0.5px;
+  }
+  .memory-library .ml-hint-desktop {
+    display: none;
+  }
+  .memory-library .ml-hint-mobile {
+    display: inline;
+  }
+
+  /* Keep the obscured shelf geometry stable for the return-to-spine animation. */
+  .memory-library[data-book-active="true"] > .ml-header,
+  .app-shell:has(.memory-library[data-book-active="true"]) .app-nav {
+    visibility: hidden;
+  }
+  .memory-library .ml-book-stage {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    width: 100%;
+    height: var(--app-viewport-height, 100dvh);
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .memory-library .ml-held-view,
+  .memory-library .ml-reader-view {
+    min-height: 0;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 14px
+      calc(24px + env(safe-area-inset-bottom, 0px));
+    scrollbar-width: none;
+  }
+  .memory-library .ml-held-view {
+    background:
+      linear-gradient(#f5f1e8d9, #f5f1e8d9),
+      url("/dearvale/art/memory-library/cabinet-botanical-v1.webp") center /
+        cover,
+      var(--ml-bg);
+  }
+  .memory-library .ml-held-toolbar,
+  .memory-library .ml-reader-toolbar {
+    width: 100%;
+    padding-inline: 4px;
+  }
+  .memory-library .ml-plain {
+    min-height: 44px;
+    font-size: 14px;
+    padding-inline: 7px;
+  }
+  .memory-library .ml-held-toolbar > span {
+    font-size: 12px;
+  }
+  .memory-library .ml-held-area {
+    flex: 1;
+    min-height: 390px;
+    padding-block: 30px;
+  }
+  .memory-library .ml-cover-button {
+    width: clamp(210px, 58vw, 260px);
+    height: clamp(310px, 83vw, 372px);
+  }
+  .memory-library .ml-held-caption {
+    margin: 0 0 65px;
+    font-size: 16px;
+  }
+  .memory-library .ml-held-caption small {
+    font-size: 12px;
+    line-height: 1.8;
+    margin-top: 10px;
+  }
+  .memory-library .ml-reader-view {
+    background:
+      linear-gradient(#f5f1e83b, #f5f1e85c),
+      url("/dearvale/art/memory-library/cabinet-botanical-v1.webp") center top /
+        100% auto no-repeat,
+      url("/dearvale/art/memory-library/cabinet-botanical-v1.webp") center
+        bottom / 100% auto no-repeat,
+      var(--ml-bg);
+  }
+  .memory-library .ml-reader-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .memory-library .ml-reader-toolbar > button:last-child {
+    margin-left: auto;
+    padding-inline: 12px;
+    color: #fff9eb;
+    border-radius: 8px;
+    background: #4b6854;
+  }
+  .memory-library .ml-reader-toolbar > button:first-child {
+    border-radius: 8px;
+    background: #fff9edb3;
+  }
+  .memory-library .ml-reader-title {
+    order: 3;
+    flex-basis: 100%;
+    margin: 18px 0 8px;
+    color: var(--ml-ink);
+  }
+  .memory-library .ml-reader-character {
+    display: block;
+    font-size: clamp(24px, 6.5vw, 30px);
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: 2px;
+    overflow-wrap: anywhere;
+  }
+  .memory-library .ml-reader-period {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    letter-spacing: 3px;
+  }
+  .memory-library .ml-spread {
+    width: 100%;
+    max-width: 540px;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    box-shadow:
+      0 12px 22px #473b2426,
+      0 2px 0 1px #e7dcc6;
+  }
+  .memory-library .ml-paper {
+    height: var(--ml-phone-page-height);
+    min-height: 0;
+    padding: 27px 27px 64px;
+  }
+  .memory-library .ml-paper.left {
+    background:
+      url("/dearvale/art/memory-library/diary-paper-v1.webp") left top / 384px
+        384px repeat,
+      var(--ml-paper);
+  }
+  .memory-library .ml-measurement {
+    width: 100%;
+  }
+  .memory-library .ml-gutter {
+    display: none;
+  }
+  .memory-library .ml-page-body {
+    font-size: 17px;
+    line-height: 1.95;
+  }
+  .memory-library .ml-paper .ml-page-title {
+    font-size: 24px;
+    line-height: 1.55;
+    margin-bottom: 20px;
+  }
+  .memory-library .ml-page-date,
+  .memory-library .ml-running-head {
+    font-size: 11px;
+    letter-spacing: 0;
+    margin-bottom: 20px;
+  }
+  .memory-library .ml-ribbon {
+    width: 11px;
+    height: 34px;
+    right: 24px;
+  }
+  .memory-library .ml-reader-bottom {
+    gap: 28px;
+    margin-top: 27px;
+  }
+  .memory-library .ml-turn {
+    width: 48px;
+    height: 48px;
+    color: #fff9eb;
+    border-color: #fff6dc;
+    background: #4b6854;
+    box-shadow: 0 2px 7px #4b503017;
+  }
+  .memory-library .ml-position {
+    font-size: 13px;
+    color: #46533e;
+  }
+  .memory-library .ml-reader-hint {
+    margin-top: 12px;
+    font-size: 11px;
+    color: #59634d;
+  }
+  .memory-library .ml-entry-actions {
+    justify-content: center;
+    margin-top: 17px;
+  }
+  .memory-library .ml-entry-actions p:empty {
+    display: none;
+  }
+  .memory-library .ml-entry-actions p:not(:empty) {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .memory-library .ml-entry-actions .ml-plain {
+    min-height: 44px;
+    padding-inline: 20px;
+    font-size: 12px;
+    border: 1px solid #a99b71;
+    border-radius: 24px;
+    background: #fff9e5bd;
+  }
+  .memory-library .ml-toc {
+    max-height: 180px;
+    padding: 10px;
+    background: #fffaf0f2;
+    border: 1px solid var(--ml-line);
+    border-radius: 8px;
+  }
+  .memory-library .ml-toc button {
+    width: 100%;
+    min-height: 44px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 370px) {
+  .memory-library .ml-header h1 {
+    font-size: 21px;
+  }
+  .memory-library .ml-header .ml-primary {
+    gap: 5px;
+    padding-inline: 9px;
+    font-size: 12px;
+  }
+  .memory-library .ml-book-slot {
+    flex-basis: 54px;
+    min-width: 54px;
+  }
+  .memory-library .ml-paper {
+    padding-inline: 22px;
+  }
+  .memory-library .ml-page-body {
+    font-size: 16px;
+  }
+}

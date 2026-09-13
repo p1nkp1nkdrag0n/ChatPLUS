@@ -1,5 +1,7 @@
 import {
   LetterReplyProposalSchema,
+  DiaryDraftSchema,
+  DiaryReviewSchema,
   PersonaTurnProviderEnvelopeSchema,
   type PersonaTurnProviderEnvelope,
 } from "@personasim/contracts";
@@ -14,6 +16,58 @@ import { LlmService, type LlmLogicalCallEvent } from "./llm-service.js";
 const NOW_UTC = "2026-08-22T04:00:00.000Z";
 
 describe("LlmService fixture chat contract", () => {
+  it("keeps diary source text and private views out of logical-call telemetry", async () => {
+    const observations: LlmLogicalCallEvent[] = [];
+    const harness = createHarness({
+      onLogicalCall: (event) => observations.push(event),
+    });
+    try {
+      await harness.llm.generateObject({
+        purpose: "diary_generation",
+        system: "PRIVATE-DIARY-SYSTEM",
+        prompt: "PRIVATE-DIARY-SOURCE",
+        schema: DiaryDraftSchema,
+        fixture: {
+          title: "PRIVATE-DIARY-TITLE",
+          paragraphs: [
+            { text: "PRIVATE-DIARY-VIEW", sourceMessageIds: ["source-1"] },
+          ],
+        },
+      });
+      await harness.llm.generateObject({
+        purpose: "diary_review",
+        system: "PRIVATE-DIARY-REVIEW-SYSTEM",
+        prompt: "PRIVATE-DIARY-REVIEW-SOURCE",
+        schema: DiaryReviewSchema,
+        fixture: { valid: false, issues: ["PRIVATE-DIARY-REVIEW-ISSUE"] },
+      });
+      expect(observations[0]).toMatchObject({
+        stage: "started",
+        system: "[redacted:diary_generation]",
+        prompt: "[redacted:diary_generation]",
+      });
+      expect(observations[1]).toMatchObject({
+        stage: "completed",
+        success: true,
+      });
+      expect(observations[1]).not.toHaveProperty("parsedOutput");
+      expect(observations[2]).toMatchObject({
+        stage: "started",
+        system: "[redacted:diary_review]",
+        prompt: "[redacted:diary_review]",
+      });
+      expect(observations[3]).toMatchObject({
+        stage: "completed",
+        success: true,
+      });
+      expect(observations[3]).not.toHaveProperty("parsedOutput");
+      expect(
+        JSON.stringify({ observations, calls: harness.store.listLlmCalls(10) }),
+      ).not.toContain("PRIVATE-DIARY");
+    } finally {
+      harness.database.close();
+    }
+  });
   it("passes a canonical chat envelope through the fixture override", async () => {
     const harness = createHarness();
     try {

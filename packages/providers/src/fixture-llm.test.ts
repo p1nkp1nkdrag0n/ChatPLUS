@@ -2,6 +2,7 @@ import {
   ActivityEnrichmentBatchSchema,
   AutobiographyRevisionProposalSchema,
   ContinuityTurnEffectsSchema,
+  DiaryDraftSchema,
   LetterReplyProposalSchema,
   PersonaChatResponseSchema,
   PersonaTurnProviderEnvelopeSchema,
@@ -9,6 +10,41 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { createFixtureLlmProvider } from "./fixture-llm.js";
+
+describe("Fixture LLM diary purpose contract", () => {
+  it("keeps retrospective context separate from the day's actual sharing", async () => {
+    const result = await createFixtureLlmProvider().generateObject({
+      purpose: "diary_generation",
+      system: "Write a character diary.",
+      prompt: JSON.stringify({
+        sourceMessages: [
+          {
+            id: "earlier",
+            role: "user",
+            content: "旧日的背景",
+            includedAsDaySource: false,
+          },
+          {
+            id: "today",
+            role: "user",
+            content: "今天没有去聚餐，只是约好了明天再见。",
+            includedAsDaySource: true,
+          },
+        ],
+      }),
+      schema: DiaryDraftSchema,
+    });
+    expect(
+      result.paragraphs.every((paragraph) =>
+        paragraph.sourceMessageIds.includes("today"),
+      ),
+    ).toBe(true);
+    expect(result.paragraphs[0]?.text).toContain(
+      "今天没有去聚餐，只是约好了明天再见。",
+    );
+    expect(JSON.stringify(result)).not.toContain("旧日的背景");
+  });
+});
 
 describe("Fixture LLM letter reply purpose contract", () => {
   it("returns a strict full-letter proposal grounded in snapshot evidence", async () => {

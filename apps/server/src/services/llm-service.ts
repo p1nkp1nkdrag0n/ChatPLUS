@@ -418,7 +418,10 @@ export class LlmService {
       },
     );
     const logicalCallIndex = ++this.logicalCallSequence;
-    const privateWriting = input.purpose === "letter_reply";
+    const privateWriting =
+      input.purpose === "letter_reply" ||
+      input.purpose === "diary_generation" ||
+      input.purpose === "diary_review";
     const redactedWriting =
       input.purpose === "letter_reply"
         ? REDACTED_LETTER_REPLY_OBSERVATION

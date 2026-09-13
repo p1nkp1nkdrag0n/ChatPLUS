@@ -20,6 +20,8 @@ describe("agentEventQueryKeys", () => {
       ["correspondence", "agent-1"],
       ["relationship-archive", "agent-1"],
       ["keepsakes", "agent-1"],
+      ["diaries", "entries", "agent-1"],
+      ["diaries", "volumes"],
     ]);
   });
 

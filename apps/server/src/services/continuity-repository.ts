@@ -986,6 +986,7 @@ export class ContinuityRepository {
       .prepare(
         `SELECT id, event_type, effective_at_utc, recorded_at_utc, payload_json
          FROM domain_events WHERE agent_id = ?
+           AND stream_type <> 'interaction_appraisal'
          ORDER BY effective_at_utc, rowid`,
       )
       .all(agentId) as Array<Record<string, unknown>>;

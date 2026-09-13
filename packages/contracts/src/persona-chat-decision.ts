@@ -39,6 +39,7 @@ const PersonaChatDecisionShapeSchema = z
       .default([]),
     stateDelta: z.unknown().optional(),
     relationshipDelta: z.unknown().optional(),
+    interactionAppraisal: z.unknown().optional(),
     personalIntentCandidates: z
       .array(z.record(z.string(), z.unknown()))
       .max(8)
@@ -153,6 +154,9 @@ export const PersonaChatDecisionSchema = z.preprocess(
       ...(memoryCandidates === undefined ? {} : { memoryCandidates }),
       ...(stateDelta === undefined ? {} : { stateDelta }),
       ...(relationshipDelta === undefined ? {} : { relationshipDelta }),
+      ...(value["interactionAppraisal"] === undefined
+        ? {}
+        : { interactionAppraisal: value["interactionAppraisal"] }),
       ...(personalIntentCandidates === undefined
         ? {}
         : { personalIntentCandidates }),
@@ -171,6 +175,7 @@ export const PersonaReplyDecisionSchema = PersonaChatDecisionShapeSchema.omit({
   memoryCandidates: true,
   stateDelta: true,
   relationshipDelta: true,
+  interactionAppraisal: true,
   personalIntentCandidates: true,
 }).refine(
   (reply) => !hasIncompleteSequentialReplyText(reply),
@@ -193,6 +198,8 @@ const PersonaTurnProviderEnvelopeShapeSchema = z
     replyDecision: z.unknown(),
     worldEffects: PersonaTurnWorldEffectsSchema.default({}),
     scheduleEffects: z.unknown().optional(),
+    // Independent optional reaction: malformed metadata cannot void the reply.
+    interactionAppraisal: z.unknown().optional(),
   })
   .strip();
 
@@ -237,6 +244,9 @@ export const PersonaTurnProviderEnvelopeSchema = z.preprocess((value) => {
         : { continuityEffects: effect("continuityEffects") }),
     },
     ...(scheduleEffects === undefined ? {} : { scheduleEffects }),
+    ...(value["interactionAppraisal"] === undefined
+      ? {}
+      : { interactionAppraisal: value["interactionAppraisal"] }),
   };
 }, PersonaTurnProviderEnvelopeShapeSchema);
 
@@ -322,12 +332,16 @@ export const PersonaTurnEnvelopeSchema = z.preprocess(
           ? {}
           : { continuityEffects: effect("continuityEffects") }),
       },
+      ...(value["interactionAppraisal"] === undefined
+        ? {}
+        : { interactionAppraisal: value["interactionAppraisal"] }),
     };
   },
   z
     .object({
       replyDecision: PersonaReplyDecisionSchema,
       worldEffects: PersonaTurnWorldEffectsSchema.default({}),
+      interactionAppraisal: z.unknown().optional(),
     })
     .strip(),
 );

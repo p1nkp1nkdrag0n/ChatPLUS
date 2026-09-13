@@ -3,6 +3,8 @@ import {
   AutobiographyRevisionProposalSchema,
   CharacterCompilationProposalSchema,
   CharacterInterviewProposalSchema,
+  DiaryDraftSchema,
+  DiaryReviewSchema,
   LetterReplyProposalSchema,
   normalizeCharacterCompilationModelOutput,
   PersonaChatResponseSchema,
@@ -28,6 +30,8 @@ export const PURPOSE_OUTPUT_SCHEMAS: Record<LlmPurpose, ZodType> = {
   compose_proactive_message: ProactiveMessageProposalSchema,
   checkpoint_autobiography: AutobiographyRevisionProposalSchema,
   letter_reply: LetterReplyProposalSchema,
+  diary_generation: DiaryDraftSchema,
+  diary_review: DiaryReviewSchema,
 };
 
 export function normalizePurposeOutput(

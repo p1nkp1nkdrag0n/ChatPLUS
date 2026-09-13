@@ -15,6 +15,7 @@ import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
 import { DatabaseStore, type StoredMessage } from "../db/store.js";
 import { FakeClock } from "../runtime/clock.js";
+import { buildTimelineResponse } from "../http/timeline-projection.js";
 import {
   AutobiographyService,
   type VerifiedContinuityEvidence,
@@ -59,6 +60,58 @@ describe("continuity services", () => {
 
   afterEach(() => {
     database.close();
+  });
+
+  it("keeps private interaction appraisals out of factual indexes and timeline windows", () => {
+    store.insertDomainEvent({
+      agentId: AGENT_ID,
+      streamType: "conversation",
+      streamId: SESSION_ID,
+      streamVersion: 1,
+      eventType: "conversation.turn_committed",
+      recordedAtUtc: NOW_UTC,
+      payload: { summary: "一次对话" },
+      idempotencyKey: "public-diary-context",
+    });
+    for (let index = 0; index < 3; index += 1) {
+      store.insertDomainEvent({
+        agentId: AGENT_ID,
+        streamType: "interaction_appraisal",
+        streamId: SESSION_ID,
+        streamVersion: index + 1,
+        eventType: "interaction.appraisal.recorded",
+        recordedAtUtc: NOW_UTC,
+        payload: { privateView: "PRIVATE_SUBJECTIVE_VIEW" },
+        idempotencyKey: `private-appraisal-${index}`,
+      });
+    }
+    const repository = new ContinuityRepository(store);
+    expect(
+      repository
+        .listDomainEventsForIndex(AGENT_ID)
+        .map((row) => row["event_type"]),
+    ).toEqual(["conversation.turn_committed"]);
+    new ContinuityIndexService(repository, clock).rebuildAgent(AGENT_ID);
+    expect(
+      database
+        .prepare(
+          "SELECT id FROM event_cards WHERE title = 'interaction.appraisal.recorded'",
+        )
+        .all(),
+    ).toEqual([]);
+    for (const publicOnly of [false, true]) {
+      const timeline = buildTimelineResponse(
+        store,
+        AGENT_ID,
+        1,
+        "fuzzy",
+        publicOnly,
+      );
+      expect(timeline.events.map((event) => event.type)).toEqual([
+        "conversation.turn_committed",
+      ]);
+      expect(JSON.stringify(timeline)).not.toContain("PRIVATE_SUBJECTIVE_VIEW");
+    }
   });
 
   it.each([

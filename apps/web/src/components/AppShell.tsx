@@ -1,5 +1,6 @@
 import {
   Award,
+  BookOpen,
   Mail,
   MessageCircle,
   Settings,
@@ -129,7 +130,16 @@ export function AppShell() {
       icon: Mail,
       activePrefixes: ["/letters/", "/correspondence/threads/"],
     },
-    // The memory entry stays hidden while its presentation is redesigned.
+    {
+      to: "/memory-library",
+      label: "记忆",
+      icon: BookOpen,
+      activePrefixes: /^\/characters\/[^/]+\/memory-library$/.test(
+        location.pathname,
+      )
+        ? [location.pathname]
+        : [],
+    },
     {
       to: "/characters",
       label: "角色",

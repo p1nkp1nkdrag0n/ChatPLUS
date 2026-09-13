@@ -63,6 +63,8 @@ import type { ContinuityIndexService } from "../services/continuity-index-servic
 import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
 import type { DateDigestService } from "../services/date-digest-service.js";
 import { registerCharacterInterviewRoutes } from "./character-interview-routes.js";
+import { registerDiaryRoutes } from "./diary-routes.js";
+import type { DiaryService } from "../services/diary-service.js";
 import type { FollowUpService } from "../services/follow-up-service.js";
 import type { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import type { LlmService } from "../services/llm-service.js";
@@ -85,6 +87,7 @@ import {
 
 export type RouteServices = {
   achievements: AchievementService;
+  diaries: DiaryService;
   config: ServerConfig;
   store: DatabaseStore;
   clock: Clock;
@@ -189,6 +192,7 @@ export function registerRoutes(
   });
 
   registerCharacterInterviewRoutes(app, services);
+  registerDiaryRoutes(app, services.diaries);
 
   app.post("/api/demo/ensure", () => {
     throw new ApiError(

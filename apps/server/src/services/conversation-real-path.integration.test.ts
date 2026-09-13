@@ -567,6 +567,38 @@ describe("openai-compatible reply-first conversation path", () => {
     ]);
   });
 
+  it("generates with the frozen output request instead of reserving the model's entire output capacity", async () => {
+    const created = await createRealProviderTestApp("off", {
+      maxContextTokens: 65_536,
+      maxOutputTokens: 64_000,
+    });
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) =>
+      input.purpose === "chat_turn"
+        ? { text: "嗯，我在。", toneTags: [] }
+        : fixtureFor(input),
+    );
+    const character = await createAndPublish(app, "lightweight");
+    calls.length = 0;
+    const sessionId = await createSession(app, character.id);
+
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "shared-output-budget",
+      "你好。",
+    );
+
+    expect(response.statusCode).toBe(201);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      purpose: "chat_turn",
+      maxOutputTokens: 24_576,
+    });
+  });
+
   it("repairs a persona-guard violation using the role, user text, and concrete issues", async () => {
     const created = await createRealProviderTestApp("off", {
       maxOutputTokens: 32_768,
@@ -2166,6 +2198,7 @@ async function createRealProviderTestApp(
     databasePath?: string;
     clock?: FakeClock;
     maxOutputTokens?: number;
+    maxContextTokens?: number;
     lifePlanningMode?: "fuzzy" | "legacy_exact";
     scheduleNegotiationMode?: "off" | "legacy" | "shadow" | "enforced";
     chatEffectsMode?: "off" | "gated";
@@ -2202,7 +2235,7 @@ async function createRealProviderTestApp(
         structuredOutputMode: "json_object",
         supportsThinkingControl: false,
         supportsStreaming: false,
-        maxContextTokens: 131_072,
+        maxContextTokens: options.maxContextTokens ?? 131_072,
         maxOutputTokens: testMaxOutputTokens,
       },
     },

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   LlmPromptHeadroomError,
   calculateLlmPromptTokenBudget,
+  resolveChatTurnTokenBudget,
 } from "./llm-prompt-headroom.js";
 
 const BASE_CAPABILITIES = {
@@ -68,10 +69,30 @@ describe("calculateLlmPromptTokenBudget", () => {
     }
   });
 
-  it("uses conservative defaults when limits are not reported", () => {
+  it("reserves the actual primary output request when limits are not reported", () => {
     const budget = calculateLlmPromptTokenBudget(BASE_CAPABILITIES);
 
-    expect(budget).toBe(21_808);
-    expect(budget + 8_192 + 2_000).toBe(32_000);
+    expect(budget).toBe(5_424);
+    expect(budget + 24_576 + 2_000).toBe(32_000);
+  });
+
+  it("does not reserve unused output capability for a normal chat turn", () => {
+    expect(
+      resolveChatTurnTokenBudget({
+        ...BASE_CAPABILITIES,
+        maxContextTokens: 65_536,
+        maxOutputTokens: 64_000,
+      }),
+    ).toEqual({ maxInputTokens: 24_000, maxOutputTokens: 24_576 });
+  });
+
+  it("uses one capability-clamped output allowance for both sides of the budget", () => {
+    const budget = resolveChatTurnTokenBudget({
+      ...BASE_CAPABILITIES,
+      maxContextTokens: 16_000,
+      maxOutputTokens: 4_000,
+    });
+    expect(budget).toEqual({ maxInputTokens: 10_000, maxOutputTokens: 4_000 });
+    expect(budget.maxInputTokens + budget.maxOutputTokens + 2_000).toBe(16_000);
   });
 });

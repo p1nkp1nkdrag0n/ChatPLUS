@@ -1,7 +1,10 @@
 import type { LlmCapabilityProfile } from "@personasim/contracts";
+import {
+  CHAT_TURN_OUTPUT_TOKEN_TARGET,
+  resolveChatOutputTokenBudget,
+} from "./chat-output-budget.js";
 
 const DEFAULT_CONTEXT_TOKENS = 32_000;
-const DEFAULT_OUTPUT_TOKENS = 8_192;
 const RESERVED_TOKENS = 2_000;
 const MAXIMUM_PROMPT_TOKENS = 24_000;
 const MINIMUM_PROMPT_TOKENS = 4_000;
@@ -31,10 +34,17 @@ export class LlmPromptHeadroomError extends Error {
  */
 export function calculateLlmPromptTokenBudget(
   capabilities: LlmCapabilityProfile,
+  requestedOutputTokens = resolveChatOutputTokenBudget(
+    capabilities,
+    CHAT_TURN_OUTPUT_TOKEN_TARGET,
+  ),
 ): number {
   const maxContextTokens =
     capabilities.maxContextTokens ?? DEFAULT_CONTEXT_TOKENS;
-  const maxOutputTokens = capabilities.maxOutputTokens ?? DEFAULT_OUTPUT_TOKENS;
+  const maxOutputTokens = resolveChatOutputTokenBudget(
+    capabilities,
+    requestedOutputTokens,
+  );
   const availablePromptTokens =
     maxContextTokens - maxOutputTokens - RESERVED_TOKENS;
 
@@ -49,4 +59,21 @@ export function calculateLlmPromptTokenBudget(
   }
 
   return Math.min(MAXIMUM_PROMPT_TOKENS, availablePromptTokens);
+}
+
+/** Freeze the same output allowance for prompt assembly and the provider call. */
+export function resolveChatTurnTokenBudget(
+  capabilities: LlmCapabilityProfile,
+): { maxInputTokens: number; maxOutputTokens: number } {
+  const maxOutputTokens = resolveChatOutputTokenBudget(
+    capabilities,
+    CHAT_TURN_OUTPUT_TOKEN_TARGET,
+  );
+  return {
+    maxInputTokens: calculateLlmPromptTokenBudget(
+      capabilities,
+      maxOutputTokens,
+    ),
+    maxOutputTokens,
+  };
 }

@@ -54,7 +54,7 @@ import {
   finalizeExplicitFactWorld,
 } from "./explicit-fact-reply-guard.js";
 import type { FuzzyLifeService } from "./fuzzy-life-service.js";
-import { calculateLlmPromptTokenBudget } from "./llm-prompt-headroom.js";
+import { resolveChatTurnTokenBudget } from "./llm-prompt-headroom.js";
 import type { LlmService } from "./llm-service.js";
 import { MemoryRecallService } from "./memory-recall-service.js";
 import { readActiveMemories } from "./memory-service.js";
@@ -501,6 +501,7 @@ export class ConversationService {
         ? []
         : [consentModalityPromptSegment(consentModalityGuardContract)]),
     ];
+    const tokenBudget = resolveChatTurnTokenBudget(llm.capabilities);
     const assembledPrompt = assembleChatPrompt({
       ...semanticContext,
       character: spec,
@@ -530,7 +531,7 @@ export class ConversationService {
       ...(additionalPromptSegments.length === 0
         ? {}
         : { additionalPromptSegments }),
-      maxInputTokens: calculateLlmPromptTokenBudget(llm.capabilities),
+      maxInputTokens: tokenBudget.maxInputTokens,
       ...(this.options.replySteeringMode === undefined
         ? {}
         : { replySteeringMode: this.options.replySteeringMode }),
@@ -583,6 +584,7 @@ export class ConversationService {
               }),
           })
         : await decisions.decide({
+            maxOutputTokens: tokenBudget.maxOutputTokens,
             llmExecution: llm,
             ...semanticContext,
             replyGrounding: assembledPrompt.replyGrounding,

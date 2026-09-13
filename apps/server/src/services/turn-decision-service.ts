@@ -343,6 +343,7 @@ export class TurnDecisionService {
 
   async decide(input: {
     llmExecution?: LlmService;
+    maxOutputTokens?: number;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -680,6 +681,7 @@ export class TurnDecisionService {
 
   private async decidePersonaReply(input: {
     llmExecution?: LlmService;
+    maxOutputTokens?: number;
     spec: CharacterSpec;
     effectivePersona?: EffectivePersonaSnapshot;
     conversationPlan?: ConversationContextPlan;
@@ -748,13 +750,7 @@ export class TurnDecisionService {
           schema: providerSchema,
           maxOutputTokens: resolveChatOutputTokenBudget(
             (input.llmExecution ?? this.llm).capabilities,
-            CHAT_TURN_OUTPUT_TOKEN_TARGET,
-            input.replyStrategy.maxOutputTokens +
-              (worldEffectsEnabled ||
-              input.effects.effectsEligible ||
-              input.effects.scheduleNegotiationEligible
-                ? 800
-                : 0),
+            input.maxOutputTokens ?? CHAT_TURN_OUTPUT_TOKEN_TARGET,
           ),
         }),
       );

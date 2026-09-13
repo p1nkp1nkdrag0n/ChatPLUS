@@ -9,6 +9,8 @@
   },
   "scripts": {
     "dev": "pnpm --parallel --stream --filter @personasim/server --filter @personasim/web dev",
+    "dev:website": "pnpm --filter @personasim/web dev:website",
+    "build:website": "pnpm --filter @personasim/web build:website",
     "dev:test": "cross-env PERSONASIM_PROFILE=test CLOCK_MODE=fake LLM_PROVIDER=fixture LLM_ACTIVE_PROFILE= DATABASE_PATH=./data/e2e.db pnpm dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",

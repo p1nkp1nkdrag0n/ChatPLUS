@@ -9,7 +9,6 @@ import { useHosted } from "../hooks/useHosted";
 const CharacterLibraryPage = lazy(
   () => import("../pages/CharacterLibraryPage"),
 );
-const LandingPage = lazy(() => import("../pages/LandingPage"));
 const WelcomeEntryPage = lazy(() => import("../pages/WelcomeEntryPage"));
 const ProductEntryPage = lazy(() => import("../pages/ProductEntryPage"));
 const CharacterGeneratorPage = lazy(
@@ -83,7 +82,7 @@ function DearvaleRoutes() {
       <AchievementActivity />
       <Suspense fallback={<LoadingBlock label="正在打开 Dearvale…" fullPage />}>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<Navigate to="/welcome" replace />} />
           <Route path="/welcome" element={<WelcomeEntryPage />} />
           <Route path="/create" element={<CharacterGeneratorPage />} />
           <Route

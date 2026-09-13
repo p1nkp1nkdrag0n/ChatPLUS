@@ -22,6 +22,7 @@ import {
 import { protocolLabels, protocolUrls } from "../../lib/llmSettings";
 import { MagicBook } from "./MagicBook";
 import { SETUP_LABELS, SETUP_STEPS, type SetupStep } from "./setupSteps";
+import { WebsiteLink } from "../WebsiteLink";
 
 const TITLES: Record<SetupStep, string> = {
   service: "连接你的模型服务",
@@ -189,13 +190,13 @@ export default function ApiSetupWizard({
   return (
     <div className="api-setup" data-testid="api-setup" data-step={step}>
       <header className="setup-header">
-        <Link to="/" className="setup-brand">
+        <Link to="/welcome" className="setup-brand">
           <img src="/dearvale/art/botanical.png" alt="" />
           Dearvale
         </Link>
-        <Link to="/" className="setup-return">
-          返回官网 <ChevronRight size={17} />
-        </Link>
+        <WebsiteLink className="setup-return">
+          访问官网 <ChevronRight size={17} />
+        </WebsiteLink>
       </header>
       <img
         className="setup-botanical setup-botanical--top"

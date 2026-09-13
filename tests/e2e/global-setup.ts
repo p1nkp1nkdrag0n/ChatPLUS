@@ -12,6 +12,9 @@ const API_PORT = Number(process.env["CHATPLUS_E2E_API_PORT"] ?? "3001");
 // Keep E2E isolated from Vite's development port. On Windows, 5173 can fall
 // inside a Hyper-V/WSL excluded range and fail with EACCES before tests start.
 const WEB_PORT = Number(process.env["CHATPLUS_E2E_WEB_PORT"] ?? "43173");
+const WEBSITE_PORT = Number(
+  process.env["CHATPLUS_E2E_WEBSITE_PORT"] ?? "43174",
+);
 const E2E_INSTANCE_SECRET = Buffer.alloc(32, 0x65).toString("base64");
 
 export default async function globalSetup() {
@@ -19,13 +22,14 @@ export default async function globalSetup() {
   const clock = new FakeClock("2026-09-03T04:00:00.000Z");
   let api: Awaited<ReturnType<typeof buildApp>> | undefined;
   let web: Awaited<ReturnType<typeof createServer>> | undefined;
+  let website: Awaited<ReturnType<typeof createServer>> | undefined;
   let disposed = false;
 
   const dispose = async () => {
     if (disposed) return;
     disposed = true;
     try {
-      if (web !== undefined) await web.close();
+      await Promise.all([web?.close(), website?.close()]);
     } finally {
       try {
         if (api !== undefined) await api.close();
@@ -74,6 +78,11 @@ export default async function globalSetup() {
     web = await createServer({
       root: resolve("apps/web"),
       configFile: resolve("apps/web/vite.config.ts"),
+      define: {
+        "import.meta.env.VITE_WEBSITE_URL": JSON.stringify(
+          `http://127.0.0.1:${WEBSITE_PORT}/`,
+        ),
+      },
       server: {
         host: "127.0.0.1",
         port: WEB_PORT,
@@ -87,6 +96,16 @@ export default async function globalSetup() {
       },
     });
     await web.listen();
+    website = await createServer({
+      configFile: resolve("apps/web/vite.website.config.ts"),
+      define: {
+        "import.meta.env.VITE_APP_URL": JSON.stringify(
+          `http://127.0.0.1:${WEB_PORT}/welcome`,
+        ),
+      },
+      server: { host: "127.0.0.1", port: WEBSITE_PORT, strictPort: true },
+    });
+    await website.listen();
 
     return dispose;
   } catch (error) {

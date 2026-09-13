@@ -14,6 +14,7 @@ import {
   skipInterviewFollowUps,
 } from "./character-interview-helpers";
 
+const websiteUrl = `http://127.0.0.1:${process.env["CHATPLUS_E2E_WEBSITE_PORT"] ?? "43174"}/`;
 const truncatedCompileMessage =
   "模型回复达到输出长度上限，生成未能完成。请在模型设置的高级设置中提高“输出 token 上限”，或降低思考预算；也可以精简输入或更换模型后重试。";
 
@@ -198,7 +199,7 @@ test.describe("Dearvale desktop journeys", () => {
         runtimeRequests.push(request.url());
     });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/");
+    await page.goto(websiteUrl);
     await expect(page).toHaveTitle(/Dearvale/);
     await expect(page.locator(".story-stage")).toHaveAttribute(
       "data-state",
@@ -273,7 +274,7 @@ test.describe("Dearvale desktop journeys", () => {
     });
     try {
       await page.emulateMedia({ reducedMotion: "no-preference" });
-      await page.goto("/");
+      await page.goto(websiteUrl);
       await page.getByRole("button", { name: "前往林间" }).click();
       await expect(page.locator(".story-stage")).toHaveAttribute(
         "data-state",
@@ -335,7 +336,7 @@ test.describe("Dearvale desktop journeys", () => {
       else await route.continue();
     });
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto("/");
+    await page.goto(websiteUrl);
     await page.getByRole("button", { name: "前往书信" }).click();
     await expect(page.locator(".story-stage")).toHaveAttribute(
       "data-state",

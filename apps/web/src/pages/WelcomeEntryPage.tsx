@@ -5,6 +5,7 @@ import { llmApi, llmCatalogKey } from "../api/llm";
 import { configuredDefault } from "../lib/apiSetup";
 import type { LlmCatalog } from "@personasim/contracts";
 import WelcomePage from "./WelcomePage";
+import { WebsiteLink } from "../components/WebsiteLink";
 import { useHosted } from "../hooks/useHosted";
 
 const ApiSetupWizard = lazy(() => import("../components/setup/ApiSetupWizard"));
@@ -49,7 +50,7 @@ function LocalWelcomeEntry() {
   if (entry === "welcome") return <WelcomePage />;
   const loading = (
     <div className="setup-entry" role="status">
-      <Link className="setup-entry-brand" to="/">
+      <Link className="setup-entry-brand" to="/welcome">
         Dearvale
       </Link>
       <p>{catalog.isError ? "暂时没能读取模型配置。" : "正在翻开魔法手册…"}</p>
@@ -62,7 +63,7 @@ function LocalWelcomeEntry() {
           ✧
         </span>
       )}
-      <Link to="/">返回官网</Link>
+      <WebsiteLink />
     </div>
   );
   if (entry === "checking") return loading;

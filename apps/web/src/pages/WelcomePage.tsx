@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { ErrorBlock } from "../components/Feedback";
+import { WebsiteLink } from "../components/WebsiteLink";
 import {
   readActiveCharacter,
   rememberActiveCharacter,
@@ -73,12 +74,10 @@ export default function WelcomePage() {
   return (
     <div className="welcome-page">
       <header className="welcome-header">
-        <Link to="/" className="dearvale-brand">
+        <Link to="/welcome" className="dearvale-brand">
           Dearvale
         </Link>
-        <Link to="/" className="welcome-back">
-          返回官网
-        </Link>
+        <WebsiteLink className="welcome-back" />
       </header>
       <img
         className="welcome-botanical welcome-botanical--top"

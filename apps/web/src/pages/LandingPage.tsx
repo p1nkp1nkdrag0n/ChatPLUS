@@ -1,10 +1,9 @@
 import { ArrowDown, ArrowRight, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { STORY_DIALOGUES, STORY_SCENES, storyFrame } from "../lib/story";
 import { LoadingBlock } from "../components/Feedback";
 
-export default function LandingPage() {
+export default function LandingPage({ appUrl }: { appUrl: string }) {
   const journey = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const retry = useRef<() => void>(() => undefined);
@@ -185,9 +184,9 @@ export default function LandingPage() {
               <p className="story-bubble story-bubble--second">{dialogue[1]}</p>
             </div>
             {index === 4 ? (
-              <Link className="story-start" to="/welcome">
+              <a className="story-start" href={appUrl}>
                 开始相遇 <ArrowRight size={19} />
-              </Link>
+              </a>
             ) : null}
           </section>
         ))}

@@ -22,8 +22,12 @@ async function expectStep(page: Page, step: string): Promise<void> {
   );
 }
 
-async function reachModel(page: Page, key = secret): Promise<void> {
-  await page.goto("/welcome");
+async function reachModel(
+  page: Page,
+  key = secret,
+  navigate = true,
+): Promise<void> {
+  if (navigate) await page.goto("/welcome");
   await expectStep(page, "service");
   await page
     .getByLabel("API 地址", { exact: true })
@@ -94,7 +98,7 @@ test.describe("Dearvale first model setup", () => {
         page.getByRole("heading", { name: "为故事，添一点魔法" }),
       ).toBeVisible();
       await expectStep(page, "service");
-      await expect(page.getByRole("link", { name: "返回官网" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "访问官网" })).toBeVisible();
       await expect(page.getByRole("button", { name: /跳过/ })).toHaveCount(0);
       await page.reload();
       await expectStep(page, "service");
@@ -442,7 +446,9 @@ test.describe("Dearvale first model setup", () => {
     const state = await mockOnboardingLlm(page);
     state.holdDefault = true;
     try {
-      await reachModel(page);
+      await page.goto("/characters");
+      await page.locator(".app-nav__brand").click();
+      await reachModel(page, secret, false);
       await enterManualModel(page);
       await page
         .getByRole("button", { name: "测试并保存", exact: true })
@@ -454,7 +460,7 @@ test.describe("Dearvale first model setup", () => {
               .length,
         )
         .toBe(1);
-      await page.getByRole("link", { name: "返回官网", exact: true }).click();
+      await page.goBack();
       await expect(
         page.getByText("正在保存，完成后将离开。", { exact: true }),
       ).toBeVisible();
@@ -463,7 +469,7 @@ test.describe("Dearvale first model setup", () => {
         page.getByRole("button", { name: "正在保存配置…", exact: true }),
       ).toBeDisabled();
       state.releaseDefaults();
-      await expect(page).toHaveURL(/:\d+\/$/);
+      await expect(page).toHaveURL(/\/characters$/);
       expect(state.catalog.defaultSelection).toEqual({
         providerId: "created-1",
         modelId: manualModel,
@@ -856,7 +862,8 @@ test.describe("Dearvale spellbook animation recovery", () => {
     page.on("pageerror", (error) => errors.push(error.message));
     await mockOnboardingLlm(page);
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto("/welcome");
+    await page.goto("/characters");
+    await page.locator(".app-nav__brand").click();
     await expectStep(page, "service");
     await freezeFallbackTimers(page);
     await page.getByRole("button", { name: "下一步", exact: true }).click();
@@ -864,14 +871,14 @@ test.describe("Dearvale spellbook animation recovery", () => {
       "data-phase",
       "turning",
     );
-    await page.getByRole("link", { name: "返回官网", exact: true }).click();
-    await expect(page).toHaveURL(/:\d+\/$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/characters$/);
     await expect(page.getByTestId("api-setup")).toHaveCount(0);
-    await expect(page.locator(".story-stage")).toBeVisible();
+    await expect(page.locator(".app-nav__brand")).toBeVisible();
     const refreshedCatalog = page.waitForResponse(
       (response) => new URL(response.url()).pathname === "/api/llm/providers",
     );
-    await page.goBack();
+    await page.goForward();
     await refreshedCatalog;
     // React Query schedules observer notifications using a timer too.
     await page.clock.runFor(100);
@@ -902,7 +909,10 @@ test.describe("Dearvale spellbook animation recovery", () => {
     const before = await paper.evaluate((element: HTMLElement) => {
       element.getAnimations({ subtree: true }).forEach((animation) => {
         animation.pause();
-        animation.currentTime = 240;
+        // Mobile uses a shorter transition than the desktop page turn. Seeking
+        // past its end fires animationend and legitimately releases the lock.
+        const duration = animation.effect?.getComputedTiming().duration;
+        if (typeof duration === "number") animation.currentTime = duration / 3;
       });
       return {
         width: element.offsetWidth,
@@ -912,6 +922,10 @@ test.describe("Dearvale spellbook animation recovery", () => {
       };
     });
     await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId("setup-book")).toHaveAttribute(
+      "data-phase",
+      "turning",
+    );
     expect(
       await paper.evaluate((element: HTMLElement) => ({
         width: element.offsetWidth,

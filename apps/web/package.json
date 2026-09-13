@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:website": "vite --config vite.website.config.ts --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
+    "build:website": "tsc --noEmit && vite build --config vite.website.config.ts",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:website": "vite preview --config vite.website.config.ts"
   },
   "dependencies": {
     "@personasim/contracts": "workspace:*",

@@ -3,6 +3,7 @@ import {
   buildConversationQualityMetrics,
   type ConversationQualityTurn,
 } from "./conversation-quality-metrics.js";
+import { conversationQualityReport } from "./conversation-quality-report.js";
 
 const turn = (
   turnId: string,
@@ -11,6 +12,120 @@ const turn = (
 ): ConversationQualityTurn => ({ turnId, assistantText, userText });
 
 describe("independent final-reply quality worksheet", () => {
+  it("distinguishes a short valid repeated form from a varied sequential corpus without awarding quality", () => {
+    const bodies = [
+      "好，我听着。你接着说。",
+      "好，我记着。你慢慢说。",
+      "好，我在这。你继续说。",
+      "好，我懂了。你往下说。",
+      "好，我听着。你慢慢说。",
+      "好，我记着。你继续说。",
+    ];
+    const repeated = conversationQualityReport({
+      turns: bodies.map((body, index) => ({
+        ...turn(`t${index + 1}`, body),
+        assistantChunks: [body.slice(0, 6), body.slice(6)],
+      })),
+    });
+    const variedBodies = [
+      ["嗯。"],
+      ["那两个橘子是谁拿走的？"],
+      ["花期也太短了。", "下次得先留一张全家福。"],
+      ["我反而喜欢摆得歪一点，像刚从树上摘下来的。"],
+      [
+        "说到这个，我有个主意。",
+        "用矮碗装橘子。",
+        "旁边留一枝绿叶，就不用担心倒了。",
+      ],
+      ["对，就那只蓝碗。"],
+    ];
+    const varied = conversationQualityReport({
+      turns: variedBodies.map((assistantChunks, index) => ({
+        ...turn(`t${index + 1}`, assistantChunks.join("\n")),
+        assistantChunks,
+      })),
+    });
+    expect(
+      repeated.responseForm.visibleCharacters.sampleStandardDeviation,
+    ).toBe(0);
+    expect(repeated.responseForm.repeatedOpeningSpans).toEqual([
+      expect.objectContaining({
+        signature: "好",
+        count: 6,
+        share: 1,
+        maximumConsecutiveTurns: 6,
+      }),
+    ]);
+    expect(repeated.responseForm.repeatedShapes).toEqual([
+      expect.objectContaining({ signature: "2s/1p/2c", count: 6 }),
+    ]);
+    expect(
+      varied.responseForm.visibleCharacters.sampleStandardDeviation,
+    ).toBeGreaterThan(0);
+    expect(varied.responseForm.chunkCount.distinctValues).toEqual([1, 2, 3]);
+    expect(varied.responseForm.sentenceCount.distinctValues).toEqual([1, 2, 3]);
+    expect(varied.responseForm.repeatedOpeningSpans).toEqual([]);
+    for (const report of [repeated, varied]) {
+      expect(report.manualCounts.overconfidentAnalysis.count).toBeNull();
+      expect(report).not.toHaveProperty("passed");
+      expect(report.responseForm).not.toHaveProperty("qualityScore");
+    }
+  });
+
+  it("keeps unknown bubbles separate from paragraphs and counts visible Unicode graphemes", () => {
+    const report = conversationQualityReport({
+      turns: [
+        turn("t2", "👨‍👩‍👧‍👦 e\u0301\n\n好。"),
+        { ...turn("t10", "好。继续。"), assistantChunks: ["好。", "继续。"] },
+        turn("t1", "好。等会儿。"),
+      ],
+    });
+    expect(report.responseForm.perTurn.map((item) => item.turnId)).toEqual([
+      "t2",
+      "t10",
+      "t1",
+    ]);
+    expect(report.responseForm.perTurn[0]).toMatchObject({
+      visibleCharacters: 4,
+      paragraphCount: 2,
+      chunkCount: null,
+    });
+    expect(report.responseForm.chunkCount).toMatchObject({
+      observedTurns: 1,
+      distinctValues: [2],
+      sampleStandardDeviation: null,
+    });
+    expect(report.responseForm.turnsWithUnknownChunks).toEqual(["t2", "t1"]);
+    expect(report.responseForm.repeatedOpeningSpans[0]).toMatchObject({
+      signature: "好",
+      turnIds: ["t10", "t1"],
+      maximumConsecutiveTurns: 2,
+    });
+  });
+
+  it("leaves empty distributions unknown and rejects fabricated bubble metadata", () => {
+    const empty = conversationQualityReport({ turns: [] });
+    expect(empty.responseForm.visibleCharacters).toMatchObject({
+      observedTurns: 0,
+      mean: null,
+      median: null,
+      sampleStandardDeviation: null,
+    });
+    expect(empty.responseForm.repeatedShapes).toEqual([]);
+    expect(() =>
+      conversationQualityReport({
+        turns: [
+          { ...turn("a", "实际正文。"), assistantChunks: ["另一个正文。"] },
+        ],
+      }),
+    ).toThrow("chunks_must_match_final_reply");
+    expect(() =>
+      conversationQualityReport({
+        turns: [{ ...turn("a", "实际正文。"), assistantChunks: [] }],
+      }),
+    ).toThrow();
+  });
+
   it("counts literal opening phrases even when a sentence continues without punctuation", () => {
     const result = buildConversationQualityMetrics({
       turns: [

@@ -8,7 +8,9 @@ Dearvale 是一个以长期相处为核心的 AI 虚拟角色应用：从逐题�
 
 项目采用本地优先、事件驱动的实现，支持无 API Key 的确定性演示、接入真实模型，以及独立实例自托管。仓库名仍为 **ChatPLUS**，内部 workspace 包名沿用 `persona-sim` / `@personasim/*`；页面品牌为 **Dearvale**。
 
-核心准则是：**时间会推进，互动有后果，关系会积累，变化可追溯。** 目前仍处于单用户实验阶段，真实模型的自然度、长期连续性和完整纠错保持尚未完成整体验收。本文按当前仓库实现整理（2026-09-11）；历史发布记录见 [v0.1.6-Beta](docs/releases/v0.1.6-Beta.md)，workspace 的 `0.1.0` 不是发布标签版本。
+好友联网测试版现提供独立的服务器入口、邀请码账号、积分计费、研究采集和本机管理网页。运行 `pnpm hosted:serve` 后访问 `http://127.0.0.1:3002/admin` 完成配置；独立 Windows / Android 联网包分别使用 `pnpm online:desktop:dist`、`pnpm online:android:build`。部署、模型映射、穿透要求和双包加密备份见[好友联网测试版说明](docs/HOSTED.md)。
+
+核心准则是：**时间会推进，互动有后果，关系会积累，变化可追溯。** 目前仍处于实验阶段，真实模型的自然度、长期连续性和完整纠错保持尚未完成整体验收。本文按当前仓库实现整理；历史发布记录见 [v0.1.6-Beta](docs/releases/v0.1.6-Beta.md)，workspace 的 `0.1.0` 不是发布标签版本。
 
 ## 当前体验
 
@@ -19,11 +21,11 @@ Dearvale 是一个以长期相处为核心的 AI 虚拟角色应用：从逐题�
 | 日常对话       | 多会话、按会话切换模型、发送状态与输入中提示；支持倾听、共同分析、明确推荐和有授权的委托决定。可选开启回复目标复核。                   |
 | 记忆与相处     | 基于来源的召回、当前事实修订、自传与事件证据；纠正会使依赖旧解释的派生内容失效并保留历史。可选学习有适用范围、可撤回的相处偏好。       |
 | 角色生活       | 按角色当地自然日生成“今天大概做什么、最近在做什么”的模糊背景；生活主线、状态和关系变化需要证据，讨论、决定、行动、结果分别记录。       |
-| 数字书信       | 可选启用五日历日运输、离线补算、不可变抵达快照、加密回信与启封；支持本地常驻和自托管时间任务。                                         |
+| 数字书信       | 可选启用普通、加急、特快投递、离线补算、不可变抵达快照、加密回信与启封；支持本地常驻和自托管时间任务。                                         |
 | 纪念物与收藏   | 可选生成有来源的关系纪念物，提供档案、陈列柜和本地 PNG 分享；成就页记录全局足迹与角色纪念，高阶角色徽章可使用独立图片模型。            |
 | 模型与诊断     | 页面管理多供应商、模型和加密凭据；支持 Fixture、OpenAI 兼容、Anthropic Messages、Gemini 原生协议。内部状态与诊断由开发者模式单独开放。 |
 
-当前主导航为“对话、书信、角色、成就、设置”。记忆主导航暂时隐藏，时间线、关系档案、纪念物及分享页面的路由仍保留。**主动消息当前统一停用**，兼容数据和底层实现保留，不应把角色生活补算理解为主动聊天或系统推送。
+当前主导航包含“对话、书信、记忆、角色、成就、设置”，托管模式另提供账号与账单入口。记忆档案室支持按角色和月份阅读日记；时间线、关系档案、纪念物及分享页面的路由仍保留。**主动消息当前统一停用**，兼容数据和底层实现保留，不应把角色生活补算理解为主动聊天或系统推送。
 
 ## 快速开始
 
@@ -38,6 +40,10 @@ pnpm dev
 打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)。开发模式同时启动 Vite 前端和 `127.0.0.1:3001` 上的 Fastify 后端，前端将 `/api` 请求代理到后端。
 
 新实例无需创建 `.env` 即可运行，默认使用 `fixture` 模型，不需要 API Key 或外部模型请求。Fixture 用于验证创建、聊天和数据流程，回复是确定性的演示内容；体验真实对话请在“设置”中添加模型。
+
+应用入口现在直接进入 `/welcome` 欢迎页。Windows x64 桌面版可运行 `pnpm desktop:dev`，生成安装程序使用 `pnpm desktop:dist`；安装包自带本地服务和运行环境，输出在 `artifacts/desktop/`。官网通过 `pnpm dev:website` 单独运行在 `http://127.0.0.1:5174`，使用 `pnpm build:website` 独立构建。桌面数据目录、安装包和官网部署配置见[桌面版与官网分离说明](docs/DESKTOP.md)。
+
+手机端采用参考 iPhone Pro 比例的 iOS 风格布局；运行 `pnpm android:build` 生成 `artifacts/android/Dearvale-<version>.apk`（版本取自 Android 构建配置），电脑运行 `pnpm mobile:serve` 后，在 APK 中填写输出的局域网地址、用户名与本次连接密码；安装和 HTTPS 服务器连接见[安卓应用说明](docs/ANDROID.md)，电脑连接步骤见[手机连接指南](docs/MOBILE-SERVER.md)，五种屏幕尺寸的隔离验收可运行 `pnpm test:mobile`。
 
 首次使用：
 
@@ -108,7 +114,7 @@ COMPANION_CONTEXT_MODE=enforced
 PERSONA_RUNTIME_MODE=enforced
 ```
 
-两项也支持 `shadow`，用于记录诊断而不应用新策略。基础记忆真实性、完整来源验证和纠正失效不依赖这两个开关。可以用“聊工作烦恼时，先听我说，不急着建议”建立限定话题的偏好，再在后续会话验证或撤回；当轮明确结束、临时例外和长期偏好分别处理。实施与已知质量边界见[长期陪伴实施记录](docs/plans/Companion_Continuity_Implementation.md)和[纠错优先实施记录](docs/plans/Correction_First_Implementation.md)。
+两项也支持 `shadow`，用于记录诊断而不应用新策略。基础记忆真实性、完整来源验证和纠正失效不依赖这两个开关。可以用“聊工作烦恼时，先听我说，不急着建议”建立限定话题的偏好，再在后续会话验证或撤回；当轮明确结束、临时例外和长期偏好分别处理。实现与边界见[记忆系统架构](docs/memory-architecture.md)和[功能开关指南](docs/ROLLOUT.md)。
 
 ### 书信、纪念物与成就
 
@@ -133,7 +139,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 | `resident` | 本机进程常驻时扫描到期任务，与浏览器是否打开无关。         |
 | `worker`   | 自托管使用相同任务循环，通过 SQLite claim/lease 协调执行。 |
 
-原信和回信的运输时间各为五个角色时区日历日。服务停机期间不会运行模型，重新启动后按时间与幂等游标补算。书信处于 `off` 时暂停任务；已有密文仍需要匹配的实例密钥。纪念物默认图片/模板路径不需要第三方图片凭证。
+原信可选择普通、加急或特快投递；运输天数按共享契约计算，回信沿用自身固定运输规则。服务停机期间不会运行模型，重新启动后按时间与幂等游标补算。书信处于 `off` 时暂停任务；已有密文仍需要匹配的实例密钥。纪念物默认图片/模板路径不需要第三方图片凭证。
 
 “成就”不依赖书信功能整体开启：目前有 **11 项全局纪念、每角色 5 项关系纪念**，满足相应行为后记录；寄信和启封类纪念自然需要书信功能。前台使用日期按 `Asia/Shanghai` 自然日记录，无需签到按钮。设置中的“徽章生图模型”独立于聊天模型，固定徽章无需图片服务，高阶专属徽章按保存的配置排队生成。徽章任务使用独立后台队列，不受 `CORRESPONDENCE_EXECUTION` 控制；失败不撤回成就，可手动重试。详见[成就收藏说明](docs/ACHIEVEMENTS.md)。
 
@@ -153,7 +159,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 docker compose --env-file .env.friend-a --project-name chatplus-friend-a --file docker-compose.selfhosted.yml up --detach --build
 ```
 
-自托管边界通过 `SELFHOSTED_REVERSE_PROXY=true` 显式启用，同时要求生产环境、容器内监听地址及 HTTPS origin。它依赖反向代理认证，应用本身仍没有多用户账户、权限和租户隔离；不同使用者部署为独立实例。仅修改 `HOST=0.0.0.0` 不能替代这套配置。
+自托管边界通过 `SELFHOSTED_REVERSE_PROXY=true` 显式启用，同时要求生产环境、容器内监听地址及 HTTPS origin。该单实例入口依赖反向代理认证；不同使用者部署为独立实例。需要邀请码账号与隔离用户数据时，使用[托管入口](docs/HOSTED.md)。仅修改 `HOST=0.0.0.0` 不能替代这套配置。
 
 数据位置以实际配置为准：
 
@@ -169,7 +175,9 @@ docker compose --env-file .env.friend-a --project-name chatplus-friend-a --file 
 
 `pnpm selfhost:backup -- ...` 和 `pnpm selfhost:restore -- ...` 提供一致性备份及恢复到全新路径的工具。当前备份格式 v3 包含数据库、纪念物和独立徽章资产，兼容恢复 v1/v2；**备份不包含 `INSTANCE_SECRET` 或 `.llm-key`**，需同批次单独保管。完整参数、密钥缺失处理和 Compose 徽章卷恢复步骤见[恢复指南](docs/SELF_HOSTING.md)。
 
-`.env`、数据库、密钥、日志、备份和运行产物均应留在 Git 忽略目录。正式源码、配置模板、测试样例、设计资产和经审查的报告纳入版本控制；新增实验不要把原始数据库或模型调用记录直接写进 `docs/`。
+源码仓库保留正式源码、依赖锁文件、构建与通用启动脚本、配置模板、测试源代码、人工合成夹具、运行时设计资产以及持续维护的技术指南和评测协议。`.env`、数据库、凭据与签名密钥、日志、备份、缓存、本地测试数据、评分、验收截图、工作记录和报告均留在 Git 忽略目录。
+
+Windows 安装程序、APK、解压运行目录和构建校验产物保存在 `artifacts/`，不提交 Git；需要分发时通过独立发布附件提供。个人启动快捷脚本仅在本机保留，公开操作使用本文的 `pnpm` 命令。`docs/plans/`、`docs/reports/` 与历史实验结果不属于公开源码内容。
 
 ## 开发与测试
 
@@ -200,15 +208,15 @@ pnpm test:e2e
 
 ### 模型实验
 
-首页只列常用入口，具体场景、恢复方式、评审协议和历史结论见对应文档。长程实验应使用独立数据库与新产物目录，避免不同模型混用同一历史。
+首页只列常用入口，具体场景、恢复方式、评审协议见对应文档。长程实验应使用独立数据库与新产物目录，避免不同模型混用同一历史。
 
 | 实验           | 离线入口                                                               | 说明                                                                                                            |
 | -------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | 双模型动态对话 | `pnpm test:dual-model:fixture --turns 3`                               | 一个模型扮演合成用户，另一个走项目真实角色消息流程；见[双模型测试](docs/DUAL_MODEL_TESTING.md)。                |
 | 产品人生长测   | `pnpm test:product-life:fixture <run-id>`                              | 42 轮、45 个模拟日，覆盖生活、记忆、重启与书信；见[产品人生实验](docs/DUAL_MODEL_TESTING.md#产品人生长程实验)。 |
-| 记忆相关性     | `pnpm test:memory-relevance:fixture --output tmp/memory-relevance-NEW` | 召回、回复消融与上下文预算实验；见[调研建议实施](docs/evals/research-optimization.md)。                         |
+| 记忆相关性     | `pnpm test:memory-relevance:fixture --output tmp/memory-relevance-NEW` | 召回、回复消融与上下文预算实验；见[记忆与预算实验方法](docs/evals/memory-relevance-and-budget-method.md)。                         |
 | 整体架构比较   | `pnpm test:architecture:fixture --output tmp/architecture-NEW`         | 对照系统、固定历史、人格与模块消融；见[实验协议](docs/evals/architecture-comparison.md)。                       |
-| 角色生成比较   | `pnpm test:character-generation:comparison:fixture`                    | 比较角色生成及约束路径；见[生成对比方案](docs/plans/reply-steering-character-generation-comparison.md)。        |
+| 角色生成比较   | `pnpm test:character-generation:comparison:fixture`                    | 比较角色生成及约束路径；见[生成对比方案](docs/evals/character-generation-comparison.md)。        |
 | 回复策略       | `pnpm test:reply-steering:fixture`                                     | 回复意图与表达策略实验；见[回复策略评测](docs/evals/reply-steering/README.md)。                                 |
 
 `pnpm test:llm:smoke` 检查所选环境模型档案的真实业务路径，另有 `:claude`、`:grok`、`:gemini`、`:gpt56-sol`、`:bigmodel`、`:qwen` 命名快捷命令。真实双模型及产品人生实验要求 `RUN_PAID_DUAL_MODEL=1`；其他实验按各自文档设置对应的显式运行开关。不要把 smoke、fixture 或执行器的 `completed` 当作真实语言质量通过。
@@ -236,7 +244,7 @@ tests/
   fixtures/             固定场景与测试数据
   e2e/                  Playwright 用户流程
 deploy/                 Caddy 与可选 Compose 挂载配置
-docs/                   架构、操作指南、ADR、设计、实验及审查报告
+docs/                   架构、操作指南、ADR、设计规范与评测协议
 ```
 
 模型只生成文本与有界提案：服务端读取上下文、调用模型、校验来源与领域规则，最后在短 SQLite 事务中提交。角色队列协调同一角色的关键变更；SSE 通知前端重新读取持久化数据。模型调用不占用数据库事务，模型输出也不能直接写数据库。
@@ -247,23 +255,22 @@ docs/                   架构、操作指南、ADR、设计、实验及审查�
 | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | [模型设置](docs/MODEL_SETTINGS.md)                                                                                                           | 多供应商、协议参数、连接测试与加密凭据。           |
 | [成就收藏](docs/ACHIEVEMENTS.md)                                                                                                             | 行为纪念、专属徽章、独立图片模型与资产恢复。       |
-| [角色问答实施](docs/design/character-interview-implementation.md)                                                                            | 问答、追问、草稿、小传、发布与验收范围。           |
+| [角色问答实施](docs/design/character-interview-implementation.md)                                                                            | 问答、追问、草稿、小传、发布与交互规则。           |
 | [自托管与恢复](docs/SELF_HOSTING.md)                                                                                                         | Docker、Caddy、时间任务、备份和升级。              |
 | [功能开关](docs/ROLLOUT.md)                                                                                                                  | 默认模式、灰度行为和历史兼容路径。                 |
 | [架构](docs/architecture.md) / [数据契约](docs/schemas.md) / [插件合同](docs/plugin-sdk.md)                                                  | 领域分层与接口约定；当前部署方式以自托管指南为准。 |
 | [模糊生活与因果 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md) / [书信 ADR](docs/adr/0007-temporal-correspondence.md)              | 时间、生活、选择与延迟书信的设计依据。             |
 | [Dearvale 插画清单](docs/design/dearvale-assets.md) / [问答素材清单](docs/design/character-interview-assets.md)                              | 当前视觉资源来源与实现说明。                       |
 | [双模型测试](docs/DUAL_MODEL_TESTING.md) / [架构实验](docs/evals/architecture-comparison.md)                                                 | 可复现的执行入口与评审协议。                       |
-| [整体架构实验报告](docs/reports/2026-09-10-architecture-comparison-glm.md) / [三组 Qwen 长测](docs/plans/Qwen_Three_Run_120_Turn_Results.md) | 特定模型与场景下的结果、失败证据和结论边界。       |
 
-`docs/plans/` 与历史发布说明记录当时的计划和验收，不代表其中每项能力已在当前默认配置启用。
+历史发布说明描述对应版本的功能与边界；当前默认配置以功能开关指南和源码为准。本地报告与测试成绩不随源码发布。
 
 ## 当前边界
 
-- 当前按单用户、虚构角色与合成测试场景设计，支持独立实例自托管，尚无多租户账户、云同步或公共分享平台。
+- 提供本地单实例、独立自托管和邀请码托管测试入口；托管入口使用独立账号与数据目录，尚无云同步或公共分享平台。
 - 真实模型仍可能出现修辞惯性、附加建议、错误召回或主体归属问题；工程测试通过不能替代长期内容质量评审。
 - 生活背景只表达自然日、粗粒度时段、近况和忙碌程度，不提供分钟级角色日历。时间过去本身不证明目标完成、用户采取行动或结果发生。
 - 作品导入使用有界摘录编译角色，不是全文检索、PDF/OCR 或音视频分析。当前没有部署向量数据库或 embedding 检索服务。
-- 主动消息暂停；没有系统通知、语音/3D、桌面安装包、第三方插件安装与沙箱。内部可信插件运行时不等于外部插件市场。
+- 主动消息暂停；没有系统通知、语音/3D、第三方插件安装与沙箱。Windows 与 Android 客户端可从源码构建，安装包单独分发。内部可信插件运行时不等于外部插件市场。
 - 应用不代表用户或角色发送现实邮件、操作日历或执行外部工具。倾听、分析、推荐和明确授权的委托决定都发生在对话与模拟中，后续行动、结果和记忆仍需证据。
 - 数据库 schema 尚未承诺跨大版本兼容；升级前保留数据库、两类资产及各自密钥的可恢复备份。

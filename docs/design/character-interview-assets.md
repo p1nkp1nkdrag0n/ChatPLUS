@@ -19,7 +19,6 @@ Alpha was verified with Windows `System.Drawing.Bitmap.GetPixel`; every producti
 
 ## Selected outputs and prompts
 
-Source generation directory: `C:/Users/34080/.codex/generated_images/01a08c6a-b263-7711-ae6a-c93f55c98ee6/`.
 
 ### Scene — `exec-191e2a42-52e2-44aa-ae80-a2440441d5f0.png`
 

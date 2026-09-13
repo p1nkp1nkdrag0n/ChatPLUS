@@ -88,7 +88,7 @@ R2/R3 已实现但保持默认关闭的纪念物写入策略。纪念物只接�
 - 历史 P0 精确日程长跑（DST 夜行 / 29h 离线 / 重启，仅作迁移回归）：
   `apps/server/src/services/personal-life-long-run.integration.test.ts`
 - 场景级验收（10 个 sim 场景）：`pnpm sim:p1`（见 `apps/server/src/scenarios/p1-scenario-harness.ts`）
-- 当前产品长程验收规格：[纯模糊生活与人生选择长程验证方案](plans/ChatPLUS_Fuzzy_Life_Decision_Long_Run_Plan_v3.md)。新的核心证据是困境、支持、决定、行动、结果和复盘链路，而不是 schedule mutation。
+- 当前产品长程验收规格：[产品人生长程实验](DUAL_MODEL_TESTING.md#产品人生长程实验)。新的核心证据是困境、支持、决定、行动、结果和复盘链路，而不是 schedule mutation。
 
 ## 晋级检查单（每个 flag 通用）
 

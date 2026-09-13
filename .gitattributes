@@ -1,3 +1,5 @@
-# Preserve reviewed evidence bytes on Windows and other platforms for SHA-256 verification.
-docs/plans/Qwen_Three_Run_120_Turn_Evidence/** -text
-docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/ChatPLUS_Continuity_Review/** -text
+# Keep synthetic evaluation inputs stable across Windows and Unix checkouts.
+apps/server/src/test-fixtures/companion-continuity/** -text
+
+# The Android wrapper must remain executable with Unix line endings.
+apps/android/gradlew text eol=lf

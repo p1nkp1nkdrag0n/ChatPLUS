@@ -10,7 +10,7 @@ import { CONTINUITY_WORKSPACE_ROOT } from "./continuity-run-identity.js";
 
 const inputDirectory = join(
   CONTINUITY_WORKSPACE_ROOT,
-  "docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/ChatPLUS_Continuity_Review",
+  "apps/server/src/test-fixtures/companion-continuity",
 );
 
 export async function companionContinuityMain(

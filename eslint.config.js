@@ -8,14 +8,20 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/dist-website/**",
       "**/coverage/**",
       "playwright-report/**",
       "test-results/**",
       "tmp/**",
+      ".cache/**",
+      "apps/android/**/build/**",
+      "apps/android/.gradle/**",
+      "apps/android/app/src/main/assets/web/**",
       "**/artifacts/**",
-      // Imported review probes are reference artifacts outside the TS project.
-      "docs/plans/ChatPLUS_Continuity_Review_and_Real_API_Test_Plan/**/*.cjs",
-      "docs/plans/ChatPLUS_db446b8_三项问题修复方案/rule_probes.mjs",
+      // Local experiment records remain on disk after leaving source control.
+      "docs/plans/**",
+      "docs/reports/**",
+      "docs/evals/reply-steering/evidence/**",
     ],
   },
   js.configs.recommended,
@@ -26,7 +32,7 @@ export default tseslint.config(
         projectService: {
           allowDefaultProject: ["*.js", "*.ts", "tests/e2e/*.ts"],
           // E2E specs live outside workspace tsconfigs; keep their typed linting bounded.
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 16,
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 18,
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -54,7 +60,7 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    files: ["docs/plans/Qwen_Three_Run_120_Turn_Evidence/verify-package.mjs"],
+    files: ["apps/desktop-online/src/connection.js"],
     ...tseslint.configs.disableTypeChecked,
   },
 );

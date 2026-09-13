@@ -5,11 +5,33 @@
 node_modules/
 .pnpm-store/
 dist/
+dist-website/
 .cache/
 .vite/
 .vite-temp/
 .eslintcache
 *.tsbuildinfo
+
+# Android build output and private signing material.
+/apps/android/.gradle/
+/apps/android/build/
+/apps/android/app/build/
+/apps/android/app/src/main/assets/web/
+/apps/android/local.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+.secrets/
+
+# Distributable installers belong in release assets, never source history.
+*.exe
+*.msi
+*.apk
+*.aab
+*.dmg
+*.AppImage
+*.blockmap
 
 # Test output (all workspaces).
 coverage/
@@ -38,8 +60,15 @@ backups/
 .env.*
 !.env.example
 !.env.selfhosted.example
+!.env.hosted.example
 *.local
 *.llm-key
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 
 # Editor and OS noise
 .DS_Store
@@ -48,17 +77,27 @@ Thumbs.db
 .vscode/
 *.log
 
-# Compatibility for legacy generators that still write into docs/reports.
-# Do not ignore all reports or image files: reviewed docs/design assets are source.
-# New generated reports belong in /tmp/ or /artifacts/.
-/docs/reports/ChatPLUS_Real_Network_Acceptance_*.md
-/docs/reports/ChatPLUS_DeepSeek_State_Acceptance_*.md
-/docs/reports/ChatPLUS_DeepSeek_State_Acceptance_*.json
-/docs/reports/ChatPLUS_DeepSeek_State_Continuation_*.md
-/docs/reports/ChatPLUS_DeepSeek_State_Continuation_*.json
+# Local reports, experiment results, and historical planning records.
+# Reusable test inputs live with test fixtures; public protocols stay in docs/evals.
+/docs/reports/
+/docs/plans/
+/docs/PRODUCT_LIFE_REMEDIATION.md
+/docs/evals/research-optimization.md
+/docs/evals/reply-steering/RESULTS.md
+/docs/evals/reply-steering/QUANTITATIVE.md
+/docs/evals/reply-steering/SCENE_COMPARISONS.md
+/docs/evals/reply-steering/evidence/
+
+# Local visual acceptance evidence. Product artwork remains versioned.
+/docs/design/**/qa/
+/docs/design/achievements/wax-seal-references/qa.json
+/docs/design/achievements/wax-wall-desktop.png
+/docs/design/achievements/wax-wall-mobile.png
+/docs/design/memory-library/
 
 # Local unresolved issues and investigation notes.
 /docs/issue/
 
-# Local-only planning drafts.
-/docs/plans/ChatPLUS_书信与关系纪念物系统分阶段实施计划书_v1.0.md
+# Personal launchers depend on scripts provisioned outside the checkout.
+/启动Dearvale.cmd
+/关闭Dearvale.cmd

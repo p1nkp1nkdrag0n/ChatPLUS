@@ -22,6 +22,7 @@ interface CorrespondenceMailboxResponse {
 
 interface OpenLetterResponse {
   body: string;
+  relatedKeepsakeIds: string[];
 }
 
 interface RelationshipArchiveEntry {
@@ -42,6 +43,16 @@ interface KeepsakePageResponse {
 interface KeepsakeDetailResponse {
   keepsake: { id: string; title: string };
   sources: Array<{ type: string; id: string; href: string }>;
+}
+
+interface ControlledKeepsakeDetail extends KeepsakeDetailResponse {
+  keepsake: {
+    id: string;
+    title: string;
+    status: "pending" | "generating" | "ready" | "failed";
+    primaryAssetId?: string;
+  };
+  assets: unknown[];
 }
 
 interface RelationshipShareProjection {
@@ -132,6 +143,7 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
       canOpen: false,
     });
     expect(reply).not.toHaveProperty("previewText");
+    expect((await readKeepsakes(request, agentId)).items).toEqual([]);
     const replyLetterId = reply.id;
     expect(await countLetterReplyCalls(request, agentId)).toBe(
       replyCallsBeforeSeal + 1,
@@ -159,6 +171,7 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     expect(arrivedCacheSafeText).not.toMatch(
       /"(?:subject|body|salutation|closing|signature|ciphertext|authTag|encryptedBody)"/iu,
     );
+    expect((await readKeepsakes(request, agentId)).items).toEqual([]);
     await page.reload();
     await expect(page.getByRole("button", { name: "启封阅读" })).toBeVisible();
     await expect(page.locator(".letter-paper__body")).toHaveCount(0);
@@ -179,6 +192,13 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     );
     expect(arrivedCacheSafeText).not.toContain(opened.body);
     expect(unopenedPageSource).not.toContain(opened.body);
+    expect(opened.relatedKeepsakeIds.length).toBeGreaterThan(0);
+    await expect(
+      page.locator(`a[href="/keepsakes/${opened.relatedKeepsakeIds[0]}"]`),
+    ).toBeVisible();
+    await page.getByRole("region", { name: "随信纪念物" }).screenshot({
+      path: test.info().outputPath("opened-letter-keepsake-attachment.png"),
+    });
 
     await page.goto(`/characters/${agentId}/correspondence`);
     await page.getByRole("tab", { name: "档案" }).click();
@@ -314,6 +334,163 @@ test.describe("correspondence, archive, keepsake, and local share flow", () => {
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/\.png$/u);
     expect(await download.failure()).toBeNull();
+  });
+
+  test("keeps a received gift visible through generation, image loading, and failure", async ({
+    page,
+    request,
+  }) => {
+    const suffix = `${test.info().project.name}-${Date.now()}`;
+    const agentId = await createPublishedHighFidelityCharacter(
+      request,
+      `随信旅人${suffix}`,
+    );
+    await rememberCharacter(page, agentId);
+    const created = await request.post(`/api/agents/${agentId}/letters`, {
+      data: {
+        clientRequestId: `gift-create:${suffix}`,
+        subject: "厨房里的那张便笺",
+        body: "一起做饭之后，我把那张写满回忆的便笺留了下来。",
+      },
+    });
+    expect(created.ok()).toBe(true);
+    const createdLetter = (await created.json()) as { letter: { id: string } };
+    const incomingId = createdLetter.letter.id;
+    const sealed = await request.post(`/api/letters/${incomingId}/seal`, {
+      data: { clientRequestId: `gift-seal:${suffix}` },
+    });
+    expect(sealed.ok()).toBe(true);
+    await advanceClock(request, 5);
+    const reply = (await readMailbox(request, agentId)).letters.find(
+      (letter) => letter.direction === "agent_to_user",
+    );
+    expect(reply).toBeDefined();
+    if (reply === undefined) throw new Error("Expected a generated reply");
+    const replyId = reply.id;
+    expect((await readKeepsakes(request, agentId)).items).toEqual([]);
+    await advanceClock(request, 5);
+
+    // Only the image state is controlled; creation, delivery, receipt, source
+    // links and the opened letter all use the disposable real backend.
+    let imageState: "generating" | "ready" | "failed" = "generating";
+    await page.route(/\/api\/keepsakes\/[^/?]+$/u, async (route) => {
+      const response = await route.fetch();
+      if (!response.ok()) return route.fulfill({ response });
+      const detail = (await response.json()) as ControlledKeepsakeDetail;
+      if (imageState !== "ready") {
+        detail.keepsake.status = imageState;
+        delete detail.keepsake.primaryAssetId;
+        detail.assets = [];
+      }
+      await route.fulfill({ response, json: detail });
+    });
+    const pageErrors: string[] = [];
+    const consoleErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    await page.goto(`/letters/${replyId}?agentId=${agentId}`);
+    await expect(page.getByRole("region", { name: "随信纪念物" })).toHaveCount(
+      0,
+    );
+    await page.getByRole("button", { name: "启封阅读" }).click();
+    const attachment = page.getByRole("region", { name: "随信纪念物" });
+    await expect(attachment).toBeVisible();
+    await expect(
+      attachment.locator('[data-status="generating"]'),
+    ).toBeVisible();
+    await expect(
+      attachment.locator('[data-artwork-ready="false"]'),
+    ).toBeVisible();
+    await attachment.screenshot({
+      path: test.info().outputPath("letter-gift-placeholder.png"),
+    });
+    await attachment.getByRole("link", { name: /打开纪念物/u }).click();
+    await expect(page).toHaveURL(/\/keepsakes\/[^/]+$/u);
+    const detailUrl = page.url();
+    const detailPath = new URL(detailUrl).pathname;
+    const keepsakeId = detailPath.substring(detailPath.lastIndexOf("/") + 1);
+    await expect(
+      page.getByRole("button", { name: "制作分享图" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("link", { name: "打开来源", exact: true }).first(),
+    ).toBeVisible();
+    await page
+      .getByRole("link", { name: "返回纪念物陈列柜" })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: test.info().outputPath("received-gift-generating.png"),
+      fullPage: true,
+    });
+
+    let releaseImage = () => {};
+    const imageGate = new Promise<void>((resolve) => {
+      releaseImage = resolve;
+    });
+    let markImageRequested = () => {};
+    const imageRequested = new Promise<void>((resolve) => {
+      markImageRequested = resolve;
+    });
+    await page.route(`**/api/keepsakes/${keepsakeId}/asset`, async (route) => {
+      markImageRequested();
+      await imageGate;
+      await route.continue();
+    });
+    imageState = "ready";
+    await imageRequested;
+    const artwork = page.locator(".artifact-hero .keepsake-artwork");
+    await expect(artwork).toHaveAttribute("data-artwork-ready", "false");
+    releaseImage();
+    await expect(artwork).toHaveAttribute("data-artwork-ready", "true");
+    await expect(page.getByRole("link", { name: "制作分享图" })).toBeVisible();
+    await expect(page).toHaveURL(detailUrl);
+    await page.screenshot({
+      path: test.info().outputPath("received-gift-ready.png"),
+      fullPage: true,
+    });
+
+    await page.unroute(`**/api/keepsakes/${keepsakeId}/asset`);
+    await page.route(`**/api/keepsakes/${keepsakeId}/asset`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/png",
+        body: "not-an-image",
+      }),
+    );
+    await page.reload();
+    await expect(
+      page.locator(".artifact-hero .keepsake-artwork"),
+    ).toHaveAttribute("aria-label", /保留基础外观/u);
+    await expect(
+      page.locator(".artifact-hero .keepsake-artwork"),
+    ).toHaveAttribute("data-artwork-ready", "false");
+
+    imageState = "failed";
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page.locator('[data-status="failed"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "制作分享图" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("link", { name: "打开来源", exact: true }).first(),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: test.info().outputPath("received-gift-failed-mobile.png"),
+      fullPage: true,
+    });
+    await page.locator(".artifact-image-status").screenshot({
+      path: test.info().outputPath("received-gift-failed-status.png"),
+    });
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
   });
 
   test("recovers an ambiguous failed-reply request through the safe projection", async ({

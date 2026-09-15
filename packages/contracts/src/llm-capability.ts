@@ -33,6 +33,8 @@ export const LlmCapabilityProfileSchema = z
     reasoningEffort: ReasoningEffortSchema.optional(),
     reasoningRequestFormat: ReasoningRequestFormatSchema.optional(),
     maxContextTokens: z.number().int().positive().max(10_000_000).optional(),
+    /** Separate provider input limit; it is not a total input+output window. */
+    maxInputTokens: z.number().int().positive().max(10_000_000).optional(),
     maxOutputTokens: z.number().int().positive().max(1_000_000).optional(),
   })
   .strict()

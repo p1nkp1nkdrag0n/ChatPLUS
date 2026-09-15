@@ -3,9 +3,37 @@ import {
   LlmModelSettingsSchema,
   LlmProviderInputSchema,
   normalizeLlmBaseUrl,
+  effectiveLlmCapabilities,
 } from "./llm-settings.js";
 
 describe("model settings contracts", () => {
+  it("keeps user budgets separate from provider input, total window and output limits", () => {
+    const model = LlmModelSettingsSchema.parse({
+      id: "limited",
+      capabilities: {
+        structuredOutputMode: "prompt_json",
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+        maxContextTokens: 64_000,
+        maxOutputTokens: 8192,
+      },
+      providerLimits: {
+        maxInputTokens: 24_000,
+        maxContextTokens: 32_000,
+        maxOutputTokens: 4096,
+      },
+    });
+    expect(effectiveLlmCapabilities(model)).toMatchObject({
+      maxContextTokens: 32_000,
+      maxInputTokens: 24_000,
+      maxOutputTokens: 4096,
+    });
+    expect(model.capabilities.maxContextTokens).toBe(64_000);
+    expect(
+      effectiveLlmCapabilities(LlmModelSettingsSchema.parse({ id: "unknown" }))
+        .maxContextTokens,
+    ).toBe(64_000);
+  });
   it("normalizes cloud and unauthenticated local endpoints without duplicated suffixes", () => {
     expect(
       normalizeLlmBaseUrl(

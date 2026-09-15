@@ -47,8 +47,43 @@ export const LlmModelSettingsSchema = z.strictObject({
     .default("max_tokens"),
   thinkingBudget: z.number().int().min(-1).max(1000000).optional(),
   thinkingLevel: z.enum(["minimal", "low", "medium", "high"]).optional(),
+  providerLimits: z
+    .strictObject({
+      maxInputTokens: z.number().int().positive().max(10_000_000).optional(),
+      maxContextTokens: z.number().int().positive().max(10_000_000).optional(),
+      maxOutputTokens: z.number().int().positive().max(1_000_000).optional(),
+    })
+    .optional(),
 });
 export type LlmModelSettings = z.infer<typeof LlmModelSettingsSchema>;
+
+/** Keep user budgets editable while applying the supplier's reported limits. */
+export function effectiveLlmCapabilities(
+  model: LlmModelSettings,
+): LlmModelSettings["capabilities"] {
+  const limits = model.providerLimits;
+  const maxContextTokens = Math.min(
+    model.capabilities.maxContextTokens ?? 64_000,
+    limits?.maxContextTokens ?? Infinity,
+  );
+  return {
+    ...model.capabilities,
+    maxContextTokens,
+    maxOutputTokens: Math.min(
+      model.capabilities.maxOutputTokens ?? 8192,
+      limits?.maxOutputTokens ?? Infinity,
+      maxContextTokens - 1,
+    ),
+    ...(limits?.maxInputTokens
+      ? {
+          maxInputTokens: Math.min(
+            model.capabilities.maxInputTokens ?? Infinity,
+            limits.maxInputTokens,
+          ),
+        }
+      : {}),
+  };
+}
 
 export const LlmProviderInputSchema = z
   .strictObject({

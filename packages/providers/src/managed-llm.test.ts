@@ -721,9 +721,10 @@ describe("model discovery", () => {
     expect(result.map((model) => model.id)).toEqual(["a", "b"]);
     expect(result[1]).toMatchObject({
       label: "B",
+      providerLimits: { maxInputTokens: 100000, maxOutputTokens: 32000 },
       capabilities: {
         structuredOutputMode: "prompt_json",
-        maxContextTokens: 100000,
+        maxContextTokens: 64000,
         maxOutputTokens: 32000,
       },
     });

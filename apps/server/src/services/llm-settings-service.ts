@@ -56,17 +56,33 @@ export class LlmSettingsService {
   private readonly credentials: LlmCredentialService;
   private readonly environment = new Map<string, EnvironmentEntry>();
   private readonly fallback: LlmSelection;
+  private readonly encryptUrls: boolean;
   constructor(
     private readonly store: DatabaseStore,
     config: ServerConfig,
     private readonly clock: Clock,
   ) {
+    this.encryptUrls = config.profile === "hosted";
     this.credentials = new LlmCredentialService(
       store.database,
       config.databasePath,
     );
     const active = this.addEnvironment(config.llm);
     this.fallback = { providerId: active.id, modelId: active.models[0]!.id };
+    if (this.encryptUrls) {
+      this.store.database.transaction(() => {
+        const rows = this.store.database
+          .prepare("SELECT * FROM llm_providers WHERE id <> 'hosted'")
+          .all() as ProviderRow[];
+        for (const row of rows) {
+          if (!row.base_url.startsWith("encrypted-url:v1:"))
+            this.store.database
+              .prepare("UPDATE llm_providers SET base_url=? WHERE id=?")
+              .run(this.storedBaseUrl(row.id, row.base_url), row.id);
+        }
+      })();
+      return;
+    }
     // Read only recognized profile names; no environment values are serialized or logged.
     for (const key of Object.keys(process.env)) {
       const match = /^LLM_PROFILE_(.+)_BASE_URL$/u.exec(key);
@@ -106,7 +122,10 @@ export class LlmSettingsService {
         id,
         input.name,
         input.protocol,
-        normalizeLlmBaseUrl(input.baseUrl, input.protocol),
+        this.storedBaseUrl(
+          id,
+          normalizeLlmBaseUrl(input.baseUrl, input.protocol),
+        ),
         input.timeoutMs,
         JSON.stringify(input.models),
         encrypted,
@@ -133,6 +152,7 @@ export class LlmSettingsService {
           "请先更换系统默认模型，再移除此模型。",
         );
       let encrypted = row.credential_json;
+      this.assertCredentialDestination(row, input);
       if (input.clearApiKey) encrypted = null;
       else if (input.apiKey?.trim())
         encrypted = this.credentials.encrypt(id, input.apiKey.trim());
@@ -143,7 +163,10 @@ export class LlmSettingsService {
         .run(
           input.name,
           input.protocol,
-          normalizeLlmBaseUrl(input.baseUrl, input.protocol),
+          this.storedBaseUrl(
+            id,
+            normalizeLlmBaseUrl(input.baseUrl, input.protocol),
+          ),
           input.timeoutMs,
           JSON.stringify(input.models),
           encrypted,
@@ -282,7 +305,7 @@ export class LlmSettingsService {
     return {
       selection: { ...selection, revision: row.revision },
       protocol: row.protocol,
-      baseUrl: row.base_url,
+      baseUrl: this.baseUrl(row),
       apiKey:
         row.credential_json === null
           ? ""
@@ -332,6 +355,19 @@ export class LlmSettingsService {
       const row = env ? undefined : this.row(target.providerId);
       revision = env?.view.revision ?? row!.revision;
       this.assertRevision(revision, target.revision ?? draft.expectedRevision);
+      if (row) this.assertCredentialDestination(row, draft);
+      else if (
+        env &&
+        !draft.clearApiKey &&
+        !apiKey &&
+        (env.view.protocol !== draft.protocol ||
+          new URL(env.view.baseUrl).origin !== new URL(draft.baseUrl).origin)
+      )
+        throw new ApiError(
+          400,
+          "provider_key_required",
+          "更换供应商地址或协议后，请重新填写 API Key。",
+        );
       if (!draft.clearApiKey && !apiKey)
         apiKey =
           env?.config.apiKey ??
@@ -478,24 +514,61 @@ export class LlmSettingsService {
     );
   }
   private view(row: ProviderRow): LlmProviderView {
+    let baseUrl = "";
+    let urlAvailable = true;
+    try {
+      baseUrl = this.baseUrl(row);
+    } catch {
+      urlAvailable = false;
+    }
     return {
       id: row.id,
       name: row.name,
       protocol: row.protocol,
-      baseUrl: row.base_url,
+      baseUrl,
       timeoutMs: row.timeout_ms,
       revision: row.revision,
       models: this.models(row),
       source: "managed",
       hasApiKey: row.credential_json !== null,
       credentialStatus:
-        row.credential_json === null ||
-        this.credentials.available(row.id, row.credential_json)
+        urlAvailable &&
+        (row.credential_json === null ||
+          this.credentials.available(row.id, row.credential_json))
           ? "ready"
           : "unavailable",
       referencedSessions: this.references(row.id),
       ...(row.discovered_at_utc ? { discoveredAt: row.discovered_at_utc } : {}),
     };
+  }
+  private storedBaseUrl(id: string, url: string): string {
+    return this.encryptUrls && id !== "hosted"
+      ? `encrypted-url:v1:${this.credentials.encrypt(`base-url:${id}`, url)}`
+      : url;
+  }
+  private baseUrl(row: ProviderRow): string {
+    return row.base_url.startsWith("encrypted-url:v1:")
+      ? this.credentials.decrypt(
+          `base-url:${row.id}`,
+          row.base_url.slice("encrypted-url:v1:".length),
+        )
+      : row.base_url;
+  }
+  private assertCredentialDestination(
+    row: ProviderRow,
+    input: LlmProviderInput,
+  ): void {
+    if (input.clearApiKey || input.apiKey?.trim() || !row.credential_json)
+      return;
+    if (
+      row.protocol !== input.protocol ||
+      new URL(this.baseUrl(row)).origin !== new URL(input.baseUrl).origin
+    )
+      throw new ApiError(
+        400,
+        "provider_key_required",
+        "更换供应商地址或协议后，请重新填写 API Key。",
+      );
   }
   private environmentView(entry: EnvironmentEntry): LlmProviderView {
     return {

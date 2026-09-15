@@ -12,6 +12,7 @@ interface Props {
   disabled?: boolean;
   allowDefault?: boolean;
   defaultLabel?: string;
+  defaultOptionLabel?: string;
 }
 
 export function ModelSelect({
@@ -22,6 +23,7 @@ export function ModelSelect({
   disabled = false,
   allowDefault = false,
   defaultLabel,
+  defaultOptionLabel,
 }: Props) {
   const hosted = useHosted();
   const [open, setOpen] = useState(false);
@@ -34,10 +36,12 @@ export function ModelSelect({
   const selected = provider?.models.find((item) => item.id === value?.modelId);
   const caption = value
     ? hosted
-      ? selected?.label || "模型暂不可用"
+      ? provider?.id === "hosted"
+        ? `${selected?.label || "模型暂不可用"} · 平台额度`
+        : `${provider?.name ?? "供应商不可用"} / ${selected?.label || value.modelId} · 自己的 API`
       : `${provider?.name ?? "供应商不可用"} / ${selected?.label || value.modelId}`
     : allowDefault
-      ? `跟随全局默认${defaultLabel ? ` · ${defaultLabel}` : ""}`
+      ? `${hosted ? "使用功能默认" : "跟随全局默认"}${defaultLabel ? ` · ${defaultLabel}` : ""}`
       : "选择模型";
   const term = search.trim().toLocaleLowerCase();
   const options: {
@@ -47,7 +51,16 @@ export function ModelSelect({
     group: string;
   }[] = [
     ...(allowDefault
-      ? [{ key: "default", selection: null, label: "跟随全局默认", group: "" }]
+      ? [
+          {
+            key: "default",
+            selection: null,
+            label:
+              defaultOptionLabel ??
+              (hosted ? "跟随聊天功能设置" : "跟随全局默认"),
+            group: "",
+          },
+        ]
       : []),
     ...providers.flatMap((item) =>
       item.models
@@ -60,11 +73,15 @@ export function ModelSelect({
           key: selectionKey({ providerId: item.id, modelId: model.id }),
           selection: { providerId: item.id, modelId: model.id },
           label: hosted
-            ? model.label || "未命名模型"
+            ? model.label || (item.id === "hosted" ? "未命名模型" : model.id)
             : model.label
               ? `${model.label} · ${model.id}`
               : model.id,
-          group: hosted ? "可选模型" : item.name,
+          group: hosted
+            ? item.id === "hosted"
+              ? "平台模型 · 消耗额度"
+              : `${item.name} · 自己的 API`
+            : item.name,
         })),
     ),
   ];

@@ -1,5 +1,6 @@
 import {
   LlmModelSettingsSchema,
+  effectiveLlmCapabilities,
   normalizeLlmBaseUrl,
   type JsonValue,
   type LLMChatMessage,
@@ -606,6 +607,7 @@ class ManagedLlmProvider implements LlmProvider {
 
   constructor(options: ManagedLlmOptions) {
     const model = LlmModelSettingsSchema.parse(options.model);
+    model.capabilities = effectiveLlmCapabilities(model);
     this.#options = { ...options, model: structuredClone(model) };
     this.name = options.protocol;
     this.model = model.id;
@@ -868,7 +870,8 @@ export async function discoverLlmModels(
       const id =
         options.protocol === "gemini" ? rawId.replace(/^models\//u, "") : rawId;
       const label = strings(
-        entry[options.protocol === "gemini" ? "displayName" : "display_name"],
+        entry[options.protocol === "gemini" ? "displayName" : "display_name"] ??
+          entry.name,
       );
       const context = count(
         entry[
@@ -878,8 +881,9 @@ export async function discoverLlmModels(
       const output = count(
         entry[
           options.protocol === "gemini" ? "outputTokenLimit" : "max_tokens"
-        ],
+        ] ?? record(entry.top_provider)?.max_completion_tokens,
       );
+      const totalContext = count(entry.context_length);
       // Model metadata provides limits, never evidence that replies or JSON work.
       const capabilities = {
         structuredOutputMode: "prompt_json" as const,
@@ -890,14 +894,21 @@ export async function discoverLlmModels(
           context && context > 1 ? context - 1 : 64_000,
           64_000,
         ),
-        ...(context && context <= 10_000_000
-          ? { maxContextTokens: context }
-          : {}),
+        maxContextTokens: 64_000,
       };
       const parsed = LlmModelSettingsSchema.safeParse({
         id,
         ...(label === undefined ? {} : { label }),
         capabilities,
+        providerLimits: {
+          ...(context && context <= 10_000_000
+            ? { maxInputTokens: context }
+            : {}),
+          ...(totalContext && totalContext <= 10_000_000
+            ? { maxContextTokens: totalContext }
+            : {}),
+          ...(output && output <= 1_000_000 ? { maxOutputTokens: output } : {}),
+        },
       });
       if (parsed.success) models.set(parsed.data.id, parsed.data);
       if (models.size > 2000)

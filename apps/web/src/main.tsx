@@ -22,6 +22,7 @@ import "./styles/mobile.css";
 import "./styles/mobile-pages.css";
 import "./styles/creation-reading.css";
 import "./styles/hosted.css";
+import "./styles/model-settings.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root mount point");

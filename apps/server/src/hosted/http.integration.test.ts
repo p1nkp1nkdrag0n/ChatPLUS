@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readConfig } from "../config.js";
 import { buildHostedApps } from "./app.js";
 import { HostedControlStore } from "./control-store.js";
+import { HostedAuthService } from "./auth.js";
 
 vi.hoisted(() => {
   process.env.PERSONASIM_LOAD_ENV = "false";
@@ -138,6 +139,7 @@ async function fixture(startSchedulers = false) {
     baseConfig,
     startSchedulers,
     transport,
+    userTransport: transport,
   });
   openedEntry.app = app;
   const admin = client(app.adminApp, adminOrigin);
@@ -198,6 +200,7 @@ async function fixture(startSchedulers = false) {
       baseConfig,
       startSchedulers,
       transport,
+      userTransport: transport,
     });
     openedEntry.app = app;
     return app;
@@ -212,6 +215,266 @@ afterEach(async () => {
 });
 
 describe("hosted HTTP boundaries and lifecycle", () => {
+  it("persists account setup and independent bindings across reconnects without exposing private providers to another user", async () => {
+    const f = await fixture();
+    const owner = await f.register("model-settings-owner");
+    const other = await f.register("model-settings-other");
+    const initial = await owner.request("GET", "/api/llm/user-settings");
+    expect(initial.statusCode, initial.body).toBe(200);
+    expect(initial.json()).toMatchObject({
+      revision: 0,
+      onboardingCompleted: false,
+      bindings: {},
+    });
+    const created = await owner.request("POST", "/api/llm/providers", {
+      name: "Owner private provider",
+      protocol: "openai-compatible",
+      baseUrl: "https://owner-provider.example/v1",
+      apiKey: "owner-private-key",
+      models: [{ id: "owner-model" }],
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.body).not.toContain("owner-private-key");
+    const selection = {
+      providerId: created.json<{ id: string }>().id,
+      modelId: "owner-model",
+    };
+    const setup = await owner.request("POST", "/api/llm/setup", {
+      mode: "user",
+      selection,
+      expectedRevision: 0,
+    });
+    expect(setup.statusCode, setup.body).toBe(200);
+    expect(setup.json()).toMatchObject({
+      revision: 1,
+      onboardingCompleted: true,
+      bindings: { chat_turn: selection, diary_review: selection },
+      imageSelection: null,
+    });
+    const catalog = await owner.request("GET", "/api/llm/providers");
+    expect(
+      catalog.json<{ defaultSelection: unknown }>().defaultSelection,
+    ).toEqual(selection);
+    expect(
+      (await other.request("GET", "/api/llm/providers")).body,
+    ).not.toContain("owner-provider");
+    expect(
+      (
+        await other.request("PATCH", "/api/llm/user-settings", {
+          expectedRevision: 0,
+          bindings: { chat_turn: selection },
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await other.request("POST", "/api/llm/models/discover", {
+          providerId: selection.providerId,
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await owner.request("PATCH", "/api/llm/user-settings", {
+          expectedRevision: 0,
+          bindings: { diary_review: null },
+        })
+      ).statusCode,
+    ).toBe(409);
+    expect(
+      (
+        await owner.request("PATCH", "/api/llm/user-settings", {
+          expectedRevision: 1,
+          bindings: { diary_review: null },
+        })
+      ).statusCode,
+    ).toBe(200);
+    const reopened = await f.reopen();
+    const android = client(reopened.userApp, publicOrigin);
+    await android.request("GET", "/api/hosted/info");
+    await android.request("POST", "/api/hosted/auth/login", {
+      username: "model-settings-owner",
+      password: "testing-friend-password",
+    });
+    const persisted = await android.request("GET", "/api/llm/user-settings");
+    expect(persisted.json()).toMatchObject({
+      revision: 2,
+      onboardingCompleted: true,
+      bindings: { chat_turn: selection },
+    });
+    expect(
+      persisted.json<{ bindings: Record<string, unknown> }>().bindings,
+    ).not.toHaveProperty("diary_review");
+  });
+
+  it("initializes platform setup while refusing platform edits, environment import and global credential reset", async () => {
+    const f = await fixture();
+    const user = await f.register("platform-settings-user");
+    const selection = { providerId: "hosted", modelId: "friendly" };
+    const setup = await user.request("POST", "/api/llm/setup", {
+      mode: "platform",
+      selection,
+      expectedRevision: 0,
+    });
+    expect(setup.statusCode, setup.body).toBe(200);
+    expect(setup.json()).toMatchObject({
+      onboardingCompleted: true,
+      bindings: { chat_turn: selection, diary_review: selection },
+    });
+    expect(
+      (await user.request("DELETE", "/api/llm/providers/hosted")).statusCode,
+    ).toBe(403);
+    expect(
+      (await user.request("POST", "/api/llm/providers/import-env", {}))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await user.request("POST", "/api/llm/credentials/reset", {
+          confirm: "reset-provider-credentials",
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await user.request("POST", "/api/llm/test", {
+          providerId: "hosted",
+          modelId: "friendly",
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await user.request("POST", "/api/llm/providers", {
+          name: "Insecure",
+          protocol: "openai-compatible",
+          baseUrl: "http://provider.example/v1",
+        })
+      ).statusCode,
+    ).toBe(400);
+    const catalog = await user.request("GET", "/api/llm/providers");
+    expect(catalog.body).not.toMatch(
+      /private-provider|mock-key-private|private-model-id/u,
+    );
+  });
+
+  it("marks a pre-rollout account completed even when its tenant database is created later", async () => {
+    const f = await fixture();
+    const { code } = f.app.control.createInvite({}, f.adminId);
+    const registered = await new HostedAuthService(f.app.control).register({
+      username: "pre-rollout-account",
+      password: "testing-friend-password",
+      inviteCode: code,
+    });
+    f.app.control.database
+      .prepare("UPDATE users SET created_at=? WHERE id=?")
+      .run("2020-01-01T00:00:00.000Z", registered.user.id);
+    const old = client(f.app.userApp, publicOrigin);
+    await old.request("GET", "/api/hosted/info");
+    await old.request("POST", "/api/hosted/auth/login", {
+      username: "pre-rollout-account",
+      password: "testing-friend-password",
+    });
+    const settings = await old.request("GET", "/api/llm/user-settings");
+    expect(settings.statusCode, settings.body).toBe(200);
+    expect(settings.json()).toMatchObject({
+      revision: 0,
+      onboardingCompleted: true,
+      bindings: {},
+    });
+  });
+
+  it("replays a committed BYOK chat after its provider is deleted even when the HTTP receipt was interrupted", async () => {
+    const f = await fixture();
+    const user = await f.register("replay-deleted-provider");
+    const createdCharacter = await user.request(
+      "POST",
+      "/api/characters/generate",
+      characterInput,
+    );
+    expect(createdCharacter.statusCode, createdCharacter.body).toBe(201);
+    const character = createdCharacter.json<{
+      character: { id: string; version: number };
+    }>().character;
+    await user.request("POST", `/api/characters/${character.id}/publish`, {
+      expectedVersion: character.version,
+    });
+    const createdSession = await user.request(
+      "POST",
+      `/api/agents/${character.id}/sessions`,
+      {},
+    );
+    expect(createdSession.statusCode, createdSession.body).toBe(201);
+    const sessionId = createdSession.json<{ session: { id: string } }>().session
+      .id;
+    const createdProvider = await user.request("POST", "/api/llm/providers", {
+      name: "Replay provider",
+      protocol: "openai-compatible",
+      baseUrl: "https://replay.example/v1",
+      apiKey: "replay-test-key",
+      models: [{ id: "replay-model" }],
+    });
+    expect(createdProvider.statusCode, createdProvider.body).toBe(201);
+    const providerId = createdProvider.json<{ id: string }>().id;
+    const input = {
+      agentId: character.id,
+      text: "你好，最近怎么样？",
+      clientMessageId: "replay-after-provider-delete",
+      modelSelection: { providerId, modelId: "replay-model", revision: 1 },
+    };
+    const complete = vi
+      .spyOn(f.app.control, "completeOperation")
+      .mockImplementationOnce((userId, operationId) =>
+        f.app.control.getOperation(userId, operationId)!,
+      );
+    const beforeChatWallet = f.app.control.wallet(user.userId);
+    const original = await user.request(
+      "POST",
+      `/api/sessions/${sessionId}/messages`,
+      input,
+    );
+    complete.mockRestore();
+    expect(original.statusCode, original.body).toBe(201);
+    expect(f.app.control.wallet(user.userId)).toEqual(beforeChatWallet);
+    expect(
+      f.app.control
+        .listAttempts({
+          userId: user.userId,
+          operationId: "chat:replay-after-provider-delete",
+        })
+        .some((attempt) => attempt.modelSnapshot.billingSource === "user"),
+    ).toBe(true);
+    expect(
+      f.app.control.getOperation(
+        user.userId,
+        "chat:replay-after-provider-delete",
+      )?.status,
+    ).toBe("running");
+    const beforeCalls = f.calls.length;
+    const wallet = f.app.control.wallet(user.userId);
+    expect(
+      (await user.request("DELETE", `/api/llm/providers/${providerId}`))
+        .statusCode,
+    ).toBe(204);
+    const replay = await user.request(
+      "POST",
+      `/api/sessions/${sessionId}/messages`,
+      input,
+    );
+    expect(replay.statusCode, replay.body).toBe(200);
+    const originalMessages = original.json<{
+      userMessage: unknown;
+      assistantMessage: unknown;
+    }>();
+    expect(replay.json()).toMatchObject({
+      idempotentReplay: true,
+      userMessage: originalMessages.userMessage,
+      assistantMessage: originalMessages.assistantMessage,
+    });
+    expect(f.calls).toHaveLength(beforeCalls);
+    expect(f.app.control.wallet(user.userId)).toEqual(wallet);
+  });
+
   it("batches all visible session billing including child calls without leaking other sessions or users", async () => {
     const { app, register } = await fixture();
     const user = await register("session-billing-owner");

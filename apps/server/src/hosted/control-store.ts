@@ -892,15 +892,25 @@ export class HostedControlStore {
             "calls_disabled",
             "Model requests are temporarily paused.",
           );
-        assertHostedModelPricing(input.modelSnapshot);
+        const userSupplied = input.modelSnapshot.billingSource === "user";
+        if (
+          userSupplied &&
+          (input.maximumCostMicros !== 0 || !input.modelSnapshot.userProviderId)
+        )
+          throw new HostedError(
+            400,
+            "invalid_user_model_attempt",
+            "用户模型不能预留平台积分。",
+          );
+        if (!userSupplied) assertHostedModelPricing(input.modelSnapshot);
         if (!input.modelSnapshot.enabled)
           throw new HostedError(
             403,
             "model_disabled",
             "This model is disabled.",
           );
-        const wallet = this.wallet(input.userId);
-        if (wallet.availableMicros < input.maximumCostMicros)
+        const wallet = userSupplied ? undefined : this.wallet(input.userId);
+        if (wallet && wallet.availableMicros < input.maximumCostMicros)
           throw new HostedError(
             402,
             "insufficient_balance",
@@ -918,9 +928,10 @@ export class HostedControlStore {
             ).total,
           );
         if (
-          daily(input.userId) + input.maximumCostMicros >
+          !userSupplied &&
+          (daily(input.userId) + input.maximumCostMicros >
             limits.perUserDailyMicros ||
-          daily() + input.maximumCostMicros > limits.globalDailyMicros
+            daily() + input.maximumCostMicros > limits.globalDailyMicros)
         )
           throw new HostedError(
             429,
@@ -928,9 +939,10 @@ export class HostedControlStore {
             "The daily spending limit has been reached.",
           );
         const timestamp = now();
-        this.database
-          .prepare("UPDATE wallets SET reserved=reserved+? WHERE user_id=?")
-          .run(input.maximumCostMicros, input.userId);
+        if (!userSupplied)
+          this.database
+            .prepare("UPDATE wallets SET reserved=reserved+? WHERE user_id=?")
+            .run(input.maximumCostMicros, input.userId);
         this.database
           .prepare(
             "INSERT INTO attempts(id,user_id,operation_id,purpose,status,maximum_cost,model_json,created_at,updated_at,session_id,parent_operation_id) VALUES(?,?,?,?,'reserved',?,?,?,?,?,?)",
@@ -1104,6 +1116,13 @@ export class HostedControlStore {
   ): HostedAttempt {
     amount(input.costMicros);
     const item = this.requireAttempt(input.id);
+    const userSupplied = item.modelSnapshot.billingSource === "user";
+    if (userSupplied && input.costMicros !== 0)
+      throw new HostedError(
+        400,
+        "user_model_charge_rejected",
+        "用户模型不能扣除平台积分。",
+      );
     if (item.status === "settled") {
       if (item.costMicros !== input.costMicros)
         throw new HostedError(
@@ -1122,7 +1141,7 @@ export class HostedControlStore {
         "invalid_settlement_state",
         "This attempt cannot be settled.",
       );
-    const wallet = this.wallet(item.userId);
+    const wallet = userSupplied ? undefined : this.wallet(item.userId);
     if (input.costMicros > item.maximumCostMicros && !reconcile) {
       this.database
         .prepare(
@@ -1132,19 +1151,21 @@ export class HostedControlStore {
       return this.requireAttempt(item.id);
     }
     if (
+      wallet &&
       input.costMicros >
-      wallet.balanceMicros - (wallet.reservedMicros - item.maximumCostMicros)
+        wallet.balanceMicros - (wallet.reservedMicros - item.maximumCostMicros)
     )
       throw new HostedError(
         409,
         "reconciliation_balance_required",
         "Add sufficient funds before reconciling this charge.",
       );
-    this.database
-      .prepare(
-        "UPDATE wallets SET balance=balance-?,reserved=reserved-? WHERE user_id=?",
-      )
-      .run(input.costMicros, item.maximumCostMicros, item.userId);
+    if (!userSupplied)
+      this.database
+        .prepare(
+          "UPDATE wallets SET balance=balance-?,reserved=reserved-? WHERE user_id=?",
+        )
+        .run(input.costMicros, item.maximumCostMicros, item.userId);
     this.database
       .prepare(
         "UPDATE attempts SET status='settled',cost=?,usage_json=?,provider_request_id=COALESCE(?,provider_request_id),reason=?,updated_at=? WHERE id=?",
@@ -1157,17 +1178,18 @@ export class HostedControlStore {
         now(),
         item.id,
       );
-    this.database
-      .prepare("INSERT INTO ledger VALUES(?,?,?,?,? ,?,NULL,?)")
-      .run(
-        randomUUID(),
-        item.userId,
-        item.id,
-        -input.costMicros,
-        "llm_charge",
-        input.reason ?? item.purpose,
-        now(),
-      );
+    if (!userSupplied)
+      this.database
+        .prepare("INSERT INTO ledger VALUES(?,?,?,?,? ,?,NULL,?)")
+        .run(
+          randomUUID(),
+          item.userId,
+          item.id,
+          -input.costMicros,
+          "llm_charge",
+          input.reason ?? item.purpose,
+          now(),
+        );
     return this.requireAttempt(item.id);
   }
   release(id: string, reason: string): HostedAttempt {
@@ -1181,9 +1203,10 @@ export class HostedControlStore {
             "sent_attempt_cannot_release",
             "A sent or uncertain attempt requires reconciliation.",
           );
-        this.database
-          .prepare("UPDATE wallets SET reserved=reserved-? WHERE user_id=?")
-          .run(item.maximumCostMicros, item.userId);
+        if (item.modelSnapshot.billingSource !== "user")
+          this.database
+            .prepare("UPDATE wallets SET reserved=reserved-? WHERE user_id=?")
+            .run(item.maximumCostMicros, item.userId);
         this.database
           .prepare(
             "UPDATE attempts SET status='released',reason=?,updated_at=? WHERE id=?",

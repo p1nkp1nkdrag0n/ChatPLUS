@@ -58,10 +58,27 @@ function fixture() {
     setDefault: (value: string) => {
       defaultId = value;
     },
+    setUserDefault: (providerId: string, modelId: string) => {
+      runtime.modelSettings = {
+        get: () => ({ bindings: { chat_turn: { providerId, modelId } } }),
+      } as unknown as TenantRuntime["modelSettings"];
+    },
   };
 }
 
 describe("managed model synchronization", () => {
+  it("preserves an account chat binding while the platform default changes", () => {
+    const f = fixture();
+    f.sync();
+    f.setUserDefault("llmprovider_custom", "private-model");
+    f.sync();
+    f.setDefault("another-platform-default");
+    f.sync();
+    expect(f.defaultSelection()).toEqual({
+      providerId: "llmprovider_custom",
+      modelId: "private-model",
+    });
+  });
   it("does not write or touch timestamps when repeated requests see the same catalog", () => {
     const f = fixture();
     f.sync();

@@ -1,13 +1,19 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   createManagedLlmProvider,
+  createSafeProviderFetch,
   LlmProviderError,
   RemoteImageGenerationProvider,
   type ImageGenerationProvider,
   type LlmProvider,
 } from "@personasim/providers";
-import type { LlmPurpose, LlmSelection } from "@personasim/contracts";
+import {
+  effectiveLlmCapabilities,
+  type LlmPurpose,
+  type LlmSelection,
+} from "@personasim/contracts";
+import type { ResolvedLlmConfiguration } from "../services/llm-settings-service.js";
 import { assertHostedModelPricing } from "./model-pricing.js";
 import { redactKnownSecrets } from "./known-secret-redaction.js";
 import type {
@@ -279,7 +285,11 @@ function imageSpecification(model: HostedModelSnapshot): {
 function publicSnapshot(model: HostedResolvedModel): HostedModelSnapshot {
   const { apiKey: _credential, ...snapshot } = model;
   void _credential;
-  return snapshot;
+  // A user's URL is encrypted in their database. Do not duplicate it in the
+  // plaintext operation ledger; completed response replay needs no endpoint.
+  return model.billingSource === "user"
+    ? { ...snapshot, baseUrl: "https://user-provider.invalid" }
+    : snapshot;
 }
 function attemptId(
   userId: string,
@@ -296,6 +306,10 @@ function attemptId(
 }
 
 export class HostedModelGateway {
+  private readonly userConfigurations = new Map<
+    string,
+    (selection: LlmSelection) => ResolvedLlmConfiguration
+  >();
   private readonly operations = new AsyncLocalStorage<OperationState>();
   private active = 0;
   private activeImages = 0;
@@ -318,6 +332,9 @@ export class HostedModelGateway {
   constructor(
     private readonly store: HostedGatewayStore,
     private readonly transport: typeof fetch = globalThis.fetch,
+    private readonly userTransport: typeof fetch = createSafeProviderFetch({
+      timeoutMs: 600_000,
+    }),
   ) {}
 
   getStats(): { active: number; queued: number; activeImages: number } {
@@ -373,11 +390,23 @@ export class HostedModelGateway {
     );
   }
 
-  forUser(userId: string): LlmServiceObservationOptions {
+  forUser(
+    userId: string,
+    resolver?: (
+      purpose: LlmPurpose,
+      selection?: LlmSelection,
+    ) => ResolvedLlmConfiguration | undefined,
+    imageResolver?: () => LlmSelection | null,
+    configurationResolver?: (
+      selection: LlmSelection,
+    ) => ResolvedLlmConfiguration,
+  ): LlmServiceObservationOptions {
+    if (configurationResolver)
+      this.userConfigurations.set(userId, configurationResolver);
     return {
       executionResolver: (purpose, selection, context) =>
-        this.resolveExecution(userId, purpose, selection, context),
-      imageProviderFactory: this.imageProviderFactory(userId),
+        this.resolveExecution(userId, purpose, selection, context, resolver),
+      imageProviderFactory: this.imageProviderFactory(userId, imageResolver),
       onImageAsset: (id, asset) => {
         if (this.store.findAttempt(id)?.userId !== userId)
           throw new HostedError(
@@ -392,6 +421,7 @@ export class HostedModelGateway {
 
   imageProviderFactory(
     userId: string,
+    imageResolver?: () => LlmSelection | null,
   ): (context: HostedImageContext) => ImageGenerationProvider {
     return (context) => {
       const scope = this.operations.getStore();
@@ -409,9 +439,18 @@ export class HostedModelGateway {
       const previous = this.store.findAttempt(
         attemptId(userId, context.generationId, context.purpose, 0, 1),
       );
+      const imageSelection = previous ? null : imageResolver?.();
+      if (imageSelection && imageSelection.providerId !== "hosted")
+        throw new HostedError(
+          400,
+          "platform_image_required",
+          "请选择平台图片模型。",
+        );
       const model = previous
         ? { ...previous.modelSnapshot, apiKey: "" }
-        : this.store.resolvePurpose(context.purpose);
+        : imageSelection
+          ? this.store.resolveModel(imageSelection.modelId)
+          : this.store.resolvePurpose(context.purpose);
       if (model.kind !== "image")
         throw new HostedError(
           409,
@@ -509,6 +548,10 @@ export class HostedModelGateway {
     purpose: LlmPurpose,
     selection?: LlmSelection,
     context?: { operationId?: string; agentId?: string },
+    resolver?: (
+      purpose: LlmPurpose,
+      selection?: LlmSelection,
+    ) => ResolvedLlmConfiguration | undefined,
   ): HostedLlmExecution {
     const operation = this.operations.getStore();
     if (operation && operation.userId !== userId)
@@ -521,7 +564,10 @@ export class HostedModelGateway {
       purpose === "chat_turn"
         ? (selection?.modelId ?? operation?.publicModelId)
         : undefined;
-    const key = `${purpose}:${route ?? "default"}`;
+    const key =
+      purpose === "chat_turn"
+        ? `${purpose}:${selection?.providerId ?? "default"}:${route ?? "default"}`
+        : purpose;
     const resolvedOperationId = context?.operationId ?? operation?.operationId;
     const nextIndex = context?.operationId
       ? 1
@@ -535,15 +581,67 @@ export class HostedModelGateway {
       ? { ...earlier.modelSnapshot, apiKey: "" }
       : operation?.snapshots.get(key);
     if (!model) {
-      model = route
-        ? this.store.resolveModel(route)
-        : this.store.resolvePurpose(purpose);
+      const config = resolver?.(
+        purpose,
+        selection ??
+          (route ? { providerId: "hosted", modelId: route } : undefined),
+      );
+      if (config && config.selection.providerId !== "hosted") {
+        if (config.protocol === "fixture")
+          throw new HostedError(
+            400,
+            "user_model_required",
+            "请选择已配置的供应商模型。",
+          );
+        model = {
+          billingSource: "user",
+          userProviderId: config.selection.providerId,
+          userModelSettings: {
+            ...structuredClone(config.model),
+            capabilities: effectiveLlmCapabilities(config.model),
+          },
+          timeoutMs: config.timeoutMs,
+          routeId: `user:${config.selection.providerId}:${config.model.id}`,
+          revision: config.selection.revision,
+          displayName: config.model.label ?? config.model.id,
+          kind: "text",
+          protocol: config.protocol,
+          baseUrl: config.baseUrl,
+          apiKey: config.apiKey,
+          modelId: config.model.id,
+          maxOutputTokens:
+            effectiveLlmCapabilities(config.model).maxOutputTokens ?? 8192,
+          maxContextTokens:
+            effectiveLlmCapabilities(config.model).maxContextTokens ?? 64_000,
+          inputMicrosPerMillion: 0,
+          outputMicrosPerMillion: 0,
+          cacheReadMicrosPerMillion: 0,
+          enabled: true,
+        };
+      } else {
+        const platformRoute = config?.selection.modelId ?? route;
+        model = platformRoute
+          ? this.store.resolveModel(platformRoute)
+          : this.store.resolvePurpose(purpose);
+      }
       operation?.snapshots.set(key, model);
+      if (purpose === "chat_turn")
+        operation?.snapshots.set(
+          `${purpose}:${model.userProviderId ?? "hosted"}:${model.billingSource === "user" ? model.modelId : model.routeId}`,
+          model,
+        );
     }
     if (model.kind !== "text")
       throw new HostedError(409, "text_model_required", "此用途需要文本模型。");
+    if (
+      model.billingSource === "user" &&
+      model.baseUrl === "https://user-provider.invalid" &&
+      earlier &&
+      !this.store.readAttemptResponse(earlier.id)
+    )
+      model = this.liveUserModel(userId, model);
     const resolved = model;
-    const capabilities = {
+    const capabilities = model.userModelSettings?.capabilities ?? {
       structuredOutputMode: "prompt_json" as const,
       supportsThinkingControl: false,
       supportsStreaming: false,
@@ -571,9 +669,24 @@ export class HostedModelGateway {
       const previous = this.store.findAttempt(
         attemptId(userId, operationId, purpose, logicalIndex, 1),
       );
-      const activeModel = previous
+      let activeModel = previous
         ? { ...previous.modelSnapshot, apiKey: "" }
         : resolved;
+      if (
+        activeModel.billingSource === "user" &&
+        previous &&
+        !this.store.readAttemptResponse(previous.id)
+      )
+        activeModel =
+          resolved.baseUrl !== "https://user-provider.invalid" &&
+          resolved.revision === activeModel.revision &&
+          resolved.routeId === activeModel.routeId
+            ? {
+                ...activeModel,
+                baseUrl: resolved.baseUrl,
+                apiKey: resolved.apiKey,
+              }
+            : this.liveUserModel(userId, activeModel);
       let attempt = 0;
       let admissionFailure: unknown;
       let lastAttemptUnknown = false;
@@ -581,9 +694,9 @@ export class HostedModelGateway {
         protocol: activeModel.protocol,
         baseUrl: activeModel.baseUrl,
         apiKey: activeModel.apiKey,
-        timeoutMs: 120000,
-        maxRetries: 1,
-        model: {
+        timeoutMs: activeModel.timeoutMs ?? 120000,
+        maxRetries: activeModel.billingSource === "user" ? 0 : 1,
+        model: activeModel.userModelSettings ?? {
           id: activeModel.modelId,
           tokenParameter: "max_tokens",
           capabilities: {
@@ -654,11 +767,149 @@ export class HostedModelGateway {
       provider,
       protocol: model.protocol,
       selection: {
-        providerId: "hosted",
-        modelId: model.routeId,
+        providerId: model.userProviderId ?? "hosted",
+        modelId: model.billingSource === "user" ? model.modelId : model.routeId,
         revision: model.revision,
       },
       displayName: model.displayName,
+    };
+  }
+
+  private liveUserModel(
+    userId: string,
+    snapshot: HostedModelSnapshot,
+  ): HostedResolvedModel {
+    const current = this.userConfigurations.get(userId)?.({
+      providerId: snapshot.userProviderId!,
+      modelId: snapshot.modelId,
+    });
+    if (!current || current.selection.revision !== snapshot.revision)
+      throw new HostedError(
+        409,
+        "user_model_configuration_changed",
+        "模型配置已变化，请重新发起操作。",
+      );
+    return { ...snapshot, baseUrl: current.baseUrl, apiKey: current.apiKey };
+  }
+
+  /** Explicit discovery and probes share admission, safe transport and research,
+   * while never entering the platform wallet. Secrets exist only in headers. */
+  userDiagnosticsFetch(userId: string): typeof fetch {
+    return async (url, init) => {
+      const endpoint = new URL(
+        typeof url === "string" || url instanceof URL ? url : url.url,
+      );
+      const headers = new Headers(init?.headers);
+      const secrets = [
+        headers.get("authorization")?.replace(/^Bearer\s+/iu, "") ?? "",
+        headers.get("x-api-key") ?? "",
+        headers.get("x-goog-api-key") ?? "",
+      ];
+      const body = typeof init?.body === "string" ? init.body : "";
+      if (Buffer.byteLength(body) > this.store.getLimits().maxRequestBytes)
+        throw new HostedError(
+          413,
+          "model_request_too_large",
+          "本次测试输入过长。",
+        );
+      const payload: unknown = body ? JSON.parse(body) : {};
+      const operationId = `user-diagnostic:${randomUUID()}`;
+      const id = attemptId(userId, operationId, "user_model_diagnostic", 1, 1);
+      const release = await this.acquire(
+        userId,
+        "text",
+        init?.signal ?? undefined,
+      );
+      const controller = new AbortController();
+      this.controllers.set(id, { userId, controller });
+      const signal = init?.signal
+        ? AbortSignal.any([init.signal, controller.signal])
+        : controller.signal;
+      const modelId =
+        typeof record(payload)?.model === "string"
+          ? String(record(payload)!.model)
+          : "model-discovery-or-probe";
+      const model: HostedModelSnapshot = {
+        billingSource: "user",
+        userProviderId: "diagnostic",
+        routeId: "user:diagnostic",
+        revision: 1,
+        displayName: "供应商检测与测试",
+        kind: "text",
+        protocol: headers.has("x-api-key")
+          ? "anthropic"
+          : headers.has("x-goog-api-key")
+            ? "gemini"
+            : "openai-compatible",
+        baseUrl: "https://user-provider.invalid",
+        modelId,
+        inputMicrosPerMillion: 0,
+        outputMicrosPerMillion: 0,
+        cacheReadMicrosPerMillion: 0,
+        maxOutputTokens: 4096,
+        enabled: true,
+      };
+      try {
+        this.store.reserve({
+          id,
+          userId,
+          operationId,
+          purpose: "user_model_diagnostic",
+          maximumCostMicros: 0,
+          modelSnapshot: model,
+        });
+        this.store.recordResearch({
+          attemptId: id,
+          kind: "request",
+          payload: JSON.parse(
+            redactKnownSecrets(
+              JSON.stringify({ endpoint: endpoint.pathname, body: payload }),
+              secrets,
+            ),
+          ),
+        });
+        signal.throwIfAborted();
+        this.store.markAttemptSent(id);
+        const upstream = await this.userTransport(url, {
+          ...init,
+          signal,
+          redirect: "error",
+        });
+        const result: HostedAttemptResponse = {
+          status: upstream.status,
+          body: redactKnownSecrets(
+            await readBounded(upstream, 8 * 1024 * 1024),
+            secrets,
+          ),
+          headers: {
+            "content-type": redactKnownSecrets(
+              upstream.headers.get("content-type") ?? "application/json",
+              secrets,
+            ),
+          },
+        };
+        this.store.recordAttemptResponse(id, result);
+        this.account(id, model, result);
+        return new Response(result.body, {
+          status: result.status,
+          ...(result.headers ? { headers: result.headers } : {}),
+        });
+      } catch (error) {
+        const previous = this.store.findAttempt(id);
+        if (previous?.status === "reserved")
+          this.store.release(id, "diagnostic_not_sent");
+        else if (previous?.status === "sent")
+          this.store.markUnknown(id, "diagnostic_interrupted");
+        if (
+          error instanceof Error &&
+          redactKnownSecrets(error.message, secrets) !== error.message
+        )
+          throw new Error(redactKnownSecrets(error.message, secrets));
+        throw error;
+      } finally {
+        this.controllers.delete(id);
+        release();
+      }
     };
   }
 
@@ -751,13 +1002,15 @@ export class HostedModelGateway {
     const model = previous?.modelSnapshot ?? publicSnapshot(context.model);
     // Settled/raw-response recovery above is independent of today's pricing.
     // Only a new physical request requires configured positive prices.
-    assertHostedModelPricing(model);
+    const userSupplied = model.billingSource === "user";
+    if (!userSupplied) assertHostedModelPricing(model);
     const requestedUrl = new URL(
       typeof url === "string" || url instanceof URL ? url : url.url,
     );
     if (
       requestedUrl.protocol !== "https:" ||
-      requestedUrl.origin !== new URL(model.baseUrl).origin
+      requestedUrl.origin !==
+        new URL(userSupplied ? context.model.baseUrl : model.baseUrl).origin
     )
       throw new HostedError(
         400,
@@ -780,8 +1033,9 @@ export class HostedModelGateway {
     const body = JSON.parse(init.body) as JsonRecord;
     this.enforceOutputLimit(model, body);
     const serialized = JSON.stringify(body);
-    const maximumCostMicros =
-      model.kind === "image"
+    const maximumCostMicros = userSupplied
+      ? 0
+      : model.kind === "image"
         ? (model.imagePointsMicros ?? 0)
         : tokenCost([
             [
@@ -810,15 +1064,33 @@ export class HostedModelGateway {
       const operation = this.operations.getStore();
       // Recovery above needs no credential. A genuinely new physical request
       // rechecks today's route admission even when its price snapshot is older.
-      const current = this.store.resolveModel(model.routeId);
-      assertHostedModelPricing(current);
+      const currentUser = userSupplied
+        ? this.userConfigurations.get(context.userId)?.({
+            providerId: model.userProviderId!,
+            modelId: model.modelId,
+          })
+        : undefined;
+      if (userSupplied && !currentUser)
+        throw new HostedError(
+          409,
+          "user_model_unavailable",
+          "用户模型配置不可用，请检查供应商设置。",
+        );
+      const current = userSupplied
+        ? context.model
+        : this.store.resolveModel(model.routeId);
+      if (!userSupplied) assertHostedModelPricing(current);
       if (!current.enabled)
         throw new HostedError(403, "model_disabled", "此模型已停止新调用。");
-      const credential = this.store.resolveModel(
-        model.routeId,
-        model.revision,
-      ).apiKey;
-      credentials = [context.model.apiKey, current.apiKey, credential];
+      const credential = userSupplied
+        ? context.model.apiKey
+        : this.store.resolveModel(model.routeId, model.revision).apiKey;
+      credentials = [
+        context.model.apiKey,
+        current.apiKey,
+        currentUser?.apiKey ?? "",
+        credential,
+      ];
       if (!current.apiKey.trim() || !credential.trim())
         throw new HostedError(
           503,
@@ -876,7 +1148,9 @@ export class HostedModelGateway {
       signal.throwIfAborted();
       this.store.markAttemptSent(id);
       sent = true;
-      const upstream = await this.transport(url, {
+      const upstream = await (
+        userSupplied ? this.userTransport : this.transport
+      )(url, {
         ...init,
         headers,
         signal,
@@ -940,6 +1214,18 @@ export class HostedModelGateway {
       /* Unknown response remains recoverable. */
     }
     const usage = normalizeHostedUsage(model.protocol, raw);
+    if (model.billingSource === "user") {
+      this.store.settle({
+        id,
+        costMicros: 0,
+        usage: { ...usage, billingSource: "user" },
+        ...(response.providerRequestId
+          ? { providerRequestId: response.providerRequestId }
+          : {}),
+        reason: "user_supplied_credentials",
+      });
+      return;
+    }
     const images = model.kind === "image" ? imageCount(model.protocol, raw) : 0;
     const cost =
       model.kind === "image"

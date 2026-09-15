@@ -6,6 +6,7 @@ import { ErrorBlock } from "../Feedback";
 import { ModelProbe } from "./ModelProbe";
 import { ModelSelect } from "./ModelSelect";
 import { useHosted } from "../../hooks/useHosted";
+import { modelFundingLabel } from "../../lib/userModelSettings";
 
 function modelErrorMessage(code?: string): string {
   switch (code?.toLowerCase()) {
@@ -53,12 +54,14 @@ export function ChatModelToolbar({
         defaultLabel={
           provider?.models.find((item) => item.id === effective?.modelId)
             ?.label ??
-          (hosted ? "当前默认模型" : (effective?.modelId ?? "未配置"))
+          (hosted && provider?.id === "hosted"
+            ? "当前默认模型"
+            : (effective?.modelId ?? "未配置"))
         }
         disabled={disabled || !catalog.data}
         onChange={onChange}
       />
-      {effective && !hosted ? (
+      {effective && (!hosted || provider?.id !== "hosted") ? (
         <ModelProbe
           key={`${effective.providerId}:${effective.modelId}:${effective.revision}`}
           target={effective}
@@ -66,15 +69,18 @@ export function ChatModelToolbar({
           disabled={disabled || provider?.source === "fixture"}
         />
       ) : null}
-      {!hosted ? (
-        <Link
-          className="text-button chat-model-toolbar__manage"
-          to={`/settings${effective ? `?provider=${encodeURIComponent(effective.providerId)}` : ""}`}
-        >
-          管理模型
-        </Link>
-      ) : null}
+      <Link
+        className="text-button chat-model-toolbar__manage"
+        to={`${hosted ? "/model-settings" : "/settings"}${effective ? `?provider=${encodeURIComponent(effective.providerId)}` : ""}`}
+      >
+        管理模型
+      </Link>
       <span className="chat-model-toolbar__scope">仅当前会话</span>
+      {hosted && effective ? (
+        <span className="chat-model-toolbar__scope">
+          {modelFundingLabel(effective)}
+        </span>
+      ) : null}
       {notice ? (
         <p className="llm-notice chat-model-toolbar__notice" role="status">
           {notice}
@@ -85,9 +91,7 @@ export function ChatModelToolbar({
           className="provider-credential-error chat-model-toolbar__notice"
           role="alert"
         >
-          {hosted
-            ? "当前模型暂时不可用，请选择其他模型或联系管理员。"
-            : modelErrorMessage(model.error)}
+          {modelErrorMessage(model.error)}
         </p>
       ) : null}
       {error || catalog.error ? (

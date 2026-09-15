@@ -65,10 +65,14 @@ export function ReplyUsage({ billing }: { billing: ReplyBillingState }) {
         <Link to="/account">本轮用量尚未记录 · 查看账单</Link>
       </div>
     );
-  const pending = attempts.some((attempt) =>
+  const platformAttempts = attempts.filter(
+    (attempt) => attempt.billingSource !== "user",
+  );
+  const hasOwn = attempts.some((attempt) => attempt.billingSource === "user");
+  const pending = platformAttempts.some((attempt) =>
     ["unknown", "reserved", "sent"].includes(attempt.status),
   );
-  const cost = attempts
+  const cost = platformAttempts
     .filter((attempt) => attempt.status === "settled")
     .reduce((sum, attempt) => sum + (attempt.costMicros ?? 0), 0);
   const names = [
@@ -77,15 +81,23 @@ export function ReplyUsage({ billing }: { billing: ReplyBillingState }) {
   return (
     <div className="hosted-reply-usage" aria-label="本轮用量与费用">
       {names.length ? <span>{names.join(" · ")}</span> : null}
+      {hasOwn ? (
+        <span>
+          自己的 API
+          {platformAttempts.length ? " + 平台模型" : " · 不扣平台模型积分"}
+        </span>
+      ) : null}
       <span>输入 {formatTokens(sumUsage(attempts, "inputTokens"))}</span>
       <span>输出 {formatTokens(sumUsage(attempts, "outputTokens"))}</span>
       <span>
         缓存命中 {formatTokens(sumUsage(attempts, "cacheReadTokens"))}
       </span>
       <span>
-        {pending
-          ? `已结算 ${formatPoints(cost)} 积分 · 另有待核对用量`
-          : `${formatPoints(cost)} 积分`}
+        {hasOwn && !platformAttempts.length
+          ? "平台扣款 0 积分"
+          : pending
+            ? `已结算 ${formatPoints(cost)} 积分 · 另有待核对用量`
+            : `${formatPoints(cost)} 积分`}
       </span>
       <Link to="/account">费用明细</Link>
     </div>
@@ -127,6 +139,9 @@ export function AttemptTable({
                     "模型调用"}
                 </strong>
                 <small>{displayDate(attempt.createdAtUtc)}</small>
+                <small>
+                  {attempt.billingSource === "user" ? "自己的 API" : "平台额度"}
+                </small>
               </td>
               <td>
                 {admin ? <small>{attempt.userId}</small> : null}
@@ -136,20 +151,31 @@ export function AttemptTable({
               <td>{formatTokens(attempt.usage?.outputTokens)}</td>
               <td>{formatTokens(attempt.usage?.cacheReadTokens)}</td>
               <td>
-                {attempt.status === "released"
-                  ? "未扣费"
-                  : formatPoints(attempt.costMicros)}
+                {attempt.billingSource === "user"
+                  ? "0 · 不扣平台积分"
+                  : attempt.status === "released"
+                    ? "未扣费"
+                    : formatPoints(attempt.costMicros)}
               </td>
               <td>
                 <span
                   className={`hosted-status hosted-status--${attempt.status}`}
                 >
-                  {ATTEMPT_LABELS[attempt.status]}
+                  {attempt.billingSource === "user"
+                    ? attempt.status === "unknown"
+                      ? "用量未知"
+                      : attempt.status === "released"
+                        ? "未完成"
+                        : attempt.status === "settled"
+                          ? "已完成"
+                          : "处理中"
+                    : ATTEMPT_LABELS[attempt.status]}
                 </span>
               </td>
               {onReconcile ? (
                 <td>
-                  {attempt.status === "unknown" ? (
+                  {attempt.status === "unknown" &&
+                  attempt.billingSource !== "user" ? (
                     <button
                       className="text-button"
                       onClick={() => onReconcile(attempt)}

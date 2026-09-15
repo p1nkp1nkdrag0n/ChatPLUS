@@ -1,3 +1,5 @@
+import type { LlmModelSettings } from "@personasim/contracts";
+
 export class HostedError extends Error {
   constructor(
     readonly statusCode: number,
@@ -44,6 +46,11 @@ export interface HostedSession {
   lastSeenAtUtc: string;
 }
 export interface HostedModelSnapshot {
+  /** User credentials have a separate, non-wallet billing path. */
+  billingSource?: "user";
+  userProviderId?: string;
+  userModelSettings?: LlmModelSettings;
+  timeoutMs?: number;
   routeId: string;
   revision: number;
   displayName: string;
@@ -61,7 +68,14 @@ export interface HostedModelSnapshot {
   imageSpecification?: string;
   enabled: boolean;
 }
-export type HostedModelInput = Omit<HostedModelSnapshot, "revision"> & {
+export type HostedModelInput = Omit<
+  HostedModelSnapshot,
+  | "revision"
+  | "billingSource"
+  | "userProviderId"
+  | "userModelSettings"
+  | "timeoutMs"
+> & {
   apiKey?: string;
 };
 /** Private server-only resolution; never send this object to a client. */

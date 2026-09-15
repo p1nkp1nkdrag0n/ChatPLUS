@@ -30,7 +30,12 @@ interface NavigationItem {
 }
 
 const SECONDARY_NAVIGATION: NavigationItem[] = [
-  { to: "/settings", label: "设置", icon: Settings },
+  {
+    to: "/settings",
+    label: "设置",
+    icon: Settings,
+    activePrefixes: ["/model-settings"],
+  },
 ];
 
 function NavItem({

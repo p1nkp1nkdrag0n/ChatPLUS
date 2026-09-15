@@ -69,9 +69,19 @@ export default function SettingsPage() {
           <BadgeImageSettings />
         </>
       ) : (
-        <Link className="button button--secondary" to="/account">
-          账号、积分与账单
-        </Link>
+        <div className="hosted-settings-links">
+          <Link className="settings-connection-link" to="/model-settings">
+            <Server size={23} aria-hidden="true" />
+            <span>
+              <strong>模型与功能</strong>
+              <small>管理自己的 API，按功能选择模型</small>
+            </span>
+            <ChevronRight size={20} aria-hidden="true" />
+          </Link>
+          <Link className="button button--secondary" to="/account">
+            账号、积分与账单
+          </Link>
+        </div>
       )}
       {query.isPending ? <LoadingBlock label="正在读取本地设置…" /> : null}
       {query.isError ? <ErrorBlock error={query.error} /> : null}

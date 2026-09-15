@@ -48,8 +48,10 @@ export function calculateLlmPromptTokenBudget(
     capabilities,
     requestedOutputTokens,
   );
-  const availablePromptTokens =
-    maxContextTokens - maxOutputTokens - RESERVED_TOKENS;
+  const availablePromptTokens = Math.min(
+    maxContextTokens - maxOutputTokens - RESERVED_TOKENS,
+    (capabilities.maxInputTokens ?? Infinity) - RESERVED_TOKENS,
+  );
 
   if (availablePromptTokens < MINIMUM_PROMPT_TOKENS) {
     throw new LlmPromptHeadroomError({

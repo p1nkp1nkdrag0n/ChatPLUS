@@ -203,7 +203,7 @@ function isLocalAddress(address: string): boolean {
     v6In(address, "fe80::", 10)
   );
 }
-function isPublicAddress(address: string): boolean {
+export function isPublicAddress(address: string): boolean {
   if (isIP(address) === 4)
     return ![
       ["0.0.0.0", 8],

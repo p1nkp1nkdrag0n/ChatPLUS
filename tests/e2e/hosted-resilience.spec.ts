@@ -80,6 +80,17 @@ async function openHostedChat(
       state.errors.push(message.text());
   });
   await page.clock.install();
+  // These cases exercise an established account, whose model onboarding is complete.
+  await page.route("**/api/llm/user-settings", (route) =>
+    route.fulfill({
+      json: {
+        revision: 1,
+        onboardingCompleted: true,
+        bindings: {},
+        imageSelection: null,
+      },
+    }),
+  );
   await page.route("**/api/hosted/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/hosted/info")

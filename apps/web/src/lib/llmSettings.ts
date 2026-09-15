@@ -34,7 +34,16 @@ export function providerDraft(provider?: LlmProviderView): LlmProviderInput {
   };
 }
 export function newModel(id: string): LlmModelSettings {
-  return LlmModelSettingsSchema.parse({ id: id.trim() });
+  return LlmModelSettingsSchema.parse({
+    id: id.trim(),
+    capabilities: {
+      structuredOutputMode: "prompt_json",
+      supportsThinkingControl: false,
+      supportsStreaming: false,
+      maxOutputTokens: 8192,
+      maxContextTokens: 64_000,
+    },
+  });
 }
 export function selectionKey(selection: LlmSelection | null): string {
   return selection

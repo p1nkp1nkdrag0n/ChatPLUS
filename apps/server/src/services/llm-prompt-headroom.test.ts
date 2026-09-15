@@ -13,6 +13,16 @@ const BASE_CAPABILITIES = {
 };
 
 describe("calculateLlmPromptTokenBudget", () => {
+  it("honors a separately reported input limit while reserving output from the total window", () => {
+    expect(
+      calculateLlmPromptTokenBudget({
+        ...BASE_CAPABILITIES,
+        maxContextTokens: 64_000,
+        maxInputTokens: 24_000,
+        maxOutputTokens: 4096,
+      }),
+    ).toBe(22_000);
+  });
   it("uses the smaller provider window after reserving normal chat output", () => {
     expect(
       calculateLlmPromptTokenBudget({

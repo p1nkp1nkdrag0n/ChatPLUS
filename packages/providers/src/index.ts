@@ -7,5 +7,6 @@ export * from "./openai-compatible-llm.js";
 export * from "./prompt-diagnostics.js";
 export * from "./purpose-schemas.js";
 export * from "./safe-json.js";
+export * from "./safe-provider-fetch.js";
 export * from "./types.js";
 export * from "./visible-text.js";

@@ -3,6 +3,8 @@ import {
   CharacterInterviewAnswersSchema,
   CharacterInterviewCompileRequestSchema,
   CharacterInterviewProposalSchema,
+  CharacterInterviewRefineRequestSchema,
+  CharacterRefinementPlanSchema,
 } from "./character-interview.js";
 
 const answers = {
@@ -14,6 +16,48 @@ const answers = {
   personality: "习惯先听别人说完",
 };
 describe("character interview contracts", () => {
+  it("requires a bounded, versioned and idempotent refinement with content-only scope", () => {
+    const request = {
+      characterId: "character_1",
+      expectedVersion: 1,
+      requestId: "refine_1",
+      feedback: "把性格改为沉静但有主见",
+    };
+    expect(CharacterInterviewRefineRequestSchema.parse(request)).toEqual(
+      request,
+    );
+    for (const patch of [
+      { feedback: " " },
+      { feedback: "改".repeat(5_001) },
+      { requestId: undefined },
+      { expectedVersion: undefined },
+    ])
+      expect(
+        CharacterInterviewRefineRequestSchema.safeParse({
+          ...request,
+          ...patch,
+        }).success,
+      ).toBe(false);
+    expect(
+      CharacterRefinementPlanSchema.safeParse({
+        answersPatch: { name: "林汐" },
+        changedPaths: ["identity.name"],
+      }).success,
+    ).toBe(true);
+    for (const path of [
+      "authorityAudit",
+      "sources",
+      "lockedPaths",
+      "userRelationship.sharedContext",
+      "identity.__proto__",
+    ])
+      expect(
+        CharacterRefinementPlanSchema.safeParse({
+          answersPatch: {},
+          changedPaths: [path],
+        }).success,
+      ).toBe(false);
+  });
   it("accepts free-text gender and age and optional unanswered questions", () => {
     expect(CharacterInterviewAnswersSchema.parse(answers)).toEqual(answers);
     expect(

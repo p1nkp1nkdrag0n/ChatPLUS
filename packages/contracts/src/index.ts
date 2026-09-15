@@ -63,3 +63,4 @@ export { ServerChatMessageInputSchema as chatMessageInputSchema } from "./messag
 export * from "./interaction-evidence.js";
 export * from "./interaction-appraisal.js";
 export * from "./llm-settings.js";
+export * from "./user-model-settings.js";

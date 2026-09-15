@@ -11,9 +11,11 @@ export const PLATFORM_PROVIDER_ID = "hosted";
 export const DEFAULT_USER_CONTEXT_TOKENS = 64_000;
 export const IMAGE_PLATFORM_NOTICE =
   "文本功能将使用你配置的 API；图片生成暂时使用平台模型，并消耗平台额度。你可以稍后单独修改。";
-export const purposeLabels: Record<LlmPurpose, string> = {
+const PURPOSE_LABELS = {
   compile_character: "角色创建",
   character_interview: "角色访谈",
+  character_portrait: "人物小传",
+  character_refinement: "人物设定修订",
   import_character: "角色导入",
   plan_schedule: "生活规划",
   chat_turn: "日常聊天",
@@ -28,6 +30,7 @@ export const purposeLabels: Record<LlmPurpose, string> = {
   diary_generation: "日记生成",
   diary_review: "日记审核",
 };
+export const purposeLabels: Record<LlmPurpose, string> = PURPOSE_LABELS;
 
 export function allTextBindings(
   selection: LlmSelection,

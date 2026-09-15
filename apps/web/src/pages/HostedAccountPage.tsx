@@ -84,7 +84,8 @@ export default function HostedAccountPage() {
         <p className="hosted-muted">
           显示最近 100
           次调用。一次回复可能包含多次模型调用。这里逐次列出实际用量；供应商未返回的
-          token 显示为未知，待核对费用不会被当作零费用。
+          token 显示为未知，待核对费用不会被当作零费用。 自己的 API
+          调用不扣平台积分，供应商费用由供应商结算。
         </p>
         {billing.isPending ? (
           <LoadingBlock label="正在读取账单…" />

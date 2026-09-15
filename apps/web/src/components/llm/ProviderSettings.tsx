@@ -40,6 +40,8 @@ import {
 import { ModelSelect } from "./ModelSelect";
 import { ModelProbe } from "./ModelProbe";
 import { ApiError } from "../../api/types";
+import { useHosted } from "../../hooks/useHosted";
+import { ModelContextLimits } from "./ModelContextLimits";
 
 interface EditorHandle {
   save: () => Promise<boolean>;
@@ -47,6 +49,7 @@ interface EditorHandle {
 }
 
 export function ProviderSettings() {
+  const hosted = useHosted();
   const client = useQueryClient();
   const [params] = useSearchParams();
   const catalog = useQuery({
@@ -127,27 +130,29 @@ export function ProviderSettings() {
       {catalog.isError ? <ErrorBlock error={catalog.error} /> : null}
       {catalog.data ? (
         <>
-          <div className="provider-default">
-            <div>
-              <h3>全局默认模型</h3>
-              <p>用于跟随默认的会话、角色生成和后台任务。</p>
+          {!hosted ? (
+            <div className="provider-default">
+              <div>
+                <h3>全局默认模型</h3>
+                <p>用于跟随默认的会话、角色生成和后台任务。</p>
+              </div>
+              <ModelSelect
+                label="全局默认模型"
+                providers={providers}
+                value={catalog.data.defaultSelection}
+                disabled={defaultMutation.isPending}
+                onChange={(selection) => {
+                  if (
+                    selection &&
+                    !sameSelection(selection, catalog.data.defaultSelection)
+                  ) {
+                    setNotice("");
+                    defaultMutation.mutate(selection);
+                  }
+                }}
+              />
             </div>
-            <ModelSelect
-              label="全局默认模型"
-              providers={providers}
-              value={catalog.data.defaultSelection}
-              disabled={defaultMutation.isPending}
-              onChange={(selection) => {
-                if (
-                  selection &&
-                  !sameSelection(selection, catalog.data.defaultSelection)
-                ) {
-                  setNotice("");
-                  defaultMutation.mutate(selection);
-                }
-              }}
-            />
-          </div>
+          ) : null}
           {notice ? (
             <p className="llm-notice" role="status">
               <Check size={16} aria-hidden="true" />
@@ -186,7 +191,13 @@ export function ProviderSettings() {
                       <small>{protocolLabels[item.protocol]}</small>
                       <small>
                         {item.models.length} 个模型
-                        {item.source === "environment" ? " · 环境配置" : ""}
+                        {hosted
+                          ? item.id === "hosted"
+                            ? " · 平台额度"
+                            : " · 自己的 API"
+                          : item.source === "environment"
+                            ? " · 环境配置"
+                            : ""}
                       </small>
                     </span>
                     {catalog.data.defaultSelection.providerId === item.id ? (
@@ -196,7 +207,9 @@ export function ProviderSettings() {
                 ))}
               </div>
               <p className="provider-list__hint">
-                配置保存在本机后端。API Key 加密保存，不写入浏览器存储。
+                {hosted
+                  ? "URL 与 API Key 加密保存在你的服务端账号中，网页与安卓端共用。"
+                  : "配置保存在本机后端。API Key 加密保存，不写入浏览器存储。"}
               </p>
             </aside>
             <ProviderEditor
@@ -293,6 +306,7 @@ function ProviderEditor({
   onDirtyChange: (value: boolean) => void;
   ref: Ref<EditorHandle>;
 }) {
+  const hosted = useHosted();
   const [draft, setDraft] = useState(() => providerDraft(provider));
   const [baseline, setBaseline] = useState(() =>
     JSON.stringify(providerDraft(provider)),
@@ -311,7 +325,9 @@ function ProviderEditor({
   const [discoveredAt, setDiscoveredAt] = useState(provider?.discoveredAt);
   const discoveryRequest = useRef<AbortController | null>(null);
   const discoverySequence = useRef(0);
-  const readOnly = !!savedProvider && savedProvider.source !== "managed";
+  const platform = !!hosted && savedProvider?.id === "hosted";
+  const readOnly =
+    !!savedProvider && (platform || savedProvider.source !== "managed");
   const dirty = !readOnly && JSON.stringify(draft) !== baseline;
   const model = draft.models.find((item) => item.id === modelId);
   const shownProvider: LlmProviderView = {
@@ -350,6 +366,17 @@ function ProviderEditor({
     });
   const save = async () => {
     if (saving) return false;
+    if (
+      hosted &&
+      savedProvider &&
+      draft.baseUrl !== savedProvider.baseUrl &&
+      !draft.apiKey?.trim()
+    ) {
+      setValidation([
+        "修改 API 地址后，请重新填写 API Key 以确认新的连接目标。",
+      ]);
+      return false;
+    }
     const parsed = LlmProviderInputSchema.safeParse(draft);
     if (!parsed.success) {
       setValidation(
@@ -448,6 +475,23 @@ function ProviderEditor({
       }
     }
   };
+  if (platform)
+    return (
+      <section className="provider-editor" aria-label="平台供应商">
+        <header className="provider-editor__heading">
+          <div>
+            <h3>{savedProvider?.name}</h3>
+            <p>平台统一管理的模型，调用时消耗平台额度。</p>
+          </div>
+        </header>
+        <p>在上方“功能模型设置”中选择平台模型或自己的模型。</p>
+        <ul className="platform-provider-models">
+          {savedProvider?.models.map((item) => (
+            <li key={item.id}>{item.label || "平台模型"}</li>
+          ))}
+        </ul>
+      </section>
+    );
   return (
     <form
       className="provider-editor"
@@ -496,42 +540,46 @@ function ProviderEditor({
       {savedProvider?.credentialStatus === "unavailable" ? (
         <div className="provider-credential-error" role="alert">
           <p>
-            已保存的凭据当前无法解密。请通过实例恢复工具提供原主密钥；如果原密钥无法找回，可重置全部供应商凭据后重新填写。
+            {hosted
+              ? "已保存的凭据当前无法读取。请重新填写 API Key 并保存，或联系管理员处理。"
+              : "已保存的凭据当前无法解密。请通过实例恢复工具提供原主密钥；如果原密钥无法找回，可重置全部供应商凭据后重新填写。"}
           </p>
-          <button
-            className="button button--quiet"
-            type="button"
-            disabled={saving}
-            onClick={() => {
-              if (
-                !window.confirm(
-                  "重置全部供应商的已保存凭据？所有供应商都需要重新填写 API Key；供应商配置和聊天数据会保留。如果有原主密钥，请先使用实例恢复工具恢复。",
+          {!hosted ? (
+            <button
+              className="button button--quiet"
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "重置全部供应商的已保存凭据？所有供应商都需要重新填写 API Key；供应商配置和聊天数据会保留。如果有原主密钥，请先使用实例恢复工具恢复。",
+                  )
                 )
-              )
-                return;
-              setSaving(true);
-              void llmApi
-                .resetCredentials()
-                .then(async (catalog) => {
-                  const next = catalog.providers.find(
-                    (item) => item.id === savedProvider.id,
-                  );
-                  setSavedProvider(next);
-                  if (next) {
-                    const nextDraft = providerDraft(next);
-                    setDraft(nextDraft);
-                    setBaseline(JSON.stringify(nextDraft));
-                    setEditVersion((value) => value + 1);
-                    onDirtyChange(false);
-                  }
-                  await onSaved(next);
-                })
-                .catch(setError)
-                .finally(() => setSaving(false));
-            }}
-          >
-            重置供应商凭据
-          </button>
+                  return;
+                setSaving(true);
+                void llmApi
+                  .resetCredentials()
+                  .then(async (catalog) => {
+                    const next = catalog.providers.find(
+                      (item) => item.id === savedProvider.id,
+                    );
+                    setSavedProvider(next);
+                    if (next) {
+                      const nextDraft = providerDraft(next);
+                      setDraft(nextDraft);
+                      setBaseline(JSON.stringify(nextDraft));
+                      setEditVersion((value) => value + 1);
+                      onDirtyChange(false);
+                    }
+                    await onSaved(next);
+                  })
+                  .catch(setError)
+                  .finally(() => setSaving(false));
+              }}
+            >
+              重置供应商凭据
+            </button>
+          ) : null}
         </div>
       ) : null}
       <fieldset
@@ -589,7 +637,9 @@ function ProviderEditor({
             }
           />
           <small id="provider-api-url-hint">
-            支持 HTTPS，以及本机或局域网 HTTP 地址。示例：
+            {hosted
+              ? "填写公网 HTTPS 接口根地址。示例："
+              : "支持 HTTPS，以及本机或局域网 HTTP 地址。示例："}
             {protocolUrls[draft.protocol]}
           </small>
         </label>
@@ -855,14 +905,16 @@ function ProviderEditor({
   );
 }
 
-function ModelAdvanced({
+export function ModelAdvanced({
   model,
   protocol,
   onChange,
+  showContext = true,
 }: {
   model: LlmModelSettings;
   protocol: LlmProtocol;
   onChange: (model: LlmModelSettings) => void;
+  showContext?: boolean;
 }) {
   const cap = model.capabilities;
   return (
@@ -908,23 +960,25 @@ function ModelAdvanced({
             }}
           />
         </label>
-        <label className="field">
-          <span>上下文 token 上限</span>
-          <input
-            type="number"
-            min={1}
-            max={10000000}
-            value={cap.maxContextTokens ?? ""}
-            placeholder="未指定"
-            onChange={(event) => {
-              const capabilities = { ...cap };
-              if (event.target.value)
-                capabilities.maxContextTokens = Number(event.target.value);
-              else delete capabilities.maxContextTokens;
-              onChange({ ...model, capabilities });
-            }}
-          />
-        </label>
+        {showContext ? (
+          <label className="field">
+            <span>上下文 token 上限</span>
+            <input
+              type="number"
+              min={1}
+              max={10000000}
+              value={cap.maxContextTokens ?? ""}
+              placeholder="未指定"
+              onChange={(event) => {
+                const capabilities = { ...cap };
+                if (event.target.value)
+                  capabilities.maxContextTokens = Number(event.target.value);
+                else delete capabilities.maxContextTokens;
+                onChange({ ...model, capabilities });
+              }}
+            />
+          </label>
+        ) : null}
         {protocol === "openai-compatible" ? (
           <label className="field">
             <span>输出 token 字段</span>
@@ -1058,6 +1112,7 @@ function ModelAdvanced({
       <p className="provider-footer-note">
         参数只作用于当前模型。不同模型支持的思考参数不同，请使用测试确认。
       </p>
+      {showContext ? <ModelContextLimits model={model} /> : null}
     </>
   );
 }

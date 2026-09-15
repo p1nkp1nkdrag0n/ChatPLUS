@@ -75,6 +75,7 @@ export interface HostedUsage {
   cacheWriteTokens?: number | null;
 }
 export interface HostedAttempt {
+  billingSource?: "user" | "platform";
   id: string;
   userId?: string;
   operationId: string;

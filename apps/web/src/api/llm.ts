@@ -7,6 +7,9 @@ import type {
   LlmSelection,
   LlmSessionModel,
   LlmTarget,
+  UserModelSettings,
+  UserModelSettingsUpdateInput,
+  UserModelSetupInput,
 } from "@personasim/contracts";
 import { ApiError } from "./types";
 import {
@@ -55,6 +58,11 @@ async function request<T>(
 
 const prefix = "/api/llm";
 export const llmApi = {
+  userSettings: () => request<UserModelSettings>(`${prefix}/user-settings`),
+  completeSetup: (input: UserModelSetupInput) =>
+    request<UserModelSettings>(`${prefix}/setup`, "POST", input),
+  updateUserSettings: (input: UserModelSettingsUpdateInput) =>
+    request<UserModelSettings>(`${prefix}/user-settings`, "PATCH", input),
   catalog: () => request<LlmCatalog>(`${prefix}/providers`),
   resetCredentials: () =>
     request<LlmCatalog>(`${prefix}/credentials/reset`, "POST", {
@@ -106,4 +114,5 @@ export const llmApi = {
 };
 
 export const llmCatalogKey = ["llm", "catalog"] as const;
+export const userModelSettingsKey = ["llm", "user-settings"] as const;
 export const sessionModelKey = (id: string) => ["llm", "session", id] as const;

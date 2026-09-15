@@ -6,6 +6,7 @@ import { AchievementActivity } from "../components/achievements/AchievementActiv
 import { useMobileViewport } from "../hooks/useMobileViewport";
 import { HostedBoundary } from "../components/HostedBoundary";
 import { useHosted } from "../hooks/useHosted";
+import { HostedSetupBoundary } from "../components/setup/HostedSetupBoundary";
 
 const CharacterLibraryPage = lazy(
   () => import("../pages/CharacterLibraryPage"),
@@ -42,6 +43,8 @@ const ArtifactDetailPage = lazy(() => import("../pages/ArtifactDetailPage"));
 const ShareComposerPage = lazy(() => import("../pages/ShareComposerPage"));
 const HostedAccountPage = lazy(() => import("../pages/HostedAccountPage"));
 const HostedAdminPage = lazy(() => import("../pages/HostedAdminPage"));
+const HostedSetupPage = lazy(() => import("../pages/HostedSetupPage"));
+const ModelSettingsPage = lazy(() => import("../pages/ModelSettingsPage"));
 
 export const CORRESPONDENCE_ROUTE_PATHS = [
   "/characters/:characterId/correspondence",
@@ -61,7 +64,9 @@ export function App() {
   useMobileViewport();
   return (
     <HostedBoundary>
-      <DearvaleRoutes />
+      <HostedSetupBoundary>
+        <DearvaleRoutes />
+      </HostedSetupBoundary>
     </HostedBoundary>
   );
 }
@@ -86,6 +91,9 @@ function DearvaleRoutes() {
         <Routes>
           <Route path="/" element={<Navigate to="/welcome" replace />} />
           <Route path="/welcome" element={<WelcomeEntryPage />} />
+          {hosted ? (
+            <Route path="/setup" element={<HostedSetupPage />} />
+          ) : null}
           <Route path="/create" element={<CharacterGeneratorPage />} />
           <Route
             path="/characters/:characterId/preview"
@@ -150,6 +158,9 @@ function DearvaleRoutes() {
               element={<TimelinePage />}
             />
             <Route path="/settings" element={<SettingsPage />} />
+            {hosted ? (
+              <Route path="/model-settings" element={<ModelSettingsPage />} />
+            ) : null}
             {hosted ? (
               <Route path="/account" element={<HostedAccountPage />} />
             ) : null}

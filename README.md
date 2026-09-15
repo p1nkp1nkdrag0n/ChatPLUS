@@ -8,7 +8,7 @@ Dearvale 是一个以长期相处为核心的 AI 虚拟角色应用：从逐题�
 
 项目采用本地优先、事件驱动的实现，支持无 API Key 的确定性演示、接入真实模型，以及独立实例自托管。仓库名仍为 **ChatPLUS**，内部 workspace 包名沿用 `persona-sim` / `@personasim/*`；页面品牌为 **Dearvale**。
 
-好友联网测试版现提供独立的服务器入口、邀请码账号、积分计费、研究采集和本机管理网页。运行 `pnpm hosted:serve` 后访问 `http://127.0.0.1:3002/admin` 完成配置；独立 Windows / Android 联网包分别使用 `pnpm online:desktop:dist`、`pnpm online:android:build`。部署、模型映射、穿透要求和双包加密备份见[好友联网测试版说明](docs/HOSTED.md)。
+好友联网测试版现提供独立的服务器入口、邀请码账号、积分计费、研究采集和本机管理网页。新账号先选择平台模型或配置自己的 API，再进入欢迎页；个人供应商和功能模型设置随账号在网页与安卓端共用。运行 `pnpm hosted:serve` 后访问 `http://127.0.0.1:3002/admin` 完成配置；独立 Windows / Android 联网包分别使用 `pnpm online:desktop:dist`、`pnpm online:android:build`。部署、模型映射、穿透要求和双包加密备份见[好友联网测试版说明](docs/HOSTED.md)。
 
 核心准则是：**时间会推进，互动有后果，关系会积累，变化可追溯。** 目前仍处于实验阶段，真实模型的自然度、长期连续性和完整纠错保持尚未完成整体验收。本文按当前仓库实现整理；历史发布记录见 [v0.1.6-Beta](docs/releases/v0.1.6-Beta.md)，workspace 的 `0.1.0` 不是发布标签版本。
 
@@ -21,7 +21,7 @@ Dearvale 是一个以长期相处为核心的 AI 虚拟角色应用：从逐题�
 | 日常对话       | 多会话、按会话切换模型、发送状态与输入中提示；支持倾听、共同分析、明确推荐和有授权的委托决定。可选开启回复目标复核。                   |
 | 记忆与相处     | 基于来源的召回、当前事实修订、自传与事件证据；纠正会使依赖旧解释的派生内容失效并保留历史。可选学习有适用范围、可撤回的相处偏好。       |
 | 角色生活       | 按角色当地自然日生成“今天大概做什么、最近在做什么”的模糊背景；生活主线、状态和关系变化需要证据，讨论、决定、行动、结果分别记录。       |
-| 数字书信       | 可选启用普通、加急、特快投递、离线补算、不可变抵达快照、加密回信与启封；支持本地常驻和自托管时间任务。                                         |
+| 数字书信       | 可选启用普通、加急、特快投递、离线补算、不可变抵达快照、加密回信与启封；支持本地常驻和自托管时间任务。                                 |
 | 纪念物与收藏   | 可选生成有来源的关系纪念物，提供档案、陈列柜和本地 PNG 分享；成就页记录全局足迹与角色纪念，高阶角色徽章可使用独立图片模型。            |
 | 模型与诊断     | 页面管理多供应商、模型和加密凭据；支持 Fixture、OpenAI 兼容、Anthropic Messages、Gemini 原生协议。内部状态与诊断由开发者模式单独开放。 |
 
@@ -41,7 +41,7 @@ pnpm dev
 
 新实例无需创建 `.env` 即可运行，默认使用 `fixture` 模型，不需要 API Key 或外部模型请求。Fixture 用于验证创建、聊天和数据流程，回复是确定性的演示内容；体验真实对话请在“设置”中添加模型。
 
-应用入口现在直接进入 `/welcome` 欢迎页。Windows x64 桌面版可运行 `pnpm desktop:dev`，生成安装程序使用 `pnpm desktop:dist`；安装包自带本地服务和运行环境，输出在 `artifacts/desktop/`。官网通过 `pnpm dev:website` 单独运行在 `http://127.0.0.1:5174`，使用 `pnpm build:website` 独立构建。桌面数据目录、安装包和官网部署配置见[桌面版与官网分离说明](docs/DESKTOP.md)。
+单机版入口直接进入 `/welcome` 欢迎页；联网版新账号先完成模型设置，已有账号升级时保留原入口。Windows x64 桌面版可运行 `pnpm desktop:dev`，生成安装程序使用 `pnpm desktop:dist`；安装包自带本地服务和运行环境，输出在 `artifacts/desktop/`。官网通过 `pnpm dev:website` 单独运行在 `http://127.0.0.1:5174`，使用 `pnpm build:website` 独立构建。桌面数据目录、安装包和官网部署配置见[桌面版与官网分离说明](docs/DESKTOP.md)。
 
 手机端采用参考 iPhone Pro 比例的 iOS 风格布局；运行 `pnpm android:build` 生成 `artifacts/android/Dearvale-<version>.apk`（版本取自 Android 构建配置），电脑运行 `pnpm mobile:serve` 后，在 APK 中填写输出的局域网地址、用户名与本次连接密码；安装和 HTTPS 服务器连接见[安卓应用说明](docs/ANDROID.md)，电脑连接步骤见[手机连接指南](docs/MOBILE-SERVER.md)，五种屏幕尺寸的隔离验收可运行 `pnpm test:mobile`。
 
@@ -58,15 +58,20 @@ pnpm dev
 
 ### 在页面中设置
 
-打开“设置”，添加供应商，选择协议并填写 API 根地址、密钥和模型。可以检测模型列表，也可以手动填写模型 ID；无需鉴权的本机或局域网 HTTP 模型服务允许留空密钥。
+单机版打开“设置”添加供应商，选择协议并填写 API 根地址、密钥和模型。可以检测模型列表，也可以手动填写模型 ID；无需鉴权的本机或局域网 HTTP 模型服务允许留空密钥。联网版个人供应商在“模型与功能”页面管理，需要 API Key 与公网 HTTPS 地址。
 
-- **全局默认模型**用于跟随默认的会话、角色生成与后台模型任务。
+- **全局默认模型**在单机版用于跟随默认的会话、角色生成与后台模型任务；联网版可按功能分别选择平台模型或自己的模型。
 - **会话模型**在聊天输入框上方选择，从下一条消息生效，保留历史和输入内容。
 - **检测模型**只读取模型列表。**测试连接与回复**最多执行两次真实短请求，分别检查可见正文与结构化 JSON；两项通过才显示绿色成功。
+- **上下文预算**新模型默认 64,000 token，支持逐个调整；供应商返回的输入、上下文和输出限制单独保存并约束实际预算，刷新列表保留已有参数。
 - **保存或切换**不会自动测试；页面配置保存后即时生效，无需重启。
-- **回复目标复核**位于“回复体验”，默认关闭。开启后由当前会话模型结合上下文复核，必要时重新生成，会增加等待时间和模型用量。
+- **回复目标复核**位于“回复体验”，默认关闭。单机版开启后由当前会话模型结合上下文复核，联网版使用对应功能的模型设置；必要时重新生成，会增加等待时间和模型用量。
 
-页面保存的 API Key 由后端加密写入 SQLite，主密钥存放在 `${DATABASE_PATH}.llm-key`，读取接口不返回密钥原文。浏览器不持久保存密钥，也不直接调用模型供应商。协议参数、连接状态及凭据恢复详见[模型设置说明](docs/MODEL_SETTINGS.md)。
+页面保存的 API Key 由后端加密写入 SQLite，主密钥存放在 `${DATABASE_PATH}.llm-key`，读取接口不返回密钥原文。联网版还加密个人供应商 URL，保存在所属账号的数据库；模型参数与聊天业务库仍为普通字段，并非全库加密。浏览器不持久保存密钥，也不直接调用模型供应商。协议参数、连接状态及凭据恢复详见[模型设置说明](docs/MODEL_SETTINGS.md)。
+
+联网版首次显示“我们需要确定一些设置”：选择“我没有API-KEY”后选择平台文本模型；选择“我有API-KEY”后配置供应商、选定模型并通过短回复与结构化测试，两条路径保存成功后进入 Welcome。首次选择应用到全部文本功能，后续在“模型与功能”页面分别调整；未设置的功能使用平台对应模型，个人模型失败时不自动切回平台。
+
+自带 Key 的调用及测试不冻结、不扣除平台积分，用量缺失也不冻结；平台调用继续扣额度。图片生成当前仅支持单独选择平台图片模型，引导中说明会消耗额度。自带 Key 沿用现有研究采集，不新增许可确认或提醒文案。配置与首次设置状态随服务端账号保存，网页完成后安卓可直接使用；请求由服务端统一执行公网 HTTPS、DNS 地址、重定向、体积与超时检查，解析并持久化结果后同步给客户端。
 
 ### 使用环境变量
 
@@ -216,9 +221,9 @@ pnpm test:e2e
 | -------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | 双模型动态对话 | `pnpm test:dual-model:fixture --turns 3`                               | 一个模型扮演合成用户，另一个走项目真实角色消息流程；见[双模型测试](docs/DUAL_MODEL_TESTING.md)。                |
 | 产品人生长测   | `pnpm test:product-life:fixture <run-id>`                              | 42 轮、45 个模拟日，覆盖生活、记忆、重启与书信；见[产品人生实验](docs/DUAL_MODEL_TESTING.md#产品人生长程实验)。 |
-| 记忆相关性     | `pnpm test:memory-relevance:fixture --output tmp/memory-relevance-NEW` | 召回、回复消融与上下文预算实验；见[记忆与预算实验方法](docs/evals/memory-relevance-and-budget-method.md)。                         |
+| 记忆相关性     | `pnpm test:memory-relevance:fixture --output tmp/memory-relevance-NEW` | 召回、回复消融与上下文预算实验；见[记忆与预算实验方法](docs/evals/memory-relevance-and-budget-method.md)。      |
 | 整体架构比较   | `pnpm test:architecture:fixture --output tmp/architecture-NEW`         | 对照系统、固定历史、人格与模块消融；见[实验协议](docs/evals/architecture-comparison.md)。                       |
-| 角色生成比较   | `pnpm test:character-generation:comparison:fixture`                    | 比较角色生成及约束路径；见[生成对比方案](docs/evals/character-generation-comparison.md)。        |
+| 角色生成比较   | `pnpm test:character-generation:comparison:fixture`                    | 比较角色生成及约束路径；见[生成对比方案](docs/evals/character-generation-comparison.md)。                       |
 | 回复策略       | `pnpm test:reply-steering:fixture`                                     | 回复意图与表达策略实验；见[回复策略评测](docs/evals/reply-steering/README.md)。                                 |
 
 `pnpm test:llm:smoke` 检查所选环境模型档案的真实业务路径，另有 `:claude`、`:grok`、`:gemini`、`:gpt56-sol`、`:bigmodel`、`:qwen` 命名快捷命令。真实双模型及产品人生实验要求 `RUN_PAID_DUAL_MODEL=1`；其他实验按各自文档设置对应的显式运行开关。不要把 smoke、fixture 或执行器的 `completed` 当作真实语言质量通过。
@@ -253,17 +258,17 @@ docs/                   架构、操作指南、ADR、设计规范与评测协�
 
 ## 文档导航
 
-| 文档                                                                                                                                         | 内容                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| [模型设置](docs/MODEL_SETTINGS.md)                                                                                                           | 多供应商、协议参数、连接测试与加密凭据。           |
-| [成就收藏](docs/ACHIEVEMENTS.md)                                                                                                             | 行为纪念、专属徽章、独立图片模型与资产恢复。       |
-| [角色问答实施](docs/design/character-interview-implementation.md)                                                                            | 问答、追问、草稿、小传、发布与交互规则。           |
-| [自托管与恢复](docs/SELF_HOSTING.md)                                                                                                         | Docker、Caddy、时间任务、备份和升级。              |
-| [功能开关](docs/ROLLOUT.md)                                                                                                                  | 默认模式、灰度行为和历史兼容路径。                 |
-| [架构](docs/architecture.md) / [数据契约](docs/schemas.md) / [插件合同](docs/plugin-sdk.md)                                                  | 领域分层与接口约定；当前部署方式以自托管指南为准。 |
-| [模糊生活与因果 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md) / [书信 ADR](docs/adr/0007-temporal-correspondence.md)              | 时间、生活、选择与延迟书信的设计依据。             |
-| [Dearvale 插画清单](docs/design/dearvale-assets.md) / [问答素材清单](docs/design/character-interview-assets.md)                              | 当前视觉资源来源与实现说明。                       |
-| [双模型测试](docs/DUAL_MODEL_TESTING.md) / [架构实验](docs/evals/architecture-comparison.md)                                                 | 可复现的执行入口与评审协议。                       |
+| 文档                                                                                                                            | 内容                                               |
+| ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [模型设置](docs/MODEL_SETTINGS.md)                                                                                              | 多供应商、协议参数、连接测试与加密凭据。           |
+| [成就收藏](docs/ACHIEVEMENTS.md)                                                                                                | 行为纪念、专属徽章、独立图片模型与资产恢复。       |
+| [角色问答实施](docs/design/character-interview-implementation.md)                                                               | 问答、追问、草稿、小传、发布与交互规则。           |
+| [自托管与恢复](docs/SELF_HOSTING.md)                                                                                            | Docker、Caddy、时间任务、备份和升级。              |
+| [功能开关](docs/ROLLOUT.md)                                                                                                     | 默认模式、灰度行为和历史兼容路径。                 |
+| [架构](docs/architecture.md) / [数据契约](docs/schemas.md) / [插件合同](docs/plugin-sdk.md)                                     | 领域分层与接口约定；当前部署方式以自托管指南为准。 |
+| [模糊生活与因果 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md) / [书信 ADR](docs/adr/0007-temporal-correspondence.md) | 时间、生活、选择与延迟书信的设计依据。             |
+| [Dearvale 插画清单](docs/design/dearvale-assets.md) / [问答素材清单](docs/design/character-interview-assets.md)                 | 当前视觉资源来源与实现说明。                       |
+| [双模型测试](docs/DUAL_MODEL_TESTING.md) / [架构实验](docs/evals/architecture-comparison.md)                                    | 可复现的执行入口与评审协议。                       |
 
 历史发布说明描述对应版本的功能与边界；当前默认配置以功能开关指南和源码为准。本地报告与测试成绩不随源码发布。
 

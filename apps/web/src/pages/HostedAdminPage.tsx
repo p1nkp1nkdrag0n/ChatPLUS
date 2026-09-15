@@ -1128,6 +1128,8 @@ const PURPOSE_NAMES: Record<string, string> = {
   default: "默认文本模型",
   compile_character: "角色编译",
   character_interview: "角色访谈",
+  character_portrait: "人物小传",
+  character_refinement: "人物设定修订",
   import_character: "角色导入",
   plan_schedule: "安排规划",
   chat_turn: "聊天回复",

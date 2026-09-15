@@ -19,6 +19,9 @@ const CharacterGeneratorPage = lazy(
 const CharacterPreviewPage = lazy(
   () => import("../pages/CharacterPreviewPage"),
 );
+const CharacterRefinementPage = lazy(
+  () => import("../pages/CharacterRefinementPage"),
+);
 const CharacterImportPage = lazy(() => import("../pages/CharacterImportPage"));
 const CharacterEditorPage = lazy(() => import("../pages/CharacterEditorPage"));
 const ChatPage = lazy(() => import("../pages/ChatPage"));
@@ -98,6 +101,10 @@ function DearvaleRoutes() {
           <Route
             path="/characters/:characterId/preview"
             element={<CharacterPreviewPage />}
+          />
+          <Route
+            path="/characters/:characterId/refine"
+            element={<CharacterRefinementPage />}
           />
           <Route element={<AppShell />}>
             <Route path="/chat" element={<ProductEntryPage kind="chat" />} />

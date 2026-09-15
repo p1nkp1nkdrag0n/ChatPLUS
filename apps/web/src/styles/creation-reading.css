@@ -135,6 +135,119 @@
   min-height: 48px;
 }
 
+.creation-refinement-entry {
+  margin-bottom: 14px;
+  font-size: 16px;
+}
+
+.creation-reading-paper .creation-refinement .creation-refinement-intro {
+  color: #64755e;
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.creation-refinement-reference {
+  margin-bottom: 22px;
+  padding: 12px 16px;
+  border: 1px solid #c3c8b2;
+  border-radius: 8px;
+  background: #fffdf529;
+}
+
+.creation-refinement-reference summary {
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.creation-refinement-reference > div {
+  padding-top: 14px;
+}
+
+.creation-refinement-label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 19px;
+}
+
+.creation-refinement-feedback {
+  display: block;
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid #8c9c81;
+  border-radius: 8px;
+  background: #fffdf56b;
+  color: #233d32;
+  font: 17px/1.8 var(--font-ui);
+  box-sizing: border-box;
+}
+
+.creation-refinement-feedback:focus-visible {
+  outline: 2px solid #41664e;
+  outline-offset: 2px;
+}
+
+.creation-refinement-feedback::placeholder {
+  color: #71806b;
+}
+
+.creation-refinement-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 8px;
+  color: #64755e;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.creation-refinement-conflict {
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border-left: 3px solid #8c9c81;
+  background: #e8eddf88;
+}
+
+.creation-refinement-conflict .creation-text-button {
+  display: block;
+  margin-top: 8px;
+  font-size: 15px;
+}
+
+.creation-refinement-waiting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.creation-reading-paper .creation-refinement-waiting p {
+  margin: 0;
+  font-size: 15px;
+}
+
+.creation-reading-paper .creation-refinement .creation-portrait-footer {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (max-width: 480px) {
+  .creation-reading-paper .creation-refinement .creation-actions {
+    flex-wrap: wrap;
+  }
+
+  .creation-refinement .creation-button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .creation-refinement-reference {
+    padding: 10px 12px;
+  }
+}
+
 @keyframes creation-reading-focus {
   from {
     backdrop-filter: blur(0);

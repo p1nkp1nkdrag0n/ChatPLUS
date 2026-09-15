@@ -3,6 +3,8 @@ const PURPOSE_LABELS: Record<string, string> = {
   letter_reply: "书信回复",
   compile_character: "角色创建",
   character_interview: "角色访谈",
+  character_portrait: "人物小传",
+  character_refinement: "人物设定修订",
   review_reply_goal: "回复复核",
   rewrite_reply_goal: "回复改写",
   rewrite_reply_affinity: "回复润色",

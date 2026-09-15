@@ -55,6 +55,91 @@ const input = {
 
 describe("managed LLM production and probe transport", () => {
   it.each(["openai-compatible", "anthropic", "gemini"] as const)(
+    "%s uses the selected model output limit without the ordinary request ceiling",
+    async (protocol) => {
+      const fetcher = vi.fn<typeof fetch>(() =>
+        fetchJson(reply(protocol, '{"ok":true}')),
+      );
+      const provider = createManagedLlmProvider({
+        protocol,
+        baseUrl: "https://provider.invalid/v1",
+        timeoutMs: 1000,
+        model: LlmModelSettingsSchema.parse({
+          id: "large-output-model",
+          tokenParameter: "max_completion_tokens",
+          capabilities: {
+            structuredOutputMode: "prompt_json",
+            supportsThinkingControl: false,
+            supportsStreaming: false,
+            maxOutputTokens: 131_072,
+            maxContextTokens: 262_144,
+          },
+        }),
+        fetch: fetcher,
+      });
+      const command = {
+        ...input,
+        schema: z.object({ ok: z.boolean() }),
+        maxOutputTokens: 32_000,
+      };
+      await provider.generateObject(command);
+      await provider.generateObject({
+        ...command,
+        useModelMaxOutputTokens: true,
+      });
+      await provider.generateObject({
+        ...command,
+        useModelMaxOutputTokens: false,
+      });
+
+      const requests = fetcher.mock.calls.map((call) => body(call[1]));
+      const limits = requests.map((request) =>
+        protocol === "gemini"
+          ? (request.generationConfig as { maxOutputTokens: number })
+              .maxOutputTokens
+          : request[
+              protocol === "anthropic" ? "max_tokens" : "max_completion_tokens"
+            ],
+      );
+      expect(limits).toEqual([32_000, 131_072, 32_000]);
+      expect(JSON.stringify(requests)).not.toContain("useModelMaxOutputTokens");
+    },
+  );
+
+  it.each([2_048, undefined])(
+    "retains a small or unknown model output capability (%s)",
+    async (maxOutputTokens) => {
+      const fetcher = vi.fn<typeof fetch>(() =>
+        fetchJson(reply("openai-compatible", '{"ok":true}')),
+      );
+      const provider = createManagedLlmProvider({
+        protocol: "openai-compatible",
+        baseUrl: "https://provider.invalid/v1",
+        timeoutMs: 1000,
+        model: LlmModelSettingsSchema.parse({
+          id: "selected-model",
+          capabilities: {
+            structuredOutputMode: "prompt_json",
+            supportsThinkingControl: false,
+            supportsStreaming: false,
+            ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+          },
+        }),
+        fetch: fetcher,
+      });
+      await provider.generateObject({
+        ...input,
+        schema: z.object({ ok: z.boolean() }),
+        maxOutputTokens: 32_000,
+        useModelMaxOutputTokens: true,
+      });
+      expect(body(fetcher.mock.calls[0]?.[1]).max_tokens).toBe(
+        maxOutputTokens ?? 8_192,
+      );
+    },
+  );
+
+  it.each(["openai-compatible", "anthropic", "gemini"] as const)(
     "%s performs plain text without JSON instructions and validates structured output",
     async (protocol) => {
       const calls: { url: string; init?: RequestInit }[] = [];

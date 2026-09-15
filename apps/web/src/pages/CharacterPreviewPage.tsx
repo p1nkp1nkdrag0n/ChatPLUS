@@ -383,6 +383,19 @@ function PreviewContents({
         ) : null}
       </div>
       <footer className="creation-portrait-footer">
+        {(preview.canRefine ?? preview.canReviseInterview) && !busy ? (
+          editable && dirty ? (
+            <p className="creation-hint">先保存更多设定，再调整人物设定。</p>
+          ) : (
+            <Link
+              className="creation-text-button creation-refinement-entry"
+              data-testid="refine-character"
+              to={`/characters/${preview.characterId}/refine`}
+            >
+              调整人物设定
+            </Link>
+          )
+        ) : null}
         <div className="creation-actions">
           {editable ? (
             <button

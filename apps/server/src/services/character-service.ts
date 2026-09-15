@@ -59,6 +59,7 @@ import {
   authorizeEditedCharacter,
   authorizeGeneratedCharacter,
   characterAuthorityReview,
+  mergeAuthorizedCharacterRevision,
 } from "./character-authority.js";
 
 export type PendingCharacterSource = {
@@ -115,26 +116,50 @@ export class CharacterService {
     options: {
       source?: PendingCharacterSource;
       replaceDraft?: { characterId: string; expectedVersion: number };
+      revisionContext?: {
+        current: CharacterDraft;
+        feedback: string;
+        changedPaths: readonly string[];
+        retainedKnownFacts?: string[];
+      };
+      prepareSources?: (
+        draft: CharacterDraft,
+      ) => Promise<PendingCharacterSource[]>;
     } = {},
   ): Promise<CharacterSpec> {
-    if (options.replaceDraft)
-      this.assertInterviewDraftEditable(options.replaceDraft);
-    else if (options.source) {
+    if (options.source) {
       const existing = this.findSourceCreation(options.source);
       if (existing) return existing;
     }
+    if (options.replaceDraft)
+      this.assertInterviewDraftEditable(options.replaceDraft);
     const input = originalCharacterInputSchema.parse(rawInput);
     assertTimezone(input.timezone);
     const fallback = buildOriginalDraft(
       input,
       CHARACTER_COMPILATION_POLICY_VERSION,
     );
+    const revisionPrompt = options.revisionContext
+      ? {
+          ...options.revisionContext,
+          current: Object.fromEntries(
+            Object.entries(options.revisionContext.current).filter(
+              ([key]) => !["authorityAudit", "sources"].includes(key),
+            ),
+          ),
+        }
+      : undefined;
     const proposal = await this.llm.generateObject({
       purpose: "compile_character",
       system: CHARACTER_COMPILER_SYSTEM,
-      prompt: buildCompilePrompt(input),
+      prompt:
+        buildCompilePrompt(input) +
+        (revisionPrompt
+          ? `\nREVISION_CONTEXT_JSON\n${JSON.stringify(revisionPrompt)}\nPreserve the full current effective character. Revise only changedPaths according to feedback and the updated author input; keep unrelated details and rule IDs intact. Feedback replaces the old conflicting author statement; it is not an additional contradictory historical source.`
+          : ""),
       schema: characterCompilationProposalSchema,
       maxOutputTokens: CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS,
+      useModelMaxOutputTokens: true,
       maxRetries: CHARACTER_COMPILATION_MAX_RETRIES,
       fixture: {
         draft: fallback,
@@ -142,12 +167,21 @@ export class CharacterService {
         reasonSummary: "根据原创角色表单生成结构化角色草稿。",
       },
     });
-    const draft = authorizeGeneratedCharacter(
+    let draft = authorizeGeneratedCharacter(
       authoritativeOriginalDraft(proposal.draft, input, fallback),
       input,
       fallback,
       proposal.draft,
     );
+    if (options.revisionContext) {
+      draft = mergeAuthorizedCharacterRevision(
+        options.revisionContext.current,
+        draft,
+        options.revisionContext.changedPaths,
+        options.revisionContext.retainedKnownFacts,
+      );
+      protectLockedCharacterFields(options.revisionContext.current, draft);
+    }
     let source: PendingCharacterSource | undefined;
     if (input.characterBrief !== undefined) {
       const sourceHash = createHash("sha256")
@@ -162,41 +196,51 @@ export class CharacterService {
         sourceHash,
       };
     }
+    const nowUtc = this.clock.nowUtc();
+    draft = applyLifePlanningAuthority(
+      normalizeTemporalAnchor(ensureTimeBasedGoalMilestones(draft), nowUtc),
+      this.lifePlanningMode,
+    );
+    assertCharacterSourceRefs(draft);
+    assertTimezone(draft.identity.timezone);
+    const preparedSources = (await options.prepareSources?.(draft)) ?? [];
     // No model work under a SQLite lock. Recheck the head after compilation so
     // another connection cannot publish, activate or overwrite this draft first.
     return this.store.database
       .transaction(() => {
-        if (options.replaceDraft)
-          return this.replaceInterviewDraft(
-            draft,
-            options.replaceDraft,
-            [source, options.source].filter(
-              (item): item is PendingCharacterSource => item !== undefined,
-            ),
-          );
         if (options.source) {
           const existing = this.findSourceCreation(options.source);
           if (existing) return existing;
         }
+        if (options.replaceDraft)
+          return this.replaceInterviewDraft(
+            draft,
+            options.replaceDraft,
+            [source, options.source, ...preparedSources].filter(
+              (item): item is PendingCharacterSource => item !== undefined,
+            ),
+            nowUtc,
+          );
         return this.createFromDraft(
           draft,
           source,
           "user",
-          options.source ? [options.source] : [],
+          [...(options.source ? [options.source] : []), ...preparedSources],
+          nowUtc,
         );
       })
       .immediate();
   }
 
-  private findSourceCreation(
+  findSourceCreation(
     source: PendingCharacterSource,
   ): CharacterSpec | undefined {
     const row = this.store.database
       .prepare(
-        "SELECT character_id AS characterId, source_hash AS sourceHash FROM character_sources WHERE id = ?",
+        "SELECT character_id AS characterId, source_hash AS sourceHash, content_excerpt AS content FROM character_sources WHERE id = ?",
       )
       .get(source.id) as
-      { characterId: string; sourceHash: string } | undefined;
+      { characterId: string; sourceHash: string; content: string } | undefined;
     if (!row) return undefined;
     if (row.sourceHash !== source.sourceHash)
       throw new ApiError(
@@ -204,10 +248,14 @@ export class CharacterService {
         "interview_request_conflict",
         "This creation request already belongs to different answers.",
       );
-    return this.store.getCharacterSpec(row.characterId);
+    const stored = JSON.parse(row.content) as { characterVersion?: number };
+    return this.store.getCharacterSpec(
+      row.characterId,
+      stored.characterVersion,
+    );
   }
 
-  private assertInterviewDraftEditable(input: {
+  assertInterviewDraftEditable(input: {
     characterId: string;
     expectedVersion: number;
   }): CharacterSpec {
@@ -255,9 +303,9 @@ export class CharacterService {
     rawDraft: CharacterDraft,
     input: { characterId: string; expectedVersion: number },
     sources: PendingCharacterSource[],
+    nowUtc = this.clock.nowUtc(),
   ): CharacterSpec {
     const current = this.assertInterviewDraftEditable(input);
-    const nowUtc = this.clock.nowUtc();
     const draft = applyLifePlanningAuthority(
       normalizeTemporalAnchor(ensureTimeBasedGoalMilestones(rawDraft), nowUtc),
       this.lifePlanningMode,
@@ -307,6 +355,7 @@ export class CharacterService {
       prompt: buildImportPrompt(input),
       schema: characterCompilationProposalSchema,
       maxOutputTokens: CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS,
+      useModelMaxOutputTokens: true,
       maxRetries: CHARACTER_COMPILATION_MAX_RETRIES,
       fixture: {
         draft: fallback,
@@ -605,8 +654,8 @@ export class CharacterService {
     source?: PendingCharacterSource,
     creationOrigin: "user" | "demo" = "user",
     additionalSources: PendingCharacterSource[] = [],
+    nowUtc = this.clock.nowUtc(),
   ): CharacterSpec {
-    const nowUtc = this.clock.nowUtc();
     const draft = applyLifePlanningAuthority(
       characterDraftSchema.parse(
         normalizeTemporalAnchor(

@@ -101,6 +101,18 @@ export type CharacterInterviewCompileRequest = z.infer<
   typeof CharacterInterviewCompileRequestSchema
 >;
 
+export const CharacterInterviewRefineRequestSchema = z
+  .object({
+    characterId: EntityIdSchema,
+    expectedVersion: z.number().int().positive(),
+    feedback: z.string().trim().min(1).max(5_000),
+    requestId: EntityIdSchema,
+  })
+  .strict();
+export type CharacterInterviewRefineRequest = z.infer<
+  typeof CharacterInterviewRefineRequestSchema
+>;
+
 export const CharacterCreationPreviewSchema = z
   .object({
     characterId: EntityIdSchema,
@@ -113,6 +125,7 @@ export const CharacterCreationPreviewSchema = z
       workOrRole: true,
     }),
     canReviseInterview: z.boolean(),
+    canRefine: z.boolean().optional(),
     paragraphs: z.array(z.string().min(1).max(12_000)).min(1).max(12),
     answers: CharacterInterviewAnswersSchema,
     factsHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -131,3 +144,67 @@ export const CharacterInterviewCompileResponseSchema = z
 export type CharacterInterviewCompileResponse = z.infer<
   typeof CharacterInterviewCompileResponseSchema
 >;
+
+export const CharacterInterviewProseSchema = z
+  .object({
+    paragraphs: z.array(z.string().trim().min(1).max(12_000)).min(2).max(12),
+  })
+  .strict();
+
+// Provider-selected revision scope is limited to character content. Audit,
+// sources, locks and application-owned relationship state are never writable.
+export const CHARACTER_REFINEMENT_PATHS = [
+  "identity.name",
+  "identity.gender",
+  "identity.ageText",
+  "identity.worldSetting",
+  "identity.workOrRole",
+  "identity.appearance",
+  "identity.selfDescription",
+  "identity.timezone",
+  "identity.temporalFrame",
+  "persona.traits",
+  "persona.values",
+  "persona.contradictions",
+  "persona.goals",
+  "persona.preferences",
+  "persona.biography",
+  "persona.boundaries",
+  "dialogue.primaryLanguage",
+  "dialogue.formality",
+  "dialogue.directness",
+  "dialogue.warmth",
+  "dialogue.verbosity",
+  "dialogue.humor",
+  "dialogue.averageMessageLength",
+  "dialogue.averageChunksPerTurn",
+  "dialogue.frequentPhrases",
+  "dialogue.avoidedPhrases",
+  "dialogue.greetingPatterns",
+  "dialogue.refusalPatterns",
+  "dialogue.comfortingPatterns",
+  "dialogue.authorGuidance",
+  "dialogue.understoodLanguages",
+  "dialogue.spokenLanguages",
+  "dialogue.rules",
+  "routines",
+  "knowledge.knownFacts",
+  "knowledge.uncertainFacts",
+  "tier",
+  "schedulePolicy",
+  "proactivePolicy",
+] as const;
+export type CharacterRefinementPath =
+  (typeof CHARACTER_REFINEMENT_PATHS)[number];
+export const CharacterRefinementPlanSchema = z
+  .object({
+    answersPatch: CharacterInterviewAnswersSchema.partial(),
+    removedFacts: z
+      .array(z.string().trim().min(1).max(1_000))
+      .max(200)
+      .optional(),
+    changedPaths: z
+      .array(z.enum(CHARACTER_REFINEMENT_PATHS))
+      .max(CHARACTER_REFINEMENT_PATHS.length),
+  })
+  .strict();

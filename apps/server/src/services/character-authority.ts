@@ -807,6 +807,59 @@ export function assertCharacterAuthority(draft: CharacterDraft): void {
     );
 }
 
+/** Both inputs have already passed server authority review. A revision can
+ * replace only the selected content fields, retaining the other approved
+ * fields and their evidence. Never pass provider-owned metadata as paths. */
+export function mergeAuthorizedCharacterRevision(
+  current: CharacterDraft,
+  generated: CharacterDraft,
+  paths: readonly string[],
+  retainedKnownFacts: readonly string[] = [],
+): CharacterDraft {
+  assertCharacterAuthority(current);
+  assertCharacterAuthority(generated);
+  const merged = structuredClone(current);
+  const selected = (target: string) =>
+    paths.some((path) => target === path || target.startsWith(`${path}.`));
+  for (const path of paths) {
+    if (
+      !/^(?:identity|persona|dialogue|routines|knowledge|proactivePolicy|schedulePolicy|tier)(?:\.|$)/.test(
+        path,
+      ) ||
+      /(?:^|\.)(?:__proto__|constructor|prototype|authorityAudit|sources|lockedPaths)(?:\.|$)/.test(
+        path,
+      )
+    )
+      throw new ApiError(
+        422,
+        "invalid_refinement_target",
+        "This field cannot be revised through character feedback.",
+      );
+    set(merged, path, structuredClone(get(generated, path)));
+  }
+  if (paths.includes("knowledge.knownFacts"))
+    merged.knowledge.knownFacts = [
+      ...new Set([...retainedKnownFacts, ...merged.knowledge.knownFacts]),
+    ];
+  if (paths.includes("dialogue.frequentPhrases"))
+    merged.dialogue.frequentPhrasesOrigin =
+      generated.dialogue.frequentPhrasesOrigin;
+  merged.sources = [
+    ...new Map(
+      [...current.sources, ...generated.sources].map((item) => [item.id, item]),
+    ).values(),
+  ];
+  const candidates = [
+    ...(current.authorityAudit?.candidates ?? []).filter(
+      (item) => !selected(item.target) || containsCandidate(merged, item),
+    ),
+    ...(generated.authorityAudit?.candidates ?? []).filter((item) =>
+      selected(item.target),
+    ),
+  ];
+  return seal(merged, candidates, generated);
+}
+
 function containsCandidate(draft: CharacterDraft, candidate: Entry): boolean {
   const current = get(draft, candidate.target);
   return (Array.isArray(current) ? current : [current]).some(

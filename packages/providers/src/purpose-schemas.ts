@@ -3,6 +3,8 @@ import {
   AutobiographyRevisionProposalSchema,
   CharacterCompilationProposalSchema,
   CharacterInterviewProposalSchema,
+  CharacterInterviewProseSchema,
+  CharacterRefinementPlanSchema,
   DiaryDraftSchema,
   DiaryReviewSchema,
   LetterReplyProposalSchema,
@@ -19,6 +21,8 @@ import type { ZodType } from "zod";
 export const PURPOSE_OUTPUT_SCHEMAS: Record<LlmPurpose, ZodType> = {
   compile_character: CharacterCompilationProposalSchema,
   character_interview: CharacterInterviewProposalSchema,
+  character_portrait: CharacterInterviewProseSchema,
+  character_refinement: CharacterRefinementPlanSchema,
   import_character: CharacterCompilationProposalSchema,
   plan_schedule: SchedulePlanProposalSchema,
   chat_turn: StrictPersonaTurnProviderEnvelopeSchema,

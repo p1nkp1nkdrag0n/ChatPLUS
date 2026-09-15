@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   CharacterInterviewCompileRequestSchema,
   CharacterInterviewFollowUpsRequestSchema,
+  CharacterInterviewRefineRequestSchema,
 } from "@personasim/contracts";
 import { CharacterInterviewService } from "../services/character-interview-service.js";
 import type { RouteServices } from "./routes.js";
@@ -37,5 +38,11 @@ export function registerCharacterInterviewRoutes(
   app.get("/api/characters/:id/creation-preview", (request) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     return interviews.preview(id);
+  });
+  app.post("/api/characters/interview/refine", async (request) => {
+    const input = CharacterInterviewRefineRequestSchema.parse(request.body);
+    return deps.actors.runExclusive(input.characterId, () =>
+      interviews.refine(input),
+    );
   });
 }

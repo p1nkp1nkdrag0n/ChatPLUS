@@ -841,6 +841,16 @@ function diaryFixture(request: LLMRequest): JsonValue {
 }
 
 const DEFAULT_FACTORIES: Record<LlmPurpose, FixtureFactory> = {
+  character_portrait: () => ({
+    paragraphs: [
+      "人物小传来自已生效的人物资料。",
+      "性格表现应以具体资料为依据。",
+    ],
+  }),
+  character_refinement: () => ({
+    answersPatch: {},
+    changedPaths: ["persona.traits"],
+  }),
   compile_character: compileFixture,
   character_interview: () => ({
     questions: [

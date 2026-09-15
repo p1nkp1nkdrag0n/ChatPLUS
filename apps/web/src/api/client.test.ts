@@ -1,11 +1,58 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resolveMessageDelivery } from "../lib/messageDelivery";
-import { api } from "./client";
+import { api, request } from "./client";
+import { ApiError } from "./types";
 
 describe("web API normalization", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("retains validation issue arrays while ignoring malformed entries", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "validation_error",
+              message: "检查输入",
+              issues: [
+                { path: "feedback", message: "最多5000字" },
+                null,
+                "unexpected",
+                { message: "补充说明" },
+              ],
+            },
+          }),
+          { status: 422 },
+        ),
+      ),
+    );
+    const result = request("/api/characters/interview/refine");
+    await expect(result).rejects.toBeInstanceOf(ApiError);
+    await expect(result).rejects.toMatchObject({
+      status: 422,
+      issues: [
+        { path: "feedback", message: "最多5000字" },
+        { path: "", message: "补充说明" },
+      ],
+    });
+  });
+
+  it("keeps the HTTP status when an error response has a null envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("null", { status: 503 })),
+    );
+    const result = request("/api/characters/interview/refine");
+    await expect(result).rejects.toBeInstanceOf(ApiError);
+    await expect(result).rejects.toMatchObject({
+      status: 503,
+      code: "HTTP_ERROR",
+      issues: [],
+    });
   });
 
   it.each([undefined, false, "true", true])(

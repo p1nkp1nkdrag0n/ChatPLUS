@@ -47,7 +47,7 @@ interface ErrorEnvelope {
   error?: {
     code?: string;
     message?: string;
-    issues?: Array<{ path?: string; message?: string }>;
+    issues?: unknown;
     requestId?: string;
   };
 }
@@ -86,22 +86,34 @@ export async function request<T>(
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     notifyHostedSessionExpired(path, response.status);
-    let payload: ErrorEnvelope = {};
+    let payload: ErrorEnvelope | null = {};
     try {
       payload = (await response.json()) as ErrorEnvelope;
     } catch {
       // The typed fallback below is safer than exposing a raw server response.
     }
-    const error = payload.error;
+    const error = payload?.error;
     throw new ApiError({
       code: error?.code ?? "HTTP_ERROR",
       message: error?.message ?? `请求失败（${response.status}）`,
       status: response.status,
-      issues:
-        error?.issues?.map((issue) => ({
-          path: issue.path ?? "",
-          message: issue.message ?? "字段无效",
-        })) ?? [],
+      // Validation errors have issue arrays; version conflicts carry an object
+      // with expected/current versions. Both must remain typed HTTP errors.
+      issues: Array.isArray(error?.issues)
+        ? error.issues.flatMap((issue: unknown) => {
+            if (typeof issue !== "object" || issue === null) return [];
+            const fields = issue as Record<string, unknown>;
+            return [
+              {
+                path: typeof fields.path === "string" ? fields.path : "",
+                message:
+                  typeof fields.message === "string"
+                    ? fields.message
+                    : "字段无效",
+              },
+            ];
+          })
+        : [],
       ...(error?.requestId ? { requestId: error.requestId } : {}),
     });
   }

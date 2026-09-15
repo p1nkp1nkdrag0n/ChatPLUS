@@ -59,6 +59,7 @@ export function resetHostedLocalState(userId?: string): void {
         "personasim.active-character.v1",
         "dearvale.last-conversation.v1",
         "dearvale.character-interview.v1",
+        "dearvale.character-refinement.v1",
       ])
         localStorage.removeItem(key);
     }

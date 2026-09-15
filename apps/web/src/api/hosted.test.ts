@@ -101,6 +101,7 @@ describe("hosted browser transport boundary", () => {
       ["personasim.active-character.v1", "private-character"],
       ["dearvale.last-conversation.v1", "private-session"],
       ["dearvale.character-interview.v1", "private-draft"],
+      ["dearvale.character-refinement.v1", "private-feedback"],
       ["unrelated-setting", "keep"],
     ]);
     vi.stubGlobal("localStorage", {

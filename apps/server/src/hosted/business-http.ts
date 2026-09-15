@@ -1,7 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
+import {
+  LlmProviderInputSchema,
+  LlmSelectionSchema,
+  LlmTargetSchema,
+  UserModelSetupInputSchema,
+  UserModelSettingsUpdateInputSchema,
+  type LlmTarget,
+} from "@personasim/contracts";
+import { LlmDiagnosticsService } from "../services/llm-diagnostics-service.js";
 import type { HostedControlStore } from "./control-store.js";
 import type { HostedModelGateway } from "./model-gateway.js";
 import { HostedError, type HostedAttempt } from "./types.js";
@@ -14,6 +23,26 @@ const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+
+async function withCancellation<T>(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => {
+    if (!reply.raw.writableEnded) controller.abort();
+  };
+  request.raw.once("aborted", abort);
+  reply.raw.once("close", abort);
+  reply.header("cache-control", "no-store");
+  try {
+    return await operation(controller.signal);
+  } finally {
+    request.raw.off("aborted", abort);
+    reply.raw.off("close", abort);
+  }
+}
 export function publicAttempt(attempt: HostedAttempt) {
   const usage = attempt.usage;
   return {
@@ -26,6 +55,7 @@ export function publicAttempt(attempt: HostedAttempt) {
       ? attempt.maximumCostMicros
       : 0,
     displayName: attempt.modelSnapshot.displayName,
+    billingSource: attempt.modelSnapshot.billingSource ?? "platform",
     kind: attempt.modelSnapshot.kind,
     createdAtUtc: attempt.createdAtUtc,
     usage: usage
@@ -224,15 +254,18 @@ export function registerHostedBusiness(
         const selection = object(body.modelSelection ?? body.model);
         if (selection.modelId !== undefined) {
           if (
-            selection.providerId !== "hosted" ||
+            typeof selection.providerId !== "string" ||
             typeof selection.modelId !== "string"
           )
             throw new HostedError(400, "invalid_model", "请选择可用模型。");
-          control.resolveModel(selection.modelId);
-          publicModelId = selection.modelId;
+          // Configuration is checked only when the downstream service needs a
+          // new execution. Completed chat replies must replay after key removal.
+          if (selection.providerId === "hosted")
+            publicModelId = selection.modelId;
         } else if (sessionId) {
-          publicModelId =
-            services.llm.sessionModel(sessionId)?.effective?.modelId;
+          const effective = services.llm.sessionModel(sessionId)?.effective;
+          if (effective?.providerId === "hosted")
+            publicModelId = effective.modelId;
         }
         const registered = runtime.registry.routes.get(
           `${route.method} ${route.url}`,
@@ -266,46 +299,130 @@ export function registerHostedBusiness(
     runtimes.syncModels(runtime);
     return runtime;
   };
-  app.get("/api/llm/providers", async (request) => {
-    await getRuntime(request);
-    const models = control
-      .listModels()
-      .filter((model) => model.kind === "text" && model.enabled);
-    let defaultId = models[0]?.routeId ?? "unconfigured";
-    try {
-      defaultId = control.resolvePurpose("chat_turn").routeId;
-    } catch {
-      /* setup incomplete */
-    }
+  app.get("/api/llm/providers", async (request, reply) => {
+    const runtime = await getRuntime(request);
+    reply.header("cache-control", "no-store");
+    const catalog = runtime.composition.routeServices.llm.settings!.catalog();
     return {
-      providers: models.length
-        ? [
-            {
-              id: "hosted",
-              name: "可用模型",
-              protocol: "openai-compatible",
-              baseUrl: "",
-              timeoutMs: 120000,
-              revision: 1,
-              models: models.map((model) => ({
-                id: model.routeId,
-                label: model.displayName,
-                tokenParameter: "max_tokens",
-                capabilities: {
-                  structuredOutputMode: "prompt_json",
-                  supportsThinkingControl: false,
-                  supportsStreaming: false,
-                  maxOutputTokens: model.maxOutputTokens,
-                },
-              })),
-              source: "managed",
-              hasApiKey: true,
-              credentialStatus: "ready",
-              referencedSessions: 0,
-            },
-          ]
-        : [],
-      defaultSelection: { providerId: "hosted", modelId: defaultId },
+      ...catalog,
+      providers: catalog.providers
+        .filter(
+          (provider) =>
+            provider.source === "managed" &&
+            (provider.id !== "hosted" || provider.models.length > 0),
+        )
+        .map((provider) =>
+          provider.id === "hosted"
+            ? {
+                ...provider,
+                baseUrl: "",
+                hasApiKey: true,
+                credentialStatus: "ready" as const,
+              }
+            : provider,
+        ),
+    };
+  });
+  app.get("/api/llm/user-settings", async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    return (await getRuntime(request)).modelSettings.get();
+  });
+  app.post("/api/llm/setup", async (request) =>
+    (await getRuntime(request)).modelSettings.completeSetup(
+      UserModelSetupInputSchema.parse(request.body),
+    ),
+  );
+  app.patch("/api/llm/user-settings", async (request) =>
+    (await getRuntime(request)).modelSettings.update(
+      UserModelSettingsUpdateInputSchema.parse(request.body),
+    ),
+  );
+  const providerInput = (body: unknown) => {
+    const input = LlmProviderInputSchema.parse(body);
+    if (new URL(input.baseUrl).protocol !== "https:")
+      throw new HostedError(
+        400,
+        "invalid_provider_url",
+        "供应商 API 地址必须使用 HTTPS。",
+      );
+    return input;
+  };
+  const providerId = (params: unknown) =>
+    z.object({ id: z.string().min(1) }).parse(params).id;
+  app.post("/api/llm/providers", async (request, reply) => {
+    const runtime = await getRuntime(request);
+    return reply
+      .code(201)
+      .send(
+        runtime.composition.routeServices.llm.settings!.create(
+          providerInput(request.body),
+        ),
+      );
+  });
+  app.patch("/api/llm/providers/:id", async (request) => {
+    const runtime = await getRuntime(request);
+    const id = providerId(request.params);
+    runtime.modelSettings.assertProvider(id);
+    const input = providerInput(request.body);
+    if (input.expectedRevision === undefined)
+      throw new HostedError(
+        400,
+        "provider_revision_required",
+        "请刷新供应商配置后重试。",
+      );
+    runtime.modelSettings.assertProviderMutationAllowed(id, input.models);
+    return runtime.composition.routeServices.llm.settings!.update(id, input);
+  });
+  app.delete("/api/llm/providers/:id", async (request, reply) => {
+    const runtime = await getRuntime(request);
+    const id = providerId(request.params);
+    runtime.modelSettings.assertProviderMutationAllowed(id);
+    runtime.composition.routeServices.llm.settings!.delete(id);
+    return reply.code(204).send();
+  });
+  const diagnosticTarget = (
+    runtime: TenantRuntime,
+    body: unknown,
+  ): LlmTarget => {
+    const target = LlmTargetSchema.parse(body);
+    if (target.providerId)
+      runtime.modelSettings.assertProvider(target.providerId);
+    if (target.draft) providerInput(target.draft);
+    return target;
+  };
+  for (const [path, action] of [
+    ["/api/llm/models/discover", "discover"],
+    ["/api/llm/test", "test"],
+  ] as const) {
+    app.post(path, async (request, reply) => {
+      const runtime = await getRuntime(request);
+      const { user } = requireHostedUser(request);
+      const target = diagnosticTarget(runtime, request.body);
+      const diagnostics = new LlmDiagnosticsService(
+        runtime.composition.routeServices.llm.settings!,
+        gateway.userDiagnosticsFetch(user.id),
+      );
+      return withCancellation<unknown>(request, reply, (signal) =>
+        diagnostics[action](target, signal),
+      );
+    });
+  }
+  app.get("/api/llm/tests", async (request, reply) => {
+    const runtime = await getRuntime(request);
+    const query = z
+      .strictObject({
+        providerId: z.string().min(1),
+        modelId: z.string().min(1),
+      })
+      .parse(request.query);
+    runtime.modelSettings.assertProvider(query.providerId);
+    reply.header("cache-control", "no-store");
+    return {
+      result:
+        runtime.composition.routeServices.llm.settings!.latestProbe(
+          query.providerId,
+          query.modelId,
+        ) ?? null,
     };
   });
   app.get("/api/hosted/models", (request) => {
@@ -342,7 +459,7 @@ export function registerHostedBusiness(
         z.strictObject({
           selection: z
             .strictObject({
-              providerId: z.literal("hosted"),
+              providerId: LlmSelectionSchema.shape.providerId,
               modelId: z.string(),
             })
             .nullable(),
@@ -356,8 +473,7 @@ export function registerHostedBusiness(
         : input.publicModelId
           ? { providerId: "hosted", modelId: input.publicModelId }
           : null;
-    if (selection && control.resolveModel(selection.modelId).kind !== "text")
-      throw new HostedError(400, "invalid_model", "请选择文本模型。");
+    if (selection) runtime.modelSettings.validateTextSelection(selection);
     const { store, actors, llm } = runtime.composition.routeServices;
     const session = store.getSession(id);
     if (!session) throw new HostedError(404, "not_found", "未找到会话。");

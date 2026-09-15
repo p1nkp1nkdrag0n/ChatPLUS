@@ -10,6 +10,7 @@ import { readOrCreateDesktopInstanceSecret } from "../desktop-runtime.js";
 import type { HostedControlStore } from "./control-store.js";
 import type { HostedModelGateway } from "./model-gateway.js";
 import { HostedError } from "./types.js";
+import { UserModelSettingsService } from "./user-model-settings.js";
 import {
   collectBusinessRoutes,
   type BusinessRegistry,
@@ -18,10 +19,12 @@ import {
 export interface TenantRuntime {
   composition: ServerComposition;
   registry: BusinessRegistry;
+  modelSettings: UserModelSettingsService;
 }
 export class HostedRuntimeManager {
   private readonly runtimes = new Map<string, Promise<TenantRuntime>>();
   private closing = false;
+  private readonly onboardingCutoff: string;
   constructor(
     private readonly options: {
       rootDirectory: string;
@@ -31,7 +34,24 @@ export class HostedRuntimeManager {
       logger: FastifyBaseLogger;
       startSchedulers?: boolean;
     },
-  ) {}
+  ) {
+    const cutoff = new Date().toISOString();
+    // Persist the rollout boundary before any registration can create a user.
+    // Existing accounts without a tenant DB also keep their previous entry flow.
+    if (options.control.database) {
+      options.control.database
+        .prepare(
+          "INSERT OR IGNORE INTO settings(key,value_json) VALUES('user_model_onboarding_cutoff',?)",
+        )
+        .run(JSON.stringify(cutoff));
+      const row = options.control.database
+        .prepare(
+          "SELECT value_json FROM settings WHERE key='user_model_onboarding_cutoff'",
+        )
+        .get() as { value_json: string };
+      this.onboardingCutoff = JSON.parse(row.value_json) as string;
+    } else this.onboardingCutoff = cutoff;
+  }
 
   get(userId: string): Promise<TenantRuntime> {
     if (this.closing)
@@ -89,14 +109,42 @@ export class HostedRuntimeManager {
         maxOutputTokens: 8192,
       },
     };
-    const composition = await composeServer({
+    const resolverState: { modelSettings?: UserModelSettingsService } = {};
+    const composition: ServerComposition = await composeServer({
       config,
       logger: this.options.logger,
-      llmObservation: this.options.gateway.forUser(userId),
+      llmObservation: this.options.gateway.forUser(
+        userId,
+        (purpose, selection) =>
+          resolverState.modelSettings?.resolve(purpose, selection),
+        () => resolverState.modelSettings?.get().imageSelection ?? null,
+        (selection) =>
+          composition.routeServices.llm.settings!.resolve(selection),
+      ),
     });
+    const modelSettings = new UserModelSettingsService(
+      composition.routeServices.store,
+      composition.routeServices.llm.settings!,
+      {
+        initialOnboardingCompleted:
+          this.options.control.getUser(userId)!.createdAtUtc <
+          this.onboardingCutoff,
+        validateImageSelection: (selection) => {
+          const model = this.options.control.resolveModel(selection.modelId);
+          if (model.kind !== "image" || !model.enabled)
+            throw new HostedError(
+              400,
+              "invalid_image_model",
+              "请选择可用的平台图片模型。",
+            );
+        },
+      },
+    );
+    resolverState.modelSettings = modelSettings;
     const runtime = {
       composition,
       registry: collectBusinessRoutes(composition.routeServices),
+      modelSettings,
     };
     this.syncModels(runtime);
     if (this.options.startSchedulers !== false) {
@@ -132,9 +180,12 @@ export class HostedRuntimeManager {
       /* no model configured yet */
     }
     const modelsJson = JSON.stringify(publicModels);
-    const selectionJson = defaultId
-      ? JSON.stringify({ providerId: "hosted", modelId: defaultId })
-      : null;
+    const chatBinding = runtime.modelSettings?.get().bindings.chat_turn;
+    const selectionJson = chatBinding
+      ? JSON.stringify(chatBinding)
+      : defaultId
+        ? JSON.stringify({ providerId: "hosted", modelId: defaultId })
+        : null;
     const provider = db
       .prepare("SELECT models_json FROM llm_providers WHERE id='hosted'")
       .get() as { models_json: string } | undefined;

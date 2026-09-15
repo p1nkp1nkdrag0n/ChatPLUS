@@ -239,15 +239,17 @@ export class LlmService {
     const session = this.settings?.sessionModel(sessionId);
     if (!session?.effective || !this.observation.executionResolver)
       return session;
-    if (session.effective.providerId !== "hosted")
-      return { ...session, effective: null, error: "model_unavailable" };
     // Hosted's local provider is only a catalog container. Every public model
     // has its own central execution revision, which the client must echo back.
-    const execution = this.observation.executionResolver(
-      "chat_turn",
-      session.effective,
-    );
-    return { ...session, effective: execution.selection };
+    try {
+      const execution = this.observation.executionResolver(
+        "chat_turn",
+        session.selection ?? undefined,
+      );
+      return { ...session, effective: execution.selection };
+    } catch {
+      return { ...session, effective: null, error: "model_unavailable" };
+    }
   }
 
   captureSelection(

@@ -28,12 +28,18 @@ export interface HostedAppOptions {
   allowLocalHttp?: boolean;
   startSchedulers?: boolean;
   transport?: typeof fetch;
+  /** Explicit test seam; production uses the validated public HTTPS transport. */
+  userTransport?: typeof fetch;
 }
 export async function buildHostedApps(options: HostedAppOptions) {
   const rootDirectory = resolve(options.rootDirectory);
   const control = new HostedControlStore(rootDirectory);
   const auth = new HostedAuthService(control);
-  const gateway = new HostedModelGateway(control, options.transport);
+  const gateway = new HostedModelGateway(
+    control,
+    options.transport,
+    options.userTransport,
+  );
   // No automatic request/response logging: request URLs and payloads can contain
   // research data. Error handlers log only stable diagnostic identifiers.
   const userApp = Fastify({

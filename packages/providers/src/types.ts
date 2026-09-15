@@ -14,6 +14,8 @@ export interface GenerateObjectInput<T> {
   maxRetries?: number;
   temperature?: number;
   maxOutputTokens?: number;
+  /** Use the selected model's declared output limit, or the normal budget if unknown. */
+  useModelMaxOutputTokens?: boolean;
 }
 
 export interface CompletionInput {

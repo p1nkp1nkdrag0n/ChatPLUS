@@ -44,6 +44,8 @@ export type GenerateObjectInput<T> = {
   agentId?: string;
   maxRetries?: number;
   maxOutputTokens?: number;
+  /** Resolve the output allowance from the provider selected for this call. */
+  useModelMaxOutputTokens?: boolean;
   fixture?: T;
   /** Stable source/task identity for resumable background generation. */
   operationId?: string;
@@ -59,6 +61,7 @@ export type LlmLogicalCallEvent =
       prompt: string;
       maxRetries?: number;
       maxOutputTokens?: number;
+      useModelMaxOutputTokens?: boolean;
       createdAtUtc: string;
     }
   | {
@@ -439,6 +442,9 @@ export class LlmService {
       ...(input.maxOutputTokens === undefined
         ? {}
         : { maxOutputTokens: input.maxOutputTokens }),
+      ...(input.useModelMaxOutputTokens === undefined
+        ? {}
+        : { useModelMaxOutputTokens: input.useModelMaxOutputTokens }),
       createdAtUtc: this.clock.nowUtc(),
     });
     const startedAt = performance.now();
@@ -459,6 +465,9 @@ export class LlmService {
         ...(input.maxOutputTokens === undefined
           ? {}
           : { maxOutputTokens: input.maxOutputTokens }),
+        ...(input.useModelMaxOutputTokens === undefined
+          ? {}
+          : { useModelMaxOutputTokens: input.useModelMaxOutputTokens }),
       });
       success = true;
       parsedOutput = result;

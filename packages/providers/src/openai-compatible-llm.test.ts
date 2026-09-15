@@ -73,6 +73,88 @@ describe("safe JSON parsing", () => {
 });
 
 describe("OpenAI-compatible provider", () => {
+  it.each([2_048, 131_072])(
+    "uses an explicit %i-token model capability only when requested",
+    async (modelLimit) => {
+      const requests: Array<Record<string, unknown>> = [];
+      const provider = createOpenAiCompatibleLlmProvider({
+        apiKey: "test-placeholder-token",
+        maxOutputTokens: 8_192,
+        capabilities: {
+          structuredOutputMode: "prompt_json",
+          supportsThinkingControl: false,
+          supportsStreaming: false,
+          maxOutputTokens: modelLimit,
+          maxContextTokens: 262_144,
+        },
+        fetch: (_url, init) => {
+          requests.push(
+            JSON.parse(requestBody(init)) as Record<string, unknown>,
+          );
+          return Promise.resolve(characterResponse({ ok: true }));
+        },
+      });
+      const input = {
+        purpose: "compile_character",
+        system: "Return JSON.",
+        prompt: "Compile a character.",
+        schema: z.object({ ok: z.boolean() }),
+        maxOutputTokens: 32_000,
+      };
+
+      await provider.generateObject(input);
+      await provider.generateObject({
+        ...input,
+        useModelMaxOutputTokens: true,
+      });
+      await provider.generateObject({
+        ...input,
+        useModelMaxOutputTokens: false,
+      });
+
+      expect(requests.map((request) => request.max_tokens)).toEqual([
+        Math.min(8_192, modelLimit),
+        modelLimit,
+        Math.min(8_192, modelLimit),
+      ]);
+      expect(JSON.stringify(requests)).not.toContain("useModelMaxOutputTokens");
+    },
+  );
+
+  it("keeps the configured budget when the model output capability is unknown", async () => {
+    const limits: number[] = [];
+    for (const capabilities of [
+      undefined,
+      {
+        structuredOutputMode: "prompt_json" as const,
+        supportsThinkingControl: false,
+        supportsStreaming: false,
+      },
+    ]) {
+      const provider = createOpenAiCompatibleLlmProvider({
+        apiKey: "test-placeholder-token",
+        maxOutputTokens: 4_096,
+        ...(capabilities === undefined ? {} : { capabilities }),
+        fetch: (_url, init) => {
+          limits.push(
+            (JSON.parse(requestBody(init)) as { max_tokens: number })
+              .max_tokens,
+          );
+          return Promise.resolve(characterResponse({ ok: true }));
+        },
+      });
+      await provider.generateObject({
+        purpose: "compile_character",
+        system: "Return JSON.",
+        prompt: "Compile a character.",
+        schema: z.object({ ok: z.boolean() }),
+        maxOutputTokens: 32_000,
+        useModelMaxOutputTokens: true,
+      });
+    }
+    expect(limits).toEqual([4_096, 4_096]);
+  });
+
   it("accepts a fifteen-minute timeout for high-effort structured compilation", () => {
     expect(() =>
       createOpenAiCompatibleLlmProvider({

@@ -422,6 +422,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   readonly #timeoutMs: number;
   readonly #maxRetries: number;
   readonly #maxOutputTokens: number;
+  readonly #modelMaxOutputTokens: number | undefined;
   readonly #fetch: FetchLike;
   readonly #onMetric: LlmMetricSink | undefined;
   readonly #promptDiagnostics: PromptDiagnosticsTracker | undefined;
@@ -431,6 +432,9 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     if (options.apiKey.trim() === "")
       throw new TypeError("LLM API key is required");
     this.capabilities = normalizeCapabilities(options.capabilities);
+    // Only an explicitly declared model capability may override the ordinary
+    // request budget. Default capability values are not model discovery.
+    this.#modelMaxOutputTokens = options.capabilities?.maxOutputTokens;
     this.#apiKey = options.apiKey;
     this.#endpoint = endpoint(options.baseUrl ?? "https://api.deepseek.com");
     this.model = options.model ?? "deepseek-v4-flash";
@@ -486,7 +490,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   }
 
   async #callOnce(
-    request: LLMRequest,
+    request: LLMRequest & { useModelMaxOutputTokens?: boolean },
     logicalCallId: string,
     attempt: number,
     schema?: ZodType<unknown>,
@@ -507,10 +511,17 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         ? {}
         : { response_format: structuredFormat }),
       stream: false,
-      max_tokens: Math.min(
-        normalizeMaxTokens(request.maxOutputTokens, this.#maxOutputTokens),
-        this.#maxOutputTokens,
-      ),
+      max_tokens:
+        request.useModelMaxOutputTokens &&
+        this.#modelMaxOutputTokens !== undefined
+          ? this.#modelMaxOutputTokens
+          : Math.min(
+              normalizeMaxTokens(
+                request.maxOutputTokens,
+                this.#maxOutputTokens,
+              ),
+              this.#maxOutputTokens,
+            ),
       ...(request.temperature === undefined
         ? {}
         : { temperature: request.temperature }),
@@ -651,7 +662,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   }
 
   async #request<T>(
-    request: LLMRequest,
+    request: LLMRequest & { useModelMaxOutputTokens?: boolean },
     schema?: ZodType<T>,
     retryOverride?: number,
   ): Promise<{ value: T | JsonValue; raw: RawCallResult }> {
@@ -778,7 +789,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         // Runtime validation remains authoritative for non-serializable schemas.
       }
     }
-    const request: LLMRequest = {
+    const request: LLMRequest & { useModelMaxOutputTokens?: boolean } = {
       purpose: input.purpose as LlmPurpose,
       messages: [
         { role: "system", content: input.system },
@@ -799,6 +810,9 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       ...(input.maxOutputTokens === undefined
         ? {}
         : { maxOutputTokens: input.maxOutputTokens }),
+      ...(input.useModelMaxOutputTokens === undefined
+        ? {}
+        : { useModelMaxOutputTokens: input.useModelMaxOutputTokens }),
     };
     const { value } = await this.#request(
       request,

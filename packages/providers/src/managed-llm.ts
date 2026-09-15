@@ -45,6 +45,9 @@ export interface ManagedLlmOptions extends ManagedLlmConnectionOptions {
 }
 
 type RecordValue = Record<string, unknown>;
+type ManagedCompletionInput = CompletionInput & {
+  useModelMaxOutputTokens?: boolean;
+};
 type UsageMetric = Pick<
   LlmCallMetric,
   | "responseModel"
@@ -489,15 +492,19 @@ function modelPath(model: string): string {
 function requestBody(
   options: ManagedLlmOptions,
   messages: LLMChatMessage[],
-  input: CompletionInput,
+  input: ManagedCompletionInput,
   schema?: RecordValue,
 ): RecordValue {
   const protocol = options.protocol;
   const model = options.model;
-  const limit = Math.min(
-    tokens(input.maxOutputTokens ?? model.capabilities.maxOutputTokens),
-    tokens(model.capabilities.maxOutputTokens),
-  );
+  const limit =
+    input.useModelMaxOutputTokens &&
+    model.capabilities.maxOutputTokens !== undefined
+      ? model.capabilities.maxOutputTokens
+      : Math.min(
+          tokens(input.maxOutputTokens ?? model.capabilities.maxOutputTokens),
+          tokens(model.capabilities.maxOutputTokens),
+        );
   const controls = thinking(protocol, model, limit);
   const mode = model.capabilities.structuredOutputMode;
   const structured = schema !== undefined;
@@ -623,7 +630,7 @@ class ManagedLlmProvider implements LlmProvider {
 
   async #run<T>(
     messages: LLMChatMessage[],
-    input: CompletionInput,
+    input: ManagedCompletionInput,
     schema?: ZodType<T>,
     retryOverride?: number,
   ): Promise<{ content: string; data?: T; metric: UsageMetric }> {

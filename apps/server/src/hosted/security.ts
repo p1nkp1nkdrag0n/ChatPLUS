@@ -112,14 +112,29 @@ export function installHostedSecurity(
   function limit(key: string, maximum: number, milliseconds = 60000): void {
     const now = Date.now();
     if (rates.size > 10000)
-      for (const [id, value] of rates) if (value.reset < now) rates.delete(id);
+      for (const [id, value] of rates) if (value.reset <= now) rates.delete(id);
     if (rates.size > 20000 && !rates.has(key))
-      throw new HostedError(429, "rate_limited", "请求较多，请稍后重试。");
+      throw new HostedError(
+        429,
+        "rate_limited",
+        "请求较多，请在 60 秒后重试。",
+        60,
+      );
     const bucket = rates.get(key);
-    if (!bucket || bucket.reset < now)
+    if (!bucket || bucket.reset <= now)
       rates.set(key, { count: 1, reset: now + milliseconds });
-    else if (++bucket.count > maximum)
-      throw new HostedError(429, "rate_limited", "请求较多，请稍后重试。");
+    else if (bucket.count >= maximum) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((bucket.reset - now) / 1000),
+      );
+      throw new HostedError(
+        429,
+        "rate_limited",
+        `操作过于频繁，请在 ${retryAfterSeconds} 秒后重试。`,
+        retryAfterSeconds,
+      );
+    } else bucket.count++;
   }
   app.addHook("onRequest", async (request, reply) => {
     const path = hostedRequestPath(request);
@@ -135,6 +150,19 @@ export function installHostedSecurity(
     if (host !== new URL(origin).host)
       throw new HostedError(421, "invalid_host", "服务地址不匹配。");
     if (path.startsWith("/api/")) reply.header("cache-control", "no-store");
+    // Count rejected attempts too, before body parsing and CSRF validation. Keep
+    // sign-in, registration and ordinary activity in independent buckets.
+    if (
+      request.method === "POST" &&
+      ["/api/hosted/auth/login", "/api/hosted/auth/bootstrap"].includes(path)
+    )
+      limit(`login:${request.ip}`, 10);
+    else if (request.method === "POST" && path === "/api/hosted/auth/register")
+      limit(`register:${request.ip}`, 3, 10 * 60000);
+    else if (path.startsWith("/api/hosted/auth/"))
+      limit(`auth:${request.ip}`, 60);
+    else if (!["GET", "HEAD", "OPTIONS"].includes(request.method))
+      limit(`write:${request.ip}`, 300);
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
       if (request.headers.origin !== origin)
         throw new HostedError(403, "invalid_origin", "请求来源不匹配。");
@@ -151,9 +179,7 @@ export function installHostedSecurity(
           "csrf_invalid",
           "页面验证已过期，请刷新后重试。",
         );
-      limit(`write:${request.ip}`, 300);
     }
-    if (path.startsWith("/api/hosted/auth/")) limit(`auth:${request.ip}`, 60);
     const token = cookies(request).get(cookieName);
     if (token) {
       try {
@@ -223,6 +249,15 @@ export function installHostedSecurity(
       { code, status, requestId: request.id },
       "hosted request failed",
     );
+    const retryAfterSeconds =
+      known &&
+      status === 429 &&
+      typeof error.retryAfterSeconds === "number" &&
+      Number.isFinite(error.retryAfterSeconds)
+        ? Math.max(1, Math.ceil(error.retryAfterSeconds))
+        : undefined;
+    if (retryAfterSeconds !== undefined)
+      reply.header("retry-after", String(retryAfterSeconds));
     void reply.code(status).send({
       error: {
         code,
@@ -235,6 +270,7 @@ export function installHostedSecurity(
               : status === 404
                 ? "未找到该内容。"
                 : "请求未能完成，请稍后重试。",
+        ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
         requestId: request.id,
       },
     });

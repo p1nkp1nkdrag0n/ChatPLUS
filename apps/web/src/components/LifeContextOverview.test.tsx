@@ -125,6 +125,26 @@ const context: FuzzyLifeContext = {
 };
 
 describe("LifeContextOverview", () => {
+  it.each([
+    ["unknown", "忙闲未确定"],
+    ["occupied", "正在忙碌"],
+  ] as const)(
+    "describes %s without equating occupancy with focus",
+    (availability, label) => {
+      const markup = renderToStaticMarkup(
+        <MemoryRouter>
+          <LifeContextOverview
+            value={{ ...context, today: { ...context.today, availability } }}
+            timelineHref="/timeline"
+          />
+        </MemoryRouter>,
+      );
+      expect(markup).toContain(label);
+      expect(markup).not.toContain("正在专注");
+      expect(markup).not.toContain("可自在交流");
+    },
+  );
+
   it("turns persisted fuzzy-life context into a user-facing causal narrative", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>

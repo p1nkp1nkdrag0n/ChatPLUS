@@ -13,6 +13,7 @@ import {
 } from "./state-matrix-validation-cases.js";
 import {
   buildStateMatrixValidationPrompts,
+  buildStateMatrixReviewContexts,
   assertStateMatrixFixedSegments,
   stateMatrixValidationInput,
   type StateMatrixPromptCapture,
@@ -244,7 +245,7 @@ describe("state matrix frozen production prompt builder", () => {
       result.cells.filter((cell) => cell.variant === "baseline"),
     ).toHaveLength(7);
     expect(result.promptManifest.candidateCaptures).toHaveLength(33);
-    expect(result.sharedReviewContexts.cases).toHaveLength(33);
+    expect(result.sharedReviewContexts.cases).toHaveLength(40);
     expect(JSON.stringify(baseline)).toBe(before);
     for (const cell of result.cells) {
       const saved = baseline.captures.find(
@@ -285,7 +286,26 @@ describe("state matrix frozen production prompt builder", () => {
       expect(cell.system).toBe(saved.model.system);
       if (cell.variant === "baseline")
         expect(cell.prompt).toBe(saved.model.prompt);
+      const review = result.sharedReviewContexts.cases.find(
+        (item) => item.cellId === cell.cellId,
+      )!;
+      expect(review.variant).toBe(cell.variant);
+      expect(
+        (review.admittedState.qualitative as Record<string, unknown>).energy,
+      ).toBe(
+        cell.variant === "candidate"
+          ? "测试中的新版精力描述"
+          : (
+              jsonPayload(saved.model.segments, "08_runtime_state")
+                .qualitative as Record<string, unknown>
+            ).energy,
+      );
     }
+    // A saved manifest can regenerate accurate review-only metadata even after
+    // production code has changed, without rebuilding either prompt variant.
+    expect(buildStateMatrixReviewContexts(result.promptManifest)).toEqual(
+      result.sharedReviewContexts,
+    );
   });
 
   it("rejects changed persona/system instructions instead of broadening the intervention silently", () => {
@@ -322,12 +342,11 @@ describe("state matrix frozen production prompt builder", () => {
     );
   });
 
-  it("rejects numeric-state clues hidden inside the allowed static interpretation", () => {
+  it("rejects numeric-state clues hidden inside an additional interpretation", () => {
     changeProductionSegment((segment) => {
       if (segment.id !== "08_runtime_state") return segment;
       const state = jsonPayload([segment], segment.id);
       state["interpretation"] = {
-        ...features.RUNTIME_STATE_INTERPRETATION,
         capacity: "Energy is low in this specific turn.",
       };
       return {
@@ -336,7 +355,7 @@ describe("state matrix frozen production prompt builder", () => {
       };
     });
     expect(() => buildStateMatrixValidationPrompts()).toThrow(
-      "Unreviewed state interpretation",
+      "Unreviewed derived state fields",
     );
   });
 

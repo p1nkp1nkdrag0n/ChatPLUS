@@ -29,10 +29,7 @@ import {
   type ReplyDialogueStyleLike,
   type ReplyStrategy,
 } from "./reply-strategy.js";
-import {
-  describeRuntimeState,
-  RUNTIME_STATE_INTERPRETATION,
-} from "./runtime-state-description.js";
+import { describeRuntimeState } from "./runtime-state-description.js";
 import { REPLY_TASK_GROUNDING_POLICY } from "./reply-task-grounding-policy.js";
 import {
   projectCharacterTime,
@@ -474,7 +471,6 @@ function compactRuntimeState(
     asOfUtc: state.asOfUtc,
     revision: state.revision,
     semantics: "present_moment_context_not_personality_or_memory",
-    interpretation: RUNTIME_STATE_INTERPRETATION,
     qualitative,
     moodValence: state.moodValence,
     moodArousal: state.moodArousal,

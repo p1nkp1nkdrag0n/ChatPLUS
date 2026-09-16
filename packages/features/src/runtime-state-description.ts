@@ -1,17 +1,5 @@
 import type { RuntimeStateLike } from "./state-engine.js";
 
-/** Value-independent semantics shared by the admitted generation/repair state
- * snapshot. These explain how to read dimensions together, never derive a
- * missing dimension or claim a cause from the numeric state. */
-export const RUNTIME_STATE_INTERPRETATION = Object.freeze({
-  capacity:
-    "Read together: energy reflects effort reserve, focus attention continuity, socialBattery conversational reserve. These are tendencies, not fixed limits or substitutes. Capacity is no quota or time/percentage commitment; small tasks stay complete and small.",
-  cause:
-    "Values, occupations, routines and clock time cannot establish recent events or causes. Use supplied evidence; user experiences belong to the user.",
-  continuity:
-    "asOfUtc/revision identify the snapshot, not individual changes. Elapsed time is not evidence of rest or resolution. Resolved events are no longer unresolved; recovery may be partial.",
-});
-
 export interface RuntimeStateDescription {
   moodValence: string;
   moodArousal: string;

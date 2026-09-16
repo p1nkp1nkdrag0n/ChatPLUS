@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   assembleChatPrompt,
-  RUNTIME_STATE_INTERPRETATION,
   type AssemblePromptInput,
   type ReplyStrategy,
   type PromptAssemblyTrace,
@@ -36,7 +35,6 @@ const OMITTABLE_STATE_KEYS = new Set([
   "asOfUtc",
   "revision",
   "semantics",
-  "interpretation",
   "qualitative",
   "moodValence",
   "moodArousal",
@@ -186,16 +184,6 @@ function projectState(
     throw new Error("Fuzzy state-matrix prompts must not expose sleep debt");
   if ("summary" in record(state.qualitative))
     throw new Error("State-matrix prompt contains a duplicate state summary");
-  // This field is a fixed definition, never a value-dependent mixed-state
-  // summary. Check the complete content so derived clues cannot hide here.
-  if (
-    "interpretation" in state &&
-    stateMatrixValidationHash(state.interpretation) !==
-      stateMatrixValidationHash(RUNTIME_STATE_INTERPRETATION)
-  )
-    throw new Error(
-      "Unreviewed state interpretation prevents a clean omission",
-    );
   if (probe.omittedDimensions.length === 0) return segment;
   if (
     Object.keys(state).some((key) => !OMITTABLE_STATE_KEYS.has(key)) ||
@@ -429,9 +417,14 @@ function cell(
   };
 }
 
-function reviewContext(captured: StateMatrixPromptCapture) {
+function reviewContext(
+  captured: StateMatrixPromptCapture,
+  variant: "baseline" | "candidate",
+) {
   const probe = captured.case;
   return {
+    cellId: `${probe.id}/${variant}`,
+    variant,
     caseId: probe.id,
     pairingId: probe.pairingId,
     title: probe.title,
@@ -444,6 +437,9 @@ function reviewContext(captured: StateMatrixPromptCapture) {
     personaReviewAuthority:
       "Judge persona only using admittedPersona, not unadmitted author material.",
     admittedState: payload(exactlyOne(captured.model.segments, STATE_SEGMENT)),
+    admittedStrategy: payload(
+      exactlyOne(captured.model.segments, STRATEGY_SEGMENT),
+    ),
     runtimeReviewAuthority:
       "Judge state using admittedState only. An omitted dimension is unavailable, not neutral; mark compatibility with that omitted dimension N/A. Private input state is provenance only.",
     omittedDimensions: probe.omittedDimensions,
@@ -460,6 +456,63 @@ function reviewContext(captured: StateMatrixPromptCapture) {
     userText: probe.userText,
     criteria: probe.criteria,
     sourceNotes: probe.sourceNotes,
+  };
+}
+
+/** Derive reviewer metadata from the saved captures, without reassembling or
+ * calling a model. A holdout has two actual state/strategy views, not one. */
+export function buildStateMatrixReviewContexts(
+  manifest: StateMatrixPromptManifest,
+) {
+  const { baseline, phase } = manifest;
+  validateFrozenBaseline(baseline);
+  const savedById = new Map(
+    baseline.captures.map((item) => [item.case.id, item]),
+  );
+  if (phase === "baseline") {
+    return {
+      rubric: STATE_MATRIX_RUBRIC,
+      cases: baseline.baselineCaseIds.map((id) =>
+        reviewContext(savedById.get(id)!, "baseline"),
+      ),
+    };
+  }
+  const candidates = manifest.candidateCaptures ?? [];
+  const selectedIds = [
+    ...baseline.regressionCaseIds,
+    ...baseline.holdoutCaseIds,
+  ];
+  if (
+    candidates.length !== selectedIds.length ||
+    new Set(candidates.map((item) => item.case.id)).size !==
+      selectedIds.length ||
+    candidates.some((item) => !selectedIds.includes(item.case.id))
+  ) {
+    throw new Error("Missing or duplicate candidate review captures");
+  }
+  return {
+    rubric: STATE_MATRIX_RUBRIC,
+    cases: candidates.flatMap((captured) => {
+      if (
+        captured.proof.modelSha256 !==
+          stateMatrixValidationHash({
+            system: captured.model.system,
+            prompt: captured.model.prompt,
+          }) ||
+        captured.model.prompt !== joined(captured.model.segments, "prompt") ||
+        captured.model.system !== joined(captured.model.segments, "system")
+      ) {
+        throw new Error(
+          "Candidate review capture differs from dispatched prompt",
+        );
+      }
+      return baseline.holdoutCaseIds.includes(captured.case.id)
+        ? [
+            reviewContext(savedById.get(captured.case.id)!, "baseline"),
+            reviewContext(captured, "candidate"),
+          ]
+        : [reviewContext(captured, "candidate")];
+    }),
   };
 }
 
@@ -506,10 +559,7 @@ export function buildStateMatrixValidationPrompts(
   };
   return {
     cells,
-    sharedReviewContexts: {
-      rubric: STATE_MATRIX_RUBRIC,
-      cases: selected.map(reviewContext),
-    },
+    sharedReviewContexts: buildStateMatrixReviewContexts(promptManifest),
     promptManifest,
   };
 }

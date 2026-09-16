@@ -64,6 +64,9 @@ const hosted = await buildHostedApps({
   baseConfig,
   webDistPath,
   allowLocalHttp: publicOrigin === `http://127.0.0.1:${publicPort}`,
+  ...(process.env.DEARVALE_HOSTED_TRUSTED_PROXIES === undefined
+    ? {}
+    : { trustedProxies: process.env.DEARVALE_HOSTED_TRUSTED_PROXIES }),
 });
 let control: ReturnType<typeof startHostedRuntimeControl> | undefined;
 let stopping = false;

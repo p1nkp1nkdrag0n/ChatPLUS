@@ -813,7 +813,6 @@ describe("reply length steering ablation", () => {
     );
     expect(strategy).toEqual({
       complexity: original.complexity,
-      stateGuidance: original.stateGuidance,
       affinityPolicyVersion: original.affinityPolicyVersion,
       affinityGuidance: original.affinityGuidance,
       lengthOverride: original.lengthOverride,
@@ -1565,10 +1564,122 @@ describe("assembleChatPrompt registry integration", () => {
     expect(result.system).toContain("not a permanent personality fact");
     expect(result.system).toContain("must not claim an opposite present mood");
     expect(result.system).toContain("pace, brevity, initiative, or boundaries");
-    expect(result.prompt).toContain("stateGuidance");
-    expect(result.prompt).toContain(
-      "do not claim the opposite current condition",
+    expect(qualitative).not.toHaveProperty("summary");
+    expect(result.prompt).not.toContain('"stateGuidance":');
+    expect(
+      promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
+    ).toEqual(state);
+    for (const description of Object.values(qualitative)) {
+      expect(result.prompt.split(String(description))).toHaveLength(2);
+    }
+  });
+
+  it.each([0, 720])(
+    "withholds unmaintained sleep debt (%s) from fuzzy generation and repair",
+    (sleepDebtMinutes) => {
+      const input = baseInput({ lifePlanningMode: "fuzzy" });
+      input.state = { ...input.state, sleepDebtMinutes };
+      const result = assembleChatPrompt(input);
+      const state = promptSegmentJson(
+        result.prompt,
+        "RUNTIME_STATE_JSON",
+      ) as Record<string, unknown>;
+      expect(state).not.toHaveProperty("sleepDebtMinutes");
+      expect(state.qualitative).not.toHaveProperty("sleepDebt");
+      expect(state.qualitative).not.toHaveProperty("summary");
+      expect(result.replyStrategy.stateGuidance).not.toContain("睡眠");
+      expect(
+        promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
+      ).toEqual(state);
+      expect(input.state.sleepDebtMinutes).toBe(sleepDebtMinutes);
+    },
+  );
+
+  it("retains maintained sleep debt in legacy life and excludes it from fuzzy fatigue planning", () => {
+    const input = baseInput({ userMessage: "今天想聊聊。" });
+    input.state = {
+      ...input.state,
+      energy: 0.9,
+      stress: 0.1,
+      socialBattery: 0.9,
+      focus: 0.9,
+      sleepDebtMinutes: 720,
+    };
+    const legacy = assembleChatPrompt({
+      ...input,
+      lifePlanningMode: "legacy_exact",
+    });
+    const fuzzy = assembleChatPrompt({ ...input, lifePlanningMode: "fuzzy" });
+    const state = promptSegmentJson(
+      legacy.prompt,
+      "RUNTIME_STATE_JSON",
+    ) as Record<string, unknown>;
+    expect(state.sleepDebtMinutes).toBe(720);
+    expect(state.qualitative).toHaveProperty(
+      "sleepDebt",
+      "睡眠债很高（约 720 分钟），需要恢复",
     );
+    expect(fuzzy.replyStrategy.targetChars).toBeGreaterThan(
+      legacy.replyStrategy.targetChars,
+    );
+  });
+
+  it.each([
+    "安静、克制，习惯用简短的具体回应",
+    "热情、爱开玩笑，喜欢详细分享小事",
+  ])(
+    "preserves authored expression for the same mixed state: %s",
+    (dialogueStyle) => {
+      const input = baseInput({ lifePlanningMode: "fuzzy" });
+      input.character.dialogue.register = dialogueStyle;
+      input.state = {
+        ...input.state,
+        moodValence: -0.2,
+        energy: 0.2,
+        focus: 0.9,
+        socialBattery: 0.9,
+      };
+      const result = assembleChatPrompt(input);
+      const state = promptSegmentJson(result.prompt, "RUNTIME_STATE_JSON") as {
+        qualitative: Record<string, string>;
+      };
+      expect(state.qualitative.moodValence).toContain("略偏负向");
+      expect(state.qualitative.energy).toContain("精力见底");
+      expect(state.qualitative.focus).toContain("注意力高度集中");
+      expect(result.prompt).not.toContain("注意力已经明显下降");
+      expect(result.prompt).not.toContain("emotionally even");
+      expect(result.system).toContain(dialogueStyle);
+      expect(result.system).toContain(
+        "the same state can look different in different people",
+      );
+    },
+  );
+
+  it("freezes the actually admitted runtime snapshot for repair under prompt pressure", () => {
+    const input = baseInput({
+      lifePlanningMode: "fuzzy",
+      maxInputTokens: 3_000,
+    });
+    input.state = {
+      ...input.state,
+      moodValence: -0.2,
+      energy: 0.2,
+      focus: 0.9,
+      revision: 7,
+    };
+    const result = assembleChatPrompt(input);
+    const delivered = promptSegmentJson(result.prompt, "RUNTIME_STATE_JSON");
+    input.state.energy = 0.95;
+    input.state.revision = 8;
+    expect(
+      promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
+    ).toEqual(delivered);
+    expect(delivered).toMatchObject({ energy: 0.2, focus: 0.9, revision: 7 });
+    expect(
+      result.segmentTrace.segments.find(
+        (segment) => segment.id === "08_runtime_state",
+      ),
+    ).toMatchObject({ included: true, truncated: false });
   });
 
   it("injects the server-selected current activity as present context", () => {

@@ -1,6 +1,7 @@
 import { CharacterSpecSchema } from "@personasim/contracts";
 import {
   buildConversationContextPlan,
+  assembleChatPrompt,
   deriveReplyStrategy,
 } from "@personasim/features";
 import { estimatePromptTokens } from "@personasim/kernel";
@@ -211,6 +212,7 @@ describe("reply repair expression controls", () => {
       "softTargetCharacters",
       "preferredChunkCount",
       "reviewUpperChars",
+      "stateGuidance",
     ]) {
       expect(call.prompt).not.toContain(`"${field}":`);
     }
@@ -250,3 +252,108 @@ describe("reply repair expression controls", () => {
     },
   );
 });
+
+describe.each(["persona", "fixture"] as const)(
+  "%s repair runtime snapshot",
+  (entrypoint) => {
+    it.each(["fuzzy", "legacy_exact"] as const)(
+      "uses only the original admitted %s state and canonical descriptions",
+      async (lifePlanningMode) => {
+        const state = {
+          agentId: spec.id,
+          asOfUtc: "2026-09-13T12:00:00.000Z",
+          revision: 7,
+          moodValence: -0.2,
+          moodArousal: 0.7,
+          energy: 0.2,
+          stress: 0.3,
+          socialBattery: 0.9,
+          focus: 0.9,
+          sleepDebtMinutes: 600,
+        };
+        const assembled = assembleChatPrompt({
+          character: spec,
+          state,
+          lifePlanningMode,
+          schedule: [],
+          memories: [],
+          recentMessages: [],
+          nowUtc: state.asOfUtc,
+          userMessage: "今天想聊两句。",
+        });
+        const lines = assembled.prompt.split("\n");
+        const originalSnapshot =
+          lines[lines.indexOf("RUNTIME_STATE_JSON") + 1]!;
+        const calls: GenerateObjectInput<unknown>[] = [];
+        const fallback: AgentTurnDecision = {
+          reply: { text: "保底回复。", chunks: ["保底回复。"], toneTags: [] },
+          scheduleEffects: [],
+          memoryCandidates: [],
+          reasonCode: "test",
+          reasonSummary: "Test fallback.",
+        };
+        const llm = {
+          capabilities: {
+            structuredOutputMode: "prompt_json",
+            supportsThinkingControl: false,
+            supportsStreaming: false,
+            maxOutputTokens: 8_192,
+          },
+          generateObject<T>(input: GenerateObjectInput<T>): Promise<T> {
+            calls.push(input);
+            return Promise.resolve(
+              input.schema.parse(input.fixture ?? { text: "修复后的回复。" }),
+            );
+          },
+        } satisfies Pick<LlmService, "capabilities" | "generateObject">;
+        const service = new ReplyRepairService(llm as LlmService);
+        // State advanced after dispatch. The repair must use the captured turn.
+        state.energy = 0.95;
+        state.focus = 0.1;
+        state.revision = 8;
+        const common = {
+          spec,
+          userText: "今天想聊两句。",
+          issues: ["Contradictory current condition"],
+          replyGrounding: assembled.replyGrounding,
+        };
+        if (entrypoint === "persona") {
+          await service.repairPersonaReply({
+            ...common,
+            invalidResponse: { text: "我精力特别足。" },
+            replyStrategy: assembled.replyStrategy,
+          });
+        } else {
+          await service.repairFixtureDecision({
+            ...common,
+            invalidDecision: undefined,
+            fallback,
+          });
+        }
+        expect(calls).toHaveLength(1);
+        const prompt = calls[0]!.prompt;
+        expect(prompt).toContain(`RUNTIME_STATE_JSON\n${originalSnapshot}`);
+        expect(prompt.split(originalSnapshot)).toHaveLength(2);
+        expect(prompt).toContain('"energy":0.2');
+        expect(prompt).toContain('"focus":0.9');
+        expect(prompt).not.toContain('"energy":0.95');
+        expect(prompt).not.toContain('"stateGuidance":');
+        expect(prompt).not.toContain('"summary":');
+        expect(prompt).toContain(
+          "same-turn snapshot admitted to the original reply",
+        );
+        expect(prompt).toContain(
+          "not evidence of past events or permanent personality",
+        );
+        expect(prompt).toContain(`"dialogue":${JSON.stringify(spec.dialogue)}`);
+        if (lifePlanningMode === "fuzzy") {
+          expect(prompt).not.toContain('"sleepDebtMinutes":');
+          expect(prompt).not.toContain('"sleepDebt":');
+        } else {
+          expect(prompt).toContain('"sleepDebtMinutes":600');
+          expect(prompt).toContain("睡眠债很高");
+        }
+      },
+    );
+  },
+);

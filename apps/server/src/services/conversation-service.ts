@@ -647,6 +647,7 @@ export class ConversationService {
     const preparedWorld = await worldEffects.resolve({
       llmExecution: llm,
       ...semanticContext,
+      replyGrounding: assembledPrompt.replyGrounding,
       ...(appliedContextPlan === undefined
         ? {}
         : { conversationPlan: appliedContextPlan }),

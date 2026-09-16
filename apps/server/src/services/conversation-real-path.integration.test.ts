@@ -11,6 +11,7 @@ import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { GenerateObjectInput, LlmService } from "./llm-service.js";
+import { WorldEffectService } from "./world-effect-service.js";
 
 const START_UTC = "2026-08-16T02:00:00.000Z";
 
@@ -629,6 +630,102 @@ describe("openai-compatible reply-first conversation path", () => {
       "repair_chat_turn",
     ]);
   });
+
+  it.each(["retained", "empty"] as const)(
+    "preserves %s grounding through the late legacy world-effect repair path",
+    async (groundingMode) => {
+      const created = await createRealProviderTestApp("off", {
+        lifePlanningMode: "legacy_exact",
+        scheduleNegotiationMode: "enforced",
+        chatEffectsMode: "gated",
+      });
+      app = created.app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      const repairedText = "我是林夏，我们可以慢慢聊。";
+      mockLlm(app.personasim.llm, calls, (input) => {
+        if (input.purpose === "chat_turn") {
+          return {
+            text: "我是林夏。",
+            scheduleAction: { kind: "none" },
+            deliveryMode: "single_block",
+          };
+        }
+        if (input.purpose === "repair_chat_turn") {
+          return { text: repairedText, deliveryMode: "single_block" };
+        }
+        return fixtureFor(input);
+      });
+      const character = await createAndPublish(app, "high_fidelity");
+      const before = app.personasim.store.getRuntimeState(character.id)!;
+      app.personasim.store.updateRuntimeState({
+        ...before,
+        moodValence: -0.2,
+        energy: 0.2,
+        focus: 0.9,
+        sleepDebtMinutes: 240,
+        revision: before.revision + 1,
+      });
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+
+      // Inject a late invalidation after the original reply passed validation.
+      // The real world resolver, guard, and repair service must handle it.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const resolve = WorldEffectService.prototype.resolve;
+      const lateWorld = vi
+        .spyOn(WorldEffectService.prototype, "resolve")
+        .mockImplementationOnce(function (this: WorldEffectService, input) {
+          expect(input.effects.negotiationEnforced).toBe(true);
+          expect(input.replyGrounding).toContain("RUNTIME_STATE_JSON");
+          const invalid = "作为一个AI语言模型，我没有自己的生活。";
+          return resolve.call(this, {
+            ...input,
+            replyGrounding:
+              groundingMode === "empty" ? "" : input.replyGrounding!,
+            turn: {
+              ...input.turn,
+              decision: {
+                ...input.turn.decision,
+                reply: {
+                  ...input.turn.decision.reply,
+                  text: invalid,
+                  chunks: [invalid],
+                },
+              },
+            },
+          });
+        });
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        `world-repair-grounding-${groundingMode}`,
+        "请以你自己的身份介绍一下自己。",
+      );
+      expect(response.statusCode, response.body).toBe(201);
+      expect(lateWorld).toHaveBeenCalledOnce();
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.assistantMessage.content).toBe(repairedText);
+      expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(calls.map((input) => input.purpose)).toEqual([
+        "chat_turn",
+        "repair_chat_turn",
+      ]);
+      const [generation, repair] = calls;
+      expect(repair?.prompt).toContain("AI_META_DISCLOSURE");
+      if (groundingMode === "retained") {
+        expect(promptJsonSegment(repair!.prompt, "RUNTIME_STATE_JSON")).toEqual(
+          promptJsonSegment(generation!.prompt, "RUNTIME_STATE_JSON"),
+        );
+      } else {
+        expect(repair?.prompt).not.toContain("RUNTIME_STATE_JSON");
+        expect(repair?.prompt).not.toContain("sleepDebtMinutes");
+        expect(repair?.prompt).not.toContain("精力见底");
+        expect(repair?.prompt).not.toContain("stateGuidance");
+      }
+    },
+  );
 
   it("generates with the frozen output request instead of reserving the model's entire output capacity", async () => {
     const created = await createRealProviderTestApp("off", {

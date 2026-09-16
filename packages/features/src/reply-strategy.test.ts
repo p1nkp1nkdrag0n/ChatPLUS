@@ -244,6 +244,115 @@ describe("deriveReplyStrategy", () => {
     expect(sequential.lengthGuidance).toContain("not a quota");
   });
 
+  describe.each([
+    {
+      persona: "outward",
+      dialogue: {
+        averageChunksPerTurn: 3,
+        averageMessageLength: 180,
+        verbosity: 0.9,
+      },
+      preference: "prefer_sequential",
+      guidance: "This character often chats in a message-by-message rhythm",
+    },
+    {
+      persona: "private",
+      dialogue: {
+        averageChunksPerTurn: 1,
+        averageMessageLength: 55,
+        verbosity: 0.1,
+      },
+      preference: "prefer_single_block",
+      guidance: "This character usually sends one coherent block",
+    },
+  ])("$persona authored delivery at low social capacity", (persona) => {
+    it.each([
+      { brief: false, fatigued: false },
+      { brief: true, fatigued: false },
+      { brief: false, fatigued: true },
+      { brief: true, fatigued: true },
+    ])(
+      "keeps the sent cadence for brief=$brief, fatigued=$fatigued",
+      ({ brief, fatigued }) => {
+        const message = brief
+          ? "今天想随便聊聊，听听你此刻的想法。简短一点，一两句就好。"
+          : "今天想随便聊聊，听听你此刻的想法。";
+        const derive = (socialBattery: number, tired = fatigued) =>
+          deriveReplyStrategy(message, persona.dialogue, {
+            sleepDebtAvailable: false,
+            state: {
+              moodValence: 0.1,
+              moodArousal: 0.4,
+              energy: tired ? 0.1 : 0.65,
+              stress: tired ? 0.8 : 0.25,
+              socialBattery,
+              focus: 0.65,
+            },
+          });
+        const low = derive(0.2);
+        const normal = derive(0.65);
+        const view = replyStrategyPromptView(low);
+
+        expect(view).toEqual(replyStrategyPromptView(normal));
+        expect(view).toMatchObject({
+          affinityPolicyVersion: "persona_expression_v2",
+          complexity: brief ? "brief" : "standard",
+          lengthOverride: brief ? "explicit_brief" : "none",
+          deliveryPreference: persona.preference,
+        });
+        expect(view.deliveryGuidance).toContain(persona.guidance);
+        expect(view.deliveryGuidance).toContain("may");
+        expect(view).not.toHaveProperty("preferredChunkCount");
+        expect(view).not.toHaveProperty("stateGuidance");
+        if (brief) {
+          expect(view.softTargetCharacters).toEqual({
+            minimum: low.targetMinChars,
+            ideal: low.targetChars,
+            maximum: low.targetMaxChars,
+          });
+        } else {
+          expect(view).not.toHaveProperty("softTargetCharacters");
+        }
+
+        // Keep the existing planning estimates; they are not authored habits.
+        expect(low.preferredChunkCount).toBe(1);
+        expect(normal.preferredChunkCount).toBe(
+          Math.min(persona.dialogue.averageChunksPerTurn, fatigued ? 2 : 3),
+        );
+        expect(low.targetChars).toBe(normal.targetChars);
+        expect(low.maxOutputTokens).toBe(normal.maxOutputTokens);
+        if (fatigued) {
+          expect(low.targetChars).toBeLessThan(derive(0.2, false).targetChars);
+        }
+      },
+    );
+  });
+
+  it("preserves legacy prompt-view estimates without reassigning the authored cadence", () => {
+    const strategy = deriveReplyStrategy(
+      "今天想随便聊聊。",
+      { averageMessageLength: 180, verbosity: 0.9, averageChunksPerTurn: 3 },
+      {
+        state: { energy: 0.1, stress: 0.8, socialBattery: 0.2, focus: 0.65 },
+      },
+    );
+    const legacy = {
+      ...strategy,
+      affinityPolicyVersion: "single_affinity_v1" as const,
+    };
+    expect(replyStrategyPromptView(legacy)).toMatchObject({
+      affinityPolicyVersion: "single_affinity_v1",
+      softTargetCharacters: { minimum: 148, ideal: 227, maximum: 352 },
+      preferredChunkCount: 1,
+      reviewUpperChars: 364,
+      affinityApplied: false,
+      deliveryPreference: "prefer_sequential",
+    });
+    expect(replyStrategyPromptView(legacy).deliveryGuidance).toContain(
+      "This character often chats in a message-by-message rhythm",
+    );
+  });
+
   it("does not misread negated brevity or English substrings", () => {
     const style = {
       verbosity: 0.5,
@@ -468,7 +577,8 @@ describe("deriveReplyStrategy", () => {
     const lowSocial = derive({ socialBattery: 0.05 });
     const highSocial = derive({ socialBattery: 0.9 });
     expect(lowSocial.preferredChunkCount).toBe(1);
-    expect(lowSocial.deliveryPreference).toBe("prefer_single_block");
+    expect(lowSocial.deliveryPreference).toBe("prefer_sequential");
+    expect(lowSocial.deliveryPreference).toBe(highSocial.deliveryPreference);
     expect(highSocial.preferredChunkCount).toBeGreaterThan(1);
     expect(highSocial.stateGuidance).toContain("社交精力充足");
   });

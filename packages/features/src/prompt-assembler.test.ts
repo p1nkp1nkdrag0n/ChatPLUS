@@ -3,6 +3,7 @@ import type { EvidenceBundle } from "@personasim/contracts";
 import { buildConversationContextPlan } from "./conversation-context-plan.js";
 import { turnExpressionPromptView } from "./turn-expression-policy.js";
 import { REPLY_TASK_GROUNDING_POLICY } from "./reply-task-grounding-policy.js";
+import { RUNTIME_STATE_INTERPRETATION } from "./runtime-state-description.js";
 
 import {
   assembleChatPrompt,
@@ -1770,11 +1771,50 @@ describe("assembleChatPrompt registry integration", () => {
       promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
     ).toEqual(delivered);
     expect(delivered).toMatchObject({ energy: 0.2, focus: 0.9, revision: 7 });
+    expect(delivered).toMatchObject({
+      interpretation: RUNTIME_STATE_INTERPRETATION,
+    });
+    for (const meaning of Object.values(RUNTIME_STATE_INTERPRETATION)) {
+      expect(result.prompt.split(meaning)).toHaveLength(2);
+    }
     expect(
       result.segmentTrace.segments.find(
         (segment) => segment.id === "08_runtime_state",
       ),
     ).toMatchObject({ included: true, truncated: false });
+  });
+
+  it("keeps joint definitions unchanged across opposing state combinations and persona styles", () => {
+    for (const energy of [0.3, 0.8]) {
+      for (const focus of [0.35, 0.8]) {
+        for (const averageChunksPerTurn of [1, 3]) {
+          const input = baseInput({ lifePlanningMode: "fuzzy" });
+          input.state = { ...input.state, energy, focus };
+          input.character.dialogue = {
+            ...input.character.dialogue,
+            averageChunksPerTurn,
+          };
+          const result = assembleChatPrompt(input);
+          const delivered = promptSegmentJson(
+            result.prompt,
+            "RUNTIME_STATE_JSON",
+          );
+          expect(delivered).toMatchObject({
+            energy,
+            focus,
+            interpretation: RUNTIME_STATE_INTERPRETATION,
+          });
+          expect(
+            promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
+          ).toEqual(delivered);
+          expect(
+            result.segmentTrace.segments.find(
+              (segment) => segment.id === "08_runtime_state",
+            ),
+          ).toMatchObject({ included: true, truncated: false });
+        }
+      }
+    }
   });
 
   it("injects the server-selected current activity as present context", () => {

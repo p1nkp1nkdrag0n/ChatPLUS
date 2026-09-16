@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   assembleChatPrompt,
+  RUNTIME_STATE_INTERPRETATION,
   type AssemblePromptInput,
   type ReplyStrategy,
   type PromptAssemblyTrace,
@@ -35,6 +36,7 @@ const OMITTABLE_STATE_KEYS = new Set([
   "asOfUtc",
   "revision",
   "semantics",
+  "interpretation",
   "qualitative",
   "moodValence",
   "moodArousal",
@@ -184,6 +186,16 @@ function projectState(
     throw new Error("Fuzzy state-matrix prompts must not expose sleep debt");
   if ("summary" in record(state.qualitative))
     throw new Error("State-matrix prompt contains a duplicate state summary");
+  // This field is a fixed definition, never a value-dependent mixed-state
+  // summary. Check the complete content so derived clues cannot hide here.
+  if (
+    "interpretation" in state &&
+    stateMatrixValidationHash(state.interpretation) !==
+      stateMatrixValidationHash(RUNTIME_STATE_INTERPRETATION)
+  )
+    throw new Error(
+      "Unreviewed state interpretation prevents a clean omission",
+    );
   if (probe.omittedDimensions.length === 0) return segment;
   if (
     Object.keys(state).some((key) => !OMITTABLE_STATE_KEYS.has(key)) ||

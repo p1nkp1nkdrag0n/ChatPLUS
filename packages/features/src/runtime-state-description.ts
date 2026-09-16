@@ -1,5 +1,17 @@
 import type { RuntimeStateLike } from "./state-engine.js";
 
+/** Value-independent semantics shared by the admitted generation/repair state
+ * snapshot. These explain how to read dimensions together, never derive a
+ * missing dimension or claim a cause from the numeric state. */
+export const RUNTIME_STATE_INTERPRETATION = Object.freeze({
+  capacity:
+    "Read together: energy reflects effort reserve, focus attention continuity, socialBattery conversational reserve. These are tendencies, not fixed limits or substitutes. Capacity is no quota or time/percentage commitment; small tasks stay complete and small.",
+  cause:
+    "Values, occupations, routines and clock time cannot establish recent events or causes. Use supplied evidence; user experiences belong to the user.",
+  continuity:
+    "asOfUtc/revision identify the snapshot, not individual changes. Elapsed time is not evidence of rest or resolution. Resolved events are no longer unresolved; recovery may be partial.",
+});
+
 export interface RuntimeStateDescription {
   moodValence: string;
   moodArousal: string;
@@ -56,7 +68,7 @@ export function describeRuntimeState(
       [1.01, "精力充足，可投入的精力较多"],
     ]),
     stress: describeBand(state.stress, [
-      [0.3, "\u538b\u529b\u8f83\u4f4e\uff0c\u5fc3\u6001\u653e\u677e"],
+      [0.3, "压力较低，当前紧张负荷较轻"],
       [
         0.55,
         "\u6709\u4e00\u4e9b\u538b\u529b\uff0c\u4f46\u4ecd\u53ef\u8c03\u8282",
@@ -65,10 +77,7 @@ export function describeRuntimeState(
         0.75,
         "\u538b\u529b\u504f\u9ad8\uff0c\u4e0d\u592a\u5bb9\u6613\u5b8c\u5168\u653e\u677e",
       ],
-      [
-        1.01,
-        "\u538b\u529b\u5f88\u9ad8\uff0c\u9700\u8981\u4f18\u5148\u964d\u4f4e\u8d1f\u8377",
-      ],
+      [1.01, "压力很高，紧张负荷明显；可承受的投入仍需结合其他状态"],
     ]),
     socialBattery: describeBand(state.socialBattery, [
       [0.2, "社交精力很低，可投入交流的余量很少"],

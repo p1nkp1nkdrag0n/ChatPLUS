@@ -151,7 +151,8 @@ const DEFINITIONS: readonly DefaultDefinition[] = [
     id: "08_runtime_state",
     placement: "prompt",
     priority: 72,
-    tokenBudget: 500,
+    // Keep joint semantics and all six dimensions intact as one snapshot.
+    tokenBudget: 650,
     required: true,
     cacheable: false,
     field: "runtimeState",

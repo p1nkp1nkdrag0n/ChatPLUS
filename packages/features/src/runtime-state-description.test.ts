@@ -85,6 +85,16 @@ describe("describeRuntimeState", () => {
     expect(result.socialBattery).not.toMatch(/主动|意愿|热络/u);
   });
 
+  it("does not turn stress alone into a mood or a mandatory withdrawal", () => {
+    const low = describeRuntimeState({ ...baseline, stress: 0.1 });
+    const high = describeRuntimeState({ ...baseline, stress: 0.9 });
+    expect(low.stress).not.toMatch(/心态放松|开心|愉快/u);
+    expect(high.stress).not.toMatch(/需要优先|拒绝|暂停/u);
+    expect(low.moodValence).toBe(high.moodValence);
+    expect(low.energy).toBe(high.energy);
+    expect(low.focus).toBe(high.focus);
+  });
+
   it.each([
     ["moodValence", -0.5, "明显低落", "略偏负向"],
     ["moodValence", -0.1, "略偏负向", "相对平稳"],

@@ -167,7 +167,8 @@ export function deriveReplyStrategy(
     1,
     12,
   );
-  let deliveryPreference = deliveryPreferenceFor(dialogue);
+  // Capacity may change this turn's effort, not the character's usual cadence.
+  const deliveryPreference = deliveryPreferenceFor(dialogue);
 
   const runtime = context.state;
   const naturalTurn = complexity === "brief" || complexity === "standard";
@@ -195,11 +196,9 @@ export function deriveReplyStrategy(
         preferredChunkCount,
         socialBattery < 0.25 ? 1 : 2,
       );
-      if (socialBattery < 0.25) deliveryPreference = "prefer_single_block";
     }
     if (socialBattery < 0.25) {
       preferredChunkCount = 1;
-      deliveryPreference = "prefer_single_block";
     }
     if (focus < 0.3) {
       target = Math.max(8, Math.round(target * 0.88));

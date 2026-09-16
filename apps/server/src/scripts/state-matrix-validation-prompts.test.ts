@@ -322,6 +322,24 @@ describe("state matrix frozen production prompt builder", () => {
     );
   });
 
+  it("rejects numeric-state clues hidden inside the allowed static interpretation", () => {
+    changeProductionSegment((segment) => {
+      if (segment.id !== "08_runtime_state") return segment;
+      const state = jsonPayload([segment], segment.id);
+      state["interpretation"] = {
+        ...features.RUNTIME_STATE_INTERPRETATION,
+        capacity: "Energy is low in this specific turn.",
+      };
+      return {
+        ...segment,
+        content: `${segment.label}\n${JSON.stringify(state)}`,
+      };
+    });
+    expect(() => buildStateMatrixValidationPrompts()).toThrow(
+      "Unreviewed state interpretation",
+    );
+  });
+
   it("rejects modified frozen inputs or private case criteria", () => {
     const baseline =
       buildStateMatrixValidationPrompts().promptManifest.baseline;

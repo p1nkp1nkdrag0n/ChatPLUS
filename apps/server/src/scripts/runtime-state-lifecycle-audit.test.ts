@@ -54,11 +54,44 @@ describe("runtime state lifecycle audit", () => {
       comparableCommits: 0,
       changedCommits: 0,
       comparableNextTurns: 0,
+      maximumGapHoursWithoutValueChange: null,
     });
     expect(result.fields["energy"]).toMatchObject({
       promptObservations: 1,
       comparableCommits: 2,
       comparableNextTurns: 0,
+      maximumGapHoursWithoutValueChange: null,
+    });
+  });
+
+  it("reports no unchanged gap when every comparable next turn differs", () => {
+    const result = auditRuntimeStateLifecycle({
+      rows: [
+        row("t1", "2026-09-01T00:00:00Z", { energy: 0.7 }, { energy: 0.4 }),
+        row("t2", "2026-09-02T00:00:00Z", { energy: 0.3 }, { energy: 0.2 }),
+        row("t3", "2026-09-03T00:00:00Z", { energy: 0.1 }),
+      ],
+    });
+    expect(result.fields["energy"]).toMatchObject({
+      comparableNextTurns: 2,
+      nextTurnDifferences: 2,
+      unchangedAcrossDayOrLonger: 0,
+      maximumGapHoursWithoutValueChange: null,
+    });
+  });
+
+  it("preserves an observed zero-hour unchanged gap as zero", () => {
+    const result = auditRuntimeStateLifecycle({
+      rows: [
+        row("t1", "2026-09-01T00:00:00Z", { energy: 0.7 }, { energy: 0.4 }),
+        row("t2", "2026-09-01T00:00:00Z", { energy: 0.4 }),
+      ],
+    });
+    expect(result.fields["energy"]).toMatchObject({
+      comparableNextTurns: 1,
+      nextTurnDifferences: 0,
+      unchangedAcrossDayOrLonger: 0,
+      maximumGapHoursWithoutValueChange: 0,
     });
   });
 

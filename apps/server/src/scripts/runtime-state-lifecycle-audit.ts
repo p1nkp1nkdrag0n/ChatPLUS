@@ -78,7 +78,7 @@ export function auditRuntimeStateLifecycle(input: unknown) {
       let nextTurnDifferences = 0;
       let promptObservationsAtBranchInitialValue = 0;
       let unchangedAcrossDayOrLonger = 0;
-      let maximumGapHoursWithoutValueChange = 0;
+      let maximumGapHoursWithoutValueChange: number | null = null;
       for (const branch of branches.values()) {
         const initial = branch[0]?.commitEvent.before[field];
         for (const [index, row] of branch.entries()) {
@@ -106,7 +106,7 @@ export function auditRuntimeStateLifecycle(input: unknown) {
                   Date.parse(previous.commitEvent.recordedAtUtc)) /
                 3_600_000;
               maximumGapHoursWithoutValueChange = Math.max(
-                maximumGapHoursWithoutValueChange,
+                maximumGapHoursWithoutValueChange ?? 0,
                 hours,
               );
               if (hours >= 24) unchangedAcrossDayOrLonger++;

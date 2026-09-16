@@ -50,8 +50,16 @@ function withoutLengthSteering(
   const index = lines.indexOf("REPLY_STRATEGY_JSON");
   if (index < 0) return prompt;
   const strategy = JSON.parse(lines[index + 1]!) as Record<string, unknown>;
+  expect(strategy.affinityPolicyVersion).toBe("persona_expression_v2");
+  expect(strategy.lengthOverride).toBe("none");
+  // This casual v2 fixture already omits both numeric quotas; removing them
+  // must be a no-op while the other steering fields remain required.
+  expect(strategy).not.toHaveProperty("softTargetCharacters");
+  expect(strategy).not.toHaveProperty("preferredChunkCount");
   for (const key of fields) {
-    expect(strategy).toHaveProperty(key);
+    if (key !== "softTargetCharacters" && key !== "preferredChunkCount") {
+      expect(strategy).toHaveProperty(key);
+    }
     delete strategy[key];
   }
   lines[index + 1] = JSON.stringify(strategy);
@@ -250,6 +258,11 @@ describe("reply steering through HTTP, provider transport and persona repair", (
         },
         current.wire[1],
       ]);
+      if (mode === "no_chunk_count_steering") {
+        // There is no chunk quota to ablate in this fixture.
+        expect(experimental.logical).toEqual(current.logical);
+        expect(experimental.wire).toEqual(current.wire);
+      }
       expect(experimental.repair.replyStrategy).toEqual(
         current.repair.replyStrategy,
       );

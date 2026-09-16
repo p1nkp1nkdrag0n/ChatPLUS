@@ -334,6 +334,12 @@ export class PromptSegmentRegistry<
       const normalized = rendered.content.trim();
       const exceedsSegmentBudget =
         estimatePromptTokens(normalized) > segment.tokenBudget;
+      if (segment.globalOverflowPolicy === "error" && exceedsSegmentBudget) {
+        throw new PromptSegmentRegistryError(
+          "required_segments_exceed_budget",
+          `Required prompt segment "${segment.id}" exceeds its whole-segment token budget.`,
+        );
+      }
       if (
         !segment.required &&
         segment.globalOverflowPolicy === "drop" &&
@@ -433,7 +439,8 @@ export class PromptSegmentRegistry<
     const bounded =
       rendered === null
         ? null
-        : !segment.required && segment.globalOverflowPolicy === "drop"
+        : segment.globalOverflowPolicy === "error" ||
+            (!segment.required && segment.globalOverflowPolicy === "drop")
           ? rendered.trim()
           : truncatePromptToTokenBudget(rendered.trim(), segment.tokenBudget);
     this.#cache.set(cacheKey, bounded);
@@ -476,11 +483,23 @@ function validateSegment<TContext extends PromptContext>(
   if (
     segment.globalOverflowPolicy !== undefined &&
     segment.globalOverflowPolicy !== "truncate" &&
-    segment.globalOverflowPolicy !== "drop"
+    segment.globalOverflowPolicy !== "drop" &&
+    segment.globalOverflowPolicy !== "error" &&
+    segment.globalOverflowPolicy !== "preserve"
   ) {
     throw new PromptSegmentRegistryError(
       "invalid_segment",
       `Prompt segment "${segment.id}" has an invalid global overflow policy.`,
+    );
+  }
+  if (
+    (segment.globalOverflowPolicy === "error" ||
+      segment.globalOverflowPolicy === "preserve") &&
+    !segment.required
+  ) {
+    throw new PromptSegmentRegistryError(
+      "invalid_segment",
+      `Prompt segment "${segment.id}" must be required to use the ${segment.globalOverflowPolicy} overflow policy.`,
     );
   }
 }
@@ -520,8 +539,10 @@ function fitRequiredCandidates<TContext extends PromptContext>(
     const largest = [...required]
       .filter(
         (candidate) =>
+          candidate.segment.globalOverflowPolicy !== "error" &&
+          candidate.segment.globalOverflowPolicy !== "preserve" &&
           estimatePromptTokens(candidate.content) >
-          minimumPromptTokens(candidate.content),
+            minimumPromptTokens(candidate.content),
       )
       .sort(
         (left, right) =>

@@ -15,6 +15,7 @@ import {
   interactionEvidencePromptView,
   turnExpressionPromptView,
   replyStrategyPromptView,
+  REPLY_TASK_GROUNDING_POLICY,
   type ReplyStrategy,
 } from "@personasim/features";
 import { estimatePromptTokens } from "@personasim/kernel";
@@ -118,8 +119,10 @@ export class ReplyRepairService {
           llm.capabilities,
           REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
         ),
-        system:
+        system: [
           "Repair a fictional character turn. Preserve a truthful reply, remove or correct invalid schedule effects, and return only the requested JSON object.",
+          REPLY_TASK_GROUNDING_POLICY,
+        ].join("\n"),
         prompt: `${repairGroundingContext(input.replyGrounding)}User message: ${input.userText}\nInvalid decision: ${JSON.stringify(
           input.invalidDecision ?? null,
         )}\nValidation issues: ${JSON.stringify(input.issues)}\nCharacter: ${JSON.stringify(
@@ -190,8 +193,10 @@ export class ReplyRepairService {
           REPAIR_CHAT_TURN_OUTPUT_TOKEN_TARGET,
           input.replyStrategy.maxOutputTokens,
         ),
-        system:
+        system: [
           "Repair only the in-character conversational reply. Return one JSON object containing the complete required text plus optional toneTags and deliveryMode. chunks is optional and intended only for sequential delivery; omit chunks for single_block so the complete reply is not duplicated. Do not emit structured effect proposals for schedules, memories, state changes, relationship changes, or hidden reasoning. Conversational advice is allowed according to currentRequest.advicePolicy; preserve explicitly requested help. Length guidance is soft: preserve useful substance and never pad merely to hit a number.",
+          REPLY_TASK_GROUNDING_POLICY,
+        ].join("\n"),
         prompt:
           repairGroundingContext(input.replyGrounding) +
           `Character role and persona: ${JSON.stringify({

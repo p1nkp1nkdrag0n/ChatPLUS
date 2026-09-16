@@ -30,6 +30,7 @@ export * from "./prompt-assembler.js";
 export * from "./prompt-segments/index.js";
 export * from "./relationship-engine.js";
 export * from "./reply-strategy.js";
+export * from "./reply-task-grounding-policy.js";
 export * from "./runtime-state-description.js";
 export * from "./schedule-negotiation.js";
 export * from "./schedule-planner.js";

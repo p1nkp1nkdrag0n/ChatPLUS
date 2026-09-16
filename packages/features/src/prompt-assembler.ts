@@ -30,6 +30,7 @@ import {
   type ReplyStrategy,
 } from "./reply-strategy.js";
 import { describeRuntimeState } from "./runtime-state-description.js";
+import { REPLY_TASK_GROUNDING_POLICY } from "./reply-task-grounding-policy.js";
 import {
   projectCharacterTime,
   projectPromptTemporalData,
@@ -1071,6 +1072,19 @@ export function assembleChatPrompt(
           : segment,
     ),
   );
+  // Isolate the new guidance: app policy keeps its existing local allowance.
+  // This block must survive whole, even when optional context must be dropped.
+  registry.register({
+    id: "01b_reply_task_grounding_policy",
+    placement: "system",
+    priority: 100,
+    tokenBudget: 600,
+    required: true,
+    cacheable: true,
+    cacheKey: () => "reply-task-grounding:v1",
+    globalOverflowPolicy: "error",
+    render: () => REPLY_TASK_GROUNDING_POLICY,
+  });
   if (input.followUpContext !== undefined) {
     registry.register(createFollowUpContextPromptSegment());
   }
@@ -1155,20 +1169,28 @@ export function assembleChatPrompt(
     input.maxInputTokens === undefined
       ? {}
       : { maxInputTokens: input.maxInputTokens };
-  let admitted = registry.render(promptSafeContext, renderOptions);
-  let completeControls = true;
+  let admitted: PromptAssemblyResult | undefined;
   try {
+    admitted = registry.render(promptSafeContext, renderOptions);
     assertTurnControlDelivered(
       admitted,
       promptSafeContext.replyStrategy as Record<string, unknown>,
     );
   } catch (error) {
-    if (!(error instanceof PromptSegmentRegistryError)) throw error;
-    completeControls = false;
+    if (
+      !(error instanceof PromptSegmentRegistryError) ||
+      error.code !== "required_segments_exceed_budget"
+    )
+      throw error;
+    admitted = undefined;
   }
-  if (!completeControls || !admitted.prompt.includes(appraisalInstructions)) {
+  if (
+    admitted === undefined ||
+    !admitted.prompt.includes(appraisalInstructions)
+  ) {
     // Optional reaction authoring is all-or-nothing. Under a small budget keep
     // the core chat contract rather than asking with clipped evidence rules.
+    // Other required results still must fit intact, or this retry throws.
     admitted = registry.render(
       { ...promptSafeContext, outputContract: baseOutputContract },
       renderOptions,

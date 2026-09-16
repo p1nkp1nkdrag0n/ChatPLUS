@@ -312,6 +312,11 @@ function toSegment(
     tokenBudget: definition.tokenBudget,
     required: definition.required,
     cacheable: definition.cacheable,
+    // Required authority and instructions may use their existing local budget
+    // handling, but global pressure must not shrink those results to fragments.
+    ...(definition.required
+      ? { globalOverflowPolicy: "preserve" as const }
+      : {}),
     ...(definition.globalOverflowPolicy === undefined
       ? {}
       : { globalOverflowPolicy: definition.globalOverflowPolicy }),

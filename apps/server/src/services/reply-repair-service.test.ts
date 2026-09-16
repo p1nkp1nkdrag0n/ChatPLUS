@@ -3,6 +3,7 @@ import {
   buildConversationContextPlan,
   assembleChatPrompt,
   deriveReplyStrategy,
+  REPLY_TASK_GROUNDING_POLICY,
 } from "@personasim/features";
 import { estimatePromptTokens } from "@personasim/kernel";
 import { describe, expect, it } from "vitest";
@@ -332,6 +333,15 @@ describe.each(["persona", "fixture"] as const)(
         }
         expect(calls).toHaveLength(1);
         const prompt = calls[0]!.prompt;
+        // Both repair schemas share the generation policy without restoring
+        // omitted data or duplicating the admitted grounding in that policy.
+        expect(
+          assembled.system.split(REPLY_TASK_GROUNDING_POLICY),
+        ).toHaveLength(2);
+        expect(
+          calls[0]!.system.split(REPLY_TASK_GROUNDING_POLICY),
+        ).toHaveLength(2);
+        expect(prompt).not.toContain(REPLY_TASK_GROUNDING_POLICY);
         expect(prompt).toContain(`RUNTIME_STATE_JSON\n${originalSnapshot}`);
         expect(prompt.split(originalSnapshot)).toHaveLength(2);
         expect(prompt).toContain('"energy":0.2');

@@ -926,6 +926,10 @@ export class ConversationService {
             }),
       },
     };
+    // Late schedule presentations, semantic filtering, or delivery rewrites may
+    // replace the original candidate. Never commit an empty promised body or
+    // the effects attached to a failed deliverable.
+    decisions.assertReplyCompleteness(input.text, finalized.world.decision);
     return this.commits.commit({
       ...(llm.selection === undefined ? {} : { modelSelection: llm.selection }),
       memoryRevision,

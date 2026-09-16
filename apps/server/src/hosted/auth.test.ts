@@ -1,12 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HostedControlStore } from "./control-store.js";
 import { HostedAuthService } from "./auth.js";
 let store: HostedControlStore | undefined;
 let root: string | undefined;
 afterEach(() => {
+  vi.useRealTimers();
   store?.close();
   if (root) rmSync(root, { recursive: true, force: true });
 });
@@ -15,6 +16,7 @@ it("uses Argon2id, handles invitation concurrency and revokes reset/logout sessi
   store = new HostedControlStore(root);
   const auth = new HostedAuthService(store);
   const admin = await auth.bootstrap("admin", "a-long-admin-password");
+  store.setLimits({ registrationEnabled: true }, admin.user.id);
   expect(store.passwordRecord("admin")!.passwordHash).toMatch(/^\$argon2id\$/u);
   await expect(
     auth.bootstrap("other-admin", "another-long-password"),
@@ -38,6 +40,9 @@ it("uses Argon2id, handles invitation concurrency and revokes reset/logout sessi
   expect(
     results.filter((result) => result.status === "fulfilled"),
   ).toHaveLength(1);
+  expect(results.find((result) => result.status === "rejected")).toMatchObject({
+    reason: { code: "invalid_invite" },
+  });
   const result = results.find((item) => item.status === "fulfilled")!;
   if (result.status !== "fulfilled") throw new Error("No registered user");
   const friend = result.value;
@@ -71,16 +76,29 @@ it("uses Argon2id, handles invitation concurrency and revokes reset/logout sessi
   auth.logout(changed.token);
   expect(() => auth.authenticate(changed.token)).toThrow("Sign in");
 });
-it("uses generic authentication errors and throttles repeated failures", async () => {
+it("shares failure limits across canonical usernames and reports the remaining cooldown", async () => {
   root = mkdtempSync(join(tmpdir(), "dearvale-auth-"));
   store = new HostedControlStore(root);
   const auth = new HostedAuthService(store);
   await auth.bootstrap("admin", "a-long-admin-password");
-  for (let index = 0; index < 5; index++)
-    await expect(auth.login("admin", "wrong")).rejects.toMatchObject({
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-16T00:00:00Z"));
+  for (const username of ["admin", " ADMIN ", "ａｄｍｉｎ", "Admin", " admin"])
+    await expect(auth.login(username, "wrong")).rejects.toMatchObject({
       code: "invalid_credentials",
     });
   await expect(
     auth.login("admin", "a-long-admin-password"),
-  ).rejects.toMatchObject({ code: "login_throttled" });
+  ).rejects.toMatchObject({ code: "login_throttled", retryAfterSeconds: 900 });
+  vi.setSystemTime(new Date("2026-09-16T00:14:59.100Z"));
+  await expect(
+    auth.login(" ADMIN ", "a-long-admin-password"),
+  ).rejects.toMatchObject({ code: "login_throttled", retryAfterSeconds: 1 });
+  vi.setSystemTime(new Date("2026-09-16T00:15:00Z"));
+  await expect(
+    auth.login(" ＡＤＭＩＮ ", "a-long-admin-password"),
+  ).resolves.toMatchObject({
+    user: { username: "admin" },
+  });
+  expect(store.loginRetryAfterSeconds("admin")).toBe(0);
 });

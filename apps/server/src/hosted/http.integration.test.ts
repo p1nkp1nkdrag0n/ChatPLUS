@@ -170,7 +170,10 @@ async function fixture(startSchedulers = false) {
     adminId,
   );
   app.control.setPurposeDefault("default", "friendly", adminId);
-  app.control.setLimits({ callsEnabled: true }, adminId);
+  app.control.setLimits(
+    { callsEnabled: true, registrationEnabled: true },
+    adminId,
+  );
   async function register(username: string) {
     const friend = client(app.userApp, publicOrigin);
     await friend.request("GET", "/api/hosted/info");

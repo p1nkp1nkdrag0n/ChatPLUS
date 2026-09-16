@@ -109,7 +109,7 @@ function acquireLock(root: string): () => void {
 }
 const now = () => new Date().toISOString();
 const defaults: HostedLimits = {
-  registrationEnabled: true,
+  registrationEnabled: false,
   callsEnabled: false,
   globalConcurrency: 4,
   perUserConcurrency: 1,
@@ -487,6 +487,30 @@ export class HostedControlStore {
       })
       .immediate();
   }
+  /** Cheap preflight before password hashing; registration rechecks in its transaction. */
+  assertRegistrationAllowed(inviteCode: string): void {
+    this.registrationInvite(inviteCode);
+  }
+  private registrationInvite(inviteCode: string): Row {
+    if (!this.limits().registrationEnabled)
+      throw new HostedError(
+        403,
+        "registration_disabled",
+        "Registration is disabled.",
+      );
+    const row = this.database
+      .prepare(
+        "SELECT * FROM invites WHERE token_hash=? AND revoked_at IS NULL AND uses<max_uses AND (expires_at IS NULL OR expires_at>?)",
+      )
+      .get(hashOpaqueToken(inviteCode.trim()), now()) as Row | undefined;
+    if (!row)
+      throw new HostedError(
+        400,
+        "invalid_invite",
+        "The invitation is invalid, expired or already used.",
+      );
+    return row;
+  }
   registerUser(input: {
     username: string;
     passwordHash: string;
@@ -495,24 +519,7 @@ export class HostedControlStore {
   }): HostedUser {
     return this.database
       .transaction(() => {
-        if (!this.limits().registrationEnabled)
-          throw new HostedError(
-            403,
-            "registration_disabled",
-            "Registration is disabled.",
-          );
-        const row = this.database
-          .prepare(
-            "SELECT * FROM invites WHERE token_hash=? AND revoked_at IS NULL AND uses<max_uses AND (expires_at IS NULL OR expires_at>?)",
-          )
-          .get(hashOpaqueToken(input.inviteCode.trim()), now()) as
-          Row | undefined;
-        if (!row)
-          throw new HostedError(
-            400,
-            "invalid_invite",
-            "The invitation is invalid, expired or already used.",
-          );
+        const row = this.registrationInvite(input.inviteCode);
         const value = this.insertUser(
           input.username,
           input.passwordHash,
@@ -759,10 +766,17 @@ export class HostedControlStore {
       .run(now(), userId);
   }
   loginBlocked(subject: string): boolean {
+    return this.loginRetryAfterSeconds(subject) > 0;
+  }
+  loginRetryAfterSeconds(subject: string): number {
     const row = this.database
       .prepare("SELECT blocked_until FROM auth_failures WHERE subject=?")
       .get(hashOpaqueToken(subject)) as Row | undefined;
-    return typeof row?.blocked_until === "string" && row.blocked_until > now();
+    if (typeof row?.blocked_until !== "string") return 0;
+    const remaining = Date.parse(row.blocked_until) - Date.now();
+    return Number.isFinite(remaining)
+      ? Math.max(0, Math.ceil(remaining / 1000))
+      : 0;
   }
   recordLoginFailure(subject: string): void {
     const key = hashOpaqueToken(subject);

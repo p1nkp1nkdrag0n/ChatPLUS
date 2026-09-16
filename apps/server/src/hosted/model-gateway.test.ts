@@ -42,6 +42,7 @@ function fixture() {
     "administrator",
     "not-a-live-password-hash",
   );
+  store.setLimits({ registrationEnabled: true }, admin.id);
   const invite = store.createInvite(
     { maxUses: 3, initialBalanceMicros: 5_000_000 },
     admin.id,

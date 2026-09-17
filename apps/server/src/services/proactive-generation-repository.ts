@@ -1,8 +1,14 @@
-import type { ProactiveDeliverySubjectLike } from "@personasim/features";
+import type {
+  FollowUpSchedule,
+  ProactiveDeliverySubjectLike,
+} from "@personasim/features";
 
 import type { Database } from "../db/connection.js";
 import { createEntityId } from "../domain/id.js";
-import { FollowUpRepository } from "./follow-up-repository.js";
+import {
+  FollowUpRepository,
+  type StoredContinuityGrounding,
+} from "./follow-up-repository.js";
 
 export type ProactiveSubjectRef =
   | { kind: "activity_candidate"; id: string }
@@ -29,6 +35,14 @@ export type ProactiveSubjectRecord =
       contextSummary: string;
       expectedOutcomeDescription: string;
       timingIntent?: "reminder" | "appointment" | "event_aftermath";
+      currentArrangement?: {
+        text: string;
+        sourceMessageId: string;
+        sourceCreatedAtUtc: string;
+        timezone?: string;
+        currentSchedule?: FollowUpSchedule;
+        historicalSourceMessageIds: string[];
+      };
     });
 
 export type GenerationRunStatus =
@@ -316,13 +330,13 @@ export class ProactiveGenerationRepository {
   ): ProactiveSubjectRecord | undefined {
     const followUps = this.database
       .prepare(
-        `SELECT fui.*,
+        `SELECT fui.*, source.content AS source_text, source.created_at_utc AS source_created_at_utc,
            EXISTS(
              SELECT 1 FROM messages m
              WHERE m.trigger_follow_up_intent_id = fui.id
                 OR m.id = fui.resolution_message_id
            ) AS already_discussed
-         FROM follow_up_intents fui
+         FROM follow_up_intents fui JOIN messages source ON source.id = fui.source_message_id
          WHERE fui.agent_id = ?
            AND fui.status = 'pending'
            AND NOT EXISTS (SELECT 1 FROM proactive_intent_decisions d
@@ -385,13 +399,13 @@ export class ProactiveGenerationRepository {
         return undefined;
       const row = this.database
         .prepare(
-          `SELECT fui.*,
+          `SELECT fui.*, source.content AS source_text, source.created_at_utc AS source_created_at_utc,
              EXISTS(
                SELECT 1 FROM messages m
                WHERE m.trigger_follow_up_intent_id = fui.id
                   OR m.id = fui.resolution_message_id
              ) AS already_discussed
-           FROM follow_up_intents fui WHERE fui.id = ?`,
+           FROM follow_up_intents fui JOIN messages source ON source.id = fui.source_message_id WHERE fui.id = ?`,
         )
         .get(ref.id) as SqlRow | undefined;
       return row === undefined
@@ -905,11 +919,23 @@ function mapActivitySubject(row: SqlRow): ProactiveSubjectRecord {
 }
 
 function mapFollowUpSubject(row: SqlRow): ProactiveSubjectRecord {
-  const grounding =
-    row["grounding_json"] == null ? {} : parseSnapshot(row["grounding_json"]);
-  const basis = grounding["basis"] as
+  const grounding = (
+    row["grounding_json"] == null ? {} : parseSnapshot(row["grounding_json"])
+  ) as Partial<StoredContinuityGrounding>;
+  const basis = grounding.basis as
     | { timingIntent?: "reminder" | "appointment" | "event_aftermath" }
     | undefined;
+  const sourceMessageId = String(row["source_message_id"]);
+  const sourceCreatedAtUtc = String(row["source_created_at_utc"]);
+  // Old records may have no parsed schedule. Never infer an event time from
+  // the contact window, or carry metadata belonging to a superseded source.
+  const schedule = grounding.currentSchedule;
+  const currentSchedule =
+    schedule !== undefined &&
+    Date.parse(schedule.referenceAtUtc) === Date.parse(sourceCreatedAtUtc) &&
+    schedule.timezone === grounding.timezone
+      ? schedule
+      : undefined;
   return {
     kind: "follow_up",
     id: String(row["id"]),
@@ -924,6 +950,18 @@ function mapFollowUpSubject(row: SqlRow): ProactiveSubjectRecord {
     generationEpoch: Number(row["generation_epoch"]),
     contextSummary: String(row["context_summary"]),
     expectedOutcomeDescription: String(row["expected_outcome_description"]),
+    currentArrangement: {
+      text: String(row["source_text"]),
+      sourceMessageId,
+      sourceCreatedAtUtc,
+      ...(grounding.timezone === undefined
+        ? {}
+        : { timezone: grounding.timezone }),
+      ...(currentSchedule === undefined ? {} : { currentSchedule }),
+      historicalSourceMessageIds: (grounding.sources ?? [])
+        .map((source) => source.id)
+        .filter((id) => id !== sourceMessageId),
+    },
     ...(basis?.timingIntent === undefined
       ? {}
       : { timingIntent: basis.timingIntent }),

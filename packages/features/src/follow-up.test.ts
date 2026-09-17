@@ -148,6 +148,15 @@ describe("FollowUp grounding and time", () => {
     expect(reminder).toEqual({
       earliestAtUtc: "2026-08-22T12:00:00.000Z",
       expiresAtUtc: "2026-08-22T14:00:00.000Z",
+      currentSchedule: {
+        timezone: "Asia/Shanghai",
+        referenceAtUtc: NOW_UTC,
+        localDate: "2026-08-22",
+        precision: "minute",
+        period: "evening",
+        localTime: "20:00",
+        atUtc: "2026-08-22T12:00:00.000Z",
+      },
     });
     expect(
       resolveFollowUpWindow(
@@ -165,6 +174,70 @@ describe("FollowUp grounding and time", () => {
         "appointment",
       )?.earliestAtUtc,
     ).toBe("2026-08-22T07:00:00.000Z");
+  });
+
+  it("keeps an explicit event start separate from the delayed contact window", () => {
+    const window = resolveFollowUpWindow(
+      "明晚九点半有面试",
+      NOW_UTC,
+      "Asia/Shanghai",
+      "event_aftermath",
+    );
+    expect(window).toEqual({
+      earliestAtUtc: "2026-08-23T02:00:00.000Z",
+      expiresAtUtc: "2026-08-26T02:00:00.000Z",
+      currentSchedule: {
+        timezone: "Asia/Shanghai",
+        referenceAtUtc: NOW_UTC,
+        localDate: "2026-08-22",
+        precision: "minute",
+        period: "evening",
+        localTime: "21:30",
+        atUtc: "2026-08-22T13:30:00.000Z",
+      },
+    });
+  });
+
+  it.each([
+    ["明晚有面试", { precision: "period", period: "evening" }],
+    ["明天有面试", { precision: "day" }],
+  ])(
+    "does not invent exact event times for vague arrangements: %s",
+    (text, timing) => {
+      const schedule = resolveFollowUpWindow(
+        text,
+        NOW_UTC,
+        "Asia/Shanghai",
+        "event_aftermath",
+      )?.currentSchedule;
+      expect(schedule).toEqual({
+        timezone: "Asia/Shanghai",
+        referenceAtUtc: NOW_UTC,
+        localDate: "2026-08-22",
+        ...timing,
+      });
+      expect(schedule).not.toHaveProperty("atUtc");
+      expect(schedule).not.toHaveProperty("localTime");
+    },
+  );
+
+  it("resolves the arrangement date from the source's local day across midnight", () => {
+    expect(
+      resolveFollowUpWindow(
+        "明天下午三点有面试",
+        "2026-08-21T16:30:00.000Z",
+        "Asia/Shanghai",
+        "event_aftermath",
+      )?.currentSchedule,
+    ).toEqual({
+      timezone: "Asia/Shanghai",
+      referenceAtUtc: "2026-08-21T16:30:00.000Z",
+      localDate: "2026-08-23",
+      precision: "minute",
+      period: "afternoon",
+      localTime: "15:00",
+      atUtc: "2026-08-23T07:00:00.000Z",
+    });
   });
 
   it("uses an explicit requested follow-up day rather than the earlier event day", () => {
@@ -328,6 +401,15 @@ describe("FollowUp grounding and time", () => {
     ).toEqual({
       earliestAtUtc: "2026-08-22T04:10:00.000Z",
       expiresAtUtc: "2026-08-25T04:10:00.000Z",
+      currentSchedule: {
+        timezone: "Asia/Shanghai",
+        referenceAtUtc: NOW_UTC,
+        localDate: "2026-08-22",
+        precision: "minute",
+        period: "noon",
+        localTime: "12:10",
+        atUtc: "2026-08-22T04:10:00.000Z",
+      },
     });
     expect(
       resolveFollowUpWindow("明天下午3:05提醒我", NOW_UTC, "Asia/Shanghai")
@@ -340,6 +422,13 @@ describe("FollowUp grounding and time", () => {
     ).toEqual({
       earliestAtUtc: "2026-08-22T10:00:00.000Z",
       expiresAtUtc: "2026-08-25T10:00:00.000Z",
+      currentSchedule: {
+        timezone: "Asia/Shanghai",
+        referenceAtUtc: NOW_UTC,
+        localDate: "2026-08-22",
+        precision: "period",
+        period: "afternoon",
+      },
     });
   });
 

@@ -74,6 +74,16 @@ describe("FollowUpService", () => {
       generationEpoch: 1,
       sourceMessageId: "reschedule",
       earliestAtUtc: "2026-08-26T09:00:00.000Z",
+      grounding: {
+        currentSchedule: {
+          timezone: "Asia/Shanghai",
+          referenceAtUtc: "2026-08-21T04:05:00.000Z",
+          localDate: "2026-08-26",
+          precision: "minute",
+          localTime: "15:00",
+          atUtc: "2026-08-26T07:00:00.000Z",
+        },
+      },
     });
     expect(revised.grounding?.sources.map((source) => source.id)).toEqual([
       "interview-source",
@@ -104,6 +114,101 @@ describe("FollowUpService", () => {
       .prepare("UPDATE messages SET content = '原始依据已修改' WHERE id = ?")
       .run("interview-source");
     expect(repository.isFollowUpEvidenceCurrent(original.id)).toBe(false);
+  });
+
+  it("replaces the effective schedule on each reschedule using the latest source's date", () => {
+    const original = createEvent("interview-source", "我明天下午有面试。");
+    for (const [id, text, at] of [
+      ["first-change", "面试改到下周三下午三点。", "2026-08-21T04:05:00.000Z"],
+      ["second-change", "面试改到明天下午三点。", "2026-08-23T04:00:00.000Z"],
+    ] as const) {
+      insertMessage(database, {
+        id,
+        role: "user",
+        content: text,
+        createdAtUtc: at,
+      });
+      clock.setUtc(at);
+      service.handleUserMessage({ agentId: AGENT_ID, messageId: id });
+    }
+    const revised = repository.getFollowUp(original.id)!;
+    expect(revised).toMatchObject({
+      revision: 2,
+      generationEpoch: 2,
+      sourceMessageId: "second-change",
+      earliestAtUtc: "2026-08-24T09:00:00.000Z",
+      grounding: {
+        currentSchedule: {
+          timezone: "Asia/Shanghai",
+          referenceAtUtc: "2026-08-23T04:00:00.000Z",
+          localDate: "2026-08-24",
+          precision: "minute",
+          localTime: "15:00",
+          atUtc: "2026-08-24T07:00:00.000Z",
+        },
+      },
+    });
+    expect(revised.grounding?.sources.map((source) => source.id)).toEqual([
+      "interview-source",
+      "first-change",
+      "second-change",
+    ]);
+    expect(countRows(database, "follow_up_intents")).toBe(1);
+  });
+
+  it("stores the reschedule timezone and inherits it when a later update omits one", () => {
+    const original = createEvent("interview-source", "我明天下午有面试。");
+    insertMessage(database, {
+      id: "new-zone",
+      role: "user",
+      content: "面试改到下周一下午三点。",
+      createdAtUtc: "2026-08-21T04:05:00.000Z",
+    });
+    clock.setUtc("2026-08-21T04:05:00.000Z");
+    service.handleUserMessage({
+      agentId: AGENT_ID,
+      messageId: "new-zone",
+      timezone: "America/New_York",
+    });
+    expect(
+      repository.getFollowUp(original.id)?.grounding?.currentSchedule,
+    ).toMatchObject({
+      timezone: "America/New_York",
+      localDate: "2026-08-24",
+      localTime: "15:00",
+      atUtc: "2026-08-24T19:00:00.000Z",
+    });
+    insertMessage(database, {
+      id: "inherit-zone",
+      role: "user",
+      content: "面试改到明天下午三点。",
+      createdAtUtc: "2026-08-21T04:10:00.000Z",
+    });
+    clock.setUtc("2026-08-21T04:10:00.000Z");
+    service.handleUserMessage({ agentId: AGENT_ID, messageId: "inherit-zone" });
+    expect(
+      repository.getFollowUp(original.id)?.grounding?.currentSchedule,
+    ).toMatchObject({
+      timezone: "America/New_York",
+      referenceAtUtc: "2026-08-21T04:10:00.000Z",
+      localDate: "2026-08-22",
+      localTime: "15:00",
+      atUtc: "2026-08-22T19:00:00.000Z",
+    });
+  });
+
+  it("anchors delayed extraction to the source message and preserves vague evening precision", () => {
+    clock.setUtc("2026-08-22T04:00:00.000Z");
+    const created = createEvent("delayed-source", "我明晚有面试。");
+    expect(created.createdAtUtc).toBe("2026-08-22T04:00:00.000Z");
+    expect(created.earliestAtUtc).toBe("2026-08-23T02:00:00.000Z");
+    expect(created.grounding?.currentSchedule).toEqual({
+      timezone: "Asia/Shanghai",
+      referenceAtUtc: NOW_UTC,
+      localDate: "2026-08-22",
+      precision: "period",
+      period: "evening",
+    });
   });
 
   it("does not reschedule multiple matching subjects or silently create a duplicate", () => {
@@ -759,7 +864,7 @@ describe("FollowUpService", () => {
     expect(repository.getCareCue(created.careCue.id)?.status).toBe("active");
   });
 
-  it("revalidates a specific legitimate legacy row using its original date while leaving the T8 row pending and unsendable", () => {
+  it("revalidates a legacy row using its source date instead of its delayed creation date while leaving the T8 row unsendable", () => {
     const event = "明天下午有面试。";
     const analysis = "请帮我分析怎样区分真正做错了和修改带来的烦躁。";
     for (const [id, content] of [
@@ -783,7 +888,7 @@ describe("FollowUpService", () => {
         earliestAtUtc: "2026-08-22T10:00:00.000Z",
         expiresAtUtc: "2026-08-25T10:00:00.000Z",
         dedupeKey: id,
-        createdAtUtc: NOW_UTC,
+        createdAtUtc: "2026-08-22T04:00:00.000Z",
       });
       expect(repository.isFollowUpEvidenceCurrent(`${id}-followup`)).toBe(
         false,
@@ -801,7 +906,16 @@ describe("FollowUpService", () => {
       followUp: {
         status: "pending",
         earliestAtUtc: "2026-08-22T10:00:00.000Z",
-        grounding: { basis: { basisKind: "user_event" } },
+        grounding: {
+          basis: { basisKind: "user_event" },
+          currentSchedule: {
+            timezone: "Asia/Shanghai",
+            referenceAtUtc: NOW_UTC,
+            localDate: "2026-08-22",
+            precision: "period",
+            period: "afternoon",
+          },
+        },
       },
     });
     expect(repository.isFollowUpEvidenceCurrent("legacy-event-followup")).toBe(

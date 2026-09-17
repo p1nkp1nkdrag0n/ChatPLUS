@@ -44,9 +44,21 @@ export interface FollowUpCandidateLike {
   reasonSummary: string;
 }
 
+/** Source-grounded arrangement, distinct from the later contact window. */
+export interface FollowUpSchedule {
+  timezone: string;
+  referenceAtUtc: string;
+  localDate: string;
+  precision: "minute" | "period" | "day";
+  localTime?: string;
+  period?: "morning" | "noon" | "afternoon" | "evening";
+  atUtc?: string;
+}
+
 export interface FollowUpWindow {
   earliestAtUtc: string;
   expiresAtUtc: string;
+  currentSchedule: FollowUpSchedule;
 }
 
 export type FollowUpCandidateRejectionCode =
@@ -68,6 +80,7 @@ export type NormalizeFollowUpCandidateResult =
         evidenceQuotes: string[];
         earliestAtUtc: string;
         expiresAtUtc: string;
+        currentSchedule: FollowUpSchedule;
         dedupeKey: string;
         reasonCode: string;
         reasonSummary: string;
@@ -271,6 +284,33 @@ export function resolveFollowUpWindow(
     second: 0,
     millisecond: 0,
   });
+  const period = morning
+    ? "morning"
+    : noon
+      ? "noon"
+      : afternoon
+        ? "afternoon"
+        : evening
+          ? "evening"
+          : undefined;
+  const currentSchedule: FollowUpSchedule = {
+    timezone,
+    referenceAtUtc: now.toUTC().toISO()!,
+    localDate: targetDay.toISODate()!,
+    precision:
+      explicitClock !== undefined
+        ? "minute"
+        : period !== undefined
+          ? "period"
+          : "day",
+    ...(period === undefined ? {} : { period }),
+    ...(explicitClock === undefined
+      ? {}
+      : {
+          localTime: earliest.toFormat("HH:mm"),
+          atUtc: earliest.toUTC().toISO()!,
+        }),
+  };
   if (timingIntent === "event_aftermath") {
     if (explicitClock !== undefined) earliest = earliest.plus({ hours: 2 });
     if ((evening && explicitClock === undefined) || earliest.hour >= 22) {
@@ -279,6 +319,7 @@ export function resolveFollowUpWindow(
   }
   if (!earliest.isValid || earliest <= now) return undefined;
   return {
+    currentSchedule,
     earliestAtUtc: earliest.toUTC().toISO()!,
     expiresAtUtc: earliest
       .plus({ hours: exactRequest ? 2 : 72 })

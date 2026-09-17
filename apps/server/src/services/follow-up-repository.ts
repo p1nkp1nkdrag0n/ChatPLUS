@@ -4,6 +4,7 @@ import type {
   CareCueLike,
   FollowUpLike,
   FollowUpGroundingBasis,
+  FollowUpSchedule,
 } from "@personasim/features";
 
 import type { Database } from "../db/connection.js";
@@ -26,6 +27,7 @@ export interface StoredCareCue extends CareCueLike {
 export interface StoredContinuityGrounding {
   version: 1;
   timezone?: string;
+  currentSchedule?: FollowUpSchedule;
   basis: FollowUpGroundingBasis | { basisKind: "user_context"; matter: string };
   contextSummary: string;
   guidance: string;

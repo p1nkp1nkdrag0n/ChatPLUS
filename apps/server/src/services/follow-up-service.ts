@@ -189,6 +189,7 @@ export class FollowUpService {
         grounding: {
           version: 1,
           timezone: input.timezone,
+          currentSchedule: normalized.followUp.currentSchedule,
           basis: normalized.followUp.grounding,
           contextSummary: normalized.followUp.contextSummary,
           guidance: normalized.followUp.expectedOutcomeDescription,
@@ -210,7 +211,7 @@ export class FollowUpService {
   }
 
   /** Restore one legacy pending record only after the same public semantic
-   * check used for new candidates. Relative dates use the original creation
+   * check used for new candidates. Relative dates use the source message
    * instant, so reviewing an old "tomorrow" never postpones it to tomorrow. */
   revalidateFollowUp(input: {
     agentId: string;
@@ -272,7 +273,7 @@ export class FollowUpService {
           reasonSummary:
             "Rebuild a pending record from its actual stored source.",
         },
-        nowUtc: record.createdAtUtc,
+        nowUtc: source.createdAtUtc,
         timezone: input.timezone,
       });
       if (!normalized.accepted) return normalized;
@@ -291,6 +292,7 @@ export class FollowUpService {
         grounding: {
           version: 1,
           timezone: input.timezone,
+          currentSchedule: basis.currentSchedule,
           basis: basis.grounding,
           contextSummary: basis.contextSummary,
           guidance: basis.expectedOutcomeDescription,
@@ -590,6 +592,7 @@ export class FollowUpService {
         grounding: {
           ...previousGrounding,
           timezone: zone,
+          currentSchedule: window.currentSchedule,
           contextSummary,
           basis: {
             ...basis,

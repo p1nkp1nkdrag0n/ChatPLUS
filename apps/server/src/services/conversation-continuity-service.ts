@@ -9,6 +9,7 @@ import {
   type ModelCareCueCandidate,
   type ModelFollowUpCandidate,
 } from "@personasim/contracts";
+import { isExplicitContactRequest } from "@personasim/features";
 
 import type { StoredMessage } from "../db/store.js";
 import type {
@@ -101,6 +102,7 @@ export class ConversationContinuityService {
     const transitions = this.followUps.handleUserMessage({
       agentId: input.agentId,
       messageId: input.userMessage.id,
+      timezone: input.timezone,
     });
     const parsed = ModelContinuityTurnEffectsSchema.safeParse(
       input.rawEffects ?? {},
@@ -379,12 +381,9 @@ function deriveExplicitFollowUpCandidate(
 ): FollowUpCandidate | undefined {
   const userText = input.userMessage.content;
   const assistantText = input.assistantMessage.content;
-  const explicitRequest =
-    /提醒我|问我|记得(?:问|提醒)|到时候(?:问|提醒)|remind\s+me|ask\s+me|check\s+(?:in|on)/iu.test(
-      userText,
-    );
+  const explicitRequest = isExplicitContactRequest(userText);
   const futureTiming =
-    /明天|明日|后天|下周|下星期|周[一二三四五六日天]|星期[一二三四五六日天]|tomorrow|next\s+week|\d{1,2}\s*[:：点]\s*\d{0,2}/iu.test(
+    /今天|今日|今晚|今早|明天|明日|明晚|明早|后天|下周|下星期|周[一二三四五六日天]|星期[一二三四五六日天]|today|tonight|tomorrow|next\s+week|\d{1,2}\s*[:：点]\s*\d{0,2}/iu.test(
       userText,
     );
   const userCancelled = /不要|不用|别|取消|不必|无需/iu.test(userText);

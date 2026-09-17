@@ -25,6 +25,7 @@ export interface StoredCareCue extends CareCueLike {
 
 export interface StoredContinuityGrounding {
   version: 1;
+  timezone?: string;
   basis: FollowUpGroundingBasis | { basisKind: "user_context"; matter: string };
   contextSummary: string;
   guidance: string;
@@ -131,6 +132,32 @@ export class FollowUpRepository {
     return rows
       .map((row) => this.getSourceMessage(row.id)!)
       .filter((message) => message.id !== source.id);
+  }
+
+  getPreviousConversationMessage(
+    source: StoredSourceMessage,
+  ): StoredSourceMessage | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT id FROM messages WHERE session_id = ? AND agent_id = ?
+       AND role IN ('user', 'assistant') AND rowid < (SELECT rowid FROM messages WHERE id = ?)
+       ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get(source.sessionId, source.agentId, source.id) as
+      { id: string } | undefined;
+    return row === undefined ? undefined : this.getSourceMessage(row.id);
+  }
+
+  findFollowUpBySource(
+    agentId: string,
+    sourceMessageId: string,
+  ): StoredFollowUpIntent | undefined {
+    const row = this.database
+      .prepare(
+        "SELECT * FROM follow_up_intents WHERE agent_id = ? AND source_message_id = ? ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(agentId, sourceMessageId) as SqlRow | undefined;
+    return row === undefined ? undefined : mapFollowUp(row);
   }
 
   isFollowUpEvidenceCurrent(id: string): boolean {
@@ -278,6 +305,32 @@ export class FollowUpRepository {
       )
       .all(agentId)
       .map((row) => mapFollowUp(row as SqlRow));
+  }
+
+  rescheduleFollowUp(input: {
+    id: string;
+    expectedRevision: number;
+    sourceMessageId: string;
+    contextSummary: string;
+    earliestAtUtc: string;
+    expiresAtUtc: string;
+    grounding: StoredContinuityGrounding;
+    updatedAtUtc: string;
+  }): StoredFollowUpIntent | undefined {
+    // Preserve ID, dedupe identity and attempt budget; revision and epoch fence
+    // any text already being generated for the superseded window.
+    const result = this.database
+      .prepare(
+        `UPDATE follow_up_intents SET source_message_id = @sourceMessageId,
+       context_summary = @contextSummary, earliest_at_utc = @earliestAtUtc,
+       expires_at_utc = @expiresAtUtc, grounding_json = @groundingJson,
+       revision = revision + 1, generation_epoch = generation_epoch + 1,
+       updated_at_utc = @updatedAtUtc
+       WHERE id = @id AND revision = @expectedRevision AND status = 'pending'
+       AND attempt_count = 0 AND sent_message_id IS NULL`,
+      )
+      .run({ ...input, groundingJson: JSON.stringify(input.grounding) });
+    return result.changes === 1 ? this.getFollowUp(input.id) : undefined;
   }
 
   transitionFollowUp(input: {

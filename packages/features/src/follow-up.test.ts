@@ -11,6 +11,7 @@ import {
   expireFollowUp,
   markFollowUpSent,
   normalizeFollowUpCandidate,
+  isFollowUpReschedule,
   recordCareCueMention,
   resolveFollowUpWindow,
   selectRelevantCareCues,
@@ -60,6 +61,138 @@ function cue(overrides: Partial<CareCueLike> = {}): CareCueLike {
 }
 
 describe("FollowUp grounding and time", () => {
+  it.each(["明天下午三点", "明天十五点", "明天下午三点半"])(
+    "parses Chinese numeral clocks in explicit reminders: %s",
+    (text) => {
+      expect(
+        resolveFollowUpWindow(text, NOW_UTC, "Asia/Shanghai", "reminder")
+          ?.earliestAtUtc,
+      ).toBe(
+        text.endsWith("半")
+          ? "2026-08-22T07:30:00.000Z"
+          : "2026-08-22T07:00:00.000Z",
+      );
+    },
+  );
+  it.each([
+    "明天下午25:99",
+    "明天下午123:00",
+    "明天下午9:599",
+    "明天下午二十五点",
+  ])(
+    "rejects invalid explicit clocks without falling back to a default: %s",
+    (text) => {
+      expect(
+        resolveFollowUpWindow(text, NOW_UTC, "Asia/Shanghai", "reminder"),
+      ).toBeUndefined();
+    },
+  );
+  it("resolves weekdays and 明晚 without choosing quiet hours for event aftermath", () => {
+    expect(
+      resolveFollowUpWindow(
+        "下周三下午有面试",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "event_aftermath",
+      )?.earliestAtUtc,
+    ).toBe("2026-08-26T10:00:00.000Z");
+    expect(
+      resolveFollowUpWindow(
+        "next Wednesday afternoon",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "event_aftermath",
+      )?.earliestAtUtc,
+    ).toBe("2026-08-26T10:00:00.000Z");
+    expect(
+      resolveFollowUpWindow(
+        "明晚有面试",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "event_aftermath",
+      )?.earliestAtUtc,
+    ).toBe("2026-08-23T02:00:00.000Z");
+    expect(
+      resolveFollowUpWindow(
+        "下周有面试",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "event_aftermath",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("separates exact reminders from event start times and gives reminders a finite useful window", () => {
+    expect(
+      resolveFollowUpWindow(
+        "明晚九点半提醒我交材料",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "reminder",
+      )?.earliestAtUtc,
+    ).toBe("2026-08-22T13:30:00.000Z");
+    expect(
+      resolveFollowUpWindow(
+        "明天25:00提醒我交材料",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "reminder",
+      ),
+    ).toBeUndefined();
+    const reminder = resolveFollowUpWindow(
+      "明晚8:00提醒我交材料",
+      NOW_UTC,
+      "Asia/Shanghai",
+      "reminder",
+    );
+    expect(reminder).toEqual({
+      earliestAtUtc: "2026-08-22T12:00:00.000Z",
+      expiresAtUtc: "2026-08-22T14:00:00.000Z",
+    });
+    expect(
+      resolveFollowUpWindow(
+        "明天下午3点有面试",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "event_aftermath",
+      )?.earliestAtUtc,
+    ).toBe("2026-08-22T09:00:00.000Z");
+    expect(
+      resolveFollowUpWindow(
+        "明天下午3点问我结果",
+        NOW_UTC,
+        "Asia/Shanghai",
+        "appointment",
+      )?.earliestAtUtc,
+    ).toBe("2026-08-22T07:00:00.000Z");
+  });
+
+  it("uses an explicit requested follow-up day rather than the earlier event day", () => {
+    const text = "我明天有面试，后天问我结果。";
+    expect(
+      normalizeFollowUpCandidate({
+        candidate: {
+          subjectType: "user_event",
+          contextSummary: text,
+          expectedOutcomeDescription: "面试结果",
+          timingHint: "tomorrow",
+          evidenceQuotes: [text],
+          reasonCode: "request",
+          reasonSummary: "request",
+        },
+        agentId: "agent-1",
+        sourceMessage: { id: "user-1", role: "user", text },
+        nowUtc: NOW_UTC,
+        timezone: "Asia/Shanghai",
+      }),
+    ).toMatchObject({
+      accepted: true,
+      followUp: {
+        earliestAtUtc: "2026-08-23T12:00:00.000Z",
+        grounding: { timingIntent: "appointment" },
+      },
+    });
+  });
   it("grounds a fuzzy candidate in a verbatim user quote", () => {
     const result = normalizeFollowUpCandidate({
       candidate: {
@@ -244,6 +377,97 @@ describe("FollowUp grounding and time", () => {
 });
 
 describe("FollowUp conservative lifecycle", () => {
+  it.each([
+    "面试可能改到下周三。",
+    "面试改到下周三吗？",
+    "别把面试改到下周三。",
+  ])(
+    "does not interpret a hypothetical or declined reschedule as an update: %s",
+    (text) => {
+      expect(isFollowUpReschedule(text)).toBe(false);
+    },
+  );
+  it.each([
+    "面试可能取消。",
+    "如果面试通过了就好了。",
+    "面试通过了吗？",
+    "面试取消了吗？",
+    "面试不会取消。",
+    "面试没有结束。",
+  ])(
+    "does not close a subject on hypothetical, queried or negated outcomes: %s",
+    (text) => {
+      expect(
+        evaluateFollowUpMessage(
+          followUp({
+            contextSummary: "明天有面试",
+            expectedOutcomeDescription: "面试是否发生",
+          }),
+          text,
+        ).outcome,
+      ).toBe("none");
+    },
+  );
+  it("scopes mixed clauses to the follow-up subject rather than unrelated future plans", () => {
+    const interview = followUp({
+      contextSummary: "我明天有面试",
+      expectedOutcomeDescription: "面试结果",
+    });
+    expect(
+      evaluateFollowUpMessage(interview, "面试通过了，明天报到。"),
+    ).toMatchObject({ outcome: "resolved" });
+    expect(
+      evaluateFollowUpMessage(interview, "面试结果出来了，我被录取了。"),
+    ).toMatchObject({ outcome: "resolved" });
+    expect(
+      evaluateFollowUpMessage(interview, "面试通过了，明天不去聚餐。"),
+    ).toMatchObject({ outcome: "resolved" });
+    expect(
+      evaluateFollowUpMessage(interview, "面试还在等结果，答辩通过了。"),
+    ).toMatchObject({ outcome: "none" });
+    expect(
+      evaluateFollowUpMessage(interview, "面试结束了，还在等结果。"),
+    ).toMatchObject({ outcome: "none" });
+    expect(
+      evaluateFollowUpMessage(interview, "面试没有取消，还在准备。"),
+    ).toMatchObject({ outcome: "none" });
+    expect(
+      evaluateFollowUpMessage(
+        followUp({
+          contextSummary: "我明天有面试",
+          expectedOutcomeDescription: "面试是否发生",
+        }),
+        "面试结束了，还在等结果。",
+      ),
+    ).toMatchObject({ outcome: "resolved" });
+  });
+
+  it("requires server-bound context before accepting a deictic refusal", () => {
+    expect(evaluateFollowUpMessage(followUp(), "这件事别再问了。")).toEqual({
+      outcome: "none",
+      reasonCode: "subject_mismatch",
+    });
+    expect(
+      evaluateFollowUpMessage(followUp(), "这件事别再问了。", {
+        contextualSubjectMatch: true,
+      }),
+    ).toMatchObject({
+      outcome: "cancelled",
+      reasonCode: "user_declined_followup",
+    });
+  });
+
+  it("does not match unrelated English subjects through generic words", () => {
+    expect(
+      evaluateFollowUpMessage(
+        followUp({
+          contextSummary: "The interview is tomorrow",
+          expectedOutcomeDescription: "Interview result",
+        }),
+        "The city race was cancelled.",
+      ),
+    ).toEqual({ outcome: "none", reasonCode: "subject_mismatch" });
+  });
   it("resolves only an explicit outcome for the same subject", () => {
     expect(
       evaluateFollowUpMessage(

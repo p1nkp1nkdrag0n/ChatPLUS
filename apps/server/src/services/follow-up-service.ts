@@ -4,6 +4,8 @@ import {
   buildCareCueDedupeKey,
   didMentionCareCue,
   evaluateFollowUpMessage,
+  followUpMessageMatchesSubject,
+  isFollowUpReschedule,
   normalizeFollowUpCandidate,
   resolveFollowUpWindow,
   selectRelevantCareCues,
@@ -109,6 +111,29 @@ export class FollowUpService {
       );
 
     const nowUtc = this.clock.nowUtc();
+    if (isFollowUpReschedule(source.text)) {
+      const existing = this.repository.findFollowUpBySource(
+        input.agentId,
+        source.id,
+      );
+      if (
+        existing !== undefined &&
+        this.repository.isFollowUpEvidenceCurrent(existing.id)
+      ) {
+        return { accepted: true, inserted: false, followUp: existing };
+      }
+      const revised = this.rescheduleFromMessage(
+        source,
+        input.timezone,
+        nowUtc,
+      );
+      return revised === undefined
+        ? rejected(
+            "ambiguous_timing",
+            "A reschedule needs one current matching subject and an explicit future window; it cannot create a second task.",
+          )
+        : { accepted: true, inserted: false, followUp: revised };
+    }
     const normalized = normalizeFollowUpCandidate({
       candidate: input.candidate,
       agentId: input.agentId,
@@ -163,6 +188,7 @@ export class FollowUpService {
         createdAtUtc: nowUtc,
         grounding: {
           version: 1,
+          timezone: input.timezone,
           basis: normalized.followUp.grounding,
           contextSummary: normalized.followUp.contextSummary,
           guidance: normalized.followUp.expectedOutcomeDescription,
@@ -264,6 +290,7 @@ export class FollowUpService {
         dedupeKey: basis.dedupeKey,
         grounding: {
           version: 1,
+          timezone: input.timezone,
           basis: basis.grounding,
           contextSummary: basis.contextSummary,
           guidance: basis.expectedOutcomeDescription,
@@ -378,6 +405,7 @@ export class FollowUpService {
   handleUserMessage(input: {
     agentId: string;
     messageId: string;
+    timezone?: string;
   }): UserContinuityTransitions {
     const message = this.repository.getSourceMessage(input.messageId);
     if (
@@ -399,12 +427,16 @@ export class FollowUpService {
       const resolvedFollowUpIds: string[] = [];
       const cancelledFollowUpIds: string[] = [];
       const dismissedCareCueIds: string[] = [];
-
-      for (const followUp of this.repository.listOpenFollowUps(input.agentId)) {
-        if (!textsAreRelated(followUp.contextSummary, message.text)) {
-          continue;
-        }
-        const evaluation = evaluateFollowUpMessage(followUp, message.text);
+      if (isFollowUpReschedule(message.text)) {
+        this.rescheduleFromMessage(message, input.timezone, nowUtc);
+      }
+      const open = this.repository.listOpenFollowUps(input.agentId);
+      const contextualId = this.contextualSubjectId(message, open);
+      for (const followUp of open) {
+        if (followUp.sourceMessageId === message.id) continue;
+        const evaluation = evaluateFollowUpMessage(followUp, message.text, {
+          contextualSubjectMatch: contextualId === followUp.id,
+        });
         if (evaluation.outcome === "none") continue;
         const transitioned = this.repository.transitionFollowUp({
           id: followUp.id,
@@ -437,6 +469,145 @@ export class FollowUpService {
         cancelledFollowUpIds,
         dismissedCareCueIds,
       };
+    });
+  }
+
+  private contextualSubjectId(
+    message: StoredSourceMessage,
+    open: StoredFollowUpIntent[],
+  ): string | undefined {
+    // Resolve a deictic reply only against the immediately preceding, recent
+    // exchange in this session, and only when exactly one live subject matches.
+    if (
+      !/(?:这件事|那件事|这事|那事|这个|那个)(?=\s*(?:我|别|不|改|推|延|提前|[，,。]|$))|\b(?:about|regarding)\s+(?:this|that|it)(?:[.!?]|$)/iu.test(
+        message.text,
+      )
+    )
+      return undefined;
+    if (open.some((item) => followUpMessageMatchesSubject(item, message.text)))
+      return undefined;
+    if (
+      !isFollowUpReschedule(message.text) &&
+      !/别(?:再)?(?:问|提)|不想聊|不(?:用|要)(?:再)?(?:问|提醒|跟进)|do not ask|don'?t ask|rather not talk|stop bringing/iu.test(
+        message.text,
+      )
+    )
+      return undefined;
+    const previous = this.repository.getPreviousConversationMessage(message);
+    if (
+      previous === undefined ||
+      !this.repository.isSourceEvidenceUsable(message.agentId, previous.id)
+    )
+      return undefined;
+    const ageMs =
+      Date.parse(message.createdAtUtc) - Date.parse(previous.createdAtUtc);
+    if (ageMs < 0 || ageMs > 30 * 60 * 1_000) return undefined;
+    const matches = open.filter(
+      (item) =>
+        item.sessionId === message.sessionId &&
+        this.repository.isFollowUpEvidenceCurrent(item.id) &&
+        followUpMessageMatchesSubject(item, previous.text),
+    );
+    return matches.length === 1 ? matches[0]!.id : undefined;
+  }
+
+  private rescheduleFromMessage(
+    message: StoredSourceMessage,
+    timezone: string | undefined,
+    nowUtc: string,
+  ): StoredFollowUpIntent | undefined {
+    if (
+      message.role !== "user" ||
+      !this.repository.isSourceEvidenceUsable(message.agentId, message.id)
+    )
+      return undefined;
+    return this.repository.transaction(() => {
+      const open = this.repository
+        .listOpenFollowUps(message.agentId)
+        .filter(
+          (item) =>
+            item.status === "pending" &&
+            item.attemptCount === 0 &&
+            item.sessionId === message.sessionId &&
+            this.repository.isFollowUpEvidenceCurrent(item.id),
+        );
+      const contextualId = this.contextualSubjectId(message, open);
+      const matches = open.filter(
+        (item) =>
+          followUpMessageMatchesSubject(item, message.text) ||
+          contextualId === item.id,
+      );
+      if (matches.length !== 1) return undefined;
+      const record = matches[0]!;
+      if (record.sourceMessageId === message.id) return record;
+      const previousSource = this.repository.getSourceMessage(
+        record.sourceMessageId,
+      );
+      if (
+        previousSource === undefined ||
+        Date.parse(previousSource.createdAtUtc) >
+          Date.parse(message.createdAtUtc)
+      )
+        return undefined;
+      if (
+        evaluateFollowUpMessage(record, message.text, {
+          contextualSubjectMatch: contextualId === record.id,
+        }).outcome !== "none"
+      )
+        return undefined;
+      const previousGrounding = record.grounding!;
+      const zone = timezone ?? previousGrounding.timezone;
+      if (zone === undefined) return undefined;
+      const basis = previousGrounding.basis;
+      if (basis.basisKind === "user_context") return undefined;
+      // Do not let an earlier date in “明天的面试改到周五” win over the revised date.
+      const changedTiming = message.text
+        .split(
+          /改(?:到|成|为|在)|推迟(?:到|至)?|延(?:期|后)(?:到|至)?|提前(?:到|至)?|rescheduled? (?:to|for)|postponed? (?:to|until)|moved? to/iu,
+        )
+        .at(-1)!;
+      const window = resolveFollowUpWindow(
+        changedTiming,
+        message.createdAtUtc,
+        zone,
+        basis.timingIntent ??
+          (basis.timingSource === "follow_up_request"
+            ? "appointment"
+            : "event_aftermath"),
+      );
+      if (window === undefined) return undefined;
+      const contextSummary = followUpMessageMatchesSubject(record, message.text)
+        ? message.text.slice(0, 1_000)
+        : `${record.contextSummary}；用户改期：${message.text}`.slice(0, 1_000);
+      const sourceIds = [...new Set([...basis.sourceMessageIds, message.id])];
+      return this.repository.rescheduleFollowUp({
+        id: record.id,
+        expectedRevision: record.revision,
+        sourceMessageId: message.id,
+        contextSummary,
+        ...window,
+        updatedAtUtc: nowUtc,
+        grounding: {
+          ...previousGrounding,
+          timezone: zone,
+          contextSummary,
+          basis: {
+            ...basis,
+            matter: contextSummary,
+            sourceMessageIds: sourceIds,
+          },
+          sources: [
+            ...previousGrounding.sources,
+            {
+              id: message.id,
+              role: message.role,
+              hash: sourceTextHash(message.text),
+              sessionId: message.sessionId,
+              createdAtUtc: message.createdAtUtc,
+            },
+          ],
+        },
+      });
     });
   }
 

@@ -173,7 +173,7 @@ describe("conversation continuity real path", () => {
 
     expect(followUp).toEqual({
       earliest_at_utc: "2026-08-22T04:10:00.000Z",
-      expires_at_utc: "2026-08-25T04:10:00.000Z",
+      expires_at_utc: "2026-08-22T06:10:00.000Z",
       source_message_id: turn.userMessage.id,
       status: "pending",
     });
@@ -183,6 +183,78 @@ describe("conversation continuity real path", () => {
       status: "active",
     });
   });
+
+  it.each([
+    ["明晚找我聊旅行计划。", true],
+    ["明晚我们一起聊旅行计划。", true],
+    ["我明晚和朋友聊旅行计划。", false],
+    ["明晚找我聊这个。", false],
+    ["明晚别找我聊旅行计划。", false],
+  ] as const)(
+    "materializes a bounded explicit chat appointment without model candidates: %s",
+    async (text, expected) => {
+      const created = await createContinuityApp({
+        llm: {
+          provider: "openai-compatible",
+          baseUrl: "https://example.invalid",
+          apiKey: "test-api-key",
+          model: "test-live-model",
+          timeoutMs: 1_000,
+          maxRetries: 0,
+        },
+      });
+      app = created.app;
+      vi.spyOn(app.personasim.llm, "generateObject").mockImplementation(
+        (input) => {
+          if (input.purpose === "chat_turn")
+            return Promise.resolve({
+              replyDecision: { text: "好，明晚一起聊旅行计划。" },
+              worldEffects: {
+                continuityEffects: {
+                  followUpCandidates: [],
+                  followUpTransitions: [],
+                  careCueCandidates: [],
+                },
+              },
+            } as never);
+          if (input.fixture !== undefined)
+            return Promise.resolve(input.fixture as never);
+          return Promise.reject(new Error(`No fixture for ${input.purpose}`));
+        },
+      );
+      const character = await createAndPublish(app);
+      const sessionId = await createSession(app, character.id);
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        "explicit-chat-appointment",
+        text,
+      );
+      expect(response.statusCode).toBe(201);
+      const rows = app.personasim.store.database
+        .prepare(
+          "SELECT earliest_at_utc, expires_at_utc, status, grounding_json FROM follow_up_intents WHERE agent_id = ?",
+        )
+        .all(character.id) as Array<{
+        earliest_at_utc: string;
+        expires_at_utc: string;
+        status: string;
+        grounding_json: string;
+      }>;
+      expect(rows).toHaveLength(expected ? 1 : 0);
+      if (expected) {
+        expect(rows[0]).toMatchObject({
+          earliest_at_utc: "2026-08-22T12:00:00.000Z",
+          expires_at_utc: "2026-08-22T14:00:00.000Z",
+          status: "pending",
+        });
+        expect(JSON.parse(rows[0]!.grounding_json)).toMatchObject({
+          basis: { timingIntent: "appointment" },
+        });
+      }
+    },
+  );
 
   it("does not treat a care boundary as reminder cancellation and materializes explicit care", async () => {
     const created = await createContinuityApp({
@@ -243,7 +315,7 @@ describe("conversation continuity real path", () => {
 
     expect(followUp).toEqual({
       earliest_at_utc: "2026-08-22T07:00:00.000Z",
-      expires_at_utc: "2026-08-25T07:00:00.000Z",
+      expires_at_utc: "2026-08-22T09:00:00.000Z",
       status: "pending",
     });
     expect(careCue).toEqual({

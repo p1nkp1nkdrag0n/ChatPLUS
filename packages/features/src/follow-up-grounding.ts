@@ -21,6 +21,7 @@ export interface FollowUpGroundingBasis {
   modality: "planned" | "requested";
   matter: string;
   timingSource: "event_or_plan" | "follow_up_request";
+  timingIntent?: "reminder" | "appointment" | "event_aftermath";
   sourceMessageIds: string[];
 }
 
@@ -52,7 +53,7 @@ const REPORTED =
 const REMINDER =
   /(?:提醒我|问问我|问我|记得问|到时候问|到时问|remind\s+me|ask\s+me|check\s+(?:in|on))/iu;
 const TIMING =
-  /明天|明日|后天|今天|今日|下周|\d{1,2}\s*天后|tomorrow|today|next\s+week|(?:in\s*)?\d{1,2}\s*days?/iu;
+  /明天|明日|明晚|今晚|后天|今天|今日|(?:下|本|这)?周[一二三四五六日天]?|星期[一二三四五六日天]|\d{1,2}\s*天后|tomorrow|today|tonight|next\s+week|(?:in\s*)?\d{1,2}\s*days?|monday|tuesday|wednesday|thursday|friday|saturday|sunday/iu;
 const USER_PLAN =
   /(?:我|我们).{0,15}(?:打算|计划|准备(?:去|做|参加|提交|试|写|发|完成)|会(?:去|做|参加|提交|试|写|发|完成|一起|共同)|要(?:去|做|参加|提交|试|写|发|完成)|试试|试一下)|\b(?:i|we)\s+(?:will|plan\s+to|am\s+going\s+to|are\s+going\s+to)\b/iu;
 const USER_EVENT =
@@ -103,7 +104,8 @@ export function groundFollowUpCandidate(input: {
         !REPORTED.test(message.text) &&
         (message.role === "assistant"
           ? characterCommitment(message.text)
-          : USER_PLAN.test(message.text)) &&
+          : USER_PLAN.test(message.text) ||
+            isExplicitContactRequest(message.text)) &&
         meaningfulOverlap(matter, message.text),
     );
     if (other === undefined)
@@ -113,7 +115,14 @@ export function groundFollowUpCandidate(input: {
       );
     sources.push(other);
   }
-  const reminder = source.role === "user" && REMINDER.test(matter);
+  const reminder = source.role === "user" && isExplicitContactRequest(matter);
+  const contactAppointment = isDialogueAppointment(matter);
+  const timingIntent =
+    reminder || contactAppointment
+      ? /提醒我|remind\s+me/iu.test(matter)
+        ? "reminder"
+        : "appointment"
+      : "event_aftermath";
   const basisKind =
     subject === "shared_commitment" || subject === "character_commitment"
       ? subject
@@ -133,20 +142,62 @@ export function groundFollowUpCandidate(input: {
       modality: reminder ? "requested" : "planned",
       matter: contextSummary,
       timingSource: reminder ? "follow_up_request" : "event_or_plan",
+      timingIntent,
       sourceMessageIds: sources.map((message) => message.id),
     },
     contextSummary,
     expectedOutcomeDescription:
-      `仅询问所述事项是否发生、是否尝试或安排有无变化，不预设执行或成功。来源原话：${contextSummary}`.slice(
+      `${timingIntent === "reminder" ? "按用户要求提醒所述事项，不预设执行或成功。" : contactAppointment ? "按约定发起所述具体话题的聊天，不询问约定是否已经完成，不预设执行或成功。" : /结果|成绩|通过|录取|result|passed|accepted/iu.test(matter) ? "仅询问所述事项的结果是否明确；仅仅结束不代表结果已知，不预设成功。" : "仅询问所述事项是否发生、是否尝试或安排有无变化，不预设执行或成功。"}来源原话：${contextSummary}`.slice(
         0,
         1_000,
       ),
-    timingText: matter,
+    timingText: reminder
+      ? (matter
+          .split(/[，,]/u)
+          .find(
+            (clause) => isExplicitContactRequest(clause) && TIMING.test(clause),
+          ) ?? matter)
+      : matter,
   };
+}
+
+function stripAppointmentTime(text: string): string {
+  return text.replace(
+    /明天|明日|明晚|明早|今晚|今早|后天|今天|今日|(?:下下|下|本|这)?(?:周|星期)[一二三四五六日天]|上午|下午|晚上|早上|中午|[零〇一二两三四五六七八九十\d]{1,3}点(?:半)?|\d{1,2}[:：]\d{1,2}|\s+/gu,
+    "",
+  );
+}
+
+function isDialogueAppointment(text: string): boolean {
+  return /我们(?:也|就|会|可以)?(?:一起)?聊|(?:找我|联系我|和我聊|跟我聊|陪我聊)|我(?:来|会)?(?:找你|联系你|和你聊|跟你聊|陪你聊)/u.test(
+    stripAppointmentTime(text),
+  );
+}
+
+/** Candidate discovery only; concrete subject, ownership and timing still need grounding. */
+export function isExplicitContactRequest(text: string): boolean {
+  if (REMINDER.test(text)) return true;
+  if (
+    /(?:让|叫|请)(?:我)?(?:朋友|同事|他|她)|(?:和|跟)(?:朋友|同事|他|她)/u.test(
+      text,
+    )
+  )
+    return false;
+  return /我们(?:也|就|会|可以)?(?:一起)?聊|找我|联系我|和我聊|跟我聊|陪我聊/u.test(
+    stripAppointmentTime(text),
+  );
 }
 
 function hasConcreteMatter(text: string): boolean {
   const remaining = text
+    .replace(
+      /找我|联系我|和我聊|跟我聊|陪我聊|找你|联系你|和你聊|跟你聊|陪你聊|聊天|聊/gu,
+      "",
+    )
+    .replace(
+      /明晚|明早|今晚|今早|(?:下下|下|本|这)?(?:周|星期)[一二三四五六日天]|[零〇一二两三四五六七八九十\d]{1,3}点(?:半|一刻|三刻)?|\b(?:tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/giu,
+      "",
+    )
     .replace(
       /明天|明日|后天|今天|今日|下周|上午|下午|中午|晚上|早上|\d+(?:点|分|天后)?|我们|一起|共同|你说的|你建议的|问问我|问我|提醒我|记得|试试|试一下|我|你|会|打算|计划|准备|参加|提交|完成|有没有|是否|去|做|这个|那个|这样|那样|到时候|成功|办法|方法|建议|这件事|那件事/gu,
       "",
@@ -165,7 +216,7 @@ function supportsSubject(
   role: FollowUpEvidenceMessage["role"],
 ): boolean {
   if (
-    !REMINDER.test(text) &&
+    !isExplicitContactRequest(text) &&
     /[?？]|吗(?:[。!！]|$)|我觉得|我猜|我估计|\bi\s+(?:think|guess|wonder)\b/iu.test(
       text,
     )
@@ -173,21 +224,21 @@ function supportsSubject(
     return false;
   if (
     role === "user" &&
-    /(?:不要|不用|别|不必|无需)(?:再)?(?:提醒|问|跟进)|取消.{0,5}(?:提醒|跟进)|don'?t (?:ask|remind)|do not (?:ask|remind)/iu.test(
+    /(?:不要|不用|别|不必|无需)(?:再)?(?:提醒|问|跟进|找我|联系我|和我聊|跟我聊|陪我聊)|取消.{0,5}(?:提醒|跟进)|don'?t (?:ask|remind)|do not (?:ask|remind)/iu.test(
       text,
     )
   )
     return false;
   const statement = text.split(/[，,]/u)[0]!.trim();
   if (
-    !REMINDER.test(text) &&
+    !isExplicitContactRequest(text) &&
     /(?<!有)没(?:有|打算|准备|去|做|参加)|不(?:去|做|参加|试)|\b(?:not|no|isn't|aren't|don't|doesn't)\b/iu.test(
       statement,
     )
   )
     return false;
   const ownerText = statement.replace(
-    /^(?:明天|明日|后天|今天|今日|下周)(?:上午|下午|早上|晚上)?/u,
+    /^(?:明天|明日|明晚|明早|今晚|后天|今天|今日|(?:下下|下|本|这)?(?:周|星期)[一二三四五六日天]?)(?:上午|下午|早上|晚上)?/u,
     "",
   );
   if (
@@ -201,9 +252,11 @@ function supportsSubject(
   if (subject === "shared_commitment")
     return (
       SHARED.test(text) &&
-      (role === "assistant" ? characterCommitment(text) : USER_PLAN.test(text))
+      (role === "assistant"
+        ? characterCommitment(text)
+        : USER_PLAN.test(text) || isExplicitContactRequest(text))
     );
-  if (REMINDER.test(text)) return role === "user";
+  if (isExplicitContactRequest(text)) return role === "user";
   if (
     /请|帮我|我想知道|要不要|该不该|能不能|是否该|如何|怎么|怎样|\b(?:please|help|should|could|would|how|why|what|whether)\b/iu.test(
       statement,
@@ -215,7 +268,7 @@ function supportsSubject(
     (USER_PLAN.test(statement) ||
       USER_EVENT.test(statement) ||
       (TIMING.test(statement) &&
-        /(?:我|我们)?(?:明天|明日|后天|今天).{0,5}(?:答辩|面试|考试|复诊|开会)|\b(?:my|the)\b.{1,60}\bis\b/iu.test(
+        /(?:我|我们)?(?:明天|明日|明晚|今晚|后天|今天|(?:下|本|这)?周[一二三四五六日天]|星期[一二三四五六日天]).{0,5}(?:答辩|面试|考试|复诊|开会)|\b(?:my|the)\b.{1,60}\bis\b/iu.test(
           statement,
         )))
   );
@@ -226,7 +279,7 @@ function characterCommitment(text: string): boolean {
     .replace(/^(?:好的?|行|嗯|没问题|可以)[，,]\s*/u, "")
     .split(/[，,]/u)[0]!
     .replace(
-      /明天|明日|后天|今天|今日|下周|上午|下午|中午|晚上|早上|\d{1,2}[:：点]\d{0,2}/gu,
+      /明天|明日|明晚|明早|今晚|后天|今天|今日|下周|上午|下午|中午|晚上|早上|\d{1,2}[:：点]\d{0,2}/gu,
       "",
     )
     .trim();
@@ -234,6 +287,7 @@ function characterCommitment(text: string): boolean {
     return false;
   return (
     /^(?:我|我们)(?:也|就)?(?:会|打算|计划|准备)/u.test(ownClause) ||
+    (TIMING.test(text) && isDialogueAppointment(ownClause)) ||
     /^(?:tomorrow\s+)?(?:i|we)(?:'ll|\s+will|\s+promise|\s+plan\s+to)\b/iu.test(
       ownClause,
     )

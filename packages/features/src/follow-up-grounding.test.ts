@@ -29,6 +29,70 @@ function candidate(
 
 describe("server-owned follow-up grounding", () => {
   it.each([
+    "明晚找我聊旅行计划。",
+    "明晚联系我聊旅行计划。",
+    "明晚我们一起聊旅行计划。",
+    "我们明晚一起聊旅行计划。",
+  ])(
+    "grounds a concrete direct contact appointment at the requested evening: %s",
+    (text) => {
+      expect(normalizeFollowUpCandidate(candidate(text))).toMatchObject({
+        accepted: true,
+        followUp: {
+          earliestAtUtc: "2026-08-22T12:00:00.000Z",
+          expiresAtUtc: "2026-08-22T14:00:00.000Z",
+          grounding: {
+            timingIntent: "appointment",
+            basisKind: "explicit_follow_up_request",
+          },
+        },
+      });
+    },
+  );
+
+  it("uses the appointment time for a mutually evidenced shared conversation", () => {
+    const input = candidate("明晚我们一起聊旅行计划。", "shared_commitment");
+    expect(normalizeFollowUpCandidate(input)).toMatchObject({
+      accepted: false,
+      rejection: { reasonCode: "missing_shared_commitment_evidence" },
+    });
+    expect(
+      normalizeFollowUpCandidate({
+        ...input,
+        supportingMessages: [
+          {
+            id: "assistant-yes",
+            role: "assistant",
+            text: "好，明晚我们一起聊旅行计划。",
+          },
+        ],
+      }),
+    ).toMatchObject({
+      accepted: true,
+      followUp: {
+        earliestAtUtc: "2026-08-22T12:00:00.000Z",
+        grounding: {
+          timingIntent: "appointment",
+          sourceMessageIds: ["source", "assistant-yes"],
+        },
+      },
+    });
+  });
+
+  it.each([
+    "我明晚和朋友聊旅行计划。",
+    "明晚让朋友找我聊旅行计划。",
+    "明晚别找我聊旅行计划。",
+    "明晚聊这个。",
+    "明晚找我聊这个。",
+    "明晚联系我。",
+  ])(
+    "does not turn third-party or ungrounded chats into appointments: %s",
+    (text) => {
+      expect(normalizeFollowUpCandidate(candidate(text)).accepted).toBe(false);
+    },
+  );
+  it.each([
     "我现在想具体想一想了，请帮我分析一下：怎样区分真正做错了，和只是被反复修改弄得烦。",
     "谢谢，我懂了。",
     "好。",
@@ -153,12 +217,12 @@ describe("server-owned follow-up grounding", () => {
     },
   );
 
-  it("does not let a model move the actual event date or clock", () => {
+  it("derives the aftermath window from the actual event clock, never the model hint", () => {
     const input = candidate("明天下午3:00有面试。");
     input.candidate.timingHint = "in 7 days";
     expect(normalizeFollowUpCandidate(input)).toMatchObject({
       accepted: true,
-      followUp: { earliestAtUtc: "2026-08-22T07:00:00.000Z" },
+      followUp: { earliestAtUtc: "2026-08-22T09:00:00.000Z" },
     });
   });
 });

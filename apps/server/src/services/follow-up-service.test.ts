@@ -29,6 +29,232 @@ describe("FollowUpService", () => {
     if (database.open) database.close();
   });
 
+  function createEvent(id: string, text: string) {
+    insertMessage(database, {
+      id,
+      role: "user",
+      content: text,
+      createdAtUtc: NOW_UTC,
+    });
+    const result = service.createFollowUp({
+      agentId: AGENT_ID,
+      sourceMessageId: id,
+      timezone: "Asia/Shanghai",
+      candidate: {
+        subjectType: "user_event",
+        contextSummary: text,
+        expectedOutcomeDescription: text,
+        timingHint: "tomorrow",
+        evidenceQuotes: [text],
+        reasonCode: "event",
+        reasonSummary: "event",
+      },
+    });
+    if (!result.accepted) throw new Error(result.rejection.reasonCode);
+    return result.followUp;
+  }
+
+  it("updates the same pending intent on reschedule and preserves auditable evidence and generation fencing", () => {
+    const original = createEvent("interview-source", "我明天下午有面试。");
+    insertMessage(database, {
+      id: "reschedule",
+      role: "user",
+      content: "明天的面试改到下周三下午3点。",
+      createdAtUtc: "2026-08-21T04:05:00.000Z",
+    });
+    clock.setUtc("2026-08-21T04:05:00.000Z");
+    service.handleUserMessage({ agentId: AGENT_ID, messageId: "reschedule" });
+    const revised = repository.getFollowUp(original.id)!;
+    expect(revised).toMatchObject({
+      id: original.id,
+      dedupeKey: original.dedupeKey,
+      status: "pending",
+      attemptCount: 0,
+      revision: 1,
+      generationEpoch: 1,
+      sourceMessageId: "reschedule",
+      earliestAtUtc: "2026-08-26T09:00:00.000Z",
+    });
+    expect(revised.grounding?.sources.map((source) => source.id)).toEqual([
+      "interview-source",
+      "reschedule",
+    ]);
+    expect(repository.isFollowUpEvidenceCurrent(original.id)).toBe(true);
+    const repeated = service.createFollowUp({
+      agentId: AGENT_ID,
+      sourceMessageId: "reschedule",
+      timezone: "Asia/Shanghai",
+      candidate: {
+        subjectType: "user_event",
+        contextSummary: "面试改期",
+        expectedOutcomeDescription: "面试结果",
+        timingHint: "next Wednesday",
+        evidenceQuotes: ["面试改到下周三"],
+        reasonCode: "reschedule",
+        reasonSummary: "reschedule",
+      },
+    });
+    expect(repeated).toMatchObject({
+      accepted: true,
+      inserted: false,
+      followUp: { id: original.id, revision: 1 },
+    });
+    expect(countRows(database, "follow_up_intents")).toBe(1);
+    database
+      .prepare("UPDATE messages SET content = '原始依据已修改' WHERE id = ?")
+      .run("interview-source");
+    expect(repository.isFollowUpEvidenceCurrent(original.id)).toBe(false);
+  });
+
+  it("does not reschedule multiple matching subjects or silently create a duplicate", () => {
+    const first = createEvent("first-interview", "我明天有甲公司的面试。");
+    const second = createEvent("second-interview", "我明天有乙公司的面试。");
+    insertMessage(database, {
+      id: "ambiguous-change",
+      role: "user",
+      content: "面试改到下周三。",
+      createdAtUtc: "2026-08-21T04:05:00.000Z",
+    });
+    service.handleUserMessage({
+      agentId: AGENT_ID,
+      messageId: "ambiguous-change",
+    });
+    expect(repository.getFollowUp(first.id)?.revision).toBe(0);
+    expect(repository.getFollowUp(second.id)?.revision).toBe(0);
+    expect(
+      service.createFollowUp({
+        agentId: AGENT_ID,
+        sourceMessageId: "ambiguous-change",
+        timezone: "Asia/Shanghai",
+        candidate: {
+          subjectType: "user_event",
+          contextSummary: "面试",
+          expectedOutcomeDescription: "面试结果",
+          timingHint: "next Wednesday",
+          evidenceQuotes: ["面试改到下周三"],
+          reasonCode: "reschedule",
+          reasonSummary: "reschedule",
+        },
+      }),
+    ).toMatchObject({ accepted: false });
+    expect(countRows(database, "follow_up_intents")).toBe(2);
+  });
+
+  it("binds 这件事别再问了 to the single recent subject and leaves other follow-ups pending", () => {
+    const interview = createEvent("interview-source", "我明天有面试。");
+    const defense = createEvent("defense-source", "我明天有答辩。");
+    insertMessage(database, {
+      id: "assistant-question",
+      role: "assistant",
+      content: "面试准备得怎么样？",
+      createdAtUtc: "2026-08-21T04:05:00.000Z",
+    });
+    insertMessage(database, {
+      id: "refusal",
+      role: "user",
+      content: "这件事别再问了。",
+      createdAtUtc: "2026-08-21T04:06:00.000Z",
+    });
+    expect(
+      service.handleUserMessage({ agentId: AGENT_ID, messageId: "refusal" }),
+    ).toMatchObject({ cancelledFollowUpIds: [interview.id] });
+    expect(repository.getFollowUp(defense.id)?.status).toBe("pending");
+  });
+
+  it("does not let a contextual pronoun override a different explicit subject", () => {
+    const interview = createEvent("interview-source", "我明天有面试。");
+    const defense = createEvent("defense-source", "我明天有答辩。");
+    insertMessage(database, {
+      id: "question",
+      role: "assistant",
+      content: "答辩准备得怎么样？",
+      createdAtUtc: "2026-08-21T04:05:00.000Z",
+    });
+    insertMessage(database, {
+      id: "refusal",
+      role: "user",
+      content: "这个面试别再问了。",
+      createdAtUtc: "2026-08-21T04:06:00.000Z",
+    });
+    expect(
+      service.handleUserMessage({ agentId: AGENT_ID, messageId: "refusal" })
+        .cancelledFollowUpIds,
+    ).toEqual([interview.id]);
+    expect(repository.getFollowUp(defense.id)?.status).toBe("pending");
+  });
+
+  it("lets explicit cancellation override a reschedule in the same message", () => {
+    const interview = createEvent("interview-source", "我明天有面试。");
+    insertMessage(database, {
+      id: "cancel-change",
+      role: "user",
+      content: "面试改到下周三，但面试我不参加了。",
+      createdAtUtc: "2026-08-21T04:05:00.000Z",
+    });
+    expect(
+      service.handleUserMessage({
+        agentId: AGENT_ID,
+        messageId: "cancel-change",
+      }).cancelledFollowUpIds,
+    ).toEqual([interview.id]);
+    expect(repository.getFollowUp(interview.id)).toMatchObject({
+      status: "cancelled",
+      generationEpoch: 0,
+      earliestAtUtc: interview.earliestAtUtc,
+    });
+  });
+
+  it.each(["面试和答辩准备得怎么样？", "今天吃什么？"])(
+    "does not bind a contextual refusal to ambiguous or unrelated context: %s",
+    (previousText) => {
+      const interview = createEvent("interview-source", "我明天有面试。");
+      const defense = createEvent("defense-source", "我明天有答辩。");
+      insertMessage(database, {
+        id: "assistant-question",
+        role: "assistant",
+        content: previousText,
+        createdAtUtc: "2026-08-21T04:05:00.000Z",
+      });
+      insertMessage(database, {
+        id: "refusal",
+        role: "user",
+        content: "这件事别再问了。",
+        createdAtUtc: "2026-08-21T04:06:00.000Z",
+      });
+      expect(
+        service.handleUserMessage({ agentId: AGENT_ID, messageId: "refusal" })
+          .cancelledFollowUpIds,
+      ).toEqual([]);
+      expect(repository.getFollowUp(interview.id)?.status).toBe("pending");
+      expect(repository.getFollowUp(defense.id)?.status).toBe("pending");
+    },
+  );
+
+  it("retains an awaited result after the event ends, then resolves a result followed by a new plan", () => {
+    const interview = createEvent(
+      "interview-source",
+      "我明天有面试，后天问我结果。",
+    );
+    insertMessage(database, {
+      id: "waiting",
+      role: "user",
+      content: "面试结束了，还在等结果。",
+      createdAtUtc: "2026-08-22T08:00:00.000Z",
+    });
+    service.handleUserMessage({ agentId: AGENT_ID, messageId: "waiting" });
+    expect(repository.getFollowUp(interview.id)?.status).toBe("pending");
+    insertMessage(database, {
+      id: "result",
+      role: "user",
+      content: "面试通过了，明天报到。",
+      createdAtUtc: "2026-08-22T09:00:00.000Z",
+    });
+    expect(
+      service.handleUserMessage({ agentId: AGENT_ID, messageId: "result" })
+        .resolvedFollowUpIds,
+    ).toEqual([interview.id]);
+  });
+
   it("normalizes grounded candidates, persists them, and deduplicates globally", () => {
     insertMessage(database, {
       id: "message-portfolio-source",

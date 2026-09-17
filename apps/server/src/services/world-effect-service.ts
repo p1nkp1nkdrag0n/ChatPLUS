@@ -211,6 +211,7 @@ export class WorldEffectService {
     conversationPlan?: ConversationContextPlan;
     interactionEvidence?: InteractionEvidenceSnapshot;
     repairBudget?: ReplyRepairBudget;
+    replyGrounding?: string;
     state: RuntimeState;
     capabilities: SimulationCapabilities;
     recentMessages: StoredMessage[];

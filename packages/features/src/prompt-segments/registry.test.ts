@@ -27,7 +27,7 @@ function segment(input: {
   tokenBudget?: number;
   required?: boolean;
   placement?: "system" | "prompt";
-  globalOverflowPolicy?: "truncate" | "drop";
+  globalOverflowPolicy?: PromptSegment["globalOverflowPolicy"];
 }): PromptSegment<TestContext> {
   return {
     id: input.id,
@@ -44,6 +44,20 @@ function segment(input: {
       : { globalOverflowPolicy: input.globalOverflowPolicy }),
     render: () => input.content,
   };
+}
+
+function expectRegistryError(
+  action: () => unknown,
+  code: PromptSegmentRegistryError["code"],
+): void {
+  let thrown: unknown;
+  try {
+    action();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(PromptSegmentRegistryError);
+  expect(thrown).toMatchObject({ code });
 }
 
 describe("PromptSegmentRegistry", () => {
@@ -378,6 +392,149 @@ describe("PromptSegmentRegistry", () => {
     });
   });
 
+  it.each([false, true])(
+    "keeps required error-policy instructions whole with caching=%s",
+    (cacheable) => {
+      const content =
+        "REQUIRED_POLICY\nPreserve every condition. Do not turn a proposal into agreement.";
+      const tokens = estimatePromptTokens(content);
+      const atomic = {
+        ...segment({
+          id: "01_atomic_policy",
+          content,
+          tokenBudget: tokens,
+          required: true,
+          globalOverflowPolicy: "error",
+        }),
+        cacheable,
+        cacheKey: () => "atomic-policy:v1",
+      };
+      const registry = new PromptSegmentRegistry([atomic]);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const result = registry.render({}, { maxInputTokens: tokens });
+        expect(result.prompt).toBe(content);
+        expect(result.trace.segments[0]).toMatchObject({
+          included: true,
+          truncated: false,
+        });
+        expectRegistryError(
+          () => registry.render({}, { maxInputTokens: tokens - 1 }),
+          "required_segments_exceed_budget",
+        );
+      }
+
+      const tooSmall = new PromptSegmentRegistry([
+        { ...atomic, tokenBudget: tokens - 1 },
+      ]);
+      // A cache miss must not truncate the source before the error check, and
+      // a subsequent cache hit must not quietly reuse a clipped policy.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        expectRegistryError(
+          () => tooSmall.render({}),
+          "required_segments_exceed_budget",
+        );
+      }
+    },
+  );
+
+  it("spends remaining space on other segments without clipping an atomic policy", () => {
+    const content =
+      "REQUIRED_POLICY\nA changed date does not establish another person's availability.";
+    const registry = new PromptSegmentRegistry([
+      segment({
+        id: "01_atomic_policy",
+        content,
+        required: true,
+        tokenBudget: 100,
+        globalOverflowPolicy: "error",
+      }),
+      segment({
+        id: "02_other_required",
+        content: "Other required context. ".repeat(30),
+        required: true,
+        tokenBudget: 300,
+      }),
+      segment({
+        id: "03_optional",
+        content: "O".repeat(100),
+        globalOverflowPolicy: "drop",
+      }),
+    ]);
+    const result = registry.render(
+      {},
+      { maxInputTokens: estimatePromptTokens(content) + 8 },
+    );
+    expect(result.prompt.startsWith(content + "\n")).toBe(true);
+    expect(
+      result.trace.segments.find((item) => item.id === "01_atomic_policy"),
+    ).toMatchObject({ included: true, truncated: false });
+    expect(
+      result.trace.segments.find((item) => item.id === "02_other_required"),
+    ).toMatchObject({ included: true, truncated: true });
+    expect(result.trace.droppedSegmentIds).toContain("03_optional");
+  });
+
+  it.each(["error", "preserve"] as const)(
+    "rejects the required-only %s policy for optional segments",
+    (globalOverflowPolicy) => {
+      expectRegistryError(
+        () =>
+          new PromptSegmentRegistry([
+            segment({
+              id: "01_invalid",
+              content: "optional",
+              globalOverflowPolicy,
+            }),
+          ]),
+        "invalid_segment",
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "preserves existing local compaction under the global budget with caching=%s",
+    (cacheable) => {
+      const content = `CORE_PERSONA_JSON\n${JSON.stringify({
+        traits: [{ name: "careful", description: "Details. ".repeat(120) }],
+        dialogue: { hardRule: "Keep every requested item in the draft." },
+      })}`;
+      const tokenBudget = 150;
+      const bounded = truncatePromptToTokenBudget(content, tokenBudget);
+      expect(bounded).not.toBe(content);
+      expect(JSON.parse(bounded.split("\n")[1]!)).toHaveProperty("dialogue");
+      const registry = new PromptSegmentRegistry([
+        {
+          ...segment({
+            id: "01_core_persona",
+            content,
+            required: true,
+            tokenBudget,
+            globalOverflowPolicy: "preserve",
+          }),
+          cacheable,
+          cacheKey: () => "persona:v1",
+        },
+        segment({ id: "02_optional", content: "Optional details" }),
+      ]);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const result = registry.render(
+          {},
+          { maxInputTokens: estimatePromptTokens(bounded) },
+        );
+        expect(result.prompt).toBe(bounded);
+        expect(result.trace.droppedSegmentIds).toContain("02_optional");
+        expectRegistryError(
+          () =>
+            registry.render(
+              {},
+              { maxInputTokens: estimatePromptTokens(bounded) - 1 },
+            ),
+          "required_segments_exceed_budget",
+        );
+      }
+    },
+  );
+
   it("compacts labeled JSON structurally instead of slicing it mid-token", () => {
     const registry = new PromptSegmentRegistry<TestContext>([
       segment({
@@ -608,8 +765,23 @@ describe("default prompt segments", () => {
     ).toBe("drop");
     expect(
       defaults
-        .filter((item) => item.id !== "12_future_schedule")
+        .filter((item) => !item.required && item.id !== "12_future_schedule")
         .every((item) => item.globalOverflowPolicy === undefined),
+    ).toBe(true);
+    const required = defaults.filter((item) => item.required);
+    expect(required.map((item) => item.id)).toEqual([
+      "01_app_policy",
+      "02_character_identity",
+      "03_core_persona",
+      "05_boundaries",
+      "08_runtime_state",
+      "10_current_time",
+      "15_reply_strategy",
+      "16_user_message",
+      "17_output_contract",
+    ]);
+    expect(
+      required.every((item) => item.globalOverflowPolicy === "preserve"),
     ).toBe(true);
   });
 

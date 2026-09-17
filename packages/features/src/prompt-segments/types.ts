@@ -1,5 +1,6 @@
 export type PromptSegmentPlacement = "system" | "prompt";
-export type PromptSegmentGlobalOverflowPolicy = "truncate" | "drop";
+export type PromptSegmentGlobalOverflowPolicy =
+  "truncate" | "drop" | "error" | "preserve";
 
 /**
  * Prompt segments intentionally accept a structural context. The future server
@@ -24,6 +25,11 @@ export interface PromptSegment<TContext extends PromptContext = PromptContext> {
    * Defaults to truncate. `drop` keeps an optional structured segment atomic:
    * exceeding either its own token budget or the global input budget omits the
    * complete segment instead of slicing its payload.
+   * `error` is for required instructions: preserve the whole segment, throwing
+   * if its local allowance or the global required minimum cannot contain it.
+   * `preserve` is also required-only: keep the existing local budget handling,
+   * then preserve that bounded result whole under the global input budget.
+   * It throws if the required results cannot fit without further compaction.
    */
   readonly globalOverflowPolicy?: PromptSegmentGlobalOverflowPolicy;
   readonly cacheKey?: (context: TContext) => string | null;

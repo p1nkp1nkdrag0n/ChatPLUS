@@ -35,7 +35,11 @@ const characterInput = {
   tier: "lightweight",
   timezone: "Asia/Shanghai",
 };
-function client(app: FastifyInstance, origin: string) {
+function client(
+  app: FastifyInstance,
+  origin: string,
+  remoteAddress = "127.0.0.1",
+) {
   const jar = new Map<string, string>();
   let csrfToken = "";
   return {
@@ -49,6 +53,7 @@ function client(app: FastifyInstance, origin: string) {
       const response = await app.inject({
         method,
         url,
+        remoteAddress,
         ...(payload ? { payload } : {}),
         headers: {
           host: new URL(origin).host,
@@ -172,7 +177,10 @@ async function fixture(startSchedulers = false) {
     adminId,
   );
   app.control.setPurposeDefault("default", "friendly", adminId);
-  app.control.setLimits({ callsEnabled: true }, adminId);
+  app.control.setLimits(
+    { callsEnabled: true, registrationEnabled: true },
+    adminId,
+  );
   async function register(username: string) {
     const friend = client(app.userApp, publicOrigin);
     await friend.request("GET", "/api/hosted/info");
@@ -208,6 +216,7 @@ async function fixture(startSchedulers = false) {
   return { app, root, admin, adminId, register, calls, baseConfig, reopen };
 }
 afterEach(async () => {
+  vi.useRealTimers();
   for (const item of opened.splice(0)) {
     await item.app?.close();
     rmSync(item.root, { recursive: true, force: true });
@@ -475,6 +484,181 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     expect(f.app.control.wallet(user.userId)).toEqual(wallet);
   });
 
+  it("limits login to ten POSTs per IP per minute without consuming session reads, logout, or another IP's allowance", async () => {
+    const { app, register } = await fixture();
+    const friend = await register("login-rate-friend");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const started = Date.now();
+    vi.setSystemTime(started);
+    const login = {
+      username: "login-rate-friend",
+      password: "testing-friend-password",
+    };
+    const paths = [
+      "/api/hosted/auth/login",
+      "/%61pi/hosted/auth/%6cogin",
+      "/api/hosted/auth/login?source=test",
+    ];
+    for (let attempt = 0; attempt < 9; attempt++) {
+      const response = await friend.request("POST", paths[attempt % 3]!, {});
+      expect(response.statusCode, response.body).toBe(400);
+    }
+    // Existing sessions and unrelated reads remain usable near the login limit.
+    for (let read = 0; read < 12; read++) {
+      expect((await friend.request("GET", "/api/hosted/me")).statusCode).toBe(
+        200,
+      );
+      expect((await friend.request("GET", "/api/health")).statusCode).toBe(200);
+    }
+    for (let logout = 0; logout < 12; logout++)
+      expect(
+        (await friend.request("POST", "/api/hosted/auth/logout", {}))
+          .statusCode,
+      ).toBe(200);
+    expect((await friend.request("POST", paths[0]!, login)).statusCode).toBe(
+      200,
+    );
+    const limited = await friend.request("POST", paths[1]!, login);
+    expect(limited.statusCode, limited.body).toBe(429);
+    expect(limited.headers["retry-after"]).toBe("60");
+    expect(limited.json<{ error: object }>().error).toMatchObject({
+      code: "rate_limited",
+      retryAfterSeconds: 60,
+    });
+    expect((await friend.request("GET", "/api/hosted/me")).statusCode).toBe(
+      200,
+    );
+    expect(
+      (await friend.request("POST", "/api/hosted/auth/logout", {})).statusCode,
+    ).toBe(200);
+
+    const otherIp = client(app.userApp, publicOrigin, "203.0.113.20");
+    await otherIp.request("GET", "/api/hosted/info");
+    expect((await otherIp.request("POST", paths[0]!, login)).statusCode).toBe(
+      200,
+    );
+    vi.setSystemTime(started + 59_001);
+    const almostReady = await friend.request("POST", paths[2]!, login);
+    expect(almostReady.statusCode, almostReady.body).toBe(429);
+    expect(almostReady.headers["retry-after"]).toBe("1");
+    expect(
+      almostReady.json<{ error: { retryAfterSeconds: number } }>().error
+        .retryAfterSeconds,
+    ).toBe(1);
+    // Rejected requests must not extend the original window, including its boundary.
+    vi.setSystemTime(started + 60_000);
+    const recovered = await friend.request("POST", paths[0]!, login);
+    expect(recovered.statusCode, recovered.body).toBe(200);
+    expect(recovered.headers["retry-after"]).toBeUndefined();
+  });
+  it("limits registration to three attempts per IP per ten minutes independently from login", async () => {
+    const { app, adminId } = await fixture();
+    const anonymous = client(app.userApp, publicOrigin, "203.0.113.30");
+    await anonymous.request("GET", "/api/hosted/info");
+    const { code } = app.control.createInvite({ maxUses: 2 }, adminId);
+    const registration = {
+      username: "registration-rate-friend",
+      password: "testing-friend-password",
+      inviteCode: code,
+    };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const started = Date.now();
+    vi.setSystemTime(started);
+    for (const path of [
+      "/api/hosted/auth/register",
+      "/%61pi/hosted/auth/%72egister",
+      "/api/hosted/auth/register?source=test",
+    ]) {
+      const response = await anonymous.request("POST", path, {});
+      expect(response.statusCode, response.body).toBe(400);
+    }
+    const limited = await anonymous.request(
+      "POST",
+      "/api/hosted/auth/register",
+      registration,
+    );
+    expect(limited.statusCode, limited.body).toBe(429);
+    expect(limited.headers["retry-after"]).toBe("600");
+    expect(limited.json<{ error: object }>().error).toMatchObject({
+      code: "rate_limited",
+      retryAfterSeconds: 600,
+    });
+    expect(
+      (
+        await anonymous.request("POST", "/api/hosted/auth/login", {
+          username: "operator",
+          password: "testing-operator-password",
+        })
+      ).statusCode,
+    ).toBe(200);
+    const otherIp = client(app.userApp, publicOrigin, "203.0.113.31");
+    await otherIp.request("GET", "/api/hosted/info");
+    const otherRegistration = await otherIp.request(
+      "POST",
+      "/api/hosted/auth/register",
+      { ...registration, username: "other-registration-rate-friend" },
+    );
+    expect(otherRegistration.statusCode, otherRegistration.body).toBe(200);
+    vi.setSystemTime(started + 599_999);
+    const almostReady = await anonymous.request(
+      "POST",
+      "/api/hosted/auth/register",
+      registration,
+    );
+    expect(almostReady.statusCode, almostReady.body).toBe(429);
+    expect(almostReady.headers["retry-after"]).toBe("1");
+    expect(
+      almostReady.json<{ error: { retryAfterSeconds: number } }>().error
+        .retryAfterSeconds,
+    ).toBe(1);
+    vi.setSystemTime(started + 600_000);
+    const recovered = await anonymous.request(
+      "POST",
+      "/api/hosted/auth/register",
+      registration,
+    );
+    expect(recovered.statusCode, recovered.body).toBe(200);
+  });
+  it.each([
+    { route: "login", maximum: 10, cooldown: 60 },
+    { route: "register", maximum: 3, cooldown: 600 },
+  ])(
+    "limits invalid-CSRF $route attempts before authentication work",
+    async ({ route, maximum, cooldown }) => {
+      const { app } = await fixture();
+      const anonymous = client(app.userApp, publicOrigin);
+      await anonymous.request("GET", "/api/hosted/info");
+      const login = vi.spyOn(app.auth, "login");
+      const register = vi.spyOn(app.auth, "register");
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.now());
+      for (let attempt = 0; attempt < maximum; attempt++) {
+        const rejected = await anonymous.request(
+          "POST",
+          `/api/hosted/auth/${route}`,
+          {
+            username: "operator",
+            password: "testing-operator-password",
+            ...(route === "register" ? { inviteCode: "invalid-invite" } : {}),
+          },
+          { "x-csrf-token": "invalid" },
+        );
+        expect(rejected.statusCode, rejected.body).toBe(403);
+        expect(rejected.json<{ error: { code: string } }>().error.code).toBe(
+          "csrf_invalid",
+        );
+      }
+      const limited = await anonymous.request(
+        "POST",
+        `/api/hosted/auth/${route}`,
+        {},
+      );
+      expect(limited.statusCode, limited.body).toBe(429);
+      expect(limited.headers["retry-after"]).toBe(String(cooldown));
+      expect(login).not.toHaveBeenCalled();
+      expect(register).not.toHaveBeenCalled();
+    },
+  );
   it("batches all visible session billing including child calls without leaking other sessions or users", async () => {
     const { app, register } = await fixture();
     const user = await register("session-billing-owner");

@@ -191,7 +191,6 @@ export class FuzzyLifeService {
       context = createDailyLifeContext({
         agentId,
         spec,
-        state,
         threads,
         intents,
         localDate,
@@ -248,7 +247,6 @@ export class FuzzyLifeService {
       .map((outcome) => outcome.id);
     const refreshed = refreshDailyLifeContext({
       context,
-      state,
       intents,
       threads,
       localHour: local.hour,
@@ -391,7 +389,10 @@ export class FuzzyLifeService {
         subject: "character",
         localDate: snapshot.context.localDate,
         currentPeriod: snapshot.context.currentPeriod,
-        availability: snapshot.context.availability,
+        availability:
+          snapshot.context.availabilityConfidence === "observed"
+            ? snapshot.context.availability
+            : "unknown",
         currentFocus: snapshot.context.currentFocus,
         intentions: snapshot.intents.map((intent) => ({
           title: intent.title,

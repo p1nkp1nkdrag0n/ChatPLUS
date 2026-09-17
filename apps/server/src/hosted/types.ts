@@ -5,6 +5,7 @@ export class HostedError extends Error {
     readonly statusCode: number,
     readonly code: string,
     message: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "HostedError";

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EvidenceBundle } from "@personasim/contracts";
 import { buildConversationContextPlan } from "./conversation-context-plan.js";
 import { turnExpressionPromptView } from "./turn-expression-policy.js";
+import { REPLY_TASK_GROUNDING_POLICY } from "./reply-task-grounding-policy.js";
 
 import {
   assembleChatPrompt,
@@ -15,6 +16,44 @@ import {
 } from "./prompt-segments/index.js";
 
 const NOW = "2026-08-21T12:00:00.000Z";
+
+describe("shared reply task grounding policy", () => {
+  it.each(["fuzzy", "legacy_exact"] as const)(
+    "delivers one independently removable policy block in the %s system",
+    (lifePlanningMode) => {
+      const result = assembleChatPrompt(
+        baseInput({
+          lifePlanningMode,
+          userMessage:
+            "帮我给编辑写一条通知，保留刚才确认的人员分工，地点未知就写未定。只给我草稿。",
+        }),
+      );
+      expect(result.system.split(REPLY_TASK_GROUNDING_POLICY)).toHaveLength(2);
+      expect(
+        result.system.match(/^REPLY_TASK_GROUNDING_POLICY$/gmu),
+      ).toHaveLength(1);
+      expect(
+        result.system.match(/^END_REPLY_TASK_GROUNDING_POLICY$/gmu),
+      ).toHaveLength(1);
+      expect(result.prompt).not.toContain(REPLY_TASK_GROUNDING_POLICY);
+      expect(result.replyGrounding).not.toContain(REPLY_TASK_GROUNDING_POLICY);
+
+      // The no-policy control removes only instructions, never persona data or
+      // the original response contract. No budgeting or reassembly is needed.
+      const controlSystem = result.system.replace(
+        REPLY_TASK_GROUNDING_POLICY,
+        "",
+      );
+      expect(controlSystem).not.toContain("REPLY_TASK_GROUNDING_POLICY");
+      for (const label of ["CHARACTER_IDENTITY_JSON", "CORE_PERSONA_JSON"]) {
+        expect(promptSegmentJson(controlSystem, label)).toEqual(
+          promptSegmentJson(result.system, label),
+        );
+      }
+      expect(controlSystem).toContain("replyDecision and worldEffects");
+    },
+  );
+});
 
 const MEMORY_EVIDENCE: EvidenceBundle = {
   query: "What did I say about hiking?",
@@ -52,18 +91,38 @@ const MEMORY_EVIDENCE: EvidenceBundle = {
 };
 
 describe("complete evidence budgets", () => {
-  it.each([undefined, 3_000, 4_000])(
-    "keeps the complete optional reaction contract with existing affinity and state at %s tokens",
-    (maxInputTokens) => {
+  it.each([
+    { maxInputTokens: undefined, appraisalIncluded: true },
+    { maxInputTokens: 4_000, appraisalIncluded: false },
+    { maxInputTokens: 6_000, appraisalIncluded: true },
+  ])(
+    "keeps optional reaction authoring whole or omits it at $maxInputTokens tokens",
+    ({ maxInputTokens, appraisalIncluded }) => {
       const result = assembleChatPrompt(
         baseInput({
           userMessage: "我想聊一件私人的事情。",
           ...(maxInputTokens === undefined ? {} : { maxInputTokens }),
         }),
       );
-      expect(result.prompt).toContain(
-        "optional top-level interactionAppraisal",
-      );
+      expect(result.system).toContain(REPLY_TASK_GROUNDING_POLICY);
+      expect(result.prompt).toContain("RUNTIME_STATE_JSON");
+      expect(
+        result.prompt.includes("optional top-level interactionAppraisal"),
+      ).toBe(appraisalIncluded);
+      if (!appraisalIncluded) {
+        // Extra required guidance consumes real global space. Preserve the
+        // existing all-or-nothing fallback rather than clipping appraisal rules.
+        expect(result.prompt).not.toContain("privateView:");
+        expect(result.prompt).not.toContain("need_more_space");
+        expect(result.prompt).not.toContain("appreciate_trust");
+        expect(result.prompt).toContain(
+          '"replyDecision":{"text":"the complete reply"}',
+        );
+        expect(result.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(
+          maxInputTokens!,
+        );
+        return;
+      }
       expect(result.prompt).toContain("Low closeness does not imply dislike");
       expect(result.prompt).toContain(
         "Private or intimate disclosure is not inherently offensive",
@@ -77,6 +136,42 @@ describe("complete evidence budgets", () => {
       expect(result.prompt).toContain("RUNTIME_STATE_JSON");
     },
   );
+  it.each([3_000, 3_500])(
+    "rejects a %s-token window that cannot retain the bounded required content",
+    (maxInputTokens) => {
+      expect(() => assembleChatPrompt(baseInput({ maxInputTokens }))).toThrow(
+        PromptSegmentRegistryError,
+      );
+    },
+  );
+  it("does not retry renderer errors unrelated to required capacity", () => {
+    let calls = 0;
+    const error = new PromptSegmentRegistryError(
+      "invalid_segment",
+      "Invalid renderer data",
+    );
+    expect(() =>
+      assembleChatPrompt(
+        baseInput({
+          additionalPromptSegments: [
+            {
+              id: "18_invalid_renderer",
+              placement: "prompt",
+              priority: 1,
+              tokenBudget: 100,
+              required: false,
+              cacheable: false,
+              render: () => {
+                calls += 1;
+                throw error;
+              },
+            },
+          ],
+        }),
+      ),
+    ).toThrow(error);
+    expect(calls).toBe(1);
+  });
   it("sends one current affinity authority and rejects budgets that would clip its controls", () => {
     const input = baseInput({ userMessage: "今天想随便聊聊。" });
     input.character.userRelationship = {
@@ -179,7 +274,7 @@ describe("complete evidence budgets", () => {
     expect(result.replyGrounding).toContain('"sourceId":"message-hiking"');
     expect(original.evidence[0]?.evidence.quote).toContain("不是林乔");
   });
-  it.each([undefined, 3_000, 4_000, 8_000])(
+  it.each([undefined, 4_000, 8_000])(
     "keeps use permissions with evidence at %s tokens",
     (budget) => {
       const item = MEMORY_EVIDENCE.evidence[0]!;
@@ -786,7 +881,7 @@ describe("reply length steering ablation", () => {
     return { current, experimental };
   }
 
-  it.each([undefined, 3_000, 4_000])(
+  it.each([undefined, 4_000, 5_000])(
     "keeps omitted mode identical to explicit current at %s tokens",
     (maxInputTokens) => {
       const input = baseInput({
@@ -813,7 +908,6 @@ describe("reply length steering ablation", () => {
     );
     expect(strategy).toEqual({
       complexity: original.complexity,
-      stateGuidance: original.stateGuidance,
       affinityPolicyVersion: original.affinityPolicyVersion,
       affinityGuidance: original.affinityGuidance,
       lengthOverride: original.lengthOverride,
@@ -871,7 +965,7 @@ describe("reply length steering ablation", () => {
     },
   );
 
-  it.each([3_000, 3_500, 4_000])(
+  it.each([4_000, 4_500, 5_000])(
     "preserves final admission and compaction at a tight %s-token budget",
     (maxInputTokens) => {
       const { current, experimental } = expectOnlySteeringRemoved(
@@ -1111,7 +1205,7 @@ describe("assembleChatPrompt registry integration", () => {
       ),
     ).toMatchObject({ renderedIndex: 0, localCacheHit: false });
     expect(after.segmentTrace.segments.map((segment) => segment.id)).toEqual(
-      DEFAULT_PROMPT_SEGMENT_IDS,
+      [...DEFAULT_PROMPT_SEGMENT_IDS, "01b_reply_task_grounding_policy"].sort(),
     );
   });
 
@@ -1140,11 +1234,11 @@ describe("assembleChatPrompt registry integration", () => {
     expect(after.prompt.startsWith("RECENT_VERBATIM_JSON\n")).toBe(true);
   });
 
-  it("assembles through exactly the 17 defaults while retaining legacy contracts", () => {
+  it("retains the 17 defaults and adds the complete task policy without clipping legacy contracts", () => {
     const result = assembleChatPrompt(baseInput());
 
     expect(result.segmentTrace.segments.map((segment) => segment.id)).toEqual(
-      DEFAULT_PROMPT_SEGMENT_IDS,
+      [...DEFAULT_PROMPT_SEGMENT_IDS, "01b_reply_task_grounding_policy"].sort(),
     );
     expect(
       result.segmentTrace.segments
@@ -1449,7 +1543,7 @@ describe("assembleChatPrompt registry integration", () => {
     expect(traceById["12_future_schedule"]?.included).toBe(false);
   });
 
-  it("keeps a large fuzzy-life payload valid JSON or drops it atomically under a tiny global budget", () => {
+  it("keeps a large fuzzy-life payload valid JSON or drops it atomically after reserving required content", () => {
     const lifeContext = {
       authority: "server_persisted_fuzzy_life",
       recentDecisionDilemmas: Array.from({ length: 4 }, (_, index) => ({
@@ -1487,7 +1581,7 @@ describe("assembleChatPrompt registry integration", () => {
       baseInput({
         lifePlanningMode: "fuzzy",
         lifeContext,
-        maxInputTokens: 3_000,
+        maxInputTokens: 4_000,
       }),
     );
     const tightTrace = tight.segmentTrace.segments.find(
@@ -1565,10 +1659,122 @@ describe("assembleChatPrompt registry integration", () => {
     expect(result.system).toContain("not a permanent personality fact");
     expect(result.system).toContain("must not claim an opposite present mood");
     expect(result.system).toContain("pace, brevity, initiative, or boundaries");
-    expect(result.prompt).toContain("stateGuidance");
-    expect(result.prompt).toContain(
-      "do not claim the opposite current condition",
+    expect(qualitative).not.toHaveProperty("summary");
+    expect(result.prompt).not.toContain('"stateGuidance":');
+    expect(
+      promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
+    ).toEqual(state);
+    for (const description of Object.values(qualitative)) {
+      expect(result.prompt.split(String(description))).toHaveLength(2);
+    }
+  });
+
+  it.each([0, 720])(
+    "withholds unmaintained sleep debt (%s) from fuzzy generation and repair",
+    (sleepDebtMinutes) => {
+      const input = baseInput({ lifePlanningMode: "fuzzy" });
+      input.state = { ...input.state, sleepDebtMinutes };
+      const result = assembleChatPrompt(input);
+      const state = promptSegmentJson(
+        result.prompt,
+        "RUNTIME_STATE_JSON",
+      ) as Record<string, unknown>;
+      expect(state).not.toHaveProperty("sleepDebtMinutes");
+      expect(state.qualitative).not.toHaveProperty("sleepDebt");
+      expect(state.qualitative).not.toHaveProperty("summary");
+      expect(result.replyStrategy.stateGuidance).not.toContain("睡眠");
+      expect(
+        promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
+      ).toEqual(state);
+      expect(input.state.sleepDebtMinutes).toBe(sleepDebtMinutes);
+    },
+  );
+
+  it("retains maintained sleep debt in legacy life and excludes it from fuzzy fatigue planning", () => {
+    const input = baseInput({ userMessage: "今天想聊聊。" });
+    input.state = {
+      ...input.state,
+      energy: 0.9,
+      stress: 0.1,
+      socialBattery: 0.9,
+      focus: 0.9,
+      sleepDebtMinutes: 720,
+    };
+    const legacy = assembleChatPrompt({
+      ...input,
+      lifePlanningMode: "legacy_exact",
+    });
+    const fuzzy = assembleChatPrompt({ ...input, lifePlanningMode: "fuzzy" });
+    const state = promptSegmentJson(
+      legacy.prompt,
+      "RUNTIME_STATE_JSON",
+    ) as Record<string, unknown>;
+    expect(state.sleepDebtMinutes).toBe(720);
+    expect(state.qualitative).toHaveProperty(
+      "sleepDebt",
+      "睡眠债很高（约 720 分钟），需要恢复",
     );
+    expect(fuzzy.replyStrategy.targetChars).toBeGreaterThan(
+      legacy.replyStrategy.targetChars,
+    );
+  });
+
+  it.each([
+    "安静、克制，习惯用简短的具体回应",
+    "热情、爱开玩笑，喜欢详细分享小事",
+  ])(
+    "preserves authored expression for the same mixed state: %s",
+    (dialogueStyle) => {
+      const input = baseInput({ lifePlanningMode: "fuzzy" });
+      input.character.dialogue.register = dialogueStyle;
+      input.state = {
+        ...input.state,
+        moodValence: -0.2,
+        energy: 0.2,
+        focus: 0.9,
+        socialBattery: 0.9,
+      };
+      const result = assembleChatPrompt(input);
+      const state = promptSegmentJson(result.prompt, "RUNTIME_STATE_JSON") as {
+        qualitative: Record<string, string>;
+      };
+      expect(state.qualitative.moodValence).toContain("略偏负向");
+      expect(state.qualitative.energy).toContain("精力见底");
+      expect(state.qualitative.focus).toContain("注意力高度集中");
+      expect(result.prompt).not.toContain("注意力已经明显下降");
+      expect(result.prompt).not.toContain("emotionally even");
+      expect(result.system).toContain(dialogueStyle);
+      expect(result.system).toContain(
+        "the same state can look different in different people",
+      );
+    },
+  );
+
+  it("freezes the actually admitted runtime snapshot for repair under prompt pressure", () => {
+    const input = baseInput({
+      lifePlanningMode: "fuzzy",
+      maxInputTokens: 4_000,
+    });
+    input.state = {
+      ...input.state,
+      moodValence: -0.2,
+      energy: 0.2,
+      focus: 0.9,
+      revision: 7,
+    };
+    const result = assembleChatPrompt(input);
+    const delivered = promptSegmentJson(result.prompt, "RUNTIME_STATE_JSON");
+    input.state.energy = 0.95;
+    input.state.revision = 8;
+    expect(
+      promptSegmentJson(result.replyGrounding, "RUNTIME_STATE_JSON"),
+    ).toEqual(delivered);
+    expect(delivered).toMatchObject({ energy: 0.2, focus: 0.9, revision: 7 });
+    expect(
+      result.segmentTrace.segments.find(
+        (segment) => segment.id === "08_runtime_state",
+      ),
+    ).toMatchObject({ included: true, truncated: false });
   });
 
   it("injects the server-selected current activity as present context", () => {
@@ -1780,18 +1986,18 @@ describe("assembleChatPrompt registry integration", () => {
           role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
           content: "m".repeat(2_000),
         })),
-        maxInputTokens: 3_000,
+        maxInputTokens: 4_000,
       }),
     );
 
-    expect(result.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(3_000);
+    expect(result.segmentTrace.estimatedInputTokens).toBeLessThanOrEqual(4_000);
     expect(
       estimatePromptTokens(result.system) + estimatePromptTokens(result.prompt),
-    ).toBeLessThanOrEqual(3_000);
+    ).toBeLessThanOrEqual(4_000);
     expect(
       result.segmentTrace.segments
         .filter((segment) => segment.required)
-        .every((segment) => segment.included),
+        .every((segment) => segment.included && !segment.truncated),
     ).toBe(true);
   });
 
@@ -1989,7 +2195,7 @@ describe("assembleChatPrompt registry integration", () => {
     );
 
     const tight = assembleChatPrompt(
-      baseInput({ schedule, maxInputTokens: 3_000 }),
+      baseInput({ schedule, maxInputTokens: 4_000 }),
     );
     const tightTrace = tight.segmentTrace.segments.find(
       (segment) => segment.id === "12_future_schedule",

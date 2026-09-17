@@ -19,6 +19,7 @@ function fixture(configured = true) {
   const store = new HostedControlStore(root);
   opened.push({ root, store });
   const admin = store.createAdministrator("admin", "test-password-hash");
+  store.setLimits({ registrationEnabled: true }, admin.id);
   if (configured) {
     store.upsertModel(model, admin.id);
     store.setLimits({ callsEnabled: true }, admin.id);
@@ -57,6 +58,28 @@ afterEach(() => {
 });
 
 describe("hosted central control", () => {
+  it("closes fresh registration by default and preserves persisted explicit choices", () => {
+    const root = mkdtempSync(join(tmpdir(), "dearvale-control-"));
+    const state = { root, store: new HostedControlStore(root) };
+    opened.push(state);
+    expect(state.store.getLimits().registrationEnabled).toBe(false);
+    const admin = state.store.createAdministrator(
+      "admin",
+      "test-password-hash",
+    );
+    const { code } = state.store.createInvite({}, admin.id);
+    expect(() => state.store.assertRegistrationAllowed(code)).toThrow(
+      "disabled",
+    );
+    for (const registrationEnabled of [true, false]) {
+      state.store.setLimits({ registrationEnabled }, admin.id);
+      state.store.close();
+      state.store = new HostedControlStore(root);
+      expect(state.store.getLimits().registrationEnabled).toBe(
+        registrationEnabled,
+      );
+    }
+  });
   it("keeps zero-price models as disabled drafts and requires complete pricing before global activation", () => {
     const { store, admin } = fixture(false);
     expect(store.getLimits().callsEnabled).toBe(false);

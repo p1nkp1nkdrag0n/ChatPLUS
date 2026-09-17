@@ -172,6 +172,8 @@ export const DailyLifeContextSchema = z
     status: DailyLifeContextStatusSchema,
     currentPeriod: DayPeriodSchema.exclude(["anytime"]),
     availability: LifeAvailabilitySchema,
+    // Legacy storage retains its three-value enum. An inferred value must be
+    // projected as unknown to prompts/UI, not treated as observed occupancy.
     availabilityConfidence: z.enum(["observed", "inferred"]),
     theme: ShortTextSchema.optional(),
     currentFocus: ShortTextSchema.optional(),

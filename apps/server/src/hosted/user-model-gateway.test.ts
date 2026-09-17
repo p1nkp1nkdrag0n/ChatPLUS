@@ -22,6 +22,7 @@ function fixture() {
   );
   opened.push(store);
   const admin = store.createAdministrator("admin", "test-hash");
+  store.setLimits({ registrationEnabled: true }, admin.id);
   const invite = store.createInvite(
     { maxUses: 2, initialBalanceMicros: 0 },
     admin.id,

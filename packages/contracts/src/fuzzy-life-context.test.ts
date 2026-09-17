@@ -44,6 +44,16 @@ describe("FuzzyLifePromptContextSchema", () => {
     );
   });
 
+  it("can express unknown availability without claiming free time or occupancy", () => {
+    const context = minimalContext();
+    expect(
+      FuzzyLifePromptContextSchema.parse({
+        ...context,
+        today: { ...context.today, availability: "unknown" },
+      }).today.availability,
+    ).toBe("unknown");
+  });
+
   it("accepts a newly opened life thread before it has a progress note", () => {
     const context = minimalContext();
 

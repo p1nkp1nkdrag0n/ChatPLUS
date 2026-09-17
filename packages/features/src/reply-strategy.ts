@@ -1,4 +1,5 @@
 import type { ConversationContextPlan } from "@personasim/contracts";
+import { describeRuntimeState } from "./runtime-state-description.js";
 
 export type ReplyComplexity = "brief" | "standard" | "complex" | "deep";
 
@@ -14,6 +15,8 @@ export interface ReplyDialogueStyleLike {
 }
 export interface ReplyStrategyContext {
   conversationPlan?: ConversationContextPlan;
+  /** Only maintained sleep history may affect current capacity. */
+  sleepDebtAvailable?: boolean;
   state?: {
     moodValence?: number;
     moodArousal?: number;
@@ -164,7 +167,8 @@ export function deriveReplyStrategy(
     1,
     12,
   );
-  let deliveryPreference = deliveryPreferenceFor(dialogue);
+  // Capacity may change this turn's effort, not the character's usual cadence.
+  const deliveryPreference = deliveryPreferenceFor(dialogue);
 
   const runtime = context.state;
   const naturalTurn = complexity === "brief" || complexity === "standard";
@@ -179,7 +183,10 @@ export function deriveReplyStrategy(
     const socialBattery = clamp(runtime.socialBattery, 0, 1);
     const focus = clamp(runtime.focus ?? 0.5, 0, 1);
     const arousal = clamp(runtime.moodArousal ?? 0.5, 0, 1);
-    const sleepDebt = clamp(runtime.sleepDebtMinutes ?? 0, 0, 720) / 720;
+    const sleepDebt =
+      context.sleepDebtAvailable === false
+        ? 0
+        : clamp(runtime.sleepDebtMinutes ?? 0, 0, 720) / 720;
     const fatigue = Math.max((1 - energy) * 0.65 + stress * 0.35, sleepDebt);
     if (fatigue >= 0.55) {
       const factor = clamp(1 - (fatigue - 0.45) * 0.4, 0.72, 1);
@@ -189,11 +196,9 @@ export function deriveReplyStrategy(
         preferredChunkCount,
         socialBattery < 0.25 ? 1 : 2,
       );
-      if (socialBattery < 0.25) deliveryPreference = "prefer_single_block";
     }
     if (socialBattery < 0.25) {
       preferredChunkCount = 1;
-      deliveryPreference = "prefer_single_block";
     }
     if (focus < 0.3) {
       target = Math.max(8, Math.round(target * 0.88));
@@ -237,7 +242,7 @@ export function deriveReplyStrategy(
         ? "Let the current exchange and the character's own cadence determine how much to say. A complete reaction may be short; an engaging detail may deserve more room. The persona's average length is a tendency, not a quota for each turn. Do not pad, repeat a response template, or cut a useful thought to match a length."
         : lengthGuidanceFor(complexity, range.minimum, range.maximum),
     deliveryGuidance: deliveryGuidanceFor(deliveryPreference),
-    stateGuidance: stateGuidanceFor(runtime),
+    stateGuidance: stateGuidanceFor(runtime, context.sleepDebtAvailable),
     affinityPolicyVersion: "persona_expression_v2",
     affinityGuidance: affinityGuidanceFor(affinity),
     affinityApplied: false,
@@ -268,7 +273,6 @@ export function replyStrategyPromptView(
     deliveryPreference: strategy.deliveryPreference,
     lengthGuidance: strategy.lengthGuidance,
     deliveryGuidance: strategy.deliveryGuidance,
-    stateGuidance: strategy.stateGuidance,
     affinityPolicyVersion: strategy.affinityPolicyVersion,
     affinityGuidance: strategy.affinityGuidance,
     ...(legacy ? { affinityApplied: strategy.affinityApplied } : {}),
@@ -289,42 +293,25 @@ function affinityGuidanceFor(affinity: number): string {
   return `${expression} Familiarity shapes relational expression, not reply length or bubble count. Preserve the character's own warmth, vocabulary and boundaries. High affinity does not imply agreement, trust in unsupported claims, consent, romance or invented shared history. Explicit brevity, requested detail, quiet companionship and current capacity take priority. Never force nicknames, questions or extra words, and never reveal scores or stages.`;
 }
 
-function stateGuidanceFor(state: ReplyStrategyContext["state"]): string {
+function stateGuidanceFor(
+  state: ReplyStrategyContext["state"],
+  sleepDebtAvailable = true,
+): string {
   if (state === undefined) {
     return "No authoritative runtime state was supplied; do not invent a current mood, fatigue level, or activity.";
   }
-  const valence = clamp(state.moodValence ?? 0, -1, 1);
-  const arousal = clamp(state.moodArousal ?? 0.5, 0, 1);
-  const focus = clamp(state.focus ?? 0.5, 0, 1);
-  const energy = clamp(state.energy, 0, 1);
-  const stress = clamp(state.stress, 0, 1);
-  const socialBattery = clamp(state.socialBattery, 0, 1);
-  const sleepDebt = clamp(state.sleepDebtMinutes ?? 0, 0, 720);
-  const affect =
-    valence < -0.35
-      ? arousal > 0.65
-        ? "negative and activated: allow a tenser, sharper emotional color"
-        : "negative and subdued: allow a quieter, heavier emotional color"
-      : valence > 0.35
-        ? arousal > 0.65
-          ? "positive and activated: allow brighter, more animated energy"
-          : "positive and calm: allow relaxed warmth"
-        : arousal > 0.7
-          ? "emotionally activated but mixed: keep the response vivid without forcing a label"
-          : "emotionally even: keep the response steady";
-  const attention =
-    focus < 0.3
-      ? "Focus is low, so keep the thought simpler and avoid unnecessary branches"
-      : focus > 0.75
-        ? "Focus is high, so the character can sustain the current thread coherently"
-        : "Focus is ordinary, so follow the conversation naturally";
-  const capacity =
-    energy < 0.3 || stress > 0.75 || sleepDebt >= 300
-      ? "Current capacity is strained; prefer a lower-effort rhythm unless the user explicitly needs detail"
-      : socialBattery < 0.25
-        ? "Social capacity is low; be more restrained and avoid stacking questions"
-        : "Current capacity supports an ordinary conversational rhythm";
-  return `${affect}. ${attention}. ${capacity}. Express these authoritative present-moment conditions softly and naturally, but do not claim the opposite current condition. If this turn itself plausibly changes the condition, make that transition natural. Never recite metrics, force stock wording, or turn runtime state into permanent personality facts.`;
+  // Diagnostics share the same bands as the single model-visible state view.
+  // Keep delivery thresholds independent: they are calculations, not labels.
+  const description = describeRuntimeState(
+    {
+      ...state,
+      moodValence: state.moodValence ?? 0,
+      moodArousal: state.moodArousal ?? 0.5,
+      focus: state.focus ?? 0.5,
+    },
+    { sleepDebtAvailable },
+  );
+  return description.summary;
 }
 
 function targetFor(

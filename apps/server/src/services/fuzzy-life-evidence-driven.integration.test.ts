@@ -130,6 +130,109 @@ describe("evidence-driven character life threads", () => {
     expect(published.statusCode, published.body).toBe(200);
   }
 
+  it("does not turn cognitive state or intended activities into observed occupancy", async () => {
+    const character = await setup();
+    const initial = app!.personasim.life.ensureToday(character.id);
+    expect(initial.intents.length).toBeGreaterThan(0);
+    expect(
+      initial.intents.every((intent) => intent.status === "intended"),
+    ).toBe(true);
+    expect(initial.context).toMatchObject({
+      availability: "free",
+      availabilityConfidence: "inferred",
+    });
+    expect(
+      app!.personasim.life.promptContext(character.id).today.availability,
+    ).toBe("unknown");
+
+    const baseline = app!.personasim.store.getRuntimeState(character.id)!;
+    for (const delta of [
+      { focus: 1 },
+      { focus: 1, energy: 0.1 },
+      { stress: 1 },
+      { socialBattery: 0 },
+      { focus: 1, stress: 1, socialBattery: 0, energy: 0.1 },
+    ]) {
+      const previous = app!.personasim.store.getRuntimeState(character.id)!;
+      app!.personasim.store.updateRuntimeState({
+        ...baseline,
+        ...delta,
+        revision: previous.revision + 1,
+      });
+      const snapshot = app!.personasim.life.ensureToday(character.id);
+      expect(snapshot.context).toEqual(initial.context);
+      expect(snapshot.intents).toEqual(initial.intents);
+      expect(
+        app!.personasim.life.promptContext(character.id).today.availability,
+      ).toBe("unknown");
+      expect(repository.listRecentActions(character.id)).toEqual([]);
+      expect(repository.listRecentLifeOutcomes(character.id)).toEqual([]);
+    }
+  });
+
+  it("replaces legacy inferred occupancy and preserves current observations until the period changes", async () => {
+    const character = await setup();
+    const initial = app!.personasim.life.ensureToday(character.id).context;
+    repository.updateDailyContext({
+      ...initial,
+      availability: "occupied",
+      availabilityConfidence: "inferred",
+      revision: initial.revision + 1,
+    });
+    expect(
+      app!.personasim.life.promptContext(character.id).today.availability,
+    ).toBe("unknown");
+    const neutral = repository.findDailyContext(
+      character.id,
+      initial.localDate,
+    )!;
+    expect(neutral).toMatchObject({
+      availability: "free",
+      availabilityConfidence: "inferred",
+    });
+
+    const state = app!.personasim.store.getRuntimeState(character.id)!;
+    app!.personasim.store.updateRuntimeState({
+      ...state,
+      stress: 1,
+      focus: 1,
+      socialBattery: 0,
+      revision: state.revision + 1,
+    });
+    for (const availability of ["free", "interruptible", "occupied"] as const) {
+      const previous = repository.findDailyContext(
+        character.id,
+        initial.localDate,
+      )!;
+      repository.updateDailyContext({
+        ...previous,
+        availability,
+        availabilityConfidence: "observed",
+        revision: previous.revision + 1,
+      });
+      expect(
+        app!.personasim.life.promptContext(character.id).today.availability,
+      ).toBe(availability);
+      expect(
+        repository.findDailyContext(character.id, initial.localDate)
+          ?.availabilityConfidence,
+      ).toBe("observed");
+    }
+
+    clock.advance({ hours: 10 });
+    expect(
+      app!.personasim.life.promptContext(character.id).today.availability,
+    ).toBe("unknown");
+    const expired = repository.findDailyContext(
+      character.id,
+      initial.localDate,
+    )!;
+    expect(expired.availabilityConfidence).toBe("inferred");
+    expect(
+      app!.personasim.life.ensureToday(character.id).context.revision,
+    ).toBe(expired.revision);
+  });
+
   it("commits explicit goal pause and resume through chat without inventing an action or result", async () => {
     const character = await setup();
     const initial = repository.listActiveThreads(character.id)[0]!;

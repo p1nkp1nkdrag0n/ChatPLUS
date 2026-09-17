@@ -102,7 +102,9 @@ export const FuzzyLifePromptContextSchema = z
         subject: z.literal("character"),
         localDate: LocalDateSchema,
         currentPeriod: DayPeriodSchema,
-        availability: LifeAvailabilitySchema,
+        // Inferred legacy availability is not evidence of either free time or
+        // an ongoing activity. Only current observations use the known values.
+        availability: LifeAvailabilitySchema.or(z.literal("unknown")),
         currentFocus: ShortTextSchema.optional(),
         intentions: z
           .array(

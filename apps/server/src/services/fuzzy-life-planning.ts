@@ -17,7 +17,6 @@ import {
   type LifeThread,
   type LifeThreadClock,
   type LifeThreadTimelinePlan,
-  type RuntimeState,
 } from "@personasim/contracts";
 import {
   projectCharacterTime,
@@ -47,7 +46,6 @@ interface DailyIntentSeed {
 export function createDailyLifeContext(input: {
   agentId: string;
   spec: CharacterSpec;
-  state: RuntimeState;
   threads: readonly LifeThread[];
   intents: readonly DailyLifeIntent[];
   localDate: string;
@@ -67,7 +65,9 @@ export function createDailyLifeContext(input: {
     timezone: input.spec.identity.timezone,
     status: "active",
     currentPeriod,
-    availability: availabilityFor(input.state),
+    // The legacy storage enum has no unknown value. This inferred placeholder
+    // is exposed as unknown, never as observed free time, in the prompt/UI.
+    availability: "free",
     availabilityConfidence: "inferred",
     theme:
       input.threads[0]?.title ??
@@ -89,7 +89,6 @@ export function createDailyLifeContext(input: {
 
 export function refreshDailyLifeContext(input: {
   context: DailyLifeContext;
-  state: RuntimeState;
   intents: readonly DailyLifeIntent[];
   threads: readonly LifeThread[];
   localHour: number;
@@ -98,12 +97,21 @@ export function refreshDailyLifeContext(input: {
   atUtc: string;
 }): DailyLifeContext {
   const currentPeriod = dayPeriod(input.localHour);
-  const availability = availabilityFor(input.state);
+  // Intentions and cognitive state cannot prove an activity is happening.
+  // Keep an existing observation only within its recorded day period.
+  const preserveObservation =
+    input.context.availabilityConfidence === "observed" &&
+    input.context.currentPeriod === currentPeriod;
+  const availability = preserveObservation
+    ? input.context.availability
+    : "free";
+  const availabilityConfidence = preserveObservation ? "observed" : "inferred";
   const currentFocus = focusForPeriod(input.intents, currentPeriod);
   const activeThreadIds = input.threads.map((thread) => thread.id);
   const changed =
     input.context.currentPeriod !== currentPeriod ||
     input.context.availability !== availability ||
+    input.context.availabilityConfidence !== availabilityConfidence ||
     input.context.currentFocus !== currentFocus ||
     JSON.stringify(input.context.activeThreadIds) !==
       JSON.stringify(activeThreadIds) ||
@@ -116,6 +124,7 @@ export function refreshDailyLifeContext(input: {
     ...input.context,
     currentPeriod,
     availability,
+    availabilityConfidence,
     currentFocus,
     activeThreadIds,
     currentPressureEpisodeIds: input.currentPressureEpisodeIds,
@@ -493,16 +502,7 @@ export function dayPeriod(hour: number): Exclude<DayPeriod, "anytime"> {
   return "late_night";
 }
 
-export function availabilityFor(
-  state: RuntimeState,
-): "free" | "interruptible" | "occupied" {
-  if (state.stress > 0.78 || (state.focus > 0.8 && state.energy < 0.4)) {
-    return "occupied";
-  }
-  if (state.focus > 0.58 || state.socialBattery < 0.35) return "interruptible";
-  return "free";
-}
-
+/** A planned topic of attention, not an observed activity or cognitive focus. */
 export function focusForPeriod(
   intents: readonly DailyLifeIntent[],
   period: Exclude<DayPeriod, "anytime">,

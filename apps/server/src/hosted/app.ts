@@ -18,6 +18,7 @@ import { registerHostedBusiness } from "./business-http.js";
 import { registerHostedAdmin } from "./admin-http.js";
 import { HostedError } from "./types.js";
 import { createSecurityAudit, installSecurityAudit } from "./security-audit.js";
+import { parseHostedTrustedProxies } from "./trusted-proxies.js";
 
 export interface HostedAppOptions {
   rootDirectory: string;
@@ -30,8 +31,10 @@ export interface HostedAppOptions {
   transport?: typeof fetch;
   /** Explicit test seam; production uses the validated public HTTPS transport. */
   userTransport?: typeof fetch;
+  trustedProxies?: string;
 }
 export async function buildHostedApps(options: HostedAppOptions) {
+  const trustProxy = parseHostedTrustedProxies(options.trustedProxies);
   const rootDirectory = resolve(options.rootDirectory);
   const control = new HostedControlStore(rootDirectory);
   const auth = new HostedAuthService(control);
@@ -43,12 +46,14 @@ export async function buildHostedApps(options: HostedAppOptions) {
   // No automatic request/response logging: request URLs and payloads can contain
   // research data. Error handlers log only stable diagnostic identifiers.
   const userApp = Fastify({
+    trustProxy,
     logger: false,
     requestIdHeader: false,
     bodyLimit: 512000,
     requestTimeout: 240000,
   });
   const adminApp = Fastify({
+    trustProxy,
     logger: false,
     requestIdHeader: false,
     bodyLimit: 512000,

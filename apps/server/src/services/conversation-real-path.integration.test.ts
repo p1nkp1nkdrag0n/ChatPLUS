@@ -11,6 +11,7 @@ import { openDatabase } from "../db/connection.js";
 import { FakeClock } from "../runtime/clock.js";
 import type { ChatTurnResult } from "./conversation-service.js";
 import type { GenerateObjectInput, LlmService } from "./llm-service.js";
+import { WorldEffectService } from "./world-effect-service.js";
 
 const START_UTC = "2026-08-16T02:00:00.000Z";
 
@@ -629,6 +630,289 @@ describe("openai-compatible reply-first conversation path", () => {
       "repair_chat_turn",
     ]);
   });
+
+  it("repairs a promised draft with no body using the same admitted context", async () => {
+    const created = await createRealProviderTestApp("off", {
+      lifePlanningMode: "fuzzy",
+    });
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    const draft =
+      "许宁，资料核对改为周五下午。我负责组织，你负责插图，会议室还没确定。发送前先确认你的具体空闲时间。";
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn")
+        return {
+          replyDecision: { text: "好，整理好了，你可以直接改：" },
+          worldEffects: {},
+          interactionAppraisal: {
+            publicExpression: draft,
+          },
+        };
+      if (input.purpose === "repair_chat_turn")
+        return { text: draft, deliveryMode: "single_block" };
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    const sessionId = await createSession(app, character.id);
+    calls.length = 0;
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "empty-deliverable-repaired",
+      "帮我写一段给许宁的通知草稿：资料核对改到周五下午，我负责组织，她负责插图，会议室还没确定；再提醒我发送前确认一件事。先别实际发送。",
+    );
+    expect(response.statusCode, response.body).toBe(201);
+    const body = jsonBody<ChatTurnResult>(response);
+    expect(body.assistantMessage.content).toBe(draft);
+    expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+    expect(calls.map((input) => input.purpose)).toEqual([
+      "chat_turn",
+      "repair_chat_turn",
+    ]);
+    expect(calls[1]?.prompt).toContain("REPLY_DELIVERABLE_BODY_MISSING");
+    expect(promptJsonSegment(calls[1]!.prompt, "RUNTIME_STATE_JSON")).toEqual(
+      promptJsonSegment(calls[0]!.prompt, "RUNTIME_STATE_JSON"),
+    );
+    expect(body.scheduleChanges).toEqual([]);
+  });
+
+  it.each(["empty", "unavailable", "invalid"] as const)(
+    "does not commit an empty deliverable or its effects when the one repair is %s",
+    async (repairResult) => {
+      const created = await createRealProviderTestApp("enforced", {
+        lifePlanningMode: "fuzzy",
+      });
+      app = created.app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      let retryWithBody = false;
+      mockLlm(app.personasim.llm, calls, (input) => {
+        if (input.purpose === "chat_turn")
+          return {
+            replyDecision: {
+              text: retryWithBody
+                ? "通知草稿：资料核对定在周五下午，会议室待定。"
+                : "好，整理好了，你可以直接改：",
+              deliveryMode: "single_block",
+            },
+            worldEffects: retryWithBody ? {} : { stateDelta: { energy: -0.1 } },
+          };
+        if (input.purpose === "repair_chat_turn") {
+          if (repairResult === "unavailable") throw new Error("fixture outage");
+          return {
+            text:
+              repairResult === "invalid"
+                ? "作为一个AI语言模型，我没有自己的生活。"
+                : "草稿如下：",
+          };
+        }
+        return fixtureFor(input);
+      });
+      const character = await createAndPublish(app, "high_fidelity");
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+      const beforeState = app.personasim.store.getRuntimeState(character.id);
+      const requestId = `empty-deliverable-${repairResult}`;
+      const request = "请写一条通知草稿：资料核对定在周五下午，会议室待定。";
+      const failed = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        requestId,
+        request,
+      );
+      expect(failed.statusCode, failed.body).toBe(502);
+      expect(failed.body).toContain("reply_deliverable_incomplete");
+      expect(calls.map((input) => input.purpose)).toEqual([
+        "chat_turn",
+        "repair_chat_turn",
+      ]);
+      expect(app.personasim.store.getRuntimeState(character.id)).toEqual(
+        beforeState,
+      );
+      expect(
+        app.personasim.store.database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM messages WHERE session_id = ?",
+          )
+          .get(sessionId),
+      ).toEqual({ count: 0 });
+      expect(worldEffectAuditCount(app, character.id, requestId)).toBe(0);
+
+      // Failure is not an idempotent success receipt; the same request can retry.
+      retryWithBody = true;
+      calls.length = 0;
+      const retried = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        requestId,
+        request,
+      );
+      expect(retried.statusCode, retried.body).toBe(201);
+      expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
+      expect(
+        app.personasim.store.database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM messages WHERE session_id = ?",
+          )
+          .get(sessionId),
+      ).toEqual({ count: 2 });
+    },
+  );
+
+  it("rejects a late replacement that removes the requested body before committing effects", async () => {
+    const created = await createRealProviderTestApp("enforced", {
+      lifePlanningMode: "fuzzy",
+    });
+    app = created.app;
+    const calls: Array<GenerateObjectInput<unknown>> = [];
+    mockLlm(app.personasim.llm, calls, (input) => {
+      if (input.purpose === "chat_turn")
+        return {
+          text: "通知草稿：资料核对定在周五下午，会议室待定。",
+          deliveryMode: "single_block",
+          worldEffects: { stateDelta: { energy: -0.1 } },
+        };
+      return fixtureFor(input);
+    });
+    const character = await createAndPublish(app, "high_fidelity");
+    const sessionId = await createSession(app, character.id);
+    calls.length = 0;
+    const beforeState = app.personasim.store.getRuntimeState(character.id);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const resolve = WorldEffectService.prototype.resolve;
+    vi.spyOn(WorldEffectService.prototype, "resolve").mockImplementationOnce(
+      async function (this: WorldEffectService, input) {
+        const prepared = await resolve.call(this, input);
+        return {
+          ...prepared,
+          decision: {
+            ...prepared.decision,
+            reply: {
+              ...prepared.decision.reply,
+              text: "草稿如下：",
+              chunks: ["草稿如下："],
+            },
+          },
+        };
+      },
+    );
+    const response = await sendMessage(
+      app,
+      sessionId,
+      character.id,
+      "empty-deliverable-late",
+      "请写一条通知草稿：资料核对定在周五下午，会议室待定。",
+    );
+    expect(response.statusCode, response.body).toBe(502);
+    expect(response.body).toContain("reply_deliverable_incomplete");
+    expect(app.personasim.store.getRuntimeState(character.id)).toEqual(
+      beforeState,
+    );
+    expect(calls.map((input) => input.purpose)).toEqual(["chat_turn"]);
+    expect(
+      app.personasim.store.database
+        .prepare("SELECT COUNT(*) AS count FROM messages WHERE session_id = ?")
+        .get(sessionId),
+    ).toEqual({ count: 0 });
+  });
+
+  it.each(["retained", "empty"] as const)(
+    "preserves %s grounding through the late legacy world-effect repair path",
+    async (groundingMode) => {
+      const created = await createRealProviderTestApp("off", {
+        lifePlanningMode: "legacy_exact",
+        scheduleNegotiationMode: "enforced",
+        chatEffectsMode: "gated",
+      });
+      app = created.app;
+      const calls: Array<GenerateObjectInput<unknown>> = [];
+      const repairedText = "我是林夏，我们可以慢慢聊。";
+      mockLlm(app.personasim.llm, calls, (input) => {
+        if (input.purpose === "chat_turn") {
+          return {
+            text: "我是林夏。",
+            scheduleAction: { kind: "none" },
+            deliveryMode: "single_block",
+          };
+        }
+        if (input.purpose === "repair_chat_turn") {
+          return { text: repairedText, deliveryMode: "single_block" };
+        }
+        return fixtureFor(input);
+      });
+      const character = await createAndPublish(app, "high_fidelity");
+      const before = app.personasim.store.getRuntimeState(character.id)!;
+      app.personasim.store.updateRuntimeState({
+        ...before,
+        moodValence: -0.2,
+        energy: 0.2,
+        focus: 0.9,
+        sleepDebtMinutes: 240,
+        revision: before.revision + 1,
+      });
+      const sessionId = await createSession(app, character.id);
+      calls.length = 0;
+
+      // Inject a late invalidation after the original reply passed validation.
+      // The real world resolver, guard, and repair service must handle it.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const resolve = WorldEffectService.prototype.resolve;
+      const lateWorld = vi
+        .spyOn(WorldEffectService.prototype, "resolve")
+        .mockImplementationOnce(function (this: WorldEffectService, input) {
+          expect(input.effects.negotiationEnforced).toBe(true);
+          expect(input.replyGrounding).toContain("RUNTIME_STATE_JSON");
+          const invalid = "作为一个AI语言模型，我没有自己的生活。";
+          return resolve.call(this, {
+            ...input,
+            replyGrounding:
+              groundingMode === "empty" ? "" : input.replyGrounding!,
+            turn: {
+              ...input.turn,
+              decision: {
+                ...input.turn.decision,
+                reply: {
+                  ...input.turn.decision.reply,
+                  text: invalid,
+                  chunks: [invalid],
+                },
+              },
+            },
+          });
+        });
+      const response = await sendMessage(
+        app,
+        sessionId,
+        character.id,
+        `world-repair-grounding-${groundingMode}`,
+        "请以你自己的身份介绍一下自己。",
+      );
+      expect(response.statusCode, response.body).toBe(201);
+      expect(lateWorld).toHaveBeenCalledOnce();
+      const body = jsonBody<ChatTurnResult>(response);
+      expect(body.assistantMessage.content).toBe(repairedText);
+      expect(body.assistantMessage.metadata.repairAttempted).toBe(true);
+      expect(body.scheduleChanges).toEqual([]);
+      expect(calls.map((input) => input.purpose)).toEqual([
+        "chat_turn",
+        "repair_chat_turn",
+      ]);
+      const [generation, repair] = calls;
+      expect(repair?.prompt).toContain("AI_META_DISCLOSURE");
+      if (groundingMode === "retained") {
+        expect(promptJsonSegment(repair!.prompt, "RUNTIME_STATE_JSON")).toEqual(
+          promptJsonSegment(generation!.prompt, "RUNTIME_STATE_JSON"),
+        );
+      } else {
+        expect(repair?.prompt).not.toContain("RUNTIME_STATE_JSON");
+        expect(repair?.prompt).not.toContain("sleepDebtMinutes");
+        expect(repair?.prompt).not.toContain("精力见底");
+        expect(repair?.prompt).not.toContain("stateGuidance");
+      }
+    },
+  );
 
   it("generates with the frozen output request instead of reserving the model's entire output capacity", async () => {
     const created = await createRealProviderTestApp("off", {

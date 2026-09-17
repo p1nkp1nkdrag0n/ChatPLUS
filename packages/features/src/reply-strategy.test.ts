@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildConversationContextPlan } from "./conversation-context-plan.js";
+import { describeRuntimeState } from "./runtime-state-description.js";
 
 import {
   deriveReplyStrategy,
@@ -58,6 +59,7 @@ describe("deriveReplyStrategy", () => {
       "preferredChunkCount",
       "reviewUpperChars",
       "affinityApplied",
+      "stateGuidance",
     ])
       expect(view).not.toHaveProperty(key);
     expect(strategy.lengthGuidance).not.toContain("characters");
@@ -242,6 +244,115 @@ describe("deriveReplyStrategy", () => {
     expect(sequential.lengthGuidance).toContain("not a quota");
   });
 
+  describe.each([
+    {
+      persona: "outward",
+      dialogue: {
+        averageChunksPerTurn: 3,
+        averageMessageLength: 180,
+        verbosity: 0.9,
+      },
+      preference: "prefer_sequential",
+      guidance: "This character often chats in a message-by-message rhythm",
+    },
+    {
+      persona: "private",
+      dialogue: {
+        averageChunksPerTurn: 1,
+        averageMessageLength: 55,
+        verbosity: 0.1,
+      },
+      preference: "prefer_single_block",
+      guidance: "This character usually sends one coherent block",
+    },
+  ])("$persona authored delivery at low social capacity", (persona) => {
+    it.each([
+      { brief: false, fatigued: false },
+      { brief: true, fatigued: false },
+      { brief: false, fatigued: true },
+      { brief: true, fatigued: true },
+    ])(
+      "keeps the sent cadence for brief=$brief, fatigued=$fatigued",
+      ({ brief, fatigued }) => {
+        const message = brief
+          ? "今天想随便聊聊，听听你此刻的想法。简短一点，一两句就好。"
+          : "今天想随便聊聊，听听你此刻的想法。";
+        const derive = (socialBattery: number, tired = fatigued) =>
+          deriveReplyStrategy(message, persona.dialogue, {
+            sleepDebtAvailable: false,
+            state: {
+              moodValence: 0.1,
+              moodArousal: 0.4,
+              energy: tired ? 0.1 : 0.65,
+              stress: tired ? 0.8 : 0.25,
+              socialBattery,
+              focus: 0.65,
+            },
+          });
+        const low = derive(0.2);
+        const normal = derive(0.65);
+        const view = replyStrategyPromptView(low);
+
+        expect(view).toEqual(replyStrategyPromptView(normal));
+        expect(view).toMatchObject({
+          affinityPolicyVersion: "persona_expression_v2",
+          complexity: brief ? "brief" : "standard",
+          lengthOverride: brief ? "explicit_brief" : "none",
+          deliveryPreference: persona.preference,
+        });
+        expect(view.deliveryGuidance).toContain(persona.guidance);
+        expect(view.deliveryGuidance).toContain("may");
+        expect(view).not.toHaveProperty("preferredChunkCount");
+        expect(view).not.toHaveProperty("stateGuidance");
+        if (brief) {
+          expect(view.softTargetCharacters).toEqual({
+            minimum: low.targetMinChars,
+            ideal: low.targetChars,
+            maximum: low.targetMaxChars,
+          });
+        } else {
+          expect(view).not.toHaveProperty("softTargetCharacters");
+        }
+
+        // Keep the existing planning estimates; they are not authored habits.
+        expect(low.preferredChunkCount).toBe(1);
+        expect(normal.preferredChunkCount).toBe(
+          Math.min(persona.dialogue.averageChunksPerTurn, fatigued ? 2 : 3),
+        );
+        expect(low.targetChars).toBe(normal.targetChars);
+        expect(low.maxOutputTokens).toBe(normal.maxOutputTokens);
+        if (fatigued) {
+          expect(low.targetChars).toBeLessThan(derive(0.2, false).targetChars);
+        }
+      },
+    );
+  });
+
+  it("preserves legacy prompt-view estimates without reassigning the authored cadence", () => {
+    const strategy = deriveReplyStrategy(
+      "今天想随便聊聊。",
+      { averageMessageLength: 180, verbosity: 0.9, averageChunksPerTurn: 3 },
+      {
+        state: { energy: 0.1, stress: 0.8, socialBattery: 0.2, focus: 0.65 },
+      },
+    );
+    const legacy = {
+      ...strategy,
+      affinityPolicyVersion: "single_affinity_v1" as const,
+    };
+    expect(replyStrategyPromptView(legacy)).toMatchObject({
+      affinityPolicyVersion: "single_affinity_v1",
+      softTargetCharacters: { minimum: 148, ideal: 227, maximum: 352 },
+      preferredChunkCount: 1,
+      reviewUpperChars: 364,
+      affinityApplied: false,
+      deliveryPreference: "prefer_sequential",
+    });
+    expect(replyStrategyPromptView(legacy).deliveryGuidance).toContain(
+      "This character often chats in a message-by-message rhythm",
+    );
+  });
+
   it("does not misread negated brevity or English substrings", () => {
     const style = {
       verbosity: 0.5,
@@ -404,14 +515,14 @@ describe("deriveReplyStrategy", () => {
       },
     });
 
-    expect(calmFocused.stateGuidance).toContain("positive and calm");
-    expect(activatedDistracted.stateGuidance).toContain(
-      "negative and activated",
-    );
+    expect(calmFocused.stateGuidance).toContain("情绪明显正向");
+    expect(calmFocused.stateGuidance).toContain("唤醒度较低");
+    expect(activatedDistracted.stateGuidance).toContain("情绪明显低落");
     expect(activatedDistracted.targetChars).toBeLessThan(
       calmFocused.targetChars,
     );
-    expect(sociallyDrained.stateGuidance).toContain("Social capacity is low");
+    expect(activatedDistracted.stateGuidance).toContain("高度激活");
+    expect(sociallyDrained.stateGuidance).toContain("社交精力很低");
     expect(sociallyDrained.preferredChunkCount).toBeLessThanOrEqual(2);
   });
 
@@ -446,13 +557,13 @@ describe("deriveReplyStrategy", () => {
 
     const positive = derive({ moodValence: 0.8, moodArousal: 0.5 });
     const negative = derive({ moodValence: -0.8, moodArousal: 0.5 });
-    expect(positive.stateGuidance).toContain("positive and calm");
-    expect(negative.stateGuidance).toContain("negative and subdued");
+    expect(positive.stateGuidance).toContain("情绪明显正向");
+    expect(negative.stateGuidance).toContain("情绪明显低落");
 
     const calm = derive({ moodValence: 0.8, moodArousal: 0.1 });
     const activated = derive({ moodValence: 0.8, moodArousal: 0.9 });
-    expect(calm.stateGuidance).toContain("positive and calm");
-    expect(activated.stateGuidance).toContain("positive and activated");
+    expect(calm.stateGuidance).toContain("唤醒度较低");
+    expect(activated.stateGuidance).toContain("高度激活");
     expect(activated.preferredChunkCount).toBeGreaterThan(
       calm.preferredChunkCount,
     );
@@ -460,16 +571,63 @@ describe("deriveReplyStrategy", () => {
     const lowFocus = derive({ focus: 0.1 });
     const highFocus = derive({ focus: 0.9 });
     expect(lowFocus.targetChars).toBeLessThan(highFocus.targetChars);
-    expect(lowFocus.stateGuidance).toContain("Focus is low");
-    expect(highFocus.stateGuidance).toContain("Focus is high");
+    expect(lowFocus.stateGuidance).toContain("很难持续专注");
+    expect(highFocus.stateGuidance).toContain("注意力高度集中");
 
     const lowSocial = derive({ socialBattery: 0.05 });
     const highSocial = derive({ socialBattery: 0.9 });
     expect(lowSocial.preferredChunkCount).toBe(1);
-    expect(lowSocial.deliveryPreference).toBe("prefer_single_block");
+    expect(lowSocial.deliveryPreference).toBe("prefer_sequential");
+    expect(lowSocial.deliveryPreference).toBe(highSocial.deliveryPreference);
     expect(highSocial.preferredChunkCount).toBeGreaterThan(1);
-    expect(highSocial.stateGuidance).toContain(
-      "do not claim the opposite current condition",
+    expect(highSocial.stateGuidance).toContain("社交精力充足");
+  });
+
+  it("uses the canonical semantic bands even when planning thresholds differ", () => {
+    const state = {
+      moodValence: -0.2,
+      moodArousal: 0.8,
+      energy: 0.2,
+      stress: 0.3,
+      socialBattery: 0.9,
+      focus: 0.9,
+      sleepDebtMinutes: 0,
+    };
+    const strategy = deriveReplyStrategy("今天想聊聊。", {}, { state });
+    expect(strategy.stateGuidance).toBe(describeRuntimeState(state).summary);
+    expect(strategy.stateGuidance).toContain("略偏负向");
+    expect(strategy.stateGuidance).toContain("注意力高度集中");
+    expect(strategy.stateGuidance).not.toContain("注意力已经明显下降");
+    expect(replyStrategyPromptView(strategy)).not.toHaveProperty(
+      "stateGuidance",
+    );
+  });
+
+  it("ignores unavailable sleep debt while preserving maintained sleep fatigue calculations", () => {
+    const state = {
+      energy: 0.9,
+      stress: 0.1,
+      socialBattery: 0.9,
+      focus: 0.9,
+      sleepDebtMinutes: 720,
+    };
+    const dialogue = { averageMessageLength: 180, averageChunksPerTurn: 4 };
+    const derive = (sleepDebtAvailable: boolean, sleepDebtMinutes = 720) =>
+      deriveReplyStrategy("今天想聊聊。", dialogue, {
+        state: { ...state, sleepDebtMinutes },
+        sleepDebtAvailable,
+      });
+    const unavailable = derive(false);
+    const maintained = derive(true);
+    expect(unavailable).toEqual(derive(false, 0));
+    expect(unavailable.stateGuidance).not.toContain("睡眠");
+    expect(maintained.stateGuidance).toContain("睡眠债很高");
+    expect(maintained.targetChars).toBeLessThan(unavailable.targetChars);
+    expect(maintained.preferredChunkCount).toBeLessThan(
+      unavailable.preferredChunkCount,
+    );
+    expect(maintained).toEqual(
+      deriveReplyStrategy("今天想聊聊。", dialogue, { state }),
     );
   });
 });

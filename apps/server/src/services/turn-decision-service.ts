@@ -39,6 +39,7 @@ import {
 } from "@personasim/features";
 
 import type { SimulationCapabilities } from "../domain/capabilities.js";
+import { ApiError } from "../domain/errors.js";
 import { toFeatureScheduleEffects } from "../domain/feature-adapters.js";
 import {
   agentTurnDecisionSchema,
@@ -53,6 +54,7 @@ import {
 } from "./chat-output-budget.js";
 import type { LlmService } from "./llm-service.js";
 import type { ReplyRepairService } from "./reply-repair-service.js";
+import { inspectReplyCompleteness } from "./reply-completeness-guard.js";
 import type { ReplyGoalReviewAudit } from "./reply-goal-review-service.js";
 import {
   conservativeSemanticReply,
@@ -413,6 +415,11 @@ export class TurnDecisionService {
       ...inspection,
       issues: [
         ...inspection.issues,
+        ...inspectReplyCompleteness({
+          userMessage: input.userText,
+          text: input.decision.reply.text,
+          chunks: input.decision.reply.chunks,
+        }),
         ...inspectCausalReply({
           userText: input.userText,
           replyText: input.decision.reply.text,
@@ -422,6 +429,23 @@ export class TurnDecisionService {
         }),
       ],
     };
+  }
+
+  /** An empty promised deliverable is a failed generation, not a safe chat reply.
+   * Call after the existing repair allowance and again at the commit boundary. */
+  assertReplyCompleteness(userText: string, decision: AgentTurnDecision): void {
+    const issues = inspectReplyCompleteness({
+      userMessage: userText,
+      text: decision.reply.text,
+      chunks: decision.reply.chunks,
+    });
+    if (issues.length > 0)
+      throw new ApiError(
+        502,
+        "reply_deliverable_incomplete",
+        "回复正文未能完整生成，本次回复尚未发送，请重试。",
+        issues,
+      );
   }
 
   materializeReply(
@@ -563,13 +587,20 @@ export class TurnDecisionService {
         invalidDecision: decision,
         issues: inspection?.issues ?? initialIssues,
         fallback:
-          initialSemanticIssues.length > 0 &&
-          semanticOriginalDecision !== undefined
-            ? conservativeSemanticReply({
-                ...input,
-                decision: semanticOriginalDecision,
-              })
-            : safeScheduleDecision(input.spec),
+          semanticOriginalDecision !== undefined &&
+          inspectReplyCompleteness({
+            userMessage: input.userText,
+            text: semanticOriginalDecision.reply.text,
+            chunks: semanticOriginalDecision.reply.chunks,
+          }).length > 0
+            ? withoutWorldEffects(semanticOriginalDecision)
+            : initialSemanticIssues.length > 0 &&
+                semanticOriginalDecision !== undefined
+              ? conservativeSemanticReply({
+                  ...input,
+                  decision: semanticOriginalDecision,
+                })
+              : safeScheduleDecision(input.spec),
       });
       decision = attachValidatedWorldEffects(
         withoutWorldEffects(repaired),
@@ -595,6 +626,9 @@ export class TurnDecisionService {
       });
     }
     if (inspection.issues.length > 0) {
+      if (semanticOriginalDecision !== undefined)
+        this.assertReplyCompleteness(input.userText, semanticOriginalDecision);
+      this.assertReplyCompleteness(input.userText, decision);
       decision = attachValidatedWorldEffects(
         withCausalReplyFallback(
           initialSemanticIssues.length > 0 &&
@@ -911,6 +945,8 @@ export class TurnDecisionService {
       }
     }
     if (!inspection || inspection.issues.length > 0) {
+      this.assertReplyCompleteness(input.userText, semanticOriginalDecision);
+      this.assertReplyCompleteness(input.userText, decision);
       decision = attachValidatedWorldEffects(
         withCausalReplyFallback(
           initialSemanticIssues.length > 0

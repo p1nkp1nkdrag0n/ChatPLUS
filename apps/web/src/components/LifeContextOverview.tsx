@@ -167,7 +167,8 @@ function availabilityLabel(value: string): string {
     {
       free: "可自在交流",
       interruptible: "可短暂交流",
-      occupied: "正在专注",
+      occupied: "正在忙碌",
+      unknown: "忙闲未确定",
     }[value] ?? value
   );
 }

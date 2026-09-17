@@ -1,11 +1,10 @@
 import type { CharacterSpec, DailyLifeIntent } from "@personasim/contracts";
 import { describe, expect, it } from "vitest";
 
-import { buildOriginalDraft, initialRuntimeState } from "../domain/defaults.js";
+import { buildOriginalDraft } from "../domain/defaults.js";
 import { characterSpecSchema } from "../domain/schemas.js";
 import {
   assertTimelinePlanHash,
-  availabilityFor,
   buildDailyIntents,
   buildDeterministicLifeOutcome,
   createDailyLifeContext,
@@ -33,30 +32,6 @@ describe("fuzzy life planning", () => {
     [23, "late_night"],
   ] as const)("maps local hour %i to %s", (hour, expected) => {
     expect(dayPeriod(hour)).toBe(expected);
-  });
-
-  it("keeps availability thresholds strict and deterministic", () => {
-    const spec = testSpec();
-    const state = initialRuntimeState(spec.id, AT_UTC, spec);
-    const boundary = {
-      ...state,
-      stress: 0.78,
-      focus: 0.58,
-      energy: 0.4,
-      socialBattery: 0.35,
-    };
-
-    expect(availabilityFor(boundary)).toBe("free");
-    expect(availabilityFor({ ...boundary, stress: 0.781 })).toBe("occupied");
-    expect(availabilityFor({ ...boundary, focus: 0.801, energy: 0.399 })).toBe(
-      "occupied",
-    );
-    expect(availabilityFor({ ...boundary, focus: 0.581 })).toBe(
-      "interruptible",
-    );
-    expect(availabilityFor({ ...boundary, socialBattery: 0.349 })).toBe(
-      "interruptible",
-    );
   });
 
   it("builds stable bounded intents and uses the spontaneous fallback", () => {
@@ -140,12 +115,10 @@ describe("fuzzy life planning", () => {
 
   it("builds stable evidenced outcomes and refreshes contexts only on change", () => {
     const spec = testSpec();
-    const state = initialRuntimeState(spec.id, AT_UTC, spec);
     const intents = buildDailyIntents(spec, [], LOCAL_DATE, AT_UTC);
     const context = createDailyLifeContext({
       agentId: spec.id,
       spec,
-      state,
       threads: [],
       intents,
       localDate: LOCAL_DATE,
@@ -156,7 +129,6 @@ describe("fuzzy life planning", () => {
     });
     const unchanged = refreshDailyLifeContext({
       context,
-      state,
       intents,
       threads: [],
       localHour: 9,
@@ -166,7 +138,6 @@ describe("fuzzy life planning", () => {
     });
     const refreshed = refreshDailyLifeContext({
       context,
-      state,
       intents,
       threads: [],
       localHour: 19,
@@ -203,6 +174,51 @@ describe("fuzzy life planning", () => {
     });
     expect(outcome.summary).toContain(intents[0]!.title);
   });
+
+  it.each(["free", "interruptible", "occupied"] as const)(
+    "preserves observed %s within its period and expires it on a period change",
+    (availability) => {
+      const spec = testSpec();
+      const intents = buildDailyIntents(spec, [], LOCAL_DATE, AT_UTC);
+      const context = {
+        ...createDailyLifeContext({
+          agentId: spec.id,
+          spec,
+          threads: [],
+          intents,
+          localDate: LOCAL_DATE,
+          localHour: 14,
+          currentPressureEpisodeIds: [],
+          recentOutcomeIds: [],
+          atUtc: AT_UTC,
+        }),
+        availability,
+        availabilityConfidence: "observed" as const,
+      };
+      const input = {
+        context,
+        intents,
+        threads: [],
+        localHour: 15,
+        currentPressureEpisodeIds: [],
+        recentOutcomeIds: [],
+        atUtc: "2026-09-03T07:00:00.000Z",
+      };
+      expect(refreshDailyLifeContext(input)).toBe(context);
+      expect(
+        refreshDailyLifeContext({
+          ...input,
+          localHour: 19,
+          atUtc: "2026-09-03T11:00:00.000Z",
+        }),
+      ).toMatchObject({
+        availability: "free",
+        availabilityConfidence: "inferred",
+        currentPeriod: "evening",
+        revision: context.revision + 1,
+      });
+    },
+  );
 });
 
 function testSpec(

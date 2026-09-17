@@ -43,6 +43,7 @@ import {
 } from "@personasim/contracts";
 import { validateCharacterPressureEvidence } from "./pressure-state-evidence.js";
 import { projectCharacterTime, stableId } from "@personasim/features";
+import { persistFuzzyLifeActivityCandidate } from "./activity-proactive-candidate-service.js";
 
 import type { DatabaseStore } from "../db/store.js";
 import {
@@ -330,6 +331,13 @@ export class FuzzyLifeService {
           if (this.repository.insertLifeOutcome(outcome)) {
             createdOutcomeIds.push(outcome.id);
             this.applyGoalThreadOutcome(outcome, toUtc);
+            persistFuzzyLifeActivityCandidate({
+              store: this.store,
+              spec,
+              intent,
+              outcome,
+              nowUtc: toUtc,
+            });
           }
           outcomeIds.push(outcome.id);
         }

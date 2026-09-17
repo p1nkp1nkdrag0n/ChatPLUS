@@ -479,7 +479,7 @@ export function buildDailyIntents(
       commitmentLevel: index === 0 ? "priority" : "optional",
       status: "intended",
       sourceKind: base.sourceKind,
-      shareable: base.importance >= 0.65,
+      shareable: spec.proactivePolicy.shareableCategories.includes(base.domain),
       importance: clamp01(base.importance),
       threadIds: base.threadIds,
       goalRefIds: base.goalRefIds,

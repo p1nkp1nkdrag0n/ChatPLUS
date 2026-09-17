@@ -39,6 +39,27 @@ export interface CreateProactiveCandidateInput {
   nowUtc: string;
   existingCandidates?: readonly ProactiveCandidateLike[];
   ttlHours?: number;
+  topicCooldownHours?: number;
+  userRelevance?: number;
+  shareableValue?: number;
+}
+
+export interface CreateCompletedActivityCandidateInput extends Omit<
+  CreateProactiveCandidateInput,
+  "event" | "item"
+> {
+  source: {
+    id: string;
+    agentId: string;
+    completed: boolean;
+    title: string;
+    category: string;
+    summary: string;
+    shareable: boolean;
+    narrativeImportance: number;
+    /** The factual source's audit time, never a fabricated activity clock. */
+    recordedAtUtc: string;
+  };
 }
 
 function parseClock(value: string): number | undefined {
@@ -69,53 +90,108 @@ export function isWithinQuietHours(
     : current >= start || current < end;
 }
 
-function isShareable(
-  item: ScheduleItemLike,
-  policy: ProactivePolicyLike,
-): boolean {
-  const category = normalizeText(item.category);
-  const categoryAllowed = policy.shareableCategories.some((allowed) => {
+function isShareable(input: CreateCompletedActivityCandidateInput): boolean {
+  const category = normalizeText(input.source.category);
+  const categoryAllowed = input.policy.shareableCategories.some((allowed) => {
     const normalized = normalizeText(allowed);
     return (
       normalized !== "" &&
       (category.includes(normalized) || normalized.includes(category))
     );
   });
-  return item.narrativeImportance >= 0.7 && (item.shareable || categoryAllowed);
+  // Story importance ranks material; it is not evidence that the user wants it.
+  return (
+    input.source.shareable ||
+    (input.shareableValue ?? 0) >= 0.5 ||
+    (categoryAllowed && (input.userRelevance ?? 0) >= 0.5)
+  );
 }
 
 export function createProactiveCandidate(
   input: CreateProactiveCandidateInput,
 ): ProactiveCandidateLike | undefined {
+  return createCompletedActivityCandidate({
+    ...input,
+    source: {
+      id: input.event.id,
+      agentId: input.event.agentId,
+      completed: input.event.kind === "completed",
+      title: input.item.title,
+      category: input.item.category,
+      summary: input.event.summary,
+      shareable: input.item.shareable,
+      narrativeImportance: input.item.narrativeImportance,
+      recordedAtUtc: input.event.occurredAtUtc,
+    },
+  });
+}
+
+export function createCompletedActivityCandidate(
+  input: CreateCompletedActivityCandidateInput,
+): ProactiveCandidateLike | undefined {
   if (
     input.tier !== "high_fidelity" ||
     !input.policy.enabled ||
-    input.event.kind !== "completed" ||
+    !input.source.completed ||
+    input.source.agentId !== input.agentId ||
     input.relationshipCloseness < input.policy.minimumCloseness ||
-    !isShareable(input.item, input.policy)
+    !isShareable(input)
   ) {
     return undefined;
   }
-  const dedupeKey = `${input.agentId}:${normalizeText(input.item.category)}:${normalizeText(input.item.title)}`;
+  const dedupeKey = `${input.agentId}:${normalizeText(input.source.category)}:${normalizeText(input.source.title)}`;
   const duplicate = (input.existingCandidates ?? []).some(
     (candidate) =>
-      candidate.dedupeKey === dedupeKey &&
-      (candidate.status === "pending" || candidate.status === "sent"),
+      candidate.agentId === input.agentId &&
+      candidate.activityEventId === input.source.id,
   );
   if (duplicate) return undefined;
 
   const now = parseInstant(input.nowUtc);
   const ttlHours = Math.min(72, Math.max(1, input.ttlHours ?? 24));
+  const expires = parseInstant(input.source.recordedAtUtc).plus({
+    hours: ttlHours,
+  });
+  const cooldownHours = Math.max(0, input.topicCooldownHours ?? 24);
+  let earliest = now;
+  for (const candidate of input.existingCandidates ?? []) {
+    if (
+      candidate.agentId !== input.agentId ||
+      candidate.dedupeKey !== dedupeKey
+    )
+      continue;
+    if (candidate.status !== "sent" && candidate.status !== "pending") continue;
+    if (
+      candidate.status === "pending" &&
+      parseInstant(candidate.expiresAtUtc) <= now
+    )
+      continue;
+    const lastTopicAt =
+      candidate.status === "sent"
+        ? candidate.updatedAtUtc
+        : candidate.earliestSendAtUtc;
+    const next = parseInstant(lastTopicAt).plus({ hours: cooldownHours });
+    if (next > earliest) earliest = next;
+  }
+  if (expires <= earliest) return undefined;
   return {
-    id: stableId("proactive", `${input.event.id}:${dedupeKey}`),
+    id: stableId("proactive", `${input.agentId}:${input.source.id}`),
     agentId: input.agentId,
-    activityEventId: input.event.id,
-    category: input.item.category,
+    activityEventId: input.source.id,
+    category: input.source.category,
     status: "pending",
-    summary: input.event.summary,
-    importance: Math.min(1, Math.max(0, input.item.narrativeImportance)),
-    earliestSendAtUtc: now.toISO() ?? input.nowUtc,
-    expiresAtUtc: now.plus({ hours: ttlHours }).toISO() ?? input.nowUtc,
+    summary: input.source.summary,
+    importance: Math.min(
+      1,
+      Math.max(
+        0,
+        input.userRelevance ??
+          input.shareableValue ??
+          input.source.narrativeImportance,
+      ),
+    ),
+    earliestSendAtUtc: earliest.toISO() ?? input.nowUtc,
+    expiresAtUtc: expires.toISO() ?? input.nowUtc,
     dedupeKey,
     createdAtUtc: input.nowUtc,
     updatedAtUtc: input.nowUtc,
@@ -154,7 +230,7 @@ export function selectProactiveCandidate(
     if (candidate.status !== "sent") return false;
     return localDay(candidate.updatedAtUtc, input.timezone) === today;
   }).length;
-  const dailyLimit = Math.min(2, Math.max(0, input.policy.maxMessagesPerDay));
+  const dailyLimit = Math.max(0, Math.floor(input.policy.maxMessagesPerDay));
   if ((input.sentToday ?? inferredSentToday) >= dailyLimit) return undefined;
 
   const now = parseInstant(input.nowUtc);

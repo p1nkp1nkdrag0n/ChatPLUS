@@ -84,6 +84,38 @@ describe("fuzzy life planning", () => {
     expect(focusForPeriod([], "evening")).toBeUndefined();
   });
 
+  it("uses explicit sharing policy independently from narrative importance", () => {
+    const spec = testSpec();
+    const withoutPermission = buildDailyIntents(
+      {
+        ...spec,
+        proactivePolicy: { ...spec.proactivePolicy, shareableCategories: [] },
+      },
+      [],
+      LOCAL_DATE,
+      AT_UTC,
+    );
+    expect(withoutPermission.every((intent) => !intent.shareable)).toBe(true);
+    const permitted = buildDailyIntents(
+      {
+        ...spec,
+        proactivePolicy: {
+          ...spec.proactivePolicy,
+          shareableCategories: [
+            ...new Set(withoutPermission.map((intent) => intent.domain)),
+          ],
+        },
+      },
+      [],
+      LOCAL_DATE,
+      AT_UTC,
+    );
+    expect(permitted.every((intent) => intent.shareable)).toBe(true);
+    expect(permitted.map((intent) => intent.importance)).toEqual(
+      withoutPermission.map((intent) => intent.importance),
+    );
+  });
+
   it("freezes and verifies a story timeline independently of later clocks", () => {
     const spec = testSpec({
       temporalFrame: {

@@ -1,4 +1,3 @@
-import { DateTime } from "luxon";
 import {
   localDayKey,
   settleSchedule,
@@ -33,6 +32,7 @@ import type { LlmService } from "./llm-service.js";
 import { validateMergeAndPersistMemories } from "./memory-service.js";
 import type { ScheduleService } from "./schedule-service.js";
 import { loadDailyRelationshipUsage } from "./relationship-effect-usage.js";
+import { persistSettledActivityCandidate } from "./activity-proactive-candidate-service.js";
 
 export type SettlementResult = {
   agentId: string;
@@ -259,12 +259,13 @@ export class SettlementService {
           if (event.eventType === "completed") {
             if (capabilities.longTermMemory) this.insertActivityMemory(event);
             if (capabilities.proactiveDialogue) {
-              this.createProactiveCandidate(
+              persistSettledActivityCandidate({
+                store: this.store,
                 spec,
-                projection.item,
+                item: projection.item,
                 event,
-                toUtc,
-              );
+                nowUtc: toUtc,
+              });
             }
           }
         }
@@ -419,7 +420,10 @@ export class SettlementService {
     try {
       const enriched = await this.llm.generateObject({
         purpose: "enrich_activity",
-        operationId: `activity-enrichment:${spec.id}:${completedActivities.map((activity) => activity.eventId).sort().join(":")}`,
+        operationId: `activity-enrichment:${spec.id}:${completedActivities
+          .map((activity) => activity.eventId)
+          .sort()
+          .join(":")}`,
         agentId: spec.id,
         system:
           "Briefly enrich completed fictional activities. Add only plausible low-stakes details, never contradict the schedule, and do not expose hidden reasoning.",
@@ -484,69 +488,5 @@ export class SettlementService {
       maxCandidates: 1,
       authoritativeActivityEventId: event.id,
     });
-  }
-
-  private createProactiveCandidate(
-    spec: CharacterSpec,
-    item: ScheduleItem,
-    event: StoredActivityEvent,
-    createdAtUtc: string,
-  ): void {
-    if (
-      !capabilitiesForTier(spec.tier).proactiveDialogue ||
-      !spec.proactivePolicy.enabled ||
-      !item.shareable ||
-      !spec.proactivePolicy.shareableCategories.includes(item.category)
-    ) {
-      return;
-    }
-    const expiresAtUtc = DateTime.fromISO(createdAtUtc)
-      .plus({ hours: 48 })
-      .toUTC()
-      .toISO()!;
-    const cooldownKey = `share:${item.category}:${DateTime.fromISO(createdAtUtc)
-      .setZone(spec.identity.timezone)
-      .toISODate()}`;
-    const similar = this.store.database
-      .prepare(
-        `SELECT id, priority FROM proactive_candidates
-         WHERE agent_id = ? AND status = 'pending' AND cooldown_key = ? LIMIT 1`,
-      )
-      .get(spec.id, cooldownKey) as
-      { id: string; priority: number } | undefined;
-    if (similar) {
-      this.store.database
-        .prepare(
-          `UPDATE proactive_candidates SET summary = ?, draft_message = ?, expires_at_utc = ?, priority = ?
-           WHERE id = ?`,
-        )
-        .run(
-          event.summary,
-          `刚结束${item.title}。${event.summary} 你今天过得怎么样？`,
-          expiresAtUtc,
-          Math.max(similar.priority, item.narrativeImportance),
-          similar.id,
-        );
-      return;
-    }
-    this.store.database
-      .prepare(
-        `INSERT OR IGNORE INTO proactive_candidates(
-          id, agent_id, trigger_event_id, intent, summary, draft_message,
-          earliest_at_utc, expires_at_utc, priority, cooldown_key, status, created_at_utc
-        ) VALUES (?, ?, ?, 'share_experience', ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-      )
-      .run(
-        createEntityId("proactive"),
-        spec.id,
-        event.id,
-        event.summary,
-        `刚结束${item.title}。${event.summary} 你今天过得怎么样？`,
-        createdAtUtc,
-        expiresAtUtc,
-        item.narrativeImportance,
-        cooldownKey,
-        createdAtUtc,
-      );
   }
 }

@@ -182,7 +182,9 @@ docker compose --env-file .env.friend-a --project-name chatplus-friend-a --file 
 
 `pnpm selfhost:backup -- ...` 和 `pnpm selfhost:restore -- ...` 提供一致性备份及恢复到全新路径的工具。当前备份格式 v3 包含数据库、纪念物和独立徽章资产，兼容恢复 v1/v2；**备份不包含 `INSTANCE_SECRET` 或 `.llm-key`**，需同批次单独保管。完整参数、密钥缺失处理和 Compose 徽章卷恢复步骤见[恢复指南](docs/SELF_HOSTING.md)。
 
-源码仓库保留正式源码、依赖锁文件、构建与通用启动脚本、配置模板、测试源代码、人工合成夹具、运行时设计资产以及持续维护的技术指南和评测协议。`.env`、数据库、凭据与签名密钥、日志、备份、缓存、本地测试数据、评分、验收截图、工作记录和报告均留在 Git 忽略目录。
+源码仓库保留正式源码、依赖锁文件、构建与通用启动脚本、配置模板、测试源代码、人工合成夹具、运行时设计资产以及持续维护的技术指南和评测协议。可复用的用户指引与空白反馈模板也可公开；填写真实部署、账号、参与者或反馈内容后的副本放到本地 `artifacts/friend-beta/`。`.env`、数据库、凭据与签名密钥、日志、备份、缓存、本地测试数据、评分、验收截图、工作记录和报告均留在 Git 忽略目录。
+
+`docs/evals/` 保留可复用协议、固定合成案例与验收方法；具体运行的成绩、模型原文、请求用量和阶段判断存入 `docs/reports/` 或 `artifacts/`。发布前应核对整个待推送提交范围，避免本地材料虽然已从最新目录移除，却仍包含在未发布的历史提交中。
 
 Windows 安装程序、APK、解压运行目录和构建校验产物保存在 `artifacts/`，不提交 Git；需要分发时通过独立发布附件提供。个人启动快捷脚本仅在本机保留，公开操作使用本文的 `pnpm` 命令。`docs/plans/`、`docs/reports/` 与历史实验结果不属于公开源码内容。
 
@@ -258,17 +260,18 @@ docs/                   架构、操作指南、ADR、设计规范与评测协�
 
 ## 文档导航
 
-| 文档                                                                                                                            | 内容                                               |
-| ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| [模型设置](docs/MODEL_SETTINGS.md)                                                                                              | 多供应商、协议参数、连接测试与加密凭据。           |
-| [成就收藏](docs/ACHIEVEMENTS.md)                                                                                                | 行为纪念、专属徽章、独立图片模型与资产恢复。       |
-| [角色问答实施](docs/design/character-interview-implementation.md)                                                               | 问答、追问、草稿、小传、发布与交互规则。           |
-| [自托管与恢复](docs/SELF_HOSTING.md)                                                                                            | Docker、Caddy、时间任务、备份和升级。              |
-| [功能开关](docs/ROLLOUT.md)                                                                                                     | 默认模式、灰度行为和历史兼容路径。                 |
-| [架构](docs/architecture.md) / [数据契约](docs/schemas.md) / [插件合同](docs/plugin-sdk.md)                                     | 领域分层与接口约定；当前部署方式以自托管指南为准。 |
-| [模糊生活与因果 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md) / [书信 ADR](docs/adr/0007-temporal-correspondence.md) | 时间、生活、选择与延迟书信的设计依据。             |
-| [Dearvale 插画清单](docs/design/dearvale-assets.md) / [问答素材清单](docs/design/character-interview-assets.md)                 | 当前视觉资源来源与实现说明。                       |
-| [双模型测试](docs/DUAL_MODEL_TESTING.md) / [架构实验](docs/evals/architecture-comparison.md)                                    | 可复现的执行入口与评审协议。                       |
+| 文档                                                                                                                            | 内容                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [模型设置](docs/MODEL_SETTINGS.md)                                                                                              | 多供应商、协议参数、连接测试与加密凭据。                               |
+| [成就收藏](docs/ACHIEVEMENTS.md)                                                                                                | 行为纪念、专属徽章、独立图片模型与资产恢复。                           |
+| [角色问答实施](docs/design/character-interview-implementation.md)                                                               | 问答、追问、草稿、小传、发布与交互规则。                               |
+| [自托管与恢复](docs/SELF_HOSTING.md)                                                                                            | Docker、Caddy、时间任务、备份和升级。                                  |
+| [功能开关](docs/ROLLOUT.md)                                                                                                     | 默认模式、灰度行为和历史兼容路径。                                     |
+| [好友体验指引](docs/FRIEND_BETA_GUIDE.md) / [空白反馈模板](docs/FRIEND_BETA_FEEDBACK.md)                                        | 可复用的限时体验步骤与反馈记录格式；本次组织计划和填写结果仅保留本地。 |
+| [架构](docs/architecture.md) / [数据契约](docs/schemas.md) / [插件合同](docs/plugin-sdk.md)                                     | 领域分层与接口约定；当前部署方式以自托管指南为准。                     |
+| [模糊生活与因果 ADR](docs/adr/0006-fuzzy-life-and-decision-causality.md) / [书信 ADR](docs/adr/0007-temporal-correspondence.md) | 时间、生活、选择与延迟书信的设计依据。                                 |
+| [Dearvale 插画清单](docs/design/dearvale-assets.md) / [问答素材清单](docs/design/character-interview-assets.md)                 | 当前视觉资源来源与实现说明。                                           |
+| [双模型测试](docs/DUAL_MODEL_TESTING.md) / [架构实验](docs/evals/architecture-comparison.md)                                    | 可复现的执行入口与评审协议。                                           |
 
 历史发布说明描述对应版本的功能与边界；当前默认配置以功能开关指南和源码为准。本地报告与测试成绩不随源码发布。
 

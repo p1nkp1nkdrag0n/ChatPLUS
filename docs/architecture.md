@@ -81,10 +81,11 @@ one failed disposer does not skip the remaining resources. The former fixed
 plugin manifests, service-token registration and profile bundle shells have
 been removed from production composition.
 
-Paused proactive generation is not composed in the product runtime. Normal
-chat no longer maintains its user-turn activity leases, and hourly work does
-not attempt delivery. Its independent services, history and regression tests
-remain available for a future explicit feature decision.
+Proactive contact uses an independent database-driven `TemporalTaskScheduler`
+instance, defaulting to shadow evaluation. Follow-up intents and completed life
+outcomes feed one delivery path with preflight/postflight checks, persisted user
+arrival leases, shared user budgets and atomic message/notification-outbox
+commit. Hourly work does not send messages. See [the complete trigger logic](proactive-messages.md).
 
 The service layer follows the same boundary: character compilation, local clock
 projection and draft editing are separate from `CharacterService`; turn audit,

@@ -2,7 +2,7 @@
 
 > README 与 [ADR 0006](adr/0006-fuzzy-life-and-decision-causality.md) 定义纯模糊生活方向；[ADR 0007](adr/0007-temporal-correspondence.md) 定义分阶段书信、离线补算、封缄回信和纪念物边界。精确日程相关 flag 只服务于历史数据兼容和回归对照，不再具有产品晋级含义。
 
-## 当前状态总览（2026-09-13）
+## 当前状态总览（2026-09-17）
 
 | Flag                        | 取值                             | 默认       | 阶段                         | 说明                                                                                        |
 | --------------------------- | -------------------------------- | ---------- | ---------------------------- | ------------------------------------------------------------------------------------------- |
@@ -14,13 +14,13 @@
 | `AUTOBIOGRAPHY_MODE`        | off / shadow / enforced          | `enforced` | 已作为本地默认连续性路径     | 达到 retention 阈值时生成 checkpoint/autobiography/event cards，并在后续轮次注入验证快照    |
 | `CORRESPONDENCE_MODE`       | off / shadow / enforced          | `off`      | **R1/R1.1 已实现，默认关闭** | off 暂停任务；shadow 仅提交确定性抵达/快照；enforced 启用生成、加密、启封和完整闭环         |
 | `KEEPSAKE_MODE`             | off / shadow / enforced          | `off`      | **R2 已实现，默认关闭**      | off/shadow 只做读取或资格观察；enforced 才入队并生成有来源、可持久回看的纪念物              |
-| ~~`PROACTIVE_COMMIT_MODE`~~ | 已移除                           | —          | 实现已收敛、运行已暂停       | 保留的主动消息实现统一走 `ProactiveGenerationService` 两阶段提交，legacy 单事务路径已删除   |
+| `PROACTIVE_MODE`            | off / shadow / on                | `shadow`   | 已接入持久化调度             | shadow 只记录门禁；on 才允许生成与提交；角色策略仍必须开启                                  |
+| `PROACTIVE_EXECUTION`       | lazy / resident / worker         | `resident` | 独立运行                     | 与书信配置和 SSE 在线列表无关                                                               |
+| ~~`PROACTIVE_COMMIT_MODE`~~ | 已移除                           | —          | 两阶段提交已统一             | 主动消息统一经过生成前后复核                                                                |
 
-主动消息的产品能力当前统一为关闭：所有 tier 的 `proactiveDialogue` 都返回
-`false`，新角色的 `proactivePolicy.enabled` 默认为 `false`，前端不提供主动对话编辑入口。
-这不是可由 `.env` 绕过的 rollout 开关；底层表、历史消息类型和两阶段生成服务仅为兼容读取与后续修复保留。
+主动联系已恢复拟真档能力，并默认以影子模式观察。实际发送要求 `PROACTIVE_MODE=on`、拟真档角色、`proactivePolicy.enabled=true` 同时成立。角色编辑器提供开关、日上限与静默时间设置；已有关闭偏好不会批量修改。
 
-正式服务工厂不再装配主动生成/投递服务，普通聊天不再为它维护活动租约，每小时调度也不再尝试投递。独立服务及其回归测试保留。默认 `fuzzy` 运行同样不构造旧 Schedule、Settlement、PersonalIntent、SelfPlanning 或 PersonalLife 写入服务；只有显式选择 `legacy_exact` 的回归配置才装配这些执行器。历史表、来源链和只读投影保持可用，模糊生活推进与记忆维护继续运行。
+正式服务工厂装配独立的主动评估 scheduler、生成/投递服务和跨进程用户到达租约。聊天事项与已完成生活事实进入同一发送门禁；默认 fuzzy 路径直接使用可信 LifeOutcome，不依赖旧精确排程。来源、改期、去重、全用户预算、通知重试和诊断见[主动消息完整触发逻辑](proactive-messages.md)。回滚设 `PROACTIVE_MODE=off`，保留已提交会话、任务与审计历史。默认 fuzzy 运行仍不构造旧 Schedule、Settlement、PersonalIntent、SelfPlanning 或 PersonalLife 写入服务。
 
 ## 书信首版配置与回滚边界
 

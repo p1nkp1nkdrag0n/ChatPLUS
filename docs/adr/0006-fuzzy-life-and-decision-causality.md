@@ -83,7 +83,7 @@ These are simulation truth and causal-audit rules, not safety boundaries for hum
 2. Stop injecting authoritative future-schedule JSON into chat prompts; inject today/recently/life-thread/decision evidence instead.
 3. Generate at most one fuzzy daily context per character/local date.
 4. Preserve historical terminal activity events as immutable history, but do not generate new ordinary `ScheduleItem` records.
-5. Replace schedule-based proactive triggers with meaningful settled outcomes, reflections and life-thread milestones. Delivery is temporarily paused while stale-subject and lifecycle defects are corrected.
+5. Replace schedule-based proactive triggers with meaningful settled outcomes, reflections and life-thread milestones. Delivery was initially paused while stale-subject and lifecycle defects were corrected. The 2026-09-17 implementation restores grounded follow-ups and completed outcomes through an independent scheduler, shadow by default; see [proactive contact](../proactive-messages.md) for current scope and gates.
 6. Retire schedule negotiation as a product gate; keep its ADR and old evidence marked as superseded.
 7. Replace long-run invitation branches with decision-before/after branches and verify causal isolation.
 

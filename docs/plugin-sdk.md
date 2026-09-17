@@ -40,7 +40,7 @@ core
 └── audit/cost meter
 
 daily = core + fuzzy life + decision causality + state + memory + relationship
-high-fidelity = daily + persona guard (proactive reflection is currently paused)
+high-fidelity = daily + persona guard + proactive contact (shadow by default)
 ```
 
 ## Explicit non-goals

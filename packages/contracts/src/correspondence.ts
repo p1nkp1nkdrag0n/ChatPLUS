@@ -67,6 +67,8 @@ export const TemporalTaskKindSchema = z.enum([
   "letter.return_arrival",
   "letter.generation_retry",
   "keepsake.generate",
+  "proactive.follow_up",
+  "proactive.activity_review",
 ]);
 export type TemporalTaskKind = z.infer<typeof TemporalTaskKindSchema>;
 

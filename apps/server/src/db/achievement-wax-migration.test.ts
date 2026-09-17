@@ -67,6 +67,9 @@ describe("achievement wax migration", () => {
         "036_memory_diaries.sql",
         "037_keepsake_retry_receipt.sql",
         "038_retrieval_diagnostic_retention.sql",
+        "039_user_model_settings.sql",
+        "040_proactive_temporal_tasks.sql",
+        "041_proactive_notification_outbox.sql",
       ]);
       expect(
         database

@@ -150,6 +150,7 @@ export class HostedRuntimeManager {
     if (this.options.startSchedulers !== false) {
       composition.scheduler.start();
       await composition.temporalTaskScheduler.start();
+      await composition.proactiveTaskScheduler.start();
     } else await composition.routeServices.achievements.pause();
     return runtime;
   }
@@ -219,6 +220,7 @@ export class HostedRuntimeManager {
     // the gateway independently checks account state before every dispatch.
     runtime.composition.scheduler.stop();
     await runtime.composition.temporalTaskScheduler.dispose();
+    await runtime.composition.proactiveTaskScheduler.dispose();
     await runtime.composition.routeServices.achievements.pause();
   }
   async resume(userId: string): Promise<void> {
@@ -227,6 +229,7 @@ export class HostedRuntimeManager {
       runtime.composition.scheduler.start();
       runtime.composition.routeServices.achievements.start();
       await runtime.composition.temporalTaskScheduler.start();
+      await runtime.composition.proactiveTaskScheduler.start();
     }
   }
   async quiesce(): Promise<void> {
@@ -234,6 +237,7 @@ export class HostedRuntimeManager {
       const { composition } = await pending;
       composition.scheduler.stop();
       await composition.temporalTaskScheduler.dispose();
+      await composition.proactiveTaskScheduler.dispose();
       await composition.routeServices.achievements.pause();
     }
     const deadline = Date.now() + 240000;

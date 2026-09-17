@@ -47,8 +47,9 @@ describe("static server composition", () => {
         "selfPlanning",
       ] as const)
         expect(services[key], key).toBeUndefined();
-      expect(services).not.toHaveProperty("proactiveDelivery");
-      expect(services).not.toHaveProperty("conversationActivity");
+      expect(services.proactiveDelivery).toBeDefined();
+      expect(services.proactiveActivity).toBeDefined();
+      expect(services.proactiveTaskScheduler.isRunning).toBe(false);
       expect(
         (await app.inject({ method: "GET", url: "/api/health" })).json(),
       ).toMatchObject({ serverTimeUtc: clock.nowUtc() });
@@ -72,7 +73,7 @@ describe("static server composition", () => {
       expect(app.personasim.schedules).toBeDefined();
       expect(app.personasim.settlements).toBeDefined();
       expect(app.personasim.kernel.services.selfPlanning).toBeDefined();
-      expect(app.personasim).not.toHaveProperty("proactiveDelivery");
+      expect(app.personasim.proactiveDelivery).toBeDefined();
     } finally {
       await app.close();
     }
@@ -120,7 +121,7 @@ describe("static server composition", () => {
         logger: Fastify({ logger: false }).log,
       }),
     ).rejects.toThrow("startup fixture");
-    expect(temporalDispose).toHaveBeenCalledOnce();
+    expect(temporalDispose).toHaveBeenCalledTimes(2);
     expect(sseClose).toHaveBeenCalledOnce();
     expect(database.open).toBe(false);
   });

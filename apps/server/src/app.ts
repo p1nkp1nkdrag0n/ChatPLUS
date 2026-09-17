@@ -78,7 +78,8 @@ export async function buildApp(
       : { fixtureTurnBehavior: options.fixtureTurnBehavior }),
   });
   const services = composition.routeServices;
-  const { scheduler, temporalTaskScheduler } = composition;
+  const { scheduler, temporalTaskScheduler, proactiveTaskScheduler } =
+    composition;
   const { characters, correspondence } = services;
 
   try {
@@ -262,6 +263,12 @@ export async function buildApp(
       (config.correspondenceExecution ?? "lazy") !== "lazy"
     ) {
       await temporalTaskScheduler.start();
+    }
+    if (
+      options.startScheduler &&
+      (config.proactiveExecution ?? "resident") !== "lazy"
+    ) {
+      await proactiveTaskScheduler.start();
     }
     Object.assign(app, {
       personasim: { ...services, scheduler, kernel: composition.kernel },

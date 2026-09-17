@@ -55,6 +55,8 @@ import type { CalendarService } from "../services/calendar-service.js";
 import type { CharacterService } from "../services/character-service.js";
 import type { CheckpointService } from "../services/checkpoint-service.js";
 import type { ConversationService } from "../services/conversation-service.js";
+import type { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
+import type { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
 import {
   CorrespondenceServiceError,
   type CorrespondenceService,
@@ -110,6 +112,9 @@ export type RouteServices = {
   correspondenceRepository: CorrespondenceRepository;
   temporalCatchUp: TemporalCatchUpService;
   temporalTaskScheduler: TemporalTaskScheduler;
+  proactiveTaskScheduler: TemporalTaskScheduler;
+  proactiveActivity: ConversationActivityTracker;
+  proactiveDelivery: ProactiveDeliveryService;
   keepsakes: KeepsakeService;
   relationshipArchive: RelationshipArchiveService;
 };
@@ -484,23 +489,30 @@ export function registerRoutes(
   app.post("/api/sessions/:sessionId/messages", async (request, reply) => {
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const input = chatMessageInputSchema.parse(normalizeChatBody(request.body));
-    await correspondence.catchUpAgent(input.agentId);
-    const result = await actors.runExclusive(input.agentId, async () => {
-      const turn = await conversations.chat(sessionId, input);
-      if (
-        config.lifePlanningMode === "fuzzy" ||
-        turn.idempotentReplay ||
-        turn.scheduleChanges.length > 0
-      ) {
-        return turn;
-      }
-      const planning = legacyServices().personalLife.ensureSelfInitiatedPlans(
-        input.agentId,
-      );
-      return planning.state === undefined
-        ? turn
-        : { ...turn, state: planning.state };
-    });
+    const result = await services.proactiveActivity.withUserTurn(
+      input.agentId,
+      async () => {
+        await correspondence.catchUpAgent(input.agentId);
+        return actors.runExclusive(input.agentId, async () => {
+          const turn = await conversations.chat(sessionId, input);
+          if (
+            config.lifePlanningMode === "fuzzy" ||
+            turn.idempotentReplay ||
+            turn.scheduleChanges.length > 0
+          ) {
+            return turn;
+          }
+          const planning =
+            legacyServices().personalLife.ensureSelfInitiatedPlans(
+              input.agentId,
+            );
+          return planning.state === undefined
+            ? turn
+            : { ...turn, state: planning.state };
+        });
+      },
+    );
+    void services.proactiveTaskScheduler.wake();
     return reply
       .code(result.idempotentReplay ? 200 : 201)
       .send(projectPublicTurn(result));
@@ -512,24 +524,31 @@ export function registerRoutes(
       ...normalizeChatBody(request.body),
       agentId: id,
     });
-    await correspondence.catchUpAgent(id);
-    const result = await actors.runExclusive(id, async () => {
-      const session =
-        conversations.listSessions(id)[0] ?? conversations.createSession(id);
-      const turn = await conversations.chat(session.id, input);
-      if (
-        config.lifePlanningMode === "fuzzy" ||
-        turn.idempotentReplay ||
-        turn.scheduleChanges.length > 0
-      ) {
-        return turn;
-      }
-      const planning =
-        legacyServices().personalLife.ensureSelfInitiatedPlans(id);
-      return planning.state === undefined
-        ? turn
-        : { ...turn, state: planning.state };
-    });
+    const result = await services.proactiveActivity.withUserTurn(
+      id,
+      async () => {
+        await correspondence.catchUpAgent(id);
+        return actors.runExclusive(id, async () => {
+          const session =
+            conversations.listSessions(id)[0] ??
+            conversations.createSession(id);
+          const turn = await conversations.chat(session.id, input);
+          if (
+            config.lifePlanningMode === "fuzzy" ||
+            turn.idempotentReplay ||
+            turn.scheduleChanges.length > 0
+          ) {
+            return turn;
+          }
+          const planning =
+            legacyServices().personalLife.ensureSelfInitiatedPlans(id);
+          return planning.state === undefined
+            ? turn
+            : { ...turn, state: planning.state };
+        });
+      },
+    );
+    void services.proactiveTaskScheduler.wake();
     return reply
       .code(result.idempotentReplay ? 200 : 201)
       .send(projectPublicTurn(result));
@@ -982,6 +1001,7 @@ export function registerRoutes(
       clock.setUtc(value);
       await settleActiveAgents(services);
       await services.temporalTaskScheduler.wake();
+      await services.proactiveTaskScheduler.wake();
       return { nowUtc: clock.nowUtc() };
     });
 
@@ -1003,6 +1023,7 @@ export function registerRoutes(
       });
       await settleActiveAgents(services);
       await services.temporalTaskScheduler.wake();
+      await services.proactiveTaskScheduler.wake();
       return { nowUtc: clock.nowUtc() };
     });
 

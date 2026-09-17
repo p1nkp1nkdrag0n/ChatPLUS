@@ -39,6 +39,15 @@ import { ContinuityRepository } from "../services/continuity-repository.js";
 import { DateDigestService } from "../services/date-digest-service.js";
 import { FollowUpRepository } from "../services/follow-up-repository.js";
 import { FollowUpService } from "../services/follow-up-service.js";
+import { ConversationActivityTracker } from "../services/conversation-activity-tracker.js";
+import { ProactiveGenerationRepository } from "../services/proactive-generation-repository.js";
+import { ProactiveGenerationService } from "../services/proactive-generation-service.js";
+import { ProactiveDeliveryService } from "../services/proactive-delivery-service.js";
+import {
+  ProactiveTaskRepository,
+  PROACTIVE_TASK_KINDS,
+} from "../services/proactive-task-repository.js";
+import { ProactiveTaskService } from "../services/proactive-task-service.js";
 import { FuzzyLifeService } from "../services/fuzzy-life-service.js";
 import { LlmSettingsService } from "../services/llm-settings-service.js";
 import {
@@ -99,6 +108,7 @@ export interface ServerComposition {
   readonly routeServices: ServerServices;
   readonly scheduler: HourlyScheduler;
   readonly temporalTaskScheduler: TemporalTaskScheduler;
+  readonly proactiveTaskScheduler: TemporalTaskScheduler;
   readonly hourlyEnabled: boolean;
   dispose(reason: "fastify_close" | "build_failed"): Promise<void>;
 }
@@ -478,6 +488,63 @@ export async function composeServer(
       },
     );
     disposers.push(() => temporalTaskScheduler.dispose());
+    const proactiveActivity = new ConversationActivityTracker(database);
+    const proactiveGenerations: ProactiveGenerationService =
+      new ProactiveGenerationService(
+        new ProactiveGenerationRepository(database),
+        proactiveActivity,
+        actors,
+        clock,
+        (agentId, nowUtc) => proactiveDelivery.loadPolicy(agentId, nowUtc),
+      );
+    const proactiveDelivery: ProactiveDeliveryService =
+      new ProactiveDeliveryService(
+        store,
+        clock,
+        llm,
+        sse,
+        proactiveGenerations,
+      );
+    const proactiveTasks = new ProactiveTaskRepository(
+      database,
+      config.proactiveMode ?? "shadow",
+      (agentId, nowUtc) => {
+        try {
+          life.advance(agentId, nowUtc);
+        } catch {
+          logger.warn(
+            { agentId },
+            "proactive activity discovery failed for one character",
+          );
+        }
+      },
+    );
+    const proactiveTaskService = new ProactiveTaskService(
+      proactiveTasks,
+      proactiveDelivery,
+      store,
+      clock,
+    );
+    const proactiveTaskScheduler = new TemporalTaskScheduler(
+      {
+        findNextTemporalTask: (nowUtc, kinds, excludedAgentIds) => {
+          proactiveDelivery.flushNotifications();
+          return proactiveTasks.findNextTemporalTask(
+            nowUtc,
+            kinds,
+            excludedAgentIds,
+          );
+        },
+      },
+      proactiveTaskService,
+      clock,
+      logger,
+      {
+        execution: config.proactiveExecution ?? "resident",
+        taskKinds: PROACTIVE_TASK_KINDS,
+      },
+    );
+    disposers.push(() => proactiveTaskScheduler.dispose());
     correspondence.setAuxiliaryCatchUp((agentId, observedNowUtc) => {
       void temporalTaskScheduler.requestAgentCatchUp(agentId, observedNowUtc);
       return Promise.resolve();
@@ -525,6 +592,9 @@ export async function composeServer(
       correspondenceRepository,
       temporalCatchUp,
       temporalTaskScheduler,
+      proactiveActivity,
+      proactiveDelivery,
+      proactiveTaskScheduler,
       keepsakes,
       relationshipArchive,
       achievements,
@@ -544,6 +614,7 @@ export async function composeServer(
       routeServices: services,
       scheduler,
       temporalTaskScheduler,
+      proactiveTaskScheduler,
       hourlyEnabled: config.profile.trim().toLowerCase() !== "lightweight",
       dispose,
     };

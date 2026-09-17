@@ -78,6 +78,9 @@ describe("PersonaSim server integration", () => {
         "036_memory_diaries.sql",
         "037_keepsake_retry_receipt.sql",
         "038_retrieval_diagnostic_retention.sql",
+        "039_user_model_settings.sql",
+        "040_proactive_temporal_tasks.sql",
+        "041_proactive_notification_outbox.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database
@@ -832,7 +835,7 @@ describe("PersonaSim server integration", () => {
     );
   });
 
-  it("keeps proactive messages disabled for high-fidelity characters", async () => {
+  it("keeps activation free of proactive delivery in shadow mode", async () => {
     const created = await createTestApp();
     app = created.app;
     const character = await createAndPublish(app, "high_fidelity");
@@ -884,7 +887,7 @@ describe("PersonaSim server integration", () => {
     });
     expect(
       jsonBody<ActivationBody>(developerState).capabilities?.proactiveDialogue,
-    ).toBe(false);
+    ).toBe(true);
     expect(activationBody.proactiveMessage).toBeUndefined();
     const candidates = app.personasim.store.database
       .prepare(
@@ -905,7 +908,7 @@ describe("PersonaSim server integration", () => {
       .get(character.id) as { count: number };
     expect(proactiveCalls.count).toBe(0);
 
-    expect(app.personasim).not.toHaveProperty("proactiveDelivery");
+    expect(app.personasim.proactiveDelivery).toBeDefined();
 
     const repeated = await app.inject({
       method: "POST",

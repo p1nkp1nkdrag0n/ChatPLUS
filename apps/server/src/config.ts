@@ -279,6 +279,10 @@ const envSchema = z.object({
   COMPANION_CONTEXT_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
   PERSONA_RUNTIME_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
   CORRESPONDENCE_MODE: z.enum(["off", "shadow", "enforced"]).default("off"),
+  PROACTIVE_MODE: z.enum(["off", "shadow", "on"]).default("shadow"),
+  PROACTIVE_EXECUTION: z
+    .enum(["lazy", "resident", "worker"])
+    .default("resident"),
   CORRESPONDENCE_EXECUTION: z
     .enum(["lazy", "resident", "worker"])
     .default("lazy"),
@@ -314,6 +318,11 @@ export type SelfHostedServerConfig = {
   selfHostedReverseProxy: boolean;
   serveWeb: boolean;
   webDistPath: string;
+};
+
+export type ProactiveServerConfig = {
+  proactiveMode: "off" | "shadow" | "on";
+  proactiveExecution: "lazy" | "resident" | "worker";
 };
 
 export type ServerConfig = {
@@ -352,14 +361,19 @@ export type ServerConfig = {
   personaRuntimeMode?: "off" | "shadow" | "enforced";
   // Keep Stage 0 injection source-compatible with historical test/scenario
   // fixtures. readConfig() returns ResolvedServerConfig with these defaults.
-} & Partial<CorrespondenceServerConfig & SelfHostedServerConfig>;
+} & Partial<
+  CorrespondenceServerConfig & SelfHostedServerConfig & ProactiveServerConfig
+>;
 
 export type ResolvedServerConfig = Omit<
   ServerConfig,
-  keyof (CorrespondenceServerConfig & SelfHostedServerConfig)
+  keyof (CorrespondenceServerConfig &
+    SelfHostedServerConfig &
+    ProactiveServerConfig)
 > &
   CorrespondenceServerConfig &
-  SelfHostedServerConfig;
+  SelfHostedServerConfig &
+  ProactiveServerConfig;
 
 /** Resolve an independent named model without changing the active application
  * profile. The returned credential is for in-memory use only. */
@@ -464,6 +478,8 @@ export function readConfig(
     companionContextMode: env.COMPANION_CONTEXT_MODE,
     personaRuntimeMode: env.PERSONA_RUNTIME_MODE,
     correspondenceMode: env.CORRESPONDENCE_MODE,
+    proactiveMode: env.PROACTIVE_MODE,
+    proactiveExecution: env.PROACTIVE_EXECUTION,
     correspondenceExecution: env.CORRESPONDENCE_EXECUTION,
     correspondenceTransitPolicy: env.CORRESPONDENCE_TRANSIT_POLICY,
     correspondenceGenerationLeaseMs: env.CORRESPONDENCE_GENERATION_LEASE_MS,

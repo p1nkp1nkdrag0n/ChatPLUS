@@ -237,7 +237,7 @@ describe("P0 personal-life long-run acceptance", () => {
       throw new Error("Missing the completed self-initiated activity.");
     }
     expect(completed?.stateDelta.energy).toBe(selfPlan.stateEffects.energy);
-    expect(capabilities.proactiveDialogue).toBe(false);
+    expect(capabilities.proactiveDialogue).toBe(true);
     expect(activationBody.proactiveMessage).toBeUndefined();
     expect(
       restarted.personasim.store.getRuntimeState(character.id)

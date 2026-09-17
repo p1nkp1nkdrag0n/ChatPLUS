@@ -56,6 +56,23 @@ describe("server configuration", () => {
     vi.unstubAllEnvs();
   });
 
+  it("defaults proactive scheduling to shadow independently of correspondence", () => {
+    vi.stubEnv("PROACTIVE_MODE", undefined);
+    vi.stubEnv("PROACTIVE_EXECUTION", undefined);
+    expect(readConfig({ correspondenceMode: "off" })).toMatchObject({
+      proactiveMode: "shadow",
+      proactiveExecution: "resident",
+    });
+    vi.stubEnv("PROACTIVE_MODE", "on");
+    vi.stubEnv("PROACTIVE_EXECUTION", "worker");
+    expect(readConfig()).toMatchObject({
+      proactiveMode: "on",
+      proactiveExecution: "worker",
+    });
+    vi.stubEnv("PROACTIVE_MODE", "yes");
+    expect(() => readConfig()).toThrow();
+  });
+
   it("ignores retired demo seeding in both environment and caller overrides", () => {
     vi.stubEnv("SEED_DEMO", "true");
     expect(readConfig().seedDemo).toBe(false);

@@ -521,7 +521,7 @@ function applyTierAuthority(
     },
     proactivePolicy: {
       ...draft.proactivePolicy,
-      enabled: capabilities.proactiveDialogue,
+      enabled: capabilities.proactiveDialogue && draft.proactivePolicy.enabled,
     },
   };
 }

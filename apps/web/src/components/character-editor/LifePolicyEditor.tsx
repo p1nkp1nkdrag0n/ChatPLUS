@@ -29,7 +29,7 @@ export function LifePolicyEditor({
     <section>
       <EditorSectionHeading
         title="生活策略"
-        description="当前 fuzzy life 以生活规律为创作入口；暂停能力与旧版精确日程参数被单独隔离。"
+        description="设置角色的生活规律与主动联系偏好；旧版精确日程参数保留在兼容设置中。"
       />
       <div className="structured-rule-section">
         <div className="rule-section__header">
@@ -335,23 +335,28 @@ export function LifePolicyEditor({
           </div>
         </details>
 
-        <details className="policy-panel compatibility-settings paused-policy-panel">
-          <summary>主动联系（当前暂停，发布时保持关闭）</summary>
+        <details className="policy-panel compatibility-settings">
+          <summary>主动联系</summary>
           <div className="policy-panel__heading">
             <div>
-              <h3>主动联系兼容偏好</h3>
+              <h3>主动联系偏好</h3>
               <p>
-                当前所有模拟档位都暂停主动消息。以下偏好仅供读取旧角色版本和未来能力恢复时使用。
+                拟真档角色可以在约定到期、关心事项有待跟进，或有值得分享的新经历时联系你。开启后仍会遵守安静时段、配额与未回复限制。
               </p>
             </div>
             <label className="switch-field">
               <input
                 type="checkbox"
-                checked={proactive.enabled}
-                disabled
-                readOnly
+                checked={spec.tier === "high_fidelity" && proactive.enabled}
+                disabled={spec.tier !== "high_fidelity"}
+                onChange={(event) =>
+                  updateProactive({
+                    ...proactive,
+                    enabled: event.target.checked,
+                  })
+                }
               />
-              当前不可启用
+              {spec.tier === "high_fidelity" ? "允许主动联系" : "拟真档可启用"}
             </label>
           </div>
           <div className="structured-editor-grid structured-editor-grid--compact">

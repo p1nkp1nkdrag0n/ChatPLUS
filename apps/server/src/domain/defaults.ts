@@ -308,8 +308,8 @@ export function buildOriginalDraft(
       socialInvitationBias: 0.62,
     },
     proactivePolicy: {
-      // The product capability is paused. Retain the policy shape for
-      // backwards-compatible character/version reads.
+      // New characters start with proactive contact disabled; eligible users
+      // can opt in explicitly through the character's life-policy editor.
       enabled: false,
       maxMessagesPerDay: 2,
       quietHours: { startLocal: "23:00", endLocal: "08:00" },

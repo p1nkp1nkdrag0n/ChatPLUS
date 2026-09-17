@@ -26,6 +26,22 @@ const INPUT: OriginalCharacterInput = {
 const POLICY = "companion_character_v2";
 
 describe("companion character compilation", () => {
+  it("preserves proactive opt-out while enforcing tier capability", () => {
+    for (const tier of ["lightweight", "daily", "high_fidelity"] as const) {
+      const input = { ...INPUT, tier };
+      const draft = buildOriginalDraft(input, POLICY);
+      for (const enabled of [false, true]) {
+        const candidate = {
+          ...draft,
+          proactivePolicy: { ...draft.proactivePolicy, enabled },
+        };
+        const result = authoritativeOriginalDraft(candidate, input, draft);
+        expect(result.proactivePolicy.enabled).toBe(
+          tier === "high_fidelity" && enabled,
+        );
+      }
+    }
+  });
   it("asks both compilation paths for supported behavioral depth without scripts or minimum quotas", () => {
     const sourceText = "阿澄说话直接，但看到对方难堪时会先把声音放轻。";
     const original = buildCompilePrompt({

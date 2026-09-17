@@ -1025,7 +1025,7 @@ export function MessageBubble({
         {proactive ? (
           <div className="proactive-origin">
             <span />
-            <Sparkles size={13} /> 主动消息 · 来自近期经历
+            <Sparkles size={13} /> 主动消息
             <span />
           </div>
         ) : null}

@@ -164,14 +164,11 @@ test.describe("PersonaSim fixture flow", () => {
     );
     await expect(legacySettings).toBeVisible();
     await expect(page.getByText("启用旧版精确排程")).toBeHidden();
-    const pausedProactive = page.getByText(
-      "主动联系（当前暂停，发布时保持关闭）",
-      { exact: true },
-    );
-    await expect(pausedProactive).toBeVisible();
-    await pausedProactive.click();
+    const proactiveSettings = page.getByText("主动联系", { exact: true });
+    await expect(proactiveSettings).toBeVisible();
+    await proactiveSettings.click();
     await expect(
-      page.getByRole("checkbox", { name: "当前不可启用" }),
+      page.getByRole("checkbox", { name: "拟真档可启用" }),
     ).toBeDisabled();
 
     const saved = page.waitForResponse(

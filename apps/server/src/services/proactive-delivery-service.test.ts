@@ -51,4 +51,15 @@ describe("due follow-up composition", () => {
       ),
     ).toBe("Tomorrow I will share the walk.");
   });
+
+  it("executes explicit reminders without requiring a question", () => {
+    expect(
+      finalizeProactiveContent(
+        "follow_up",
+        "fallback",
+        "到时间了，记得提交报名表。",
+        "reminder",
+      ),
+    ).toBe("到时间了，记得提交报名表。");
+  });
 });

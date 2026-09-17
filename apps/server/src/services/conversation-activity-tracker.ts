@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Database } from "../db/connection.js";
 
 export interface ConversationActivitySnapshot {
@@ -28,6 +29,30 @@ export class ConversationActivityTracker {
    * actor queue. The returned lease must be ended in a finally block.
    */
   beginUserTurn(agentId: string): UserTurnLease {
+    const token = randomUUID();
+    this.database
+      .transaction(() => {
+        this.database
+          .prepare(
+            "UPDATE proactive_user_activity_state SET arrival_epoch = arrival_epoch + 1 WHERE singleton = 1",
+          )
+          .run();
+        this.database
+          .prepare(
+            "DELETE FROM proactive_user_turn_leases WHERE expires_at_utc <= ?",
+          )
+          .run(new Date().toISOString());
+        this.database
+          .prepare(
+            "INSERT INTO proactive_user_turn_leases(token, agent_id, expires_at_utc) VALUES (?, ?, ?)",
+          )
+          .run(
+            token,
+            agentId,
+            new Date(Date.now() + 30 * 60_000).toISOString(),
+          );
+      })
+      .immediate();
     const state = this.stateFor(agentId);
     state.userArrivalEpoch += 1;
     state.inFlightUserTurns += 1;
@@ -39,6 +64,9 @@ export class ConversationActivityTracker {
       end: () => {
         if (ended) return;
         ended = true;
+        this.database
+          .prepare("DELETE FROM proactive_user_turn_leases WHERE token = ?")
+          .run(token);
         const current = this.stateFor(agentId);
         current.inFlightUserTurns = Math.max(0, current.inFlightUserTurns - 1);
       },
@@ -114,6 +142,54 @@ export class ConversationActivityTracker {
         state.userArrivalEpoch,
       ]),
     );
+  }
+
+  get userArrivalEpoch(): number {
+    return Number(
+      (
+        this.database
+          .prepare(
+            "SELECT arrival_epoch FROM proactive_user_activity_state WHERE singleton = 1",
+          )
+          .get() as { arrival_epoch: number }
+      ).arrival_epoch,
+    );
+  }
+
+  get latestUserMessageRowid(): number {
+    return Number(
+      (
+        this.database
+          .prepare(
+            "SELECT COALESCE(MAX(rowid), 0) AS rowid FROM messages WHERE role = 'user'",
+          )
+          .get() as { rowid: number }
+      ).rowid,
+    );
+  }
+
+  isUserActive(nowUtc: string, activeWindowMs = 120_000): boolean {
+    if ([...this.states.values()].some((state) => state.inFlightUserTurns > 0))
+      return true;
+    if (
+      this.database
+        .prepare(
+          "SELECT 1 FROM proactive_user_turn_leases WHERE expires_at_utc > ? LIMIT 1",
+        )
+        .get(new Date().toISOString()) !== undefined
+    )
+      return true;
+    if (activeWindowMs <= 0) return false;
+    const row = this.database
+      .prepare(
+        `SELECT created_at_utc FROM messages
+       WHERE role = 'user' OR message_kind = 'assistant_reply'
+       ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get() as { created_at_utc: string } | undefined;
+    if (row === undefined) return false;
+    const elapsed = Date.parse(nowUtc) - Date.parse(row.created_at_utc);
+    return elapsed >= 0 && elapsed < activeWindowMs;
   }
 
   private stateFor(agentId: string): ActivityState {

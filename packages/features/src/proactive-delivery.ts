@@ -27,6 +27,8 @@ export type ProactivePreflightRejectionCode =
   | "already_discussed"
   | "quiet_hours"
   | "daily_cap_reached"
+  | "user_daily_cap_reached"
+  | "user_cooldown_active"
   | "relationship_below_minimum"
   | "cooldown_active"
   | "unanswered_limit_reached"
@@ -51,6 +53,9 @@ export interface ProactivePreflightInput {
   unansweredCount: number;
   maximumUnanswered: number;
   activeConversation: boolean;
+  userSentToday?: number;
+  userDailyLimit?: number;
+  userCooldownUntilUtc?: string;
 }
 
 export function evaluateProactivePreflight(
@@ -90,6 +95,18 @@ export function evaluateProactivePreflight(
   }
   if (input.sentToday >= Math.max(0, input.dailyLimit)) {
     return rejected("daily_cap_reached");
+  }
+  if (
+    input.userDailyLimit !== undefined &&
+    (input.userSentToday ?? 0) >= Math.max(0, input.userDailyLimit)
+  ) {
+    return rejected("user_daily_cap_reached");
+  }
+  if (
+    input.userCooldownUntilUtc !== undefined &&
+    Date.parse(input.userCooldownUntilUtc) > now
+  ) {
+    return rejected("user_cooldown_active");
   }
   if (input.relationshipCloseness < input.minimumCloseness) {
     return rejected("relationship_below_minimum");

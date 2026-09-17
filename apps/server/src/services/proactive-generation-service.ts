@@ -35,6 +35,9 @@ export interface ProactiveGenerationPolicy {
   maximumUnanswered: number;
   activeConversation?: boolean;
   activeConversationWindowMs?: number;
+  /** Budget across all characters in this user/tenant database, over rolling 24h. */
+  userDailyLimit?: number;
+  userCooldownMs?: number;
 }
 
 export type ProactivePolicyLoader = (
@@ -54,7 +57,7 @@ export interface ProactiveComposeContext {
 
 export type ProactiveComposer = (
   context: ProactiveComposeContext,
-) => Promise<string> | string;
+) => Promise<string | { decision: "skip" }> | string | { decision: "skip" };
 
 export type ProactiveClaimRejectionCode =
   | ProactivePreflightRejectionCode
@@ -66,6 +69,7 @@ export type ProactiveClaimRejectionCode =
   | "claim_conflict";
 
 export type ProactiveGenerationOutcome =
+  | { status: "skipped"; runId: string; reasonCode: "model_declined" }
   | {
       status: "not_claimed";
       reasonCode: ProactiveClaimRejectionCode;
@@ -123,6 +127,38 @@ export class ProactiveGenerationService {
     this.generationLeaseMs = generationLeaseMs;
   }
 
+  /** Cheap gates only: no claim, model call, message or source mutation. */
+  inspect(
+    agentId: string,
+    sessionId: string,
+    ref?: ProactiveSubjectRef,
+  ):
+    | { allowed: true }
+    | { allowed: false; reasonCode: ProactiveClaimRejectionCode } {
+    const nowUtc = this.clock.nowUtc();
+    if (!this.repository.sessionBelongsToAgent(sessionId, agentId))
+      return { allowed: false, reasonCode: "session_mismatch" };
+    if (this.repository.readAgentRevisions(agentId) === undefined)
+      return { allowed: false, reasonCode: "agent_state_missing" };
+    const subject =
+      ref === undefined
+        ? this.repository.findNextDueSubject(agentId, nowUtc)
+        : this.repository.getSubject(ref);
+    if (subject === undefined)
+      return { allowed: false, reasonCode: "no_delivery_subject" };
+    if (subject.agentId !== agentId)
+      return { allowed: false, reasonCode: "subject_agent_mismatch" };
+    return evaluateProactivePreflight({
+      ...this.preflightInput(
+        subject,
+        this.loadPolicy(agentId, nowUtc),
+        this.activityTracker.snapshot(agentId),
+        nowUtc,
+      ),
+      generationInProgress: this.repository.hasGeneratingRun(agentId),
+    });
+  }
+
   async generate(input: {
     agentId: string;
     sessionId: string;
@@ -139,7 +175,15 @@ export class ProactiveGenerationService {
     const context = composeContext(claim.generation);
     let generatedContent: string;
     try {
-      generatedContent = (await input.compose(context)).trim();
+      const composed = await input.compose(context);
+      if (typeof composed !== "string") {
+        return await this.actorQueue.runExclusive(input.agentId, () =>
+          this.repository.transaction(() =>
+            this.postflightCommit(claim.generation, "", "skip"),
+          ),
+        );
+      }
+      generatedContent = composed.trim();
     } catch {
       await this.finishFailed(
         claim.generation.run,
@@ -253,6 +297,8 @@ export class ProactiveGenerationService {
       snapshot: {
         subject: { kind: subject.kind, id: subject.id },
         policy,
+        userArrivalEpoch: this.activityTracker.userArrivalEpoch,
+        userMessageRowid: this.activityTracker.latestUserMessageRowid,
       },
       startedAtUtc: nowUtc,
     });
@@ -264,6 +310,7 @@ export class ProactiveGenerationService {
   private postflightCommit(
     claimed: ClaimedGeneration,
     generatedContent: string,
+    compositionDecision: "send" | "skip" = "send",
   ): ProactiveGenerationOutcome {
     const nowUtc = this.clock.nowUtc();
     const currentRun = this.repository.getRun(claimed.run.id);
@@ -303,6 +350,7 @@ export class ProactiveGenerationService {
       currentRun.claimToken === claimed.run.claimToken &&
       currentRun.generationEpoch === claimed.run.generationEpoch &&
       currentSubject !== undefined &&
+      currentSubject.revision === claimed.run.preflightSourceRevision &&
       currentSubject.generationEpoch === claimed.run.generationEpoch;
     const sourceStillClaimed =
       currentRun !== undefined && this.repository.isSourceClaimed(currentRun);
@@ -325,7 +373,14 @@ export class ProactiveGenerationService {
       preflightStateRevision: claimed.run.preflightStateRevision,
       currentStateRevision: currentRevisions?.stateRevision ?? -1,
       preflightUserArrivalEpoch: claimed.run.preflightUserArrivalEpoch,
-      currentUserArrivalEpoch: currentActivity.userArrivalEpoch,
+      currentUserArrivalEpoch:
+        currentActivity.userArrivalEpoch +
+        (claimed.run.snapshot["userArrivalEpoch"] !==
+          this.activityTracker.userArrivalEpoch ||
+        claimed.run.snapshot["userMessageRowid"] !==
+          this.activityTracker.latestUserMessageRowid
+          ? 1
+          : 0),
       inFlightUserTurns: currentActivity.inFlightUserTurns,
       preflightLastUserMessageRowid: claimed.run.preflightLastUserMessageRowid,
       currentLastUserMessageRowid: currentActivity.lastUserMessageRowid,
@@ -364,6 +419,26 @@ export class ProactiveGenerationService {
       };
     }
 
+    if (compositionDecision === "skip") {
+      if (!this.repository.declineGeneration(currentRun, nowUtc)) {
+        this.repository.discardGeneration({
+          runId: currentRun.id,
+          claimToken: currentRun.claimToken,
+          reasonCode: "stale_generation",
+          completedAtUtc: nowUtc,
+        });
+        return {
+          status: "discarded",
+          runId: currentRun.id,
+          reasonCode: "stale_generation",
+        };
+      }
+      return {
+        status: "skipped",
+        runId: currentRun.id,
+        reasonCode: "model_declined",
+      };
+    }
     const message = this.repository.commitGeneration({
       run: currentRun,
       subject: currentSubject,
@@ -381,6 +456,7 @@ export class ProactiveGenerationService {
     nowUtc: string,
   ): Parameters<typeof evaluateProactivePreflight>[0] {
     const bounds = localDayBounds(nowUtc, policy.timezone);
+    const lastUserProactive = this.repository.latestUserProactiveAt();
     return {
       subject,
       nowUtc,
@@ -394,12 +470,31 @@ export class ProactiveGenerationService {
         bounds.endUtc,
       ),
       dailyLimit: policy.dailyLimit,
+      ...(policy.userDailyLimit === undefined
+        ? {}
+        : {
+            userDailyLimit: policy.userDailyLimit,
+            userSentToday: this.repository.countUserSentSince(
+              new Date(Date.parse(nowUtc) - 24 * 60 * 60_000).toISOString(),
+            ),
+          }),
+      ...(policy.userCooldownMs === undefined || lastUserProactive === undefined
+        ? {}
+        : {
+            userCooldownUntilUtc: new Date(
+              Date.parse(lastUserProactive) + policy.userCooldownMs,
+            ).toISOString(),
+          }),
       relationshipCloseness: policy.relationshipCloseness,
       minimumCloseness: policy.minimumCloseness,
       unansweredCount: this.repository.countUnanswered(subject.agentId),
       maximumUnanswered: policy.maximumUnanswered,
       activeConversation:
         (policy.activeConversation ?? false) ||
+        this.activityTracker.isUserActive(
+          nowUtc,
+          policy.activeConversationWindowMs ?? 120_000,
+        ) ||
         activity.inFlightUserTurns > 0 ||
         this.activityTracker.isConversationActive(
           subject.agentId,

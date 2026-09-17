@@ -28,6 +28,7 @@ export type ProactiveSubjectRecord =
       generationEpoch: number;
       contextSummary: string;
       expectedOutcomeDescription: string;
+      timingIntent?: "reminder" | "appointment" | "event_aftermath";
     });
 
 export type GenerationRunStatus =
@@ -78,7 +79,95 @@ export class ProactiveGenerationRepository {
   constructor(readonly database: Database) {}
 
   transaction<T>(operation: () => T): T {
-    return this.database.transaction(operation)();
+    return this.database.transaction(operation).immediate();
+  }
+
+  countUserSentSince(sinceUtc: string): number {
+    return Number(
+      (
+        this.database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM messages
+       WHERE message_kind = 'assistant_proactive' AND created_at_utc >= ?`,
+          )
+          .get(sinceUtc) as { count: number }
+      ).count,
+    );
+  }
+
+  latestUserProactiveAt(): string | undefined {
+    return (
+      this.database
+        .prepare(
+          `SELECT created_at_utc FROM messages WHERE message_kind = 'assistant_proactive'
+       ORDER BY created_at_utc DESC, rowid DESC LIMIT 1`,
+        )
+        .get() as { created_at_utc: string } | undefined
+    )?.created_at_utc;
+  }
+
+  private withDecision(
+    subject: ProactiveSubjectRecord,
+  ): ProactiveSubjectRecord {
+    const closed = this.database
+      .prepare(
+        `SELECT 1 FROM proactive_intent_decisions
+       WHERE source_kind = ? AND source_id = ? AND source_revision = ?`,
+      )
+      .get(subject.kind, subject.id, subject.revision);
+    return closed === undefined ? subject : { ...subject, status: "closed" };
+  }
+
+  private activitySubject(row: SqlRow): ProactiveSubjectRecord {
+    const subject = mapActivitySubject(row);
+    const last = this.database
+      .prepare(
+        `SELECT MAX(m.created_at_utc) AS sent_at_utc
+       FROM proactive_candidates prior
+       JOIN messages m ON m.id = prior.sent_message_id OR m.trigger_event_id = prior.trigger_event_id
+       WHERE prior.agent_id = ? AND m.agent_id = ? AND prior.cooldown_key = ?
+         AND prior.id <> ? AND m.message_kind = 'assistant_proactive'`,
+      )
+      .get(
+        subject.agentId,
+        subject.agentId,
+        row["cooldown_key"],
+        subject.id,
+      ) as { sent_at_utc: string | null };
+    if (last.sent_at_utc === null) return subject;
+    const nextTopicAt = new Date(
+      Date.parse(last.sent_at_utc) + 24 * 60 * 60_000,
+    ).toISOString();
+    return Date.parse(nextTopicAt) > Date.parse(subject.earliestAtUtc)
+      ? { ...subject, earliestAtUtc: nextTopicAt }
+      : subject;
+  }
+
+  declineGeneration(run: StoredGenerationRun, nowUtc: string): boolean {
+    const subject = this.getSubject({ kind: run.sourceKind, id: run.sourceId });
+    if (
+      subject === undefined ||
+      subject.revision !== run.preflightSourceRevision ||
+      !this.isSourceClaimed(run)
+    )
+      return false;
+    if (
+      !this.discardGeneration({
+        runId: run.id,
+        claimToken: run.claimToken,
+        reasonCode: "model_declined",
+        completedAtUtc: nowUtc,
+      })
+    )
+      return false;
+    this.database
+      .prepare(
+        `INSERT OR IGNORE INTO proactive_intent_decisions
+       (source_kind, source_id, source_revision, reason_code, decided_at_utc)
+       VALUES (?, ?, ?, 'model_declined', ?)`,
+      )
+      .run(subject.kind, subject.id, subject.revision, nowUtc);
+    return true;
   }
 
   hasGeneratingRun(agentId: string): boolean {
@@ -135,7 +224,7 @@ export class ProactiveGenerationRepository {
                 rs.revision AS state_revision
          FROM characters c
          JOIN runtime_states rs ON rs.agent_id = c.id
-         WHERE c.id = ?`,
+         WHERE c.id = ? AND c.status = 'published'`,
       )
       .get(agentId) as
       { spec_version: number; state_revision: number } | undefined;
@@ -236,6 +325,9 @@ export class ProactiveGenerationRepository {
          FROM follow_up_intents fui
          WHERE fui.agent_id = ?
            AND fui.status = 'pending'
+           AND NOT EXISTS (SELECT 1 FROM proactive_intent_decisions d
+             WHERE d.source_kind = 'follow_up' AND d.source_id = fui.id
+               AND d.source_revision = fui.revision)
            AND fui.attempt_count < fui.max_attempts
            AND fui.earliest_at_utc <= ?
            AND fui.expires_at_utc > ?
@@ -254,7 +346,7 @@ export class ProactiveGenerationRepository {
     );
     if (followUp !== undefined) return mapFollowUpSubject(followUp);
 
-    const candidate = this.database
+    const candidates = this.database
       .prepare(
         `SELECT pc.*,
            EXISTS(
@@ -265,6 +357,9 @@ export class ProactiveGenerationRepository {
          FROM proactive_candidates pc
          WHERE pc.agent_id = ?
            AND pc.status = 'pending'
+           AND NOT EXISTS (SELECT 1 FROM proactive_intent_decisions d
+             WHERE d.source_kind = 'activity_candidate' AND d.source_id = pc.id
+               AND d.source_revision = pc.revision)
            AND pc.earliest_at_utc <= ?
            AND pc.expires_at_utc > ?
            AND NOT EXISTS (
@@ -272,11 +367,14 @@ export class ProactiveGenerationRepository {
              WHERE pgr.proactive_candidate_id = pc.id
                AND pgr.status = 'generating'
            )
-         ORDER BY pc.priority DESC, pc.created_at_utc, pc.rowid
-         LIMIT 1`,
+         ORDER BY pc.priority DESC, pc.created_at_utc, pc.rowid`,
       )
-      .get(agentId, nowUtc, nowUtc) as SqlRow | undefined;
-    return candidate === undefined ? undefined : mapActivitySubject(candidate);
+      .all(agentId, nowUtc, nowUtc) as SqlRow[];
+    return candidates
+      .map((row) => this.activitySubject(row))
+      .find(
+        (subject) => Date.parse(subject.earliestAtUtc) <= Date.parse(nowUtc),
+      );
   }
 
   getSubject(ref: ProactiveSubjectRef): ProactiveSubjectRecord | undefined {
@@ -296,7 +394,9 @@ export class ProactiveGenerationRepository {
            FROM follow_up_intents fui WHERE fui.id = ?`,
         )
         .get(ref.id) as SqlRow | undefined;
-      return row === undefined ? undefined : mapFollowUpSubject(row);
+      return row === undefined
+        ? undefined
+        : this.withDecision(mapFollowUpSubject(row));
     }
     const row = this.database
       .prepare(
@@ -309,7 +409,9 @@ export class ProactiveGenerationRepository {
          FROM proactive_candidates pc WHERE pc.id = ?`,
       )
       .get(ref.id) as SqlRow | undefined;
-    return row === undefined ? undefined : mapActivitySubject(row);
+    return row === undefined
+      ? undefined
+      : this.withDecision(this.activitySubject(row));
   }
 
   claimSubject(input: {
@@ -325,6 +427,7 @@ export class ProactiveGenerationRepository {
     snapshot: Record<string, unknown>;
     startedAtUtc: string;
   }): ClaimedGeneration | undefined {
+    if (this.withDecision(input.subject).status !== "pending") return undefined;
     if (
       input.subject.kind === "follow_up" &&
       !new FollowUpRepository(this.database).isFollowUpEvidenceCurrent(
@@ -641,6 +744,18 @@ export class ProactiveGenerationRepository {
     this.database
       .prepare("UPDATE sessions SET updated_at_utc = ? WHERE id = ?")
       .run(input.completedAtUtc, input.run.sessionId);
+    this.database
+      .prepare(
+        `INSERT INTO proactive_notification_outbox
+       (message_id, agent_id, next_attempt_at_utc, created_at_utc)
+       VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        input.messageId,
+        input.run.agentId,
+        input.completedAtUtc,
+        input.completedAtUtc,
+      );
     this.insertDomainEvent({
       agentId: input.run.agentId,
       streamType: "conversation",
@@ -790,6 +905,11 @@ function mapActivitySubject(row: SqlRow): ProactiveSubjectRecord {
 }
 
 function mapFollowUpSubject(row: SqlRow): ProactiveSubjectRecord {
+  const grounding =
+    row["grounding_json"] == null ? {} : parseSnapshot(row["grounding_json"]);
+  const basis = grounding["basis"] as
+    | { timingIntent?: "reminder" | "appointment" | "event_aftermath" }
+    | undefined;
   return {
     kind: "follow_up",
     id: String(row["id"]),
@@ -804,6 +924,9 @@ function mapFollowUpSubject(row: SqlRow): ProactiveSubjectRecord {
     generationEpoch: Number(row["generation_epoch"]),
     contextSummary: String(row["context_summary"]),
     expectedOutcomeDescription: String(row["expected_outcome_description"]),
+    ...(basis?.timingIntent === undefined
+      ? {}
+      : { timingIntent: basis.timingIntent }),
   };
 }
 

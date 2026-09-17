@@ -2,10 +2,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { openDatabase, type Database } from "../db/connection.js";
 import { runMigrations } from "../db/migrations.js";
+import { DatabaseStore } from "../db/store.js";
+import { SseHub } from "../sse/hub.js";
+import { ProactiveDeliveryService } from "./proactive-delivery-service.js";
+import type { LlmService } from "./llm-service.js";
 import { ActorQueue } from "../runtime/actor-queue.js";
 import { FakeClock } from "../runtime/clock.js";
 import { ConversationActivityTracker } from "./conversation-activity-tracker.js";
@@ -110,6 +114,249 @@ describe("ProactiveGenerationService", () => {
       reasonCode: "no_delivery_subject",
     });
     expect(proactiveMessageCount(database)).toBe(1);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM proactive_notification_outbox")
+        .get(),
+    ).toEqual({ count: 1 });
+  });
+
+  it("treats model silence as a terminal contact decision without resolving the event", async () => {
+    const outcome = await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: () => ({ decision: "skip" }),
+    });
+    expect(outcome).toMatchObject({
+      status: "skipped",
+      reasonCode: "model_declined",
+    });
+    expect(readCandidate(database).status).toBe("pending");
+    expect(
+      repository.getSubject({ kind: "activity_candidate", id: CANDIDATE_ID })
+        ?.status,
+    ).toBe("closed");
+    expect(repository.findNextDueSubject(AGENT_ID, NOW_UTC)).toBeUndefined();
+    expect(proactiveMessageCount(database)).toBe(0);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM proactive_notification_outbox")
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      await service.generate({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        compose: () => {
+          throw new Error("must not repeat a declined contact");
+        },
+      }),
+    ).toEqual({ status: "not_claimed", reasonCode: "no_delivery_subject" });
+  });
+
+  it("rolls the message and source back when outbox registration fails", async () => {
+    database.exec(`CREATE TRIGGER reject_outbox BEFORE INSERT ON proactive_notification_outbox
+      BEGIN SELECT RAISE(ABORT, 'outbox failure'); END;`);
+    expect(
+      await service.generate({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        compose: () => "A grounded activity share.",
+      }),
+    ).toMatchObject({
+      status: "failed",
+      reasonCode: "postflight_failed",
+    });
+    expect(proactiveMessageCount(database)).toBe(0);
+    expect(readCandidate(database).status).toBe("pending");
+  });
+
+  it("retries failed notification dispatch without regenerating or duplicating a message", async () => {
+    const compose = vi.fn(() => "A grounded share.");
+    await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose,
+    });
+    const hub = new SseHub();
+    vi.spyOn(hub, "getActiveAgentIds").mockReturnValue([AGENT_ID]);
+    const publish = vi.spyOn(hub, "publish").mockImplementationOnce(() => {
+      throw new Error("channel unavailable");
+    });
+    const delivery = new ProactiveDeliveryService(
+      new DatabaseStore(database),
+      clock,
+      {} as LlmService,
+      hub,
+      service,
+    );
+    expect(delivery.flushNotifications()).toBe(0);
+    expect(
+      database
+        .prepare(
+          "SELECT status, attempt_count FROM proactive_notification_outbox",
+        )
+        .get(),
+    ).toEqual({ status: "pending", attempt_count: 1 });
+    clock.setUtc("2026-08-21T12:00:05.000Z");
+    expect(delivery.flushNotifications()).toBe(1);
+    expect(delivery.flushNotifications()).toBe(0);
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(compose).toHaveBeenCalledTimes(1);
+    expect(proactiveMessageCount(database)).toBe(1);
+    expect(
+      database
+        .prepare("SELECT status FROM proactive_notification_outbox")
+        .get(),
+    ).toEqual({ status: "processed" });
+  });
+
+  it("leaves worker notifications for a process with an active subscriber", async () => {
+    await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: () => "A grounded share.",
+    });
+    const delivery = new ProactiveDeliveryService(
+      new DatabaseStore(database),
+      clock,
+      {} as LlmService,
+      new SseHub(),
+      service,
+    );
+    expect(delivery.flushNotifications()).toBe(0);
+    expect(
+      database
+        .prepare(
+          "SELECT status, attempt_count FROM proactive_notification_outbox",
+        )
+        .get(),
+    ).toEqual({ status: "pending", attempt_count: 0 });
+  });
+
+  it.each(["send", "skip"] as const)(
+    "rejects a %s decision after the character is archived",
+    async (decision) => {
+      const result = await service.generate({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        compose: () => {
+          database
+            .prepare("UPDATE characters SET status = 'archived' WHERE id = ?")
+            .run(AGENT_ID);
+          return decision === "send"
+            ? "Old context."
+            : { decision: "skip" as const };
+        },
+      });
+      expect(result).toMatchObject({
+        status: "discarded",
+        reasonCode: "agent_revision_changed",
+      });
+      expect(
+        database
+          .prepare("SELECT COUNT(*) AS count FROM proactive_intent_decisions")
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(proactiveMessageCount(database)).toBe(0);
+    },
+  );
+
+  it("does not close an intent when a skip decision returns after its lease", async () => {
+    const result = await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: () => {
+        clock.setUtc("2026-08-21T12:30:00.000Z");
+        return { decision: "skip" };
+      },
+    });
+    expect(result).toMatchObject({
+      status: "discarded",
+      reasonCode: "generation_lease_expired",
+    });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM proactive_intent_decisions")
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("uses wall time for cross-process turn leases even when the simulation clock jumps", () => {
+    const other = new ConversationActivityTracker(database);
+    const lease = tracker.beginUserTurn(AGENT_ID);
+    try {
+      expect(other.isUserActive("2036-08-21T12:00:00.000Z", 0)).toBe(true);
+    } finally {
+      lease.end();
+    }
+    expect(other.isUserActive("2036-08-21T12:00:00.000Z", 0)).toBe(false);
+  });
+
+  it("rechecks the shared user budget when two characters finish concurrently", async () => {
+    seedAgent(database, "agent-other", "session-other");
+    seedActivityCandidate(
+      database,
+      "agent-other",
+      "event-other",
+      "candidate-other",
+    );
+    policy.userDailyLimit = 1;
+    const otherWorker = new ProactiveGenerationService(
+      repository,
+      new ConversationActivityTracker(database),
+      new ActorQueue(),
+      clock,
+      () => policy,
+    );
+    const first = await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: async () => {
+        const second = await otherWorker.generate({
+          agentId: "agent-other",
+          sessionId: "session-other",
+          compose: () => "The other character's grounded share.",
+        });
+        expect(second.status).toBe("committed");
+        return "This share must wait for the user budget.";
+      },
+    });
+    expect(first).toMatchObject({
+      status: "discarded",
+      reasonCode: "user_daily_cap_reached",
+    });
+    expect(repository.countUserSentSince("2026-08-20T12:00:00.000Z")).toBe(1);
+  });
+
+  it("fences a separate tracker when the user arrives before their message is saved", async () => {
+    const otherTracker = new ConversationActivityTracker(database);
+    const first = await service.generate({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      compose: () => {
+        const lease = otherTracker.beginUserTurn("agent-other");
+        expect(tracker.isUserActive(NOW_UTC)).toBe(true);
+        lease.end();
+        return "Stale after user arrival on another character.";
+      },
+    });
+    expect(first).toMatchObject({
+      status: "discarded",
+      reasonCode: "user_returned",
+    });
+    expect(proactiveMessageCount(database)).toBe(0);
+  });
+
+  it("shadow inspection performs no generation claim or model work", () => {
+    expect(service.inspect(AGENT_ID, SESSION_ID)).toEqual({ allowed: true });
+    expect(countGenerationRuns(database)).toBe(0);
+    policy.quietHours = true;
+    expect(service.inspect(AGENT_ID, SESSION_ID)).toEqual({
+      allowed: false,
+      reasonCode: "quiet_hours",
+    });
+    expect(readCandidate(database).generationEpoch).toBe(0);
   });
 
   it("preserves delivery idempotency after reopening the same SQLite file", async () => {
@@ -796,7 +1043,11 @@ function eligiblePolicy(): ProactiveGenerationPolicy {
   };
 }
 
-function seedAgent(database: Database): void {
+function seedAgent(
+  database: Database,
+  agentId = AGENT_ID,
+  sessionId = SESSION_ID,
+): void {
   database
     .prepare(
       `INSERT INTO characters(
@@ -804,24 +1055,29 @@ function seedAgent(database: Database): void {
         created_at_utc, updated_at_utc
       ) VALUES (?, 1, 'published', 'high_fidelity', ?, 'original', ?, ?)`,
     )
-    .run(AGENT_ID, "Generation Agent", NOW_UTC, NOW_UTC);
+    .run(agentId, "Generation Agent", NOW_UTC, NOW_UTC);
   database
     .prepare(
       `INSERT INTO runtime_states(
         agent_id, state_json, revision, updated_at_utc
       ) VALUES (?, '{}', 0, ?)`,
     )
-    .run(AGENT_ID, NOW_UTC);
+    .run(agentId, NOW_UTC);
   database
     .prepare(
       `INSERT INTO sessions(
         id, agent_id, title, created_at_utc, updated_at_utc
       ) VALUES (?, ?, 'Generation test', ?, ?)`,
     )
-    .run(SESSION_ID, AGENT_ID, NOW_UTC, NOW_UTC);
+    .run(sessionId, agentId, NOW_UTC, NOW_UTC);
 }
 
-function seedActivityCandidate(database: Database): void {
+function seedActivityCandidate(
+  database: Database,
+  agentId = AGENT_ID,
+  eventId = EVENT_ID,
+  candidateId = CANDIDATE_ID,
+): void {
   database
     .prepare(
       `INSERT INTO activity_events(
@@ -830,10 +1086,10 @@ function seedActivityCandidate(database: Database): void {
         event_json
       ) VALUES (
         ?, ?, 'completed', ?, 'Completed a city walk.', '[]', '{}',
-        'deterministic', 'event:proactive-generation', '{}'
+        'deterministic', ?, '{}'
       )`,
     )
-    .run(EVENT_ID, AGENT_ID, "2026-08-21T11:00:00.000Z");
+    .run(eventId, agentId, "2026-08-21T11:00:00.000Z", `event:${eventId}`);
   database
     .prepare(
       `INSERT INTO proactive_candidates(
@@ -847,9 +1103,9 @@ function seedActivityCandidate(database: Database): void {
       )`,
     )
     .run(
-      CANDIDATE_ID,
-      AGENT_ID,
-      EVENT_ID,
+      candidateId,
+      agentId,
+      eventId,
       "2026-08-21T11:30:00.000Z",
       "2026-08-23T12:00:00.000Z",
       NOW_UTC,

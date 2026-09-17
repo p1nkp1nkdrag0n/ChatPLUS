@@ -128,7 +128,8 @@ export type ServerChatMessageInput = z.infer<
 
 export const ProactiveMessageProposalSchema = z
   .object({
-    content: z.string().trim().min(1).max(4_000),
+    decision: z.enum(["send", "skip"]).default("send"),
+    content: z.string().trim().max(4_000),
     reasonCode: ReasonCodeSchema,
     reasonSummary: ShortTextSchema,
   })

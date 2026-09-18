@@ -14,7 +14,10 @@ export class HostedError extends Error {
 
 export interface HostedUser {
   id: string;
+  /** Display name used when characters address the user; duplicates are allowed. */
   username: string;
+  /** Unique login name, including the generated six-digit account suffix. */
+  accountName: string;
   role: "admin" | "user";
   status: "active" | "banned";
   mustChangePassword: boolean;

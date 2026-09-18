@@ -197,6 +197,8 @@ async function fixture(startSchedulers = false) {
     return {
       ...friend,
       userId: response.json<{ user: { id: string } }>().user.id,
+      accountName: response.json<{ user: { accountName: string } }>().user
+        .accountName,
     };
   }
   const reopen = async () => {
@@ -302,7 +304,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     const android = client(reopened.userApp, publicOrigin);
     await android.request("GET", "/api/hosted/info");
     await android.request("POST", "/api/hosted/auth/login", {
-      username: "model-settings-owner",
+      username: owner.accountName,
       password: "testing-friend-password",
     });
     const persisted = await android.request("GET", "/api/llm/user-settings");
@@ -381,7 +383,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     const old = client(f.app.userApp, publicOrigin);
     await old.request("GET", "/api/hosted/info");
     await old.request("POST", "/api/hosted/auth/login", {
-      username: "pre-rollout-account",
+      username: registered.user.accountName,
       password: "testing-friend-password",
     });
     const settings = await old.request("GET", "/api/llm/user-settings");
@@ -491,7 +493,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     const started = Date.now();
     vi.setSystemTime(started);
     const login = {
-      username: "login-rate-friend",
+      username: friend.accountName,
       password: "testing-friend-password",
     };
     const paths = [
@@ -978,7 +980,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     expect(
       (
         await user.request("POST", "/api/hosted/auth/login", {
-          username: "encoded_reset",
+          username: user.accountName,
           password: "temporary-reset-password",
         })
       ).statusCode,
@@ -1053,7 +1055,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     });
     const friend = await register("friend1");
     const login = await friend.request("POST", "/api/hosted/auth/login", {
-      username: "friend1",
+      username: friend.accountName,
       password: "testing-friend-password",
     });
     expect(String(login.headers["set-cookie"])).toMatch(
@@ -1121,8 +1123,12 @@ describe("hosted HTTP boundaries and lifecycle", () => {
   );
   it("isolates characters, sessions, images and events before paid work; syncs another device and revokes banned sessions", async () => {
     const { app, admin, register, calls } = await fixture();
-    const a = await register("alice"),
-      b = await register("bob");
+    const a = await register("圆圆"),
+      b = await register("圆圆");
+    expect(a.accountName).toMatch(/^圆圆#\d{6}$/u);
+    expect(b.accountName).toMatch(/^圆圆#\d{6}$/u);
+    expect(a.accountName).not.toBe(b.accountName);
+    expect(a.userId).not.toBe(b.userId);
     const draftResponse = await a.request(
       "POST",
       "/api/characters/generate",
@@ -1179,7 +1185,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     expect(
       (
         await anotherDevice.request("POST", "/api/hosted/auth/login", {
-          username: "alice",
+          username: a.accountName,
           password: "testing-friend-password",
         })
       ).statusCode,
@@ -1339,7 +1345,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     const reconnected = client(restarted.userApp, publicOrigin);
     await reconnected.request("GET", "/api/hosted/info");
     await reconnected.request("POST", "/api/hosted/auth/login", {
-      username: "recovery",
+      username: user.accountName,
       password: "testing-friend-password",
     });
     const recovered = await reconnected.request(

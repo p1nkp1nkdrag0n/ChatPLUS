@@ -7,11 +7,17 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import * as crypto from "node:crypto";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import { HostedControlStore } from "./control-store.js";
 import type { HostedModelInput } from "./types.js";
+
+vi.mock("node:crypto", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:crypto")>();
+  return { ...original, randomInt: vi.fn(original.randomInt) };
+});
 
 const opened: { root: string; store: HostedControlStore }[] = [];
 function fixture(configured = true) {
@@ -51,6 +57,8 @@ const model: HostedModelInput = {
   apiKey: "test-private-provider-key",
 };
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.mocked(crypto.randomInt).mockReset();
   for (const { root, store } of opened.splice(0)) {
     store.close();
     rmSync(root, { recursive: true, force: true });
@@ -201,23 +209,24 @@ describe("hosted central control", () => {
     expect(bytes.includes(Buffer.from(model.apiKey!))).toBe(false);
     expect(store.listModels()[0]).not.toHaveProperty("apiKey");
   });
-  it("atomically consumes invitations and rolls back duplicate registrations", () => {
+  it("atomically consumes invitations while allowing duplicate display names", () => {
     const { store, created, user } = fixture();
     expect(() =>
       store.registerUser({
-        username: "FRIEND",
+        username: "bad#name",
         passwordHash: "x",
         inviteCode: created.code,
         consentVersion: "v1",
       }),
-    ).toThrow("username");
+    ).toThrow("Username");
     expect(store.listInvites()[0]!.uses).toBe(1);
     const registered = store.registerUser({
-      username: "friend2",
+      username: "FRIEND",
       passwordHash: "x",
       inviteCode: created.code,
     });
     expect(registered).toMatchObject({
+      username: "FRIEND",
       consentVersion: null,
       consentAtUtc: null,
     });
@@ -234,6 +243,94 @@ describe("hosted central control", () => {
       }),
     ).toThrow("invitation");
     expect(store.listUsers()).toHaveLength(3);
+    expect(user.accountName).toMatch(/^friend#[0-9]{6}$/u);
+    expect(registered.accountName.toLowerCase()).not.toBe(user.accountName);
+    expect(store.passwordRecord("friend")).toBeUndefined();
+    expect(store.passwordRecord(registered.accountName)?.user.id).toBe(
+      registered.id,
+    );
+    expect(store.listUsers({ search: registered.accountName })).toEqual([
+      registered,
+    ]);
+  });
+  it("retries random account suffix collisions and rolls back exhausted registrations", () => {
+    const { store, admin } = fixture();
+    const { code, invite } = store.createInvite({ maxUses: 3 }, admin.id);
+    const random = vi
+      .mocked(crypto.randomInt)
+      .mockClear()
+      .mockImplementation(() => 7);
+    const first = store.registerUser({
+      username: "圆圆",
+      passwordHash: "first",
+      inviteCode: code,
+    });
+    expect(first.accountName).toBe("圆圆#000007");
+    random.mockImplementationOnce(() => 7).mockImplementationOnce(() => 8);
+    const second = store.registerUser({
+      username: "圆圆",
+      passwordHash: "second",
+      inviteCode: code,
+    });
+    expect(second.accountName).toBe("圆圆#000008");
+    expect(random).toHaveBeenCalledTimes(3);
+    const userCount = store.listUsers().length;
+    expect(() =>
+      store.registerUser({
+        username: "圆圆",
+        passwordHash: "third",
+        inviteCode: code,
+      }),
+    ).toThrow("暂时无法生成唯一账号");
+    expect(store.listUsers()).toHaveLength(userCount);
+    expect(
+      store.listInvites().find((item) => item.id === invite.id)?.uses,
+    ).toBe(2);
+    expect(
+      store.database.prepare("SELECT count(*) AS count FROM wallets").get(),
+    ).toEqual({ count: userCount });
+  });
+  it("migrates legacy names without changing IDs, wallets or sessions and keeps only their original aliases", () => {
+    const { root, store, user, created } = fixture();
+    const session = store.createSession(user.id);
+    const wallet = store.wallet(user.id);
+    store.database.exec(
+      "UPDATE users SET username_key=lower(username); DROP INDEX users_legacy_username; ALTER TABLE users DROP COLUMN account_name; ALTER TABLE users DROP COLUMN legacy_username_key;",
+    );
+    store.close();
+    const state = opened.find((item) => item.root === root)!;
+    state.store = new HostedControlStore(root);
+    const migrated = state.store.getUser(user.id)!;
+    expect(migrated).toMatchObject({
+      ...user,
+      accountName: expect.stringMatching(/^friend#[0-9]{6}$/u),
+    });
+    expect(state.store.passwordRecord(" FRIEND ")?.user.id).toBe(user.id);
+    expect(state.store.passwordRecord(migrated.accountName)?.user.id).toBe(
+      user.id,
+    );
+    expect(state.store.wallet(user.id)).toEqual(wallet);
+    expect(state.store.authenticateSession(session.token)?.user.id).toBe(
+      user.id,
+    );
+    const duplicate = state.store.registerUser({
+      username: "friend",
+      passwordHash: "duplicate",
+      inviteCode: created.code,
+    });
+    expect(state.store.passwordRecord("friend")?.user.id).toBe(user.id);
+    expect(state.store.passwordRecord(duplicate.accountName)?.user.id).toBe(
+      duplicate.id,
+    );
+    expect(state.store.database.pragma("foreign_key_check")).toEqual([]);
+    state.store.close();
+    state.store = new HostedControlStore(root);
+    expect(state.store.getUser(user.id)?.accountName).toBe(
+      migrated.accountName,
+    );
+    expect(state.store.getUser(duplicate.id)?.accountName).toBe(
+      duplicate.accountName,
+    );
   });
   it("freezes funds once, settles once and preserves uncertain attempts", () => {
     const { store, admin, user } = fixture();

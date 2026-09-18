@@ -1,5 +1,9 @@
 import { hash, verify, type Options } from "@node-rs/argon2";
-import { type HostedControlStore, normalizeUsername } from "./control-store.js";
+import {
+  type HostedControlStore,
+  normalizeLoginIdentifier,
+  normalizeUsername,
+} from "./control-store.js";
 import { HostedError, type HostedSession, type HostedUser } from "./types.js";
 
 export interface HostedLoginResult {
@@ -85,8 +89,12 @@ export class HostedAuthService {
   }
   async login(username: string, password: string): Promise<HostedLoginResult> {
     let subject = "";
+    let record: ReturnType<HostedControlStore["passwordRecord"]>;
     try {
-      subject = normalizeUsername(username).toLocaleLowerCase("en-US");
+      subject = normalizeLoginIdentifier(username).toLocaleLowerCase("en-US");
+      record = this.store.passwordRecord(username);
+      // The legacy alias and generated account name share the same failure limit.
+      if (record) subject = record.user.accountName.toLocaleLowerCase("en-US");
     } catch {
       // Invalid names share a failure bucket and still receive a generic error.
     }
@@ -98,12 +106,6 @@ export class HostedAuthService {
         `登录失败次数过多，请 ${retryAfterSeconds} 秒后重试。`,
         retryAfterSeconds,
       );
-    let record: ReturnType<HostedControlStore["passwordRecord"]>;
-    try {
-      record = this.store.passwordRecord(username);
-    } catch {
-      record = undefined;
-    }
     return this.passwordWork(async () => {
       if (!record)
         this.dummyHash ??= hash(
@@ -153,8 +155,8 @@ export class HostedAuthService {
     newPassword: string,
   ): Promise<HostedLoginResult> {
     validatePassword(newPassword);
-    const user = this.store.assertActiveUser(userId);
-    const record = this.store.passwordRecord(user.username)!;
+    this.store.assertActiveUser(userId);
+    const record = this.store.passwordRecordById(userId)!;
     return this.passwordWork(async () => {
       if (
         typeof currentPassword !== "string" ||

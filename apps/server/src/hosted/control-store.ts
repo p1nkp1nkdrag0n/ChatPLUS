@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import {
   existsSync,
@@ -160,10 +160,17 @@ export function normalizeUsername(username: string): string {
     );
   return value;
 }
+export function normalizeLoginIdentifier(identifier: string): string {
+  const value = text(identifier, "account name", 39).normalize("NFKC");
+  if (!/^[\p{L}\p{N}_.-]{2,32}(?:#[0-9]{6})?$/u.test(value))
+    throw new HostedError(400, "invalid_username", "Invalid account name.");
+  return value;
+}
 function user(row: Row): HostedUser {
   return {
     id: String(row.id),
     username: String(row.username),
+    accountName: String(row.account_name),
     role: row.role as HostedUser["role"],
     status: row.status as HostedUser["status"],
     mustChangePassword: Boolean(row.must_change_password),
@@ -277,6 +284,7 @@ export class HostedControlStore {
       CREATE INDEX IF NOT EXISTS operations_message ON operations(user_id,client_message_id);
       CREATE TABLE IF NOT EXISTS auth_failures(subject TEXT PRIMARY KEY,failures INTEGER NOT NULL,blocked_until TEXT,updated_at TEXT NOT NULL);
     `);
+      this.migrateAccountNames();
       this.researchDatabase.exec(
         `CREATE TABLE IF NOT EXISTS research_records(id TEXT PRIMARY KEY,attempt_id TEXT,operation_id TEXT NOT NULL,session_id TEXT,user_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('request','response','input','output','image')),purpose TEXT NOT NULL,display_name TEXT NOT NULL,model_id TEXT NOT NULL,payload_encrypted TEXT,created_at TEXT NOT NULL,deleted_at TEXT); CREATE UNIQUE INDEX IF NOT EXISTS research_attempt_kind ON research_records(attempt_id,kind) WHERE attempt_id IS NOT NULL; CREATE INDEX IF NOT EXISTS research_user_created ON research_records(user_id,created_at);`,
       );
@@ -336,6 +344,64 @@ export class HostedControlStore {
     db.pragma("synchronous=FULL");
     db.pragma("busy_timeout=5000");
     return db;
+  }
+  private migrateAccountNames(): void {
+    this.database
+      .transaction(() => {
+        const columns = new Set(
+          (this.database.pragma("table_info(users)") as { name: string }[]).map(
+            (column) => column.name,
+          ),
+        );
+        if (!columns.has("account_name"))
+          this.database.exec("ALTER TABLE users ADD COLUMN account_name TEXT");
+        if (!columns.has("legacy_username_key"))
+          this.database.exec(
+            "ALTER TABLE users ADD COLUMN legacy_username_key TEXT",
+          );
+        this.database.exec(
+          "CREATE UNIQUE INDEX IF NOT EXISTS users_legacy_username ON users(legacy_username_key) WHERE legacy_username_key IS NOT NULL",
+        );
+        const legacyUsers = this.database
+          .prepare(
+            "SELECT id,username,username_key FROM users WHERE account_name IS NULL",
+          )
+          .all() as Row[];
+        const update = this.database.prepare(
+          "UPDATE users SET account_name=?,username_key=?,legacy_username_key=? WHERE id=?",
+        );
+        for (const row of legacyUsers)
+          this.assignAccountName(String(row.username), (accountName, key) => {
+            update.run(accountName, key, row.username_key, row.id);
+          });
+      })
+      .immediate();
+  }
+  /** The unique database key remains authoritative even if random suffixes collide. */
+  private assignAccountName(
+    username: string,
+    write: (accountName: string, key: string) => void,
+  ): void {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const accountName = `${username}#${String(randomInt(1_000_000)).padStart(6, "0")}`;
+      try {
+        write(accountName, accountName.toLocaleLowerCase("en-US"));
+        return;
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !("code" in error) ||
+          error.code !== "SQLITE_CONSTRAINT_UNIQUE" ||
+          !error.message.includes("users.username_key")
+        )
+          throw error;
+      }
+    }
+    throw new HostedError(
+      503,
+      "account_identifier_unavailable",
+      "暂时无法生成唯一账号，请稍后重试。",
+    );
   }
   close(): void {
     if (this.researchDatabase.open) this.researchDatabase.close();
@@ -430,7 +496,7 @@ export class HostedControlStore {
     const clauses: string[] = [];
     const values: unknown[] = [];
     if (filter.search) {
-      clauses.push("(instr(lower(username),lower(?))>0 OR id=?)");
+      clauses.push("(instr(lower(account_name),lower(?))>0 OR id=?)");
       values.push(filter.search, filter.search);
     }
     if (filter.status) {
@@ -460,12 +526,24 @@ export class HostedControlStore {
     return value;
   }
   passwordRecord(
-    username: string,
+    identifier: string,
+  ): { user: HostedUser; passwordHash: string } | undefined {
+    const key = normalizeLoginIdentifier(identifier).toLocaleLowerCase("en-US");
+    const row = this.database
+      .prepare(
+        "SELECT * FROM users WHERE username_key=? OR legacy_username_key=?",
+      )
+      .get(key, key) as Row | undefined;
+    return row
+      ? { user: user(row), passwordHash: String(row.password_hash) }
+      : undefined;
+  }
+  passwordRecordById(
+    userId: string,
   ): { user: HostedUser; passwordHash: string } | undefined {
     const row = this.database
-      .prepare("SELECT * FROM users WHERE username_key=?")
-      .get(normalizeUsername(username).toLocaleLowerCase("en-US")) as
-      Row | undefined;
+      .prepare("SELECT * FROM users WHERE id=?")
+      .get(userId) as Row | undefined;
     return row
       ? { user: user(row), passwordHash: String(row.password_hash) }
       : undefined;
@@ -554,24 +632,17 @@ export class HostedControlStore {
     username = normalizeUsername(username);
     const timestamp = now();
     const id = randomUUID();
-    if (
-      this.database
-        .prepare("SELECT 1 FROM users WHERE username_key=?")
-        .get(username.toLocaleLowerCase("en-US"))
-    )
-      throw new HostedError(
-        409,
-        "username_unavailable",
-        "This username is unavailable.",
-      );
-    this.database
-      .prepare(
-        "INSERT INTO users(id,username,username_key,password_hash,role,consent_version,consent_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-      )
-      .run(
+    const insert = this.database.prepare(
+      "INSERT INTO users(id,username,account_name,username_key,legacy_username_key,password_hash,role,consent_version,consent_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+    );
+    this.assignAccountName(username, (accountName, key) => {
+      insert.run(
         id,
         username,
-        username.toLocaleLowerCase("en-US"),
+        accountName,
+        key,
+        // Bootstrap credentials remain usable by existing administrator tooling.
+        role === "admin" ? username.toLocaleLowerCase("en-US") : null,
         passwordHash,
         role,
         consentVersion,
@@ -579,6 +650,7 @@ export class HostedControlStore {
         timestamp,
         timestamp,
       );
+    });
     this.database
       .prepare("INSERT INTO wallets(user_id,balance,reserved) VALUES(?,0,0)")
       .run(id);

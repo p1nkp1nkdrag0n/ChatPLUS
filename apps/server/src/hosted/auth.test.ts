@@ -62,7 +62,7 @@ it("uses Argon2id, handles invitation concurrency and revokes reset/logout sessi
   );
   expect(() => auth.authenticate(friend.token)).toThrow("Sign in");
   const fresh = await auth.login(
-    friend.user.username,
+    friend.user.accountName,
     "temporary-new-password",
   );
   expect(fresh.user.mustChangePassword).toBe(true);
@@ -80,10 +80,16 @@ it("shares failure limits across canonical usernames and reports the remaining c
   root = mkdtempSync(join(tmpdir(), "dearvale-auth-"));
   store = new HostedControlStore(root);
   const auth = new HostedAuthService(store);
-  await auth.bootstrap("admin", "a-long-admin-password");
+  const admin = await auth.bootstrap("admin", "a-long-admin-password");
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-16T00:00:00Z"));
-  for (const username of ["admin", " ADMIN ", "ａｄｍｉｎ", "Admin", " admin"])
+  for (const username of [
+    "admin",
+    " ADMIN ",
+    "ａｄｍｉｎ",
+    admin.user.accountName,
+    " admin",
+  ])
     await expect(auth.login(username, "wrong")).rejects.toMatchObject({
       code: "invalid_credentials",
     });
@@ -101,4 +107,54 @@ it("shares failure limits across canonical usernames and reports the remaining c
     user: { username: "admin" },
   });
   expect(store.loginRetryAfterSeconds("admin")).toBe(0);
+});
+it("keeps same-name accounts, their passwords and sessions isolated", async () => {
+  root = mkdtempSync(join(tmpdir(), "dearvale-auth-"));
+  store = new HostedControlStore(root);
+  const auth = new HostedAuthService(store);
+  const admin = await auth.bootstrap("admin", "a-long-admin-password");
+  store.setLimits({ registrationEnabled: true }, admin.user.id);
+  const { code } = store.createInvite({ maxUses: 2 }, admin.user.id);
+  const first = await auth.register({
+    username: "圆圆",
+    password: "first-user-password",
+    inviteCode: code,
+  });
+  const second = await auth.register({
+    username: "圆圆",
+    password: "second-user-password",
+    inviteCode: code,
+  });
+  expect(first.user.accountName).toMatch(/^圆圆#[0-9]{6}$/u);
+  expect(second.user.accountName).toMatch(/^圆圆#[0-9]{6}$/u);
+  expect(first.user.accountName).not.toBe(second.user.accountName);
+  await expect(auth.login("圆圆", "first-user-password")).rejects.toMatchObject(
+    { code: "invalid_credentials" },
+  );
+  await expect(
+    auth.login(first.user.accountName, "second-user-password"),
+  ).rejects.toMatchObject({ code: "invalid_credentials" });
+  await expect(
+    auth.login(second.user.accountName, "second-user-password"),
+  ).resolves.toMatchObject({ user: { id: second.user.id } });
+  await expect(
+    auth.changePassword(
+      second.user.id,
+      "first-user-password",
+      "new-second-password",
+    ),
+  ).rejects.toMatchObject({ code: "invalid_credentials" });
+  await auth.changePassword(
+    second.user.id,
+    "second-user-password",
+    "new-second-password",
+  );
+  expect(auth.authenticate(first.token).user.id).toBe(first.user.id);
+  expect(() => auth.authenticate(second.token)).toThrow("Sign in");
+  await expect(
+    auth.login(first.user.accountName, "first-user-password"),
+  ).resolves.toMatchObject({ user: { id: first.user.id } });
+  await expect(
+    auth.login(second.user.accountName, "new-second-password"),
+  ).resolves.toMatchObject({ user: { id: second.user.id } });
 });

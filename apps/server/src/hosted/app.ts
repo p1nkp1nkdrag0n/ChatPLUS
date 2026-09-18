@@ -198,6 +198,7 @@ export async function buildHostedApps(options: HostedAppOptions) {
               username: z.string().max(100),
               password: z.string().min(10).max(256),
               inviteCode: z.string().max(200),
+              confirmedAdult: z.boolean().optional(),
               consentVersion: z
                 .literal("dearvale-friends-research-v1")
                 .optional(),

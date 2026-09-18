@@ -30,11 +30,13 @@ it("uses Argon2id, handles invitation concurrency and revokes reset/logout sessi
       username: "friend1",
       password: "a-friend-password",
       inviteCode: code,
+      confirmedAdult: true,
     }),
     auth.register({
       username: "friend2",
       password: "a-friend-password",
       inviteCode: code,
+      confirmedAdult: true,
     }),
   ]);
   expect(
@@ -119,11 +121,13 @@ it("keeps same-name accounts, their passwords and sessions isolated", async () =
     username: "圆圆",
     password: "first-user-password",
     inviteCode: code,
+    confirmedAdult: true,
   });
   const second = await auth.register({
     username: "圆圆",
     password: "second-user-password",
     inviteCode: code,
+    confirmedAdult: true,
   });
   expect(first.user.accountName).toMatch(/^圆圆#[0-9]{6}$/u);
   expect(second.user.accountName).toMatch(/^圆圆#[0-9]{6}$/u);

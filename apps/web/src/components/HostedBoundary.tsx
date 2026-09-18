@@ -211,6 +211,7 @@ function HostedAuth({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [confirmedAdult, setConfirmedAdult] = useState(false);
   const auth = useMutation({
     mutationFn: async () => {
       const value = bootstrap
@@ -220,6 +221,7 @@ function HostedAuth({
               username: username.trim(),
               password,
               inviteCode: inviteCode.trim(),
+              confirmedAdult,
             })
           : await hostedApi.login({ username: username.trim(), password });
       if (value.csrfToken) configureHostedSession(true, value.csrfToken);
@@ -234,6 +236,7 @@ function HostedAuth({
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (register && !confirmedAdult) return;
     if (!auth.isPending) {
       if (register || bootstrap) onCreatingAccount(true);
       auth.mutate();
@@ -318,13 +321,31 @@ function HostedAuth({
                 测试积分由管理员分配；发送请求会按所选模型的价格扣除积分。密码请至少使用
                 10 个字符。
               </p>
+              <label className="hosted-checkbox">
+                <input
+                  type="checkbox"
+                  name="confirmedAdult"
+                  required
+                  checked={confirmedAdult}
+                  disabled={auth.isPending}
+                  aria-describedby="hosted-age-requirement"
+                  onChange={(event) => setConfirmedAdult(event.target.checked)}
+                />
+                <span>我已年满18周岁</span>
+              </label>
+              <p
+                id="hosted-age-requirement"
+                className="hosted-muted hosted-small hosted-field-help"
+              >
+                仅限年满18周岁的用户注册，请如实确认。
+              </p>
             </>
           ) : null}
           {auth.error ? <ErrorBlock error={auth.error} /> : null}
           <button
             className="button button--primary"
             type="submit"
-            disabled={auth.isPending}
+            disabled={auth.isPending || (register && !confirmedAdult)}
           >
             <LogIn size={18} />
             {auth.isPending
@@ -345,6 +366,7 @@ function HostedAuth({
               setRegister((value) => !value);
               auth.reset();
               setPassword("");
+              setConfirmedAdult(false);
             }}
           >
             {register ? "已有账号，返回登录" : "收到邀请码？创建账号"}

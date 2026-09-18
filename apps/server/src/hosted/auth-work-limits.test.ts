@@ -38,6 +38,42 @@ afterEach(() => {
   }
 });
 
+it.each([undefined, false, "true", 1, null])(
+  "rejects age confirmation %s before password work or invitation consumption",
+  async (confirmedAdult) => {
+    const { store, admin, auth } = fixture();
+    store.setLimits({ registrationEnabled: true }, admin.id);
+    const { code } = store.createInvite({ maxUses: 1 }, admin.id);
+    const input = { username: "adult-friend", password, inviteCode: code };
+    const checkInvitation = vi.spyOn(store, "assertRegistrationAllowed");
+
+    await expect(
+      auth.register({
+        ...input,
+        // Exercise the runtime boundary as well as typed callers.
+        confirmedAdult: confirmedAdult as boolean | undefined,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: "age_confirmation_required",
+      message: "请确认您已年满 18 周岁后再注册。",
+    });
+    expect(hash).not.toHaveBeenCalled();
+    expect(verify).not.toHaveBeenCalled();
+    expect(checkInvitation).not.toHaveBeenCalled();
+    expect(store.listUsers()).toHaveLength(1);
+    expect(store.listInvites()[0]!.uses).toBe(0);
+
+    const registered = await auth.register({ ...input, confirmedAdult: true });
+    expect(hash).toHaveBeenCalledTimes(1);
+    expect(store.listUsers()).toHaveLength(2);
+    expect(store.listInvites()[0]!.uses).toBe(1);
+    expect(auth.authenticate(registered.token).user.id).toBe(
+      registered.user.id,
+    );
+  },
+);
+
 it.each(["closed", "unknown", "revoked", "expired", "used"] as const)(
   "rejects %s registration before any password work",
   async (state) => {
@@ -61,6 +97,7 @@ it.each(["closed", "unknown", "revoked", "expired", "used"] as const)(
         password,
         inviteCode:
           state === "unknown" ? "unknown-invitation" : invitation.code,
+        confirmedAdult: true,
       }),
     ).rejects.toMatchObject({
       code: state === "closed" ? "registration_disabled" : "invalid_invite",
@@ -82,6 +119,7 @@ it.each(["closed", "revoked"] as const)(
       username: "friend",
       password,
       inviteCode: code,
+      confirmedAdult: true,
     });
     const rejected = expect(pending).rejects.toMatchObject({
       code: state === "closed" ? "registration_disabled" : "invalid_invite",
@@ -111,7 +149,12 @@ it("shares two fail-fast password slots across every authentication operation", 
     busy,
   );
   await expect(
-    auth.register({ username: "friend", password, inviteCode: code }),
+    auth.register({
+      username: "friend",
+      password,
+      inviteCode: code,
+      confirmedAdult: true,
+    }),
   ).rejects.toMatchObject(busy);
   await expect(
     auth.changePassword(admin.id, password, password),

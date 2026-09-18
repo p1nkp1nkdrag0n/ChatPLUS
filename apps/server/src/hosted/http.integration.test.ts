@@ -192,6 +192,7 @@ async function fixture(startSchedulers = false) {
       username,
       password: "testing-friend-password",
       inviteCode: code,
+      confirmedAdult: true,
     });
     expect(response.statusCode, response.body).toBe(200);
     return {
@@ -226,6 +227,72 @@ afterEach(async () => {
 });
 
 describe("hosted HTTP boundaries and lifecycle", () => {
+  it.each([
+    { label: "omitted", fields: {}, errorCode: "age_confirmation_required" },
+    {
+      label: "false",
+      fields: { confirmedAdult: false },
+      errorCode: "age_confirmation_required",
+    },
+    {
+      label: "string",
+      fields: { confirmedAdult: "true" },
+      errorCode: "validation_error",
+    },
+    {
+      label: "number",
+      fields: { confirmedAdult: 1 },
+      errorCode: "validation_error",
+    },
+    {
+      label: "null",
+      fields: { confirmedAdult: null },
+      errorCode: "validation_error",
+    },
+  ])(
+    "requires explicit adult confirmation for public registration: $label",
+    async ({ fields, errorCode }) => {
+      const { app, adminId } = await fixture();
+      const anonymous = client(app.userApp, publicOrigin);
+      await anonymous.request("GET", "/api/hosted/info");
+      const { code } = app.control.createInvite({ maxUses: 1 }, adminId);
+      const registration = {
+        username: "adult-friend",
+        password: "testing-friend-password",
+        inviteCode: code,
+      };
+
+      const rejected = await anonymous.request(
+        "POST",
+        "/api/hosted/auth/register",
+        { ...registration, ...fields },
+      );
+      expect(rejected.statusCode, rejected.body).toBe(400);
+      expect(rejected.json()).toMatchObject({ error: { code: errorCode } });
+      if (errorCode === "age_confirmation_required")
+        expect(rejected.json()).toMatchObject({
+          error: { message: "请确认您已年满 18 周岁后再注册。" },
+        });
+      expect(app.control.listUsers()).toHaveLength(1);
+      expect(app.control.listInvites()[0]!.uses).toBe(0);
+      expect(
+        (await anonymous.request("GET", "/api/hosted/me")).statusCode,
+      ).toBe(401);
+
+      const accepted = await anonymous.request(
+        "POST",
+        "/api/hosted/auth/register",
+        { ...registration, confirmedAdult: true },
+      );
+      expect(accepted.statusCode, accepted.body).toBe(200);
+      expect(app.control.listUsers()).toHaveLength(2);
+      expect(app.control.listInvites()[0]!.uses).toBe(1);
+      expect(
+        (await anonymous.request("GET", "/api/hosted/me")).statusCode,
+      ).toBe(200);
+    },
+  );
+
   it("persists account setup and independent bindings across reconnects without exposing private providers to another user", async () => {
     const f = await fixture();
     const owner = await f.register("model-settings-owner");
@@ -376,6 +443,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
       username: "pre-rollout-account",
       password: "testing-friend-password",
       inviteCode: code,
+      confirmedAdult: true,
     });
     f.app.control.database
       .prepare("UPDATE users SET created_at=? WHERE id=?")
@@ -562,6 +630,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
       username: "registration-rate-friend",
       password: "testing-friend-password",
       inviteCode: code,
+      confirmedAdult: true,
     };
     vi.useFakeTimers({ toFake: ["Date"] });
     const started = Date.now();
@@ -1038,6 +1107,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
         username: "nosign",
         password: "testing-friend-password",
         inviteCode: code,
+        confirmedAdult: true,
       },
     );
     expect(registered.statusCode, registered.body).toBe(200);
@@ -1109,6 +1179,7 @@ describe("hosted HTTP boundaries and lifecycle", () => {
           username: "legacy-friend",
           password: "testing-friend-password",
           inviteCode: code,
+          confirmedAdult: true,
           consentVersion,
           ...(acceptedConsent === undefined ? {} : { acceptedConsent }),
         },

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { HostedMe } from "../../apps/web/src/api/hosted";
 
-test("shows the generated login account until acknowledged, even after a session refresh", async ({
+test("requires adult confirmation and shows the generated login account until acknowledged", async ({
   page,
 }) => {
   const session: HostedMe = {
@@ -27,6 +27,7 @@ test("shows the generated login account until acknowledged, even after a session
   };
   let authenticated = false;
   let authenticatedReads = 0;
+  let registrationRequests = 0;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.clock.install();
@@ -53,10 +54,12 @@ test("shows the generated login account until acknowledged, even after a session
       });
   });
   await page.route("**/api/hosted/auth/register", async (route) => {
+    registrationRequests++;
     expect(route.request().postDataJSON()).toEqual({
       username: "圆圆",
       password: "testing-user-password",
       inviteCode: "test-invite",
+      confirmedAdult: true,
     });
     authenticated = true;
     await route.fulfill({ json: session });
@@ -87,7 +90,61 @@ test("shows the generated login account until acknowledged, even after a session
     .fill("圆圆");
   await page.getByLabel("密码", { exact: true }).fill("testing-user-password");
   await page.getByLabel("邀请码", { exact: true }).fill("test-invite");
-  await page.getByRole("button", { name: "创建账号", exact: true }).click();
+  const adultConfirmation = page.getByRole("checkbox", {
+    name: "我已年满18周岁",
+  });
+  const createAccount = page.getByRole("button", {
+    name: "创建账号",
+    exact: true,
+  });
+  await expect(adultConfirmation).not.toBeChecked();
+  await expect(adultConfirmation).toHaveAttribute("required", "");
+  await expect(createAccount).toBeDisabled();
+  await page.getByLabel("邀请码", { exact: true }).press("Enter");
+  expect(registrationRequests).toBe(0);
+  // The submit handler also enforces confirmation if native validation is skipped.
+  await page
+    .locator(".hosted-form")
+    .evaluate((form) =>
+      form.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      ),
+    );
+  expect(registrationRequests).toBe(0);
+  await adultConfirmation.check();
+  await expect(createAccount).toBeEnabled();
+  await adultConfirmation.uncheck();
+  await expect(createAccount).toBeDisabled();
+  await adultConfirmation.check();
+  await page.getByRole("button", { name: "已有账号，返回登录" }).click();
+  await expect(adultConfirmation).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "登录", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "收到邀请码？创建账号" }).click();
+  await expect(adultConfirmation).not.toBeChecked();
+  await expect(createAccount).toBeDisabled();
+  await page.getByLabel("密码", { exact: true }).fill("testing-user-password");
+  await page.screenshot({
+    path: test.info().outputPath("registration-age-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await adultConfirmation.scrollIntoViewIfNeeded();
+  await expect(adultConfirmation).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: test.info().outputPath("registration-age-mobile.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await adultConfirmation.check();
+  await createAccount.click();
+  await expect.poll(() => registrationRequests).toBe(1);
   await expect(
     page.getByRole("heading", { name: "账号创建成功" }),
   ).toBeVisible();

@@ -218,6 +218,7 @@ export const hostedApi = {
     username: string;
     password: string;
     inviteCode: string;
+    confirmedAdult: boolean;
   }) =>
     request<HostedMe>(`${prefix}/auth/register`, {
       method: "POST",

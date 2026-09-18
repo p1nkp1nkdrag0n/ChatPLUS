@@ -68,9 +68,16 @@ export class HostedAuthService {
     username: string;
     password: string;
     inviteCode: string;
+    confirmedAdult?: boolean | undefined;
     consentVersion?: string | undefined;
     acceptedConsent?: boolean | undefined;
   }): Promise<HostedLoginResult> {
+    if (input.confirmedAdult !== true)
+      throw new HostedError(
+        400,
+        "age_confirmation_required",
+        "请确认您已年满 18 周岁后再注册。",
+      );
     normalizeUsername(input.username);
     validatePassword(input.password);
     this.store.assertRegistrationAllowed(input.inviteCode);

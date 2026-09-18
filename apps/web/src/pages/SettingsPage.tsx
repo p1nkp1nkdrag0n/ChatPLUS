@@ -15,6 +15,7 @@ import { PageHeader } from "../components/PageHeader";
 import { ProviderSettings } from "../components/llm/ProviderSettings";
 import { BadgeImageSettings } from "../components/achievements/BadgeImageSettings";
 import { useHosted } from "../hooks/useHosted";
+import { HostedAccountIdentity } from "../components/hosted/HostedAccountIdentity";
 
 export default function SettingsPage() {
   const hosted = useHosted();
@@ -83,6 +84,12 @@ export default function SettingsPage() {
           </Link>
         </div>
       )}
+      {hosted ? (
+        <section className="hosted-panel hosted-form">
+          <h2>账号与称呼</h2>
+          <HostedAccountIdentity user={hosted.session.user} />
+        </section>
+      ) : null}
       {query.isPending ? <LoadingBlock label="正在读取本地设置…" /> : null}
       {query.isError ? <ErrorBlock error={query.error} /> : null}
       {form ? (

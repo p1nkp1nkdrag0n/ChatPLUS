@@ -54,6 +54,7 @@ async function openHostedChat(
       user: {
         id: "ui-hosted-user",
         username: "测试朋友",
+        accountName: "测试朋友#123456",
         role: "user",
         status: "active",
         mustChangePassword: false,

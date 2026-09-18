@@ -200,7 +200,7 @@ export default function HostedAdminPage() {
           ))}
         </nav>
         <div className="hosted-admin-nav__account">
-          <span>{hosted.session.user.username}</span>
+          <span>{hosted.session.user.accountName}</span>
           <button
             className="text-button"
             disabled={loggingOut}
@@ -339,8 +339,8 @@ function UsersSection() {
         <label className="hosted-search">
           <Search size={17} />
           <input
-            aria-label="搜索用户名"
-            placeholder="用户名或账号 ID"
+            aria-label="搜索账号或用户名"
+            placeholder="完整账号、用户名或账号 ID"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
@@ -378,7 +378,8 @@ function UsersSection() {
                   {query.data.users.map((user) => (
                     <tr key={user.id}>
                       <td>
-                        <strong>{user.username}</strong>
+                        <strong>{user.accountName}</strong>
+                        <small>角色称呼：{user.username}</small>
                         <small>{user.id}</small>
                         {user.role === "admin" ? <small>管理员</small> : null}
                       </td>
@@ -449,7 +450,7 @@ function UserEditor({
   return (
     <section className="hosted-panel hosted-editor">
       <div className="hosted-section-heading">
-        <h2>管理 {user.username}</h2>
+        <h2>管理 {user.accountName}</h2>
         <button className="text-button" onClick={onClose}>
           关闭
         </button>

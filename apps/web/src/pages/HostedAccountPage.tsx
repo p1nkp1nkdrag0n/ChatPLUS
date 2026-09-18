@@ -7,6 +7,7 @@ import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordChange } from "../components/HostedBoundary";
 import { AttemptTable, LedgerTable } from "../components/hosted/HostedBilling";
+import { HostedAccountIdentity } from "../components/hosted/HostedAccountIdentity";
 
 export default function HostedAccountPage() {
   const hosted = useHosted();
@@ -30,7 +31,7 @@ export default function HostedAccountPage() {
     <div className="page hosted-account">
       <PageHeader
         title="我的账号"
-        description={`${hosted.session.user.username} · 测试积分与使用明细`}
+        description={`${hosted.session.user.accountName} · 测试积分与使用明细`}
         actions={
           <button
             className="button button--secondary"
@@ -49,6 +50,10 @@ export default function HostedAccountPage() {
         }
       />
       {logoutError ? <ErrorBlock error={logoutError} /> : null}
+      <section className="hosted-panel hosted-form">
+        <h2>账号与称呼</h2>
+        <HostedAccountIdentity user={hosted.session.user} />
+      </section>
       <div className="hosted-stats">
         <section>
           <Wallet size={22} />

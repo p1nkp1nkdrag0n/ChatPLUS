@@ -187,11 +187,11 @@ export function AppShell() {
                 to="/account"
                 className="hosted-wallet-link"
                 aria-label="账户"
-                title="账户"
+                title={hosted.session.user.accountName}
               >
                 <Wallet size={20} aria-hidden="true" />
                 <span className="hosted-wallet-link__mobile-label">账户</span>
-                <span>{hosted.session.user.username}</span>
+                <span>{hosted.session.user.accountName}</span>
                 <strong>
                   {formatPoints(hosted.session.wallet.availableMicros)} 积分
                 </strong>

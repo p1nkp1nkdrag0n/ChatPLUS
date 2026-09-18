@@ -16,9 +16,12 @@ import {
   resetHostedLocalState,
 } from "../lib/hostedSession";
 import { ErrorBlock, LoadingBlock } from "./Feedback";
+import { HostedAccountIdentity } from "./hosted/HostedAccountIdentity";
 
 export function HostedBoundary({ children }: { children: ReactNode }) {
   const client = useQueryClient();
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [createdAccount, setCreatedAccount] = useState<HostedMe>();
   const info = useQuery({
     queryKey: hostedInfoKey,
     queryFn: async () => {
@@ -55,6 +58,8 @@ export function HostedBoundary({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(HOSTED_SESSION_EXPIRED, expired);
   }, [client]);
   const acceptSession = (session: HostedMe) => {
+    setCreatedAccount(undefined);
+    setCreatingAccount(false);
     client.removeQueries({
       predicate: (query) =>
         query.queryKey[0] !== "hosted" ||
@@ -65,6 +70,42 @@ export function HostedBoundary({ children }: { children: ReactNode }) {
     client.setQueryData(hostedMeKey, session);
     void client.invalidateQueries({ queryKey: hostedInfoKey });
   };
+  const auth = info.data ? (
+    <HostedAuth
+      info={info.data}
+      onAuthenticated={acceptSession}
+      onCreatingAccount={setCreatingAccount}
+      onRegistered={(session) => {
+        setCreatedAccount(session);
+        setCreatingAccount(false);
+      }}
+    />
+  ) : null;
+  // Account creation sets the session cookie before the response arrives. Keep
+  // background /me refreshes from skipping the new account's save reminder.
+  if (createdAccount)
+    return (
+      <div className="hosted-auth">
+        <div className="hosted-auth__card hosted-form">
+          <div className="hosted-auth__brand">
+            <Sprout size={30} />
+            <span>Dearvale</span>
+          </div>
+          <h1>账号创建成功</h1>
+          <p className="hosted-muted">
+            请保存下面的完整账号。下次登录时，请一起输入用户名、# 和六位编号。
+          </p>
+          <HostedAccountIdentity user={createdAccount.user} />
+          <button
+            className="button button--primary"
+            onClick={() => acceptSession(createdAccount)}
+          >
+            我已保存账号，进入 Dearvale
+          </button>
+        </div>
+      </div>
+    );
+  if (creatingAccount) return auth;
   const logout = async () => {
     await hostedApi.logout();
     resetHostedLocalState();
@@ -92,8 +133,7 @@ export function HostedBoundary({ children }: { children: ReactNode }) {
     );
   if (!info.data?.hosted) return children;
   if (me.isPending) return <LoadingBlock label="正在验证账号…" fullPage />;
-  if (me.error instanceof ApiError && me.error.status === 401)
-    return <HostedAuth info={info.data} onAuthenticated={acceptSession} />;
+  if (me.error instanceof ApiError && me.error.status === 401) return auth;
   if (me.error && (!me.data || !isTransientSessionError(me.error)))
     return (
       <div className="hosted-auth">
@@ -110,8 +150,7 @@ export function HostedBoundary({ children }: { children: ReactNode }) {
         </button>
       </div>
     );
-  if (!me.data)
-    return <HostedAuth info={info.data} onAuthenticated={acceptSession} />;
+  if (!me.data) return auth;
   if (me.data.user.mustChangePassword)
     return <PasswordChange required onSaved={acceptSession} />;
   if (info.data.surface === "admin" && me.data.user.role !== "admin")
@@ -159,9 +198,13 @@ function isTransientSessionError(error: unknown): boolean {
 function HostedAuth({
   info,
   onAuthenticated,
+  onCreatingAccount,
+  onRegistered,
 }: {
   info: HostedInfo;
   onAuthenticated: (session: HostedMe) => void;
+  onCreatingAccount: (pending: boolean) => void;
+  onRegistered: (session: HostedMe) => void;
 }) {
   const bootstrap = info.surface === "admin" && info.bootstrapRequired === true;
   const [register, setRegister] = useState(false);
@@ -184,12 +227,17 @@ function HostedAuth({
     },
     onSuccess: (value) => {
       setPassword("");
-      onAuthenticated(value);
+      if (register || bootstrap) onRegistered(value);
+      else onAuthenticated(value);
     },
+    onError: () => onCreatingAccount(false),
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!auth.isPending) auth.mutate();
+    if (!auth.isPending) {
+      if (register || bootstrap) onCreatingAccount(true);
+      auth.mutate();
+    }
   };
   return (
     <div className="hosted-auth">
@@ -219,15 +267,28 @@ function HostedAuth({
         </p>
         <form className="hosted-form" onSubmit={submit}>
           <label className="field">
-            用户名
+            {register || bootstrap ? "用户名（角色对你的称呼）" : "完整账号"}
             <input
               autoComplete="username"
+              aria-describedby="hosted-username-help"
+              placeholder={
+                register || bootstrap ? "例如：圆圆" : "例如：圆圆#123456"
+              }
               required
-              maxLength={64}
+              minLength={2}
+              maxLength={register || bootstrap ? 32 : 39}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
             />
           </label>
+          <p
+            id="hosted-username-help"
+            className="hosted-muted hosted-small hosted-field-help"
+          >
+            {register || bootstrap
+              ? "角色会用这个用户名来称呼你，例如填写“圆圆”，角色就会称呼你“圆圆”；会根据对话自然使用，不必每次回复都叫名字。用户名可以重复，创建账号后会自动添加 # 和随机六位编号，用于区分账号。"
+              : "请输入创建账号时保存的完整账号（用户名#六位编号）。已有的旧账号也可以继续使用原用户名登录。"}
+          </p>
           <label className="field">
             密码
             <input
@@ -269,9 +330,9 @@ function HostedAuth({
             {auth.isPending
               ? "正在验证…"
               : bootstrap
-                ? "创建管理员并进入"
+                ? "创建管理员账号"
                 : register
-                  ? "注册并进入"
+                  ? "创建账号"
                   : "登录"}
           </button>
         </form>

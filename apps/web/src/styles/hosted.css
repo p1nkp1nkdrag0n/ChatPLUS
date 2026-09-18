@@ -72,6 +72,31 @@
 .hosted-small {
   font-size: 12px;
 }
+.hosted-field-help {
+  margin: -10px 0 0;
+}
+.hosted-account-identity {
+  min-width: 0;
+}
+.hosted-account-identity input {
+  font-variant-numeric: tabular-nums;
+}
+.hosted-account-identity dl {
+  margin: 20px 0 8px;
+}
+.hosted-account-identity dt {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.hosted-account-identity dd {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.hosted-account-identity > p:last-child {
+  margin-bottom: 0;
+}
 .hosted-form {
   display: flex;
   flex-direction: column;

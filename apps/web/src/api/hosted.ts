@@ -16,6 +16,7 @@ export interface HostedInfo {
 export interface HostedUser {
   id: string;
   username: string;
+  accountName: string;
   role: "admin" | "user";
   status: "active" | "banned";
   mustChangePassword: boolean;

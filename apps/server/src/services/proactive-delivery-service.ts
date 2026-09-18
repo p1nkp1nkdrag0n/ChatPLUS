@@ -35,6 +35,7 @@ export class ProactiveDeliveryService {
     private readonly llm: LlmService,
     private readonly sse: SseHub,
     private readonly generations: ProactiveGenerationService,
+    private readonly userDisplayName?: string,
   ) {}
 
   loadPolicy(agentId: string, nowUtc: string): ProactiveGenerationPolicy {
@@ -121,6 +122,9 @@ export class ProactiveDeliveryService {
         if (currentSpec === undefined)
           throw new Error("Character no longer exists");
         const composition = buildProactiveCompositionPrompt({
+          ...(this.userDisplayName === undefined
+            ? {}
+            : { userDisplayName: this.userDisplayName }),
           nowUtc,
           character: currentSpec,
           subject: context.subject,

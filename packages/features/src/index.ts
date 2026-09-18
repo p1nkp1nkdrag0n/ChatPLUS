@@ -27,6 +27,7 @@ export * from "./personal-intent.js";
 export * from "./proactive-dialogue.js";
 export * from "./proactive-delivery.js";
 export * from "./prompt-assembler.js";
+export * from "./user-identity-prompt.js";
 export * from "./prompt-segments/index.js";
 export * from "./relationship-engine.js";
 export * from "./reply-strategy.js";

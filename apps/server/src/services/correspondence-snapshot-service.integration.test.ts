@@ -84,6 +84,43 @@ describe("CorrespondenceSnapshotService SQLite integration", () => {
     }
   });
 
+  it("freezes the account display name once and preserves it on retries", async () => {
+    let claimedTask: Readonly<TemporalTask> | undefined;
+    snapshotService = new CorrespondenceSnapshotService(
+      store,
+      {},
+      undefined,
+      "圆圆",
+    );
+    const handler = snapshotService.createOutboundArrivalTaskHandler("shadow");
+    await createCatchUp({
+      mode: "shadow",
+      commit: (context) => {
+        claimedTask = context.task;
+        handler.commit(context);
+      },
+    }).catchUpAgent(AGENT_ID, OBSERVED_AT);
+    const original = repository.getSnapshotForIncomingLetter(
+      outboundTask.entityId,
+    )!;
+    expect(original.contextJson).toHaveProperty("userIdentity", {
+      displayName: "圆圆",
+    });
+    const retryService = new CorrespondenceSnapshotService(
+      store,
+      {},
+      undefined,
+      "另一个称呼",
+    );
+    const retried = retryService.freezeOutboundArrival({
+      task: claimedTask!,
+      observedNowUtc: FUTURE_RETRY_AT,
+      mode: "shadow",
+    });
+    expect(retried.snapshot.contextJson).toEqual(original.contextJson);
+    expect(retried.snapshot.contextHash).toBe(original.contextHash);
+  });
+
   it("excludes invalidated pressure projections while retaining supported pressure in a new snapshot", async () => {
     const lifeRepository = new LifeRepository(database);
     for (const id of ["pressure-valid", "pressure-invalid"]) {

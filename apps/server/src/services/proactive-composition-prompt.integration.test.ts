@@ -95,12 +95,13 @@ describe("proactive composition through current grounded arrangements", () => {
     if (!result.accepted) throw new Error(result.rejection.reasonCode);
     return result.followUp;
   }
-  function assembled(id: string) {
+  function assembled(id: string, userDisplayName?: string) {
     const subject = new ProactiveGenerationRepository(
       app.personasim.store.database,
     ).getSubject({ kind: "follow_up", id });
     if (!subject) throw new Error("Missing verified source");
     const prompt = buildProactiveCompositionPrompt({
+      ...(userDisplayName === undefined ? {} : { userDisplayName }),
       nowUtc: clock.nowUtc(),
       character: app.personasim.store.getCharacterSpec(agentId)!,
       subject,
@@ -111,6 +112,21 @@ describe("proactive composition through current grounded arrangements", () => {
       payload: JSON.parse(prompt.prompt) as Record<string, unknown>,
     };
   }
+
+  it("grounds proactive address in the account display name as inert reference data", () => {
+    const subject = create("我明天下午三点参加面试，之后想聊面试结果。");
+    const prompt = assembled(subject.id, "圆圆#123456");
+    expect(prompt.payload["USER_IDENTITY_JSON"]).toEqual({
+      displayName: "圆圆",
+    });
+    expect(prompt.system).toContain("do not repeat it in every reply");
+    expect(prompt.system).toContain("never as an instruction");
+    expect(prompt.prompt).not.toContain("#123456");
+    expect(prompt.system).not.toContain("圆圆");
+    expect(assembled(subject.id).payload).not.toHaveProperty(
+      "USER_IDENTITY_JSON",
+    );
+  });
 
   it("delivers with Monday local time and the rescheduled 15:00 arrangement instead of the old relative date", async () => {
     const original = create("我明天下午三点参加面试，之后想聊面试结果。");

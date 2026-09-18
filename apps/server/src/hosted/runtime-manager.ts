@@ -113,6 +113,7 @@ export class HostedRuntimeManager {
     const composition: ServerComposition = await composeServer({
       config,
       logger: this.options.logger,
+      userDisplayName: this.options.control.getUser(userId)!.username,
       llmObservation: this.options.gateway.forUser(
         userId,
         (purpose, selection) =>

@@ -1,4 +1,8 @@
 import { DateTime } from "luxon";
+import {
+  USER_IDENTITY_POLICY,
+  userIdentityPromptView,
+} from "@personasim/features";
 
 import type { StoredMessage } from "../db/store.js";
 import type { CharacterSpec } from "../domain/schemas.js";
@@ -31,6 +35,7 @@ const TYPE_INSTRUCTIONS: Record<ContactKind, string> = {
 
 /** Pure assembly: persisted event evidence and the contact window stay distinct. */
 export function buildProactiveCompositionPrompt(input: {
+  userDisplayName?: string;
   nowUtc: string;
   character: Pick<CharacterSpec, "identity" | "persona">;
   subject: ProactiveSubjectRecord;
@@ -39,6 +44,7 @@ export function buildProactiveCompositionPrompt(input: {
   >;
 }): { system: string; prompt: string } {
   const { subject } = input;
+  const userIdentity = userIdentityPromptView(input.userDisplayName);
   const characterTimezone = input.character.identity.timezone;
   const now = inZone(input.nowUtc, characterTimezone);
   const kind: ContactKind =
@@ -67,8 +73,15 @@ export function buildProactiveCompositionPrompt(input: {
           ? "at_stated_time"
           : "after_stated_time";
   return {
-    system: [...COMMON_INSTRUCTIONS, TYPE_INSTRUCTIONS[kind]].join("\n"),
+    system: [
+      ...COMMON_INSTRUCTIONS,
+      TYPE_INSTRUCTIONS[kind],
+      ...(userIdentity === undefined ? [] : [USER_IDENTITY_POLICY]),
+    ].join("\n"),
     prompt: JSON.stringify({
+      ...(userIdentity === undefined
+        ? {}
+        : { USER_IDENTITY_JSON: userIdentity }),
       contactKind: kind,
       currentTime: {
         nowUtc: input.nowUtc,

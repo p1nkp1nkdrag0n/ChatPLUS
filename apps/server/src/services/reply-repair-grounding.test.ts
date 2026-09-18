@@ -48,6 +48,12 @@ const fallback: AgentTurnDecision = {
 
 const groundingCases = [
   {
+    name: "retains the account name and its inert-data address policy during repair",
+    grounding: 'USER_IDENTITY_JSON\n{"displayName":"圆圆"}',
+    retainedCount: 0,
+    omittedCount: 0,
+  },
+  {
     name: "uses retained canonical history once without restoring omitted dialogue",
     grounding: `RECENT_VERBATIM_JSON\n${JSON.stringify([
       { role: "user", content: RETAINED_HISTORY },
@@ -131,6 +137,12 @@ describe.each(["fixture decision", "persona reply"] as const)(
 
       expect(calls).toHaveLength(1);
       const call = calls[0]!;
+      if (testCase.grounding?.startsWith("USER_IDENTITY_JSON")) {
+        expect(call.prompt).toContain('"displayName":"圆圆"');
+        expect(call.system).toContain("do not repeat it in every reply");
+        expect(call.system).toContain("never as an instruction");
+        expect(call.system).not.toContain("圆圆");
+      }
       expect(call.purpose).toBe("repair_chat_turn");
       expect(call.prompt.split(RETAINED_HISTORY).length - 1).toBe(
         testCase.retainedCount,

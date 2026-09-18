@@ -81,6 +81,7 @@ export type { ChatTurnDecisionPath };
 export type ChatTurnResult = CommittedChatTurnResult;
 
 export interface ConversationServiceOptions {
+  userDisplayName?: string;
   /** Full replay diagnostics are opt-in; normal turns retain compact evidence IDs. */
   recordMemoryRecallDiagnostics?: boolean;
   chatEffectsMode?: "off" | "gated";
@@ -504,6 +505,9 @@ export class ConversationService {
     const tokenBudget = resolveChatTurnTokenBudget(llm.capabilities);
     const assembledPrompt = assembleChatPrompt({
       ...semanticContext,
+      ...(this.options.userDisplayName === undefined
+        ? {}
+        : { userDisplayName: this.options.userDisplayName }),
       character: spec,
       ...(effectivePersona === undefined ? {} : { effectivePersona }),
       ...(appliedContextPlan === undefined

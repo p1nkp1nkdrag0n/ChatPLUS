@@ -32,6 +32,10 @@ import {
 import { describeRuntimeState } from "./runtime-state-description.js";
 import { REPLY_TASK_GROUNDING_POLICY } from "./reply-task-grounding-policy.js";
 import {
+  USER_IDENTITY_POLICY,
+  userIdentityPromptView,
+} from "./user-identity-prompt.js";
+import {
   projectCharacterTime,
   projectPromptTemporalData,
 } from "./character-time.js";
@@ -116,6 +120,8 @@ export const REPLY_STEERING_REMOVED_FIELDS = {
 export type ReplySteeringMode = keyof typeof REPLY_STEERING_REMOVED_FIELDS;
 
 export interface AssemblePromptInput {
+  /** Account display name only; never an account handle or routing identifier. */
+  userDisplayName?: string;
   character: CharacterForPrompt;
   effectivePersona?: EffectivePersonaSnapshot;
   state: RuntimeStateLike;
@@ -1085,6 +1091,30 @@ export function assembleChatPrompt(
     globalOverflowPolicy: "error",
     render: () => REPLY_TASK_GROUNDING_POLICY,
   });
+  const userIdentity = userIdentityPromptView(input.userDisplayName);
+  if (userIdentity !== undefined) {
+    registry.register({
+      id: "01c_user_identity_policy",
+      placement: "system",
+      priority: 100,
+      tokenBudget: 250,
+      required: true,
+      cacheable: true,
+      cacheKey: () => "user-identity-policy:v1",
+      globalOverflowPolicy: "error",
+      render: () => USER_IDENTITY_POLICY,
+    });
+    registry.register({
+      id: "07b_user_identity",
+      placement: "prompt",
+      priority: 100,
+      tokenBudget: 512,
+      required: true,
+      cacheable: false,
+      globalOverflowPolicy: "error",
+      render: () => "USER_IDENTITY_JSON\n" + JSON.stringify(userIdentity),
+    });
+  }
   if (input.followUpContext !== undefined) {
     registry.register(createFollowUpContextPromptSegment());
   }
@@ -1299,6 +1329,7 @@ function retainedReplyGrounding(assembled: {
   const entries = [
     ["13_retrieved_evidence", "RETRIEVED_EVIDENCE_JSON"],
     ["07_user_model", "REFERENCE_CONTEXT_JSON"],
+    ["07b_user_identity", "USER_IDENTITY_JSON"],
     ["08_runtime_state", "RUNTIME_STATE_JSON"],
     ["14_recent_verbatim", "RECENT_VERBATIM_JSON"],
     ["10z_life_context", "LIFE_CONTEXT_JSON"],

@@ -19,6 +19,7 @@ import {
 import {
   canonicalCorrespondenceJson,
   canonicalLetterGenerationSnapshot,
+  userIdentityPromptView,
 } from "@personasim/features";
 import { DateTime } from "luxon";
 
@@ -146,6 +147,7 @@ export class CorrespondenceSnapshotService {
       nowUtc: string,
       topicText: string,
     ) => EffectivePersonaSnapshot,
+    private readonly userDisplayName?: string,
   ) {
     // The repository must share this exact connection so all correspondence
     // writes participate in the store.transaction below.
@@ -202,6 +204,7 @@ export class CorrespondenceSnapshotService {
           input.task.dueAtUtc,
           this.#budgets,
           this.personaAtArrival,
+          this.userDisplayName,
         );
         snapshot = this.#repository.insertSnapshot({
           incomingLetterId: delivered.id,
@@ -272,6 +275,7 @@ function buildSnapshot(
     nowUtc: string,
     topicText: string,
   ) => EffectivePersonaSnapshot,
+  userDisplayName?: string,
 ): SnapshotBuildResult {
   const dispatchedAtUtc = incoming.dispatchedAtUtc;
   const timezone = incoming.transitTimezone;
@@ -514,7 +518,9 @@ function buildSnapshot(
     budgets.readyKeepsakes,
   );
 
+  const userIdentity = userIdentityPromptView(userDisplayName);
   const contextJson = LetterGenerationContextV1Schema.parse({
+    ...(userIdentity === undefined ? {} : { userIdentity }),
     schemaVersion: 1,
     effectiveAtUtc,
     ...(personaAtArrival === undefined

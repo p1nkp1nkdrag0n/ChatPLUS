@@ -5,6 +5,10 @@ import {
 
 import { canonicalCorrespondenceJson } from "./canonical-json.js";
 import type { LetterStrategy } from "./letter-strategy.js";
+import {
+  USER_IDENTITY_POLICY,
+  userIdentityPromptView,
+} from "../user-identity-prompt.js";
 
 export interface LetterPromptIncomingLetter {
   readonly id: string;
@@ -50,8 +54,14 @@ export function letterReplyParticipants(
       "Letter reply requires the frozen character author identity",
     );
   }
+  const userIdentity = userIdentityPromptView(
+    "userIdentity" in snapshot.contextJson
+      ? snapshot.contextJson.userIdentity.displayName
+      : undefined,
+  );
   const recipient =
-    typeof address === "string" && address.trim() ? address.trim() : "朋友";
+    userIdentity?.displayName ??
+    (typeof address === "string" && address.trim() ? address.trim() : "朋友");
   return { author: author.trim(), recipient, salutation: `${recipient}：` };
 }
 
@@ -194,8 +204,14 @@ export function buildLetterReplyPrompt(
     referenceBindings.map((item) => [item.evidenceId, item.localId]),
   );
   const participants = letterReplyParticipants(snapshot);
+  const userIdentity = userIdentityPromptView(
+    "userIdentity" in generationContext
+      ? generationContext.userIdentity.displayName
+      : undefined,
+  );
   const system = [
     "Write one complete correspondence letter in the supplied character identity; do not answer as an instant chat message.",
+    ...(userIdentity === undefined ? [] : [USER_IDENTITY_POLICY]),
     `The character first reads the incoming letter at LETTER_ARRIVAL_EFFECTIVE_TIME=${snapshot.effectiveAtUtc}.`,
     "Use only USER_LETTER and SNAPSHOT_EVIDENCE as factual sources. The incoming USER_LETTER is read at that arrival boundary; SNAPSHOT_EVIDENCE has the same cutoff. Never use generation time, live state, later conversation, or other future knowledge.",
     "A plan is not an outcome; advice is not a decision; a decision is not an action; an action is not an observed result. State only the strongest status supported by snapshot evidence.",
@@ -209,6 +225,9 @@ export function buildLetterReplyPrompt(
   const prompt = canonicalCorrespondenceJson(
     localizeReferenceFields(
       {
+        ...(userIdentity === undefined
+          ? {}
+          : { USER_IDENTITY_JSON: userIdentity }),
         ALLOWED_REFERENCED_EVIDENCE_IDS: referenceBindings.map(
           (item) => item.localId,
         ),

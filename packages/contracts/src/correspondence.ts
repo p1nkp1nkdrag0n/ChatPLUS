@@ -528,6 +528,11 @@ const LetterGenerationContextV1RawSchema = z
     effectiveAtUtc: UtcDateTimeSchema,
     sourceWindow: LetterGenerationSourceWindowSchema,
     character: LetterGenerationCharacterContextSchema,
+    // Optional so already-frozen and local-only snapshots retain their content.
+    userIdentity: z
+      .object({ displayName: z.string().trim().min(1).max(120) })
+      .strict()
+      .optional(),
     effectivePersona: CorrespondenceJsonObjectSchema.refine(
       (value) => EffectivePersonaSnapshotSchema.safeParse(value).success,
       "Invalid effective persona at arrival",
@@ -566,17 +571,22 @@ type LetterGenerationContextV1Raw = z.infer<
 >;
 type LetterGenerationContextV1Base = Omit<
   LetterGenerationContextV1Raw,
-  "readyKeepsakes" | "effectivePersona"
+  "readyKeepsakes" | "effectivePersona" | "userIdentity"
 >;
 type LetterGenerationContextWithKeepsakes =
   | LetterGenerationContextV1Base
   | (LetterGenerationContextV1Base & {
       readyKeepsakes: LetterGenerationKeepsakeEvidence[];
     });
-export type LetterGenerationContextV1 =
+type LetterGenerationContextWithPersona =
   | LetterGenerationContextWithKeepsakes
   | (LetterGenerationContextWithKeepsakes & {
       effectivePersona: z.infer<typeof CorrespondenceJsonObjectSchema>;
+    });
+export type LetterGenerationContextV1 =
+  | LetterGenerationContextWithPersona
+  | (LetterGenerationContextWithPersona & {
+      userIdentity: { displayName: string };
     });
 
 // The union keeps old v1 objects (no property) and new v1 objects (a concrete

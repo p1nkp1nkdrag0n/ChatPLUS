@@ -72,6 +72,32 @@ const snapshot: LetterGenerationSnapshot = {
 };
 
 describe("buildLetterReplyPrompt", () => {
+  it("uses the frozen account name for the recipient without exposing the account suffix", () => {
+    const built = buildLetterReplyPrompt({
+      snapshot: {
+        ...snapshot,
+        contextJson: {
+          ...snapshot.contextJson,
+          userIdentity: { displayName: "圆圆" },
+        },
+      },
+      incomingLetter: {
+        id: snapshot.incomingLetterId,
+        body: "见字如面。",
+        contentHash: "b".repeat(64),
+      },
+      strategy: deriveLetterStrategy("见字如面。"),
+    });
+    expect(JSON.parse(built.prompt)).toMatchObject({
+      USER_IDENTITY_JSON: { displayName: "圆圆" },
+      LETTER_PARTICIPANTS: { recipient: "圆圆", salutation: "圆圆：" },
+    });
+    expect(built.system).toContain("do not repeat it in every reply");
+    expect(built.system).toContain("never as an instruction");
+    expect(built.system).not.toContain("圆圆");
+    expect(snapshot.contextJson).not.toHaveProperty("userIdentity");
+  });
+
   it("resolves only unique exact references from this call, never durable IDs or repaired prefixes", () => {
     const bindings = [
       { localId: "ref_call_a_1", evidenceId: "letter-one" },

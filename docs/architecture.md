@@ -54,6 +54,27 @@ Each arrow requires evidence. Discussion is not a decision, a decision is not an
 
 ## Workspace boundaries
 
+### User names in prompt assembly
+
+Hosted account `username` is the user's chosen form of address. It may be shared by
+multiple accounts. The full `accountName` (`username#NNNNNN`) identifies an account
+for login and administration; tenant routing continues to use the immutable user
+ID. Only the base username crosses into `ComposeServerOptions.userDisplayName`.
+
+Chat and proactive composition expose the base name as `USER_IDENTITY_JSON`
+reference data. Fixed application policy tells the character to use that name
+naturally when addressing the user, without requiring it in every reply. A name
+does not establish intimacy or shared history. Explicit conversational preferences
+for another form of address still apply. Names are JSON-escaped data and cannot
+override instructions; account numbers are never a form of address. Chat preserves
+the identity and policy segments whole when enforcing the prompt token budget.
+
+Correspondence freezes the same base name in the arrival snapshot, so later reply
+generation and retries use the same recipient and salutation. Old snapshots and
+local installations without an account name preserve their existing behavior.
+
+### Package and runtime responsibilities
+
 - `packages/contracts`: shared Zod schemas and inferred TypeScript types.
 - `packages/kernel`: shared prompt-token estimation plus the retained historical plugin SDK; the server no longer uses its registry or plugin lifecycle.
 - `packages/features`: pure state, memory, relationship, fuzzy-life, decision, outcome, prompt and proactive rules.

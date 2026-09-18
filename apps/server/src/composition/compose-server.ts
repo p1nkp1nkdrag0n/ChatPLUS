@@ -79,6 +79,8 @@ import { DiaryService } from "../services/diary-service.js";
 import type { RouteServices } from "../http/routes.js";
 
 export interface ComposeServerOptions {
+  /** Trusted tenant binding to the account's user-chosen display name. */
+  readonly userDisplayName?: string;
   readonly replySteeringMode?: ReplySteeringMode;
   readonly config: ServerConfig;
   readonly logger: FastifyBaseLogger;
@@ -222,6 +224,7 @@ export async function composeServer(
         ? (baseSpec, nowUtc, topicText) =>
             personaRuntime.snapshotAsOf({ baseSpec, nowUtc, topicText })
         : undefined,
+      options.userDisplayName,
     );
     const letterReplyGeneration =
       correspondenceMode === "enforced" && correspondenceCrypto !== undefined
@@ -389,6 +392,9 @@ export async function composeServer(
             config.lifePlanningMode,
           );
     const conversationOptions = {
+      ...(options.userDisplayName === undefined
+        ? {}
+        : { userDisplayName: options.userDisplayName }),
       recordMemoryRecallDiagnostics: config.developerRoutes,
       ...(replySteeringMode === undefined ? {} : { replySteeringMode }),
       chatEffectsMode: config.chatEffectsMode,
@@ -504,6 +510,7 @@ export async function composeServer(
         llm,
         sse,
         proactiveGenerations,
+        options.userDisplayName,
       );
     const proactiveTasks = new ProactiveTaskRepository(
       database,

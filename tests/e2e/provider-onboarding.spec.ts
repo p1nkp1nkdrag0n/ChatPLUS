@@ -112,6 +112,7 @@ async function mockAccount(
         user: {
           id: "account-a",
           username: "test-user",
+          accountName: "test-user#123456",
           role: options.role ?? "user",
           status: "active",
           mustChangePassword: false,
@@ -288,6 +289,70 @@ test("first-use account gate protects deep links and platform setup persists thr
   expect(state.errors).toEqual([]);
 });
 
+test("own-key choice opens a separate red warning with back and explicit continue", async ({
+  page,
+}) => {
+  const state = await mockAccount(page);
+  await page.goto("/welcome");
+  await page.getByRole("button", { name: "我有API-KEY", exact: false }).click();
+  await expect(page).toHaveURL(/\/api-key-notice\?from=setup$/);
+  await expect(page).toHaveTitle("填写 API Key 前 · Dearvale");
+  const warning = page.getByText("请您明确自己在做什么时再进行下一步。", {
+    exact: true,
+  });
+  await expect(warning).toBeVisible();
+  await expect(warning).toHaveCSS("color", "rgb(180, 35, 24)");
+  await expect(page.getByLabel("API Key", { exact: true })).toHaveCount(0);
+  await page.screenshot({
+    path: test.info().outputPath("api-key-warning.png"),
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "返回上一步" }).click();
+  await expect(page).toHaveURL(/\/setup$/);
+  await expect(
+    page.getByRole("heading", { name: "我们需要确定一些设置" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "我有API-KEY", exact: false }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(warning).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: test.info().outputPath("api-key-warning-mobile.png"),
+    fullPage: true,
+  });
+  expect(
+    state.calls.filter(
+      (call) => call.path.startsWith("/api/llm/") && call.method !== "GET",
+    ),
+  ).toEqual([]);
+  await page.getByRole("button", { name: "我已明确，继续填写" }).click();
+  await expect(page).toHaveURL(/\/setup$/);
+  await expect(page.getByLabel("API Key", { exact: true })).toBeVisible();
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  expect(state.errors).toEqual([]);
+});
+
+test("adding an own provider from model settings goes through the warning", async ({
+  page,
+}) => {
+  const state = await mockAccount(page, { completed: true });
+  await page.goto("/model-settings");
+  await page.getByRole("link", { name: "先添加自己的供应商" }).click();
+  await expect(page).toHaveURL(/\/api-key-notice\?from=model-settings$/);
+  await page.getByRole("link", { name: "返回上一步" }).click();
+  await expect(page).toHaveURL(/\/model-settings$/);
+  await page.getByRole("button", { name: "添加供应商", exact: true }).click();
+  await expect(page).toHaveURL(/\/api-key-notice\?from=model-settings$/);
+  await page.getByRole("button", { name: "我已明确，继续填写" }).click();
+  await expect(page).toHaveURL(/\/model-settings\?provider=new#my-providers$/);
+  await expect(page.getByLabel("API Key", { exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
 test("own-key setup preserves 64000 and edited budgets, blocks partial tests, and syncs saved settings", async ({
   page,
 }) => {
@@ -296,6 +361,8 @@ test("own-key setup preserves 64000 and edited budgets, blocks partial tests, an
   state.probeStatus = "partial";
   await page.goto("/welcome");
   await page.getByRole("button", { name: "我有API-KEY", exact: false }).click();
+  await expect(page).toHaveURL(/\/api-key-notice\?from=setup$/);
+  await page.getByRole("button", { name: "我已明确，继续填写" }).click();
   await page
     .getByLabel("API URL", { exact: true })
     .fill("https://my-api.example/v1");
@@ -445,6 +512,8 @@ test("an uncertain provider save recovers the existing configuration instead of 
   state.unknownCreateOutcome = true;
   await page.goto("/welcome");
   await page.getByRole("button", { name: "我有API-KEY", exact: false }).click();
+  await expect(page).toHaveURL(/\/api-key-notice\?from=setup$/);
+  await page.getByRole("button", { name: "我已明确，继续填写" }).click();
   await page
     .getByLabel("API URL", { exact: true })
     .fill("https://my-api.example/v1");

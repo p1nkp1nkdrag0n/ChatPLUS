@@ -21,6 +21,7 @@ import {
   PLATFORM_PROVIDER_ID,
   purposeLabels,
 } from "../lib/userModelSettings";
+import { apiKeyNoticePath } from "../lib/apiKeyNotice";
 
 export default function ModelSettingsPage() {
   const client = useQueryClient();
@@ -156,9 +157,12 @@ export default function ModelSettingsPage() {
                   应用我的模型到全部文本功能
                 </button>
                 {!own.length ? (
-                  <a className="text-button" href="#my-providers">
+                  <Link
+                    className="text-button"
+                    to={apiKeyNoticePath("model-settings")}
+                  >
                     先添加自己的供应商
-                  </a>
+                  </Link>
                 ) : null}
               </div>
             </div>

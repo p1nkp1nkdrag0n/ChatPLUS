@@ -6,7 +6,13 @@ import {
   type Ref,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBeforeUnload, useBlocker, useSearchParams } from "react-router-dom";
+import {
+  useBeforeUnload,
+  useBlocker,
+  useSearchParams,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import {
   Check,
   Eye,
@@ -42,6 +48,10 @@ import { ModelProbe } from "./ModelProbe";
 import { ApiError } from "../../api/types";
 import { useHosted } from "../../hooks/useHosted";
 import { ModelContextLimits } from "./ModelContextLimits";
+import {
+  apiKeyNoticePath,
+  hasAcceptedApiKeyNotice,
+} from "../../lib/apiKeyNotice";
 
 interface EditorHandle {
   save: () => Promise<boolean>;
@@ -50,6 +60,10 @@ interface EditorHandle {
 
 export function ProviderSettings() {
   const hosted = useHosted();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const noticeOrigin = hosted ? "model-settings" : "settings";
+  const acceptedNotice = hasAcceptedApiKeyNotice(location.state, noticeOrigin);
   const client = useQueryClient();
   const [params] = useSearchParams();
   const catalog = useQuery({
@@ -171,7 +185,7 @@ export function ProviderSettings() {
               <button
                 type="button"
                 className="button button--secondary button--wide"
-                onClick={() => select("new")}
+                onClick={() => navigate(apiKeyNoticePath(noticeOrigin))}
               >
                 <Plus size={16} aria-hidden="true" />
                 添加供应商
@@ -212,21 +226,34 @@ export function ProviderSettings() {
                   : "配置保存在本机后端。API Key 加密保存，不写入浏览器存储。"}
               </p>
             </aside>
-            <ProviderEditor
-              key={id}
-              ref={editor}
-              provider={provider}
-              isDefault={
-                catalog.data.defaultSelection.providerId === provider?.id
-              }
-              onDirtyChange={setDirty}
-              onSaved={refresh}
-              onRemoved={() => {
-                setSelectedId(null);
-                setDirty(false);
-                void refresh();
-              }}
-            />
+            {!provider && !acceptedNotice ? (
+              <div className="provider-editor">
+                <h3>添加自己的供应商</h3>
+                <button
+                  className="button button--primary"
+                  type="button"
+                  onClick={() => navigate(apiKeyNoticePath(noticeOrigin))}
+                >
+                  继续配置
+                </button>
+              </div>
+            ) : (
+              <ProviderEditor
+                key={id}
+                ref={editor}
+                provider={provider}
+                isDefault={
+                  catalog.data.defaultSelection.providerId === provider?.id
+                }
+                onDirtyChange={setDirty}
+                onSaved={refresh}
+                onRemoved={() => {
+                  setSelectedId(null);
+                  setDirty(false);
+                  void refresh();
+                }}
+              />
+            )}
           </div>
         </>
       ) : null}

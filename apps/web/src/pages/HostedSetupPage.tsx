@@ -4,6 +4,7 @@ import {
   Link,
   useBeforeUnload,
   useBlocker,
+  useLocation,
   useNavigate,
 } from "react-router-dom";
 import {
@@ -47,10 +48,12 @@ import {
   safeModelSetupError,
   redactModelProbe,
 } from "../lib/userModelSettings";
+import { apiKeyNoticePath, hasAcceptedApiKeyNotice } from "../lib/apiKeyNotice";
 
 export default function HostedSetupPage() {
   const client = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const settings = useQuery({
     queryKey: userModelSettingsKey,
     queryFn: llmApi.userSettings,
@@ -64,7 +67,9 @@ export default function HostedSetupPage() {
     queryKey: ["hosted", "public-models"],
     queryFn: hostedApi.publicModels,
   });
-  const [mode, setMode] = useState<"platform" | "user" | null>(null);
+  const [mode, setMode] = useState<"platform" | "user" | null>(() =>
+    hasAcceptedApiKeyNotice(location.state, "setup") ? "user" : null,
+  );
   const [selection, setSelection] = useState<LlmSelection | null>(null);
   const [draft, setDraft] = useState<LlmProviderInput>(() => ({
     ...providerDraft(),
@@ -312,7 +317,7 @@ export default function HostedSetupPage() {
           <div className="model-onboarding__choices">
             <button
               className="model-onboarding__choice"
-              onClick={() => setMode("user")}
+              onClick={() => navigate(apiKeyNoticePath("setup"))}
             >
               <KeyRound size={26} />
               <strong>我有API-KEY</strong>

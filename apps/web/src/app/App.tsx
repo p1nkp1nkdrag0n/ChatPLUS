@@ -47,6 +47,7 @@ const ShareComposerPage = lazy(() => import("../pages/ShareComposerPage"));
 const HostedAccountPage = lazy(() => import("../pages/HostedAccountPage"));
 const HostedAdminPage = lazy(() => import("../pages/HostedAdminPage"));
 const HostedSetupPage = lazy(() => import("../pages/HostedSetupPage"));
+const ApiKeyNoticePage = lazy(() => import("../pages/ApiKeyNoticePage"));
 const ModelSettingsPage = lazy(() => import("../pages/ModelSettingsPage"));
 
 export const CORRESPONDENCE_ROUTE_PATHS = [
@@ -94,6 +95,7 @@ function DearvaleRoutes() {
         <Routes>
           <Route path="/" element={<Navigate to="/welcome" replace />} />
           <Route path="/welcome" element={<WelcomeEntryPage />} />
+          <Route path="/api-key-notice" element={<ApiKeyNoticePage />} />
           {hosted ? (
             <Route path="/setup" element={<HostedSetupPage />} />
           ) : null}

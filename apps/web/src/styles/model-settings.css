@@ -28,6 +28,27 @@
 .model-onboarding__panel--form {
   max-width: 720px;
 }
+.api-key-notice {
+  max-width: 720px;
+}
+.api-key-notice > svg {
+  color: var(--accent-strong);
+}
+.api-key-notice__warning {
+  margin: 30px 0 36px;
+  color: #b42318;
+  font-size: clamp(18px, 2.4vw, 24px);
+  font-weight: 600;
+  line-height: 1.8;
+}
+.api-key-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.api-key-notice__actions .button {
+  justify-content: center;
+}
 .model-onboarding__eyebrow {
   color: var(--accent);
   font-size: 12px;

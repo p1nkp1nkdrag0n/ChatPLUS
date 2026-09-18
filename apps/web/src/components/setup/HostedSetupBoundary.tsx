@@ -35,7 +35,11 @@ export function HostedSetupBoundary({ children }: { children: ReactNode }) {
         </button>
       </div>
     );
-  if (!settings.data.onboardingCompleted && location.pathname !== "/setup")
+  if (
+    !settings.data.onboardingCompleted &&
+    location.pathname !== "/setup" &&
+    location.pathname !== "/api-key-notice"
+  )
     return <Navigate to="/setup" replace />;
   if (settings.data.onboardingCompleted && location.pathname === "/setup")
     return <Navigate to="/welcome" replace />;

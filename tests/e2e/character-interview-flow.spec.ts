@@ -14,6 +14,54 @@ test.describe("Dearvale character interview", () => {
     await mockConfiguredWelcomeCatalog(page);
   });
 
+  test("keeps a 2000-character answer through reload and character compilation", async ({
+    page,
+    request,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/create");
+    for (const field of [
+      "gender",
+      "name",
+      "ageText",
+      "worldSetting",
+      "workOrRole",
+      "appearanceDescription",
+    ] as const)
+      await answerMainQuestion(page, field, basicInterviewAnswers[field]);
+    const answer = "温和而有主见，愿意听完对方的想法。"
+      .repeat(120)
+      .slice(0, 2000);
+    expect(answer).toHaveLength(2000);
+    await expect(page.locator("#interview-answer")).toHaveAttribute(
+      "maxlength",
+      "2000",
+    );
+    await page.locator("#interview-answer").fill(answer);
+    await page.reload();
+    await expect(page.getByTestId("character-generator")).toHaveAttribute(
+      "data-question",
+      "personality",
+    );
+    await expect(page.locator("#interview-answer")).toHaveValue(answer);
+    await page.screenshot({
+      path: test.info().outputPath("interview-2000.png"),
+      fullPage: true,
+    });
+    await page.getByTestId("interview-next").click();
+    await fillMainInterview(page, basicInterviewAnswers, 7);
+    await skipInterviewFollowUps(page);
+    await page.getByTestId("generate-character").click();
+    await expect(page).toHaveURL(/\/characters\/[^/]+\/preview$/);
+    const id = new URL(page.url()).pathname.split("/")[2]!;
+    const preview = await request.get(`/api/characters/${id}/creation-preview`);
+    expect(preview.ok()).toBe(true);
+    expect(
+      ((await preview.json()) as { answers: { personality: string } }).answers
+        .personality,
+    ).toBe(answer);
+  });
+
   test("answers twelve questions, restores progress, revises one draft and publishes before welcome changes", async ({
     page,
     request,

@@ -1,4 +1,7 @@
-import type { CharacterInterviewAnswers } from "@personasim/contracts";
+import {
+  CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH,
+  type CharacterInterviewAnswers,
+} from "@personasim/contracts";
 
 export function InterviewSettings({
   answers,
@@ -75,7 +78,7 @@ export function InterviewSettings({
           时代说明（可选）
           <input
             value={advanced.storyEra ?? ""}
-            maxLength={240}
+            maxLength={CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH}
             disabled={disabled}
             onChange={(event) => {
               const rest = { ...advanced };

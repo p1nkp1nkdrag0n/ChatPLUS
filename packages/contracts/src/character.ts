@@ -598,7 +598,8 @@ export const OriginalCharacterInputSchema = z
       .optional(),
     initialRelationship: z.string().trim().min(1).max(120),
     dialogueStyle: z.string().trim().min(1).max(500),
-    characterBrief: z.string().trim().min(1).max(20_000).optional(),
+    // Holds every interview answer, including follow-ups and optional era text.
+    characterBrief: z.string().trim().min(1).max(40_000).optional(),
     authoring: CharacterAuthoringSchema.optional(),
     storyEra: z.string().trim().min(1).max(240).optional(),
     storyAnchorYear: z.number().int().min(1000).max(9999).optional(),

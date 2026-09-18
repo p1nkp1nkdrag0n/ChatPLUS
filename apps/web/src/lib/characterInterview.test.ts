@@ -8,6 +8,7 @@ import {
   INTERVIEW_QUESTIONS,
   clearInterviewDraft,
   mainAnswersSnapshot,
+  interviewSubject,
   newInterviewDraft,
   previewInterviewDraft,
   readInterviewDraft,
@@ -113,7 +114,7 @@ describe("character interview recovery", () => {
     ).toBe(false);
   });
 
-  it.each(["{broken", "null", "[]", '"draft"', "x".repeat(100_001)])(
+  it.each(["{broken", "null", "[]", '"draft"', "x".repeat(500_001)])(
     "ignores corrupt or oversized storage (case %#)",
     (raw) => {
       storage.set(INTERVIEW_KEY, raw);
@@ -151,10 +152,35 @@ describe("character interview recovery", () => {
     expect(
       saveInterviewDraft({
         ...draft,
-        answers: { ...answers, name: "x".repeat(121) },
+        answers: { ...answers, name: "x".repeat(2_001) },
       }),
     ).toBe(false);
     expect(readInterviewDraft()?.answers.name).toBe("林澈");
+  });
+  it("retains every maximum-length answer, follow-up and escaped snapshot after a reload", () => {
+    const draft = followUpDraft();
+    for (const question of INTERVIEW_QUESTIONS) {
+      expect(question.maxLength).toBeGreaterThanOrEqual(2_000);
+      draft.answers[question.field] = "\u0001".repeat(question.maxLength);
+    }
+    draft.answers.advanced = { storyEra: "代".repeat(2_000) };
+    draft.answers.followUps![0]!.answer = "答".repeat(2_000);
+    draft.followUpSnapshot = mainAnswersSnapshot(draft.answers);
+    expect(draft.followUpSnapshot.length).toBeGreaterThan(100_000);
+    expect(
+      CharacterInterviewAnswersSchema.safeParse(draft.answers).success,
+    ).toBe(true);
+    expect(saveInterviewDraft(draft)).toBe(true);
+    expect(readInterviewDraft()).toEqual(draft);
+  });
+  it("uses a neutral subject when the name answer is a long explanation", () => {
+    expect(
+      interviewSubject({
+        name: "姓氏与名字的故事".repeat(200),
+        gender: "自定义",
+      }),
+    ).toBe("这个人");
+    expect(interviewSubject({ name: "林澈", gender: "自定义" })).toBe("林澈");
   });
 
   it("invalidates AI questions and answers immediately when the author's main answer changes", () => {

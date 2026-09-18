@@ -5,6 +5,7 @@ import {
   CharacterInterviewProposalSchema,
   CharacterInterviewRefineRequestSchema,
   CharacterRefinementPlanSchema,
+  CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH,
 } from "./character-interview.js";
 
 const answers = {
@@ -75,7 +76,59 @@ describe("character interview contracts", () => {
     expect(
       CharacterInterviewAnswersSchema.safeParse({
         ...answers,
-        personality: "长".repeat(121),
+        personality: "长".repeat(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH + 1),
+      }).success,
+    ).toBe(false);
+  });
+  it.each([
+    "gender",
+    "name",
+    "ageText",
+    "workOrRole",
+    "personality",
+    "appearanceDescription",
+    "dailyHabits",
+    "importantExperience",
+    "dialogueStyle",
+    "currentFocus",
+  ])(
+    "accepts 2000 characters for %s and rejects only the overflow",
+    (field) => {
+      expect(
+        CharacterInterviewAnswersSchema.safeParse({
+          ...answers,
+          [field]: "描".repeat(2_000),
+        }).success,
+      ).toBe(true);
+      expect(
+        CharacterInterviewAnswersSchema.safeParse({
+          ...answers,
+          [field]: "描".repeat(2_001),
+        }).success,
+      ).toBe(false);
+    },
+  );
+  it("accepts expanded follow-ups and era text while retaining longer existing answer limits", () => {
+    const expanded = {
+      ...answers,
+      worldSetting: "世".repeat(4_000),
+      additionalDetails: "补".repeat(6_000),
+      followUps: [
+        { id: "one", question: "为什么？", answer: "答".repeat(2_000) },
+      ],
+      advanced: { storyEra: "代".repeat(2_000) },
+    };
+    expect(CharacterInterviewAnswersSchema.parse(expanded)).toEqual(expanded);
+    expect(
+      CharacterInterviewAnswersSchema.safeParse({
+        ...expanded,
+        followUps: [{ ...expanded.followUps[0], answer: "答".repeat(2_001) }],
+      }).success,
+    ).toBe(false);
+    expect(
+      CharacterInterviewAnswersSchema.safeParse({
+        ...expanded,
+        advanced: { storyEra: "代".repeat(2_001) },
       }).success,
     ).toBe(false);
   });

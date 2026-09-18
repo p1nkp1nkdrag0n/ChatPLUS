@@ -12,19 +12,49 @@ import {
 } from "./primitives.js";
 
 /** Author responses, not model claims. Empty optional answers remain optional. */
+export const CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH = 2_000;
+
 export const CharacterInterviewAnswersSchema = z
   .object({
-    gender: z.string().trim().min(1).max(120),
-    name: z.string().trim().min(1).max(120),
-    ageText: z.string().trim().min(1).max(120),
+    gender: z.string().trim().min(1).max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH),
+    name: z.string().trim().min(1).max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH),
+    ageText: z
+      .string()
+      .trim()
+      .min(1)
+      .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH),
     worldSetting: z.string().trim().min(1).max(4_000),
-    workOrRole: z.string().trim().min(1).max(240),
+    workOrRole: z
+      .string()
+      .trim()
+      .min(1)
+      .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH),
     appearanceDescription: z.string().trim().max(2_000).optional(),
-    personality: z.string().trim().min(1).max(120),
-    dailyHabits: z.string().trim().max(1_000).optional(),
-    importantExperience: z.string().trim().max(1_000).optional(),
-    dialogueStyle: z.string().trim().max(500).optional(),
-    currentFocus: z.string().trim().max(1_000).optional(),
+    personality: z
+      .string()
+      .trim()
+      .min(1)
+      .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH),
+    dailyHabits: z
+      .string()
+      .trim()
+      .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH)
+      .optional(),
+    importantExperience: z
+      .string()
+      .trim()
+      .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH)
+      .optional(),
+    dialogueStyle: z
+      .string()
+      .trim()
+      .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH)
+      .optional(),
+    currentFocus: z
+      .string()
+      .trim()
+      .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH)
+      .optional(),
     additionalDetails: z.string().trim().max(6_000).optional(),
     followUps: z
       .array(
@@ -32,7 +62,10 @@ export const CharacterInterviewAnswersSchema = z
           .object({
             id: EntityIdSchema,
             question: z.string().trim().min(1).max(240),
-            answer: z.string().trim().max(1_000),
+            answer: z
+              .string()
+              .trim()
+              .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH),
           })
           .strict(),
       )
@@ -42,7 +75,11 @@ export const CharacterInterviewAnswersSchema = z
       .object({
         tier: SimulationTierSchema.optional(),
         timezone: IanaTimezoneSchema.optional(),
-        storyEra: z.string().trim().max(240).optional(),
+        storyEra: z
+          .string()
+          .trim()
+          .max(CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH)
+          .optional(),
         storyAnchorYear: z.number().int().min(1000).max(9999).optional(),
       })
       .strict()

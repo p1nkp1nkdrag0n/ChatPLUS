@@ -7,7 +7,10 @@ import {
   type FormEvent,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CharacterInterviewAnswersSchema } from "@personasim/contracts";
+import {
+  CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH,
+  CharacterInterviewAnswersSchema,
+} from "@personasim/contracts";
 import { interviewApi } from "../api/interview";
 import { ApiError } from "../api/types";
 import {
@@ -538,7 +541,7 @@ export default function CharacterGeneratorPage() {
                     className="creation-answer"
                     aria-label="自定义性别"
                     required
-                    maxLength={120}
+                    maxLength={CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH}
                     value={value}
                     placeholder={mainQuestion.placeholder}
                     onChange={(event) => updateCurrent(event.target.value)}
@@ -568,7 +571,11 @@ export default function CharacterGeneratorPage() {
                     rows={3}
                     required={!isFollowUp && mainQuestion.required}
                     value={value}
-                    maxLength={isFollowUp ? 1000 : mainQuestion.maxLength}
+                    maxLength={
+                      isFollowUp
+                        ? CHARACTER_INTERVIEW_ANSWER_MAX_LENGTH
+                        : mainQuestion.maxLength
+                    }
                     placeholder={
                       isFollowUp
                         ? "写下你想到的，也可以暂时略过……"

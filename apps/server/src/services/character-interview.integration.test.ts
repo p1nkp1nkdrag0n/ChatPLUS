@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CharacterCompilationProposalSchema,
   CharacterInterviewCompileResponseSchema,
+  OriginalCharacterInputSchema,
   type CharacterInterviewAnswers,
   type CharacterInterviewCompileResponse,
 } from "@personasim/contracts";
@@ -142,6 +143,79 @@ describe("character interview lifecycle", () => {
       .listCharacterSources(character.id)
       .find((item) => item.sourceType === "character_interview_v1");
     expect(source?.contentExcerpt).toEqual(expect.stringContaining("二十多岁"));
+  });
+
+  it("compiles and restores all maximum-length answers without losing full source writing", async () => {
+    await start();
+    const longAnswers: CharacterInterviewAnswers = {
+      gender: "性".repeat(2_000),
+      name: "名".repeat(2_000),
+      ageText: "龄".repeat(2_000),
+      worldSetting: "世".repeat(4_000),
+      workOrRole: "职".repeat(2_000),
+      personality: "格".repeat(2_000),
+      appearanceDescription: "貌".repeat(2_000),
+      dailyHabits: "惯".repeat(2_000),
+      importantExperience: "历".repeat(2_000),
+      dialogueStyle: "话".repeat(2_000),
+      currentFocus: "意".repeat(2_000),
+      additionalDetails: "补".repeat(6_000),
+      followUps: [
+        { id: "one", question: "其一？", answer: "一".repeat(2_000) },
+        { id: "two", question: "其二？", answer: "二".repeat(2_000) },
+      ],
+      advanced: { storyEra: "代".repeat(2_000) },
+    };
+    const input = interviewOriginalInput(longAnswers);
+    expect(OriginalCharacterInputSchema.safeParse(input).success).toBe(true);
+    expect(input.characterBrief!.length).toBeGreaterThan(30_000);
+    const spy = vi.spyOn(app.personasim.llm, "generateObject");
+    const { character, preview } = await compile({ answers: longAnswers });
+    expect(preview.answers).toEqual(longAnswers);
+    expect(character.identity.name).toHaveLength(120);
+    expect(character.identity.workOrRole).toHaveLength(240);
+    expect(character.persona.traits[0]!.name).toHaveLength(120);
+    const compilerPrompt = spy.mock.calls.find(
+      ([call]) => call.purpose === "compile_character",
+    )![0].prompt;
+    for (const value of Object.values(longAnswers).filter(
+      (value): value is string => typeof value === "string",
+    ))
+      expect(compilerPrompt).toContain(value);
+    expect(compilerPrompt).toContain(longAnswers.advanced!.storyEra!);
+    expect(compilerPrompt).toContain(longAnswers.followUps![1]!.answer);
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/characters/${character.id}/creation-preview`,
+    });
+    expect(read.statusCode).toBe(200);
+    expect(read.json<{ answers: CharacterInterviewAnswers }>().answers).toEqual(
+      longAnswers,
+    );
+    const source = app.personasim.store
+      .listCharacterSources(character.id)
+      .find((item) => item.sourceType === "character_interview_v1")!;
+    const persisted = JSON.parse(String(source.contentExcerpt)) as {
+      answers: CharacterInterviewAnswers;
+    };
+    expect(persisted.answers).toEqual(longAnswers);
+
+    vi.restoreAllMocks();
+    planRefinement({ name: "林澈" }, ["identity.name"]);
+    const response = await refine(
+      character.id,
+      1,
+      "long-answers-refinement",
+      "只把名字改为林澈，其余保留",
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const revised = CharacterInterviewCompileResponseSchema.parse(
+      response.json(),
+    );
+    expect(revised.preview.answers).toMatchObject({
+      ...longAnswers,
+      name: "林澈",
+    });
   });
 
   it("reuses one request and recompiles the same draft without resetting its initial state", async () => {

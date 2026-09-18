@@ -76,12 +76,14 @@ export const LETTER_DELIVERY_METHODS = {
   standard: { days: 5, label: "平信" },
   express: { days: 2, label: "快递" },
   priority: { days: 1, label: "特快" },
+  email: { days: 0, label: "Email" },
 } as const;
 
 export const LetterDeliveryMethodSchema = z.enum([
   "standard",
   "express",
   "priority",
+  "email",
 ]);
 export type LetterDeliveryMethod = z.infer<typeof LetterDeliveryMethodSchema>;
 
@@ -89,6 +91,7 @@ export const LetterTransitPolicyVersionSchema = z.enum([
   "fixed_5d_v1",
   "fixed_2d_v1",
   "fixed_1d_v1",
+  "fixed_0d_v1",
 ]);
 export type LetterTransitPolicyVersion = z.infer<
   typeof LetterTransitPolicyVersionSchema
@@ -359,11 +362,16 @@ export const LetterSchema = z
     if (
       letter.dispatchedAtUtc !== undefined &&
       letter.arrivalDueAtUtc !== undefined &&
-      Date.parse(letter.arrivalDueAtUtc) <= Date.parse(letter.dispatchedAtUtc)
+      (letter.deliveryMethod === "email"
+        ? Date.parse(letter.arrivalDueAtUtc) !==
+          Date.parse(letter.dispatchedAtUtc)
+        : Date.parse(letter.arrivalDueAtUtc) <=
+          Date.parse(letter.dispatchedAtUtc))
     ) {
       context.addIssue({
         code: "custom",
-        message: "arrivalDueAtUtc must be later than dispatchedAtUtc",
+        message:
+          "Email arrives at dispatch time; postal arrival must be later than dispatch",
         path: ["arrivalDueAtUtc"],
       });
     }

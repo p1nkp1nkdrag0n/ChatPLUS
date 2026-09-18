@@ -15,6 +15,19 @@ import {
 } from "./progress.js";
 
 describe("FixedTransitPolicyV1", () => {
+  it("delivers email immediately in both directions across timezones", () => {
+    for (const timezone of ["Asia/Shanghai", "America/New_York"])
+      for (const direction of ["user_to_agent", "agent_to_user"] as const)
+        expect(
+          calculateLetterArrivalDueAtUtc(
+            "2026-03-07T17:00:00.000Z",
+            timezone,
+            direction,
+            "email",
+          ),
+        ).toBe("2026-03-07T17:00:00.000Z");
+    expect(transitPolicyVersionForDeliveryMethod("email")).toBe("fixed_0d_v1");
+  });
   it.each([
     ["standard", "2026-03-12T16:00:00.000Z", "fixed_5d_v1"],
     ["express", "2026-03-09T16:00:00.000Z", "fixed_2d_v1"],
@@ -201,7 +214,7 @@ describe("transit progress projection", () => {
     expect(() =>
       calculateTransitProgress({
         dispatchedAtUtc,
-        arrivalDueAtUtc: dispatchedAtUtc,
+        arrivalDueAtUtc: "2026-09-02T12:00:00.000Z",
         observedAtUtc: dispatchedAtUtc,
       }),
     ).toThrow(RangeError);
@@ -218,5 +231,31 @@ describe("transit progress projection", () => {
         "2026-09-04T12:00:00.000Z",
       ),
     ).toThrow(RangeError);
+  });
+  it("projects zero-duration email transit without dividing by zero", () => {
+    expect(
+      calculateTransitProgress({
+        dispatchedAtUtc,
+        arrivalDueAtUtc: dispatchedAtUtc,
+        observedAtUtc: "2026-09-02T12:00:00.000Z",
+      }),
+    ).toBe(0);
+    expect(
+      calculateTransitProgress({
+        dispatchedAtUtc,
+        arrivalDueAtUtc: dispatchedAtUtc,
+        observedAtUtc: dispatchedAtUtc,
+      }),
+    ).toBe(1);
+    expect(
+      deriveLetterTransitProgress(
+        {
+          status: "in_transit",
+          dispatchedAtUtc,
+          arrivalDueAtUtc: dispatchedAtUtc,
+        },
+        arrivalDueAtUtc,
+      ),
+    ).toBe(1);
   });
 });

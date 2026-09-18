@@ -494,6 +494,9 @@ export async function composeServer(
       },
     );
     disposers.push(() => temporalTaskScheduler.dispose());
+    correspondence.setBackgroundCatchUp((agentId, observedNowUtc) => {
+      void temporalTaskScheduler.requestAgentCatchUp(agentId, observedNowUtc);
+    });
     const proactiveActivity = new ConversationActivityTracker(database);
     const proactiveGenerations: ProactiveGenerationService =
       new ProactiveGenerationService(

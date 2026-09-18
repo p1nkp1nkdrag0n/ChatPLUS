@@ -34,7 +34,7 @@ const ARRIVAL_AT = "2026-09-08T12:00:00.000Z";
 const PROCESSED_AT = "2026-09-09T01:00:00.000Z";
 
 describe("letter delivery method requests", () => {
-  it.each(["standard", "express", "priority"])(
+  it.each(["standard", "express", "priority", "email"])(
     "accepts %s for draft creation and method-only edits",
     (deliveryMethod) => {
       expect(
@@ -92,6 +92,25 @@ const letter = {
   createdAtUtc: CREATED_AT,
   updatedAtUtc: CREATED_AT,
 };
+
+it("allows equal dispatch and arrival instants only for email", () => {
+  const instant = { ...letter, arrivalDueAtUtc: CREATED_AT };
+  expect(LetterSchema.safeParse(instant).success).toBe(false);
+  expect(
+    LetterSchema.safeParse({
+      ...instant,
+      deliveryMethod: "email",
+      transitPolicyVersion: "fixed_0d_v1",
+    }).success,
+  ).toBe(true);
+  expect(
+    LetterSchema.safeParse({
+      ...letter,
+      deliveryMethod: "email",
+      transitPolicyVersion: "fixed_0d_v1",
+    }).success,
+  ).toBe(false);
+});
 
 const encryptedBody = {
   letterId: "letter-reply-1",

@@ -589,6 +589,10 @@ export function registerRoutes(
     const result = await correspondenceApi(() =>
       correspondence.sealLetter({ letterId, ...input }),
     );
+    if (result.letter.deliveryMethod === "email") {
+      const incoming = services.correspondenceRepository.getLetter(letterId)!;
+      void services.temporalTaskScheduler.requestAgentCatchUp(incoming.agentId);
+    }
     reply.header("cache-control", "no-store");
     return reply.send(result);
   });
@@ -603,6 +607,12 @@ export function registerRoutes(
         { includeErrorDetails: false },
       );
       void services.temporalTaskScheduler.wake();
+      const incoming = services.correspondenceRepository.getLetter(letterId);
+      if (incoming?.deliveryMethod === "email") {
+        void services.temporalTaskScheduler.requestAgentCatchUp(
+          incoming.agentId,
+        );
+      }
       reply.header("cache-control", "no-store");
       return reply.code(202).send(result);
     },

@@ -570,10 +570,13 @@ export class LetterReplyGenerationService {
     const replyLetterId = stableLetterReplyId(prepared.incomingLetter.id);
     const effectiveAuthorTimeUtc = prepared.snapshot.effectiveAtUtc;
     const transitTimezone = prepared.incomingLetter.transitTimezone!;
+    const replyDeliveryMethod =
+      prepared.incomingLetter.deliveryMethod === "email" ? "email" : "standard";
     const arrivalDueAtUtc = calculateFixedTransitArrivalUtc(
       effectiveAuthorTimeUtc,
       transitTimezone,
       "return",
+      replyDeliveryMethod,
     );
     const contentHash = sha256(canonicalLetterReplyContent(execution.proposal));
     let encrypted: EncryptedLetterBody;
@@ -623,7 +626,8 @@ export class LetterReplyGenerationService {
         nowUtc: observedNowUtc,
         replyLetterId,
         contentHash,
-        transitPolicyVersion: "fixed_5d_v1",
+        transitPolicyVersion:
+          replyDeliveryMethod === "email" ? "fixed_0d_v1" : "fixed_5d_v1",
         transitTimezone,
         effectiveAuthorTimeUtc,
         arrivalDueAtUtc,

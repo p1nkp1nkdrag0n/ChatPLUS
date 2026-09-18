@@ -1412,10 +1412,16 @@ export class CorrespondenceRepository {
             { runId: input.runId },
           );
         }
-        if (input.transitPolicyVersion !== "fixed_5d_v1") {
+        const incoming = this.requireLetter(runRow.incoming_letter_id);
+        const replyDeliveryMethod =
+          incoming.deliveryMethod === "email" ? "email" : "standard";
+        if (
+          input.transitPolicyVersion !==
+          transitPolicyVersionForDeliveryMethod(replyDeliveryMethod)
+        ) {
           throw domainError(
             "invariant_violation",
-            "Only the frozen fixed_5d_v1 transit policy may be persisted",
+            "Reply transit policy must match the incoming delivery method",
           );
         }
         if (input.resultHash !== undefined)
@@ -1441,8 +1447,8 @@ export class CorrespondenceRepository {
           input.effectiveAuthorTimeUtc,
           input.transitTimezone,
           input.arrivalDueAtUtc,
+          replyDeliveryMethod,
         );
-        const incoming = this.requireLetter(runRow.incoming_letter_id);
         if (
           incoming.status !== "read" ||
           incoming.direction !== "user_to_agent"
@@ -1459,7 +1465,7 @@ export class CorrespondenceRepository {
           this.database
             .prepare(
               `INSERT INTO letters(
-                 id, thread_id, agent_id, reply_to_letter_id, direction, status,
+                 id, thread_id, agent_id, reply_to_letter_id, direction, status, delivery_method,
                  subject, body, content_hash, encrypted_ciphertext,
                  encrypted_iv, encrypted_auth_tag, encrypted_key_version,
                  encrypted_aad_hash, encrypted_created_at_utc,
@@ -1467,7 +1473,7 @@ export class CorrespondenceRepository {
                  arrival_due_at_utc, effective_author_time_utc,
                  created_at_utc, updated_at_utc
                ) VALUES (
-                 ?, ?, ?, ?, 'agent_to_user', 'in_transit', NULL, NULL, ?, ?, ?,
+                 ?, ?, ?, ?, 'agent_to_user', 'in_transit', ?, NULL, NULL, ?, ?, ?,
                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                )`,
             )
@@ -1476,6 +1482,7 @@ export class CorrespondenceRepository {
               incoming.threadId,
               incoming.agentId,
               incoming.id,
+              replyDeliveryMethod,
               input.contentHash,
               input.encryptedBody.ciphertext,
               input.encryptedBody.iv,
@@ -1663,6 +1670,25 @@ export class CorrespondenceRepository {
       )
       .get(incomingLetterId) as TaskRow | undefined;
     return row === undefined ? undefined : mapTask(row);
+  }
+
+  hasDueEmailTasks(agentId: string, observedNowUtc: string): boolean {
+    assertEntityId(agentId, "agentId");
+    assertUtc(observedNowUtc, "observedNowUtc");
+    return (
+      this.database
+        .prepare(
+          `SELECT 1 FROM temporal_tasks task
+       JOIN letters letter ON letter.id = task.entity_id AND letter.agent_id = task.agent_id
+       WHERE task.agent_id = ? AND letter.delivery_method = 'email'
+         AND task.kind IN ('letter.outbound_arrival', 'letter.reply_generation',
+                           'letter.generation_retry', 'letter.return_arrival')
+         AND task.status IN ('pending', 'claimed', 'retryable')
+         AND (task.status = 'claimed' OR task.due_at_utc <= ?)
+       LIMIT 1`,
+        )
+        .get(agentId, observedNowUtc) !== undefined
+    );
   }
 
   enqueueReplyGenerationRetry(

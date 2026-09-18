@@ -43,6 +43,334 @@ describe("correspondence HTTP lifecycle", () => {
     directory = undefined;
   });
 
+  it.each(["lazy", "resident"] as const)(
+    "sends email immediately and delivers one encrypted reply in %s mode",
+    async (execution) => {
+      directory = mkdtempSync(join(tmpdir(), "chatplus-email-"));
+      const databasePath = join(directory, "correspondence.db");
+      const clock = new FakeClock(SEPTEMBER_3);
+      const observations: LlmLogicalCallEvent[] = [];
+      app = await startApp(
+        databasePath,
+        "enforced",
+        clock,
+        observations,
+        execution,
+      );
+      const agentId = await createPublishedAgent(app);
+      const created = await app.inject({
+        method: "POST",
+        url: `/api/agents/${agentId}/letters`,
+        payload: {
+          clientRequestId: "email-create",
+          body: "这封 Email 发送后就能收到，不必等邮递。",
+          deliveryMethod: "email",
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const incomingId = created.json<LetterDetailResponse>().letter.id;
+      let releaseGeneration!: () => void;
+      const generation = new Promise<void>((resolve) => {
+        releaseGeneration = resolve;
+      });
+      const generate = vi
+        .spyOn(app.personasim.llm, "generateObject")
+        .mockImplementationOnce((input) =>
+          generation.then(() =>
+            input.schema.parse({
+              subject: "收到你的 Email",
+              salutation: "你好。",
+              paragraphs: ["我已经收到你的邮件，正在认真读你写下的每句话。"],
+              closing: "祝安。",
+              signature: "Correspondent",
+              referencedEvidenceIds: [
+                (JSON.parse(input.prompt) as { USER_LETTER: { id: string } })
+                  .USER_LETTER.id,
+              ],
+            }),
+          ),
+        );
+      const repository = app.personasim.correspondenceRepository;
+      try {
+        const sealed = await app.inject({
+          method: "POST",
+          url: `/api/letters/${incomingId}/seal`,
+          payload: { clientRequestId: "email-seal" },
+        });
+        expect(sealed.statusCode, sealed.body).toBe(200);
+        expect(sealed.json<LetterDetailResponse>().letter).toMatchObject({
+          deliveryMethod: "email",
+          dispatchedAtUtc: SEPTEMBER_3,
+          arrivalDueAtUtc: SEPTEMBER_3,
+          progress: 1,
+          canEdit: false,
+        });
+        await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+        expect(repository.getLetter(incomingId)?.status).toBe("read");
+        expect(repository.findReplyToLetter(incomingId)).toBeUndefined();
+        // Both reads must return the waiting projection while the model is
+        // still held. They must not join the scheduler's entire generation pass.
+        let detail: LetterDetailResponse | undefined;
+        let mailbox: CorrespondenceMailboxResponse | undefined;
+        const reads = Promise.all([
+          app
+            .inject({ method: "GET", url: `/api/letters/${incomingId}` })
+            .then((response) => {
+              expect(response.statusCode).toBe(200);
+              detail = response.json<LetterDetailResponse>();
+            }),
+          app
+            .inject({
+              method: "GET",
+              url: `/api/agents/${agentId}/correspondence`,
+            })
+            .then((response) => {
+              expect(response.statusCode).toBe(200);
+              mailbox = response.json<CorrespondenceMailboxResponse>();
+            }),
+        ]);
+        await vi.waitFor(() => {
+          expect(detail?.letter.replyState).toMatchObject({
+            kind: "waiting",
+            incomingLetterId: incomingId,
+          });
+          expect(
+            mailbox?.letters.find((letter) => letter.id === incomingId)
+              ?.replyState,
+          ).toMatchObject({ kind: "waiting", incomingLetterId: incomingId });
+        });
+        await reads;
+        expect(repository.findReplyToLetter(incomingId)).toBeUndefined();
+      } finally {
+        releaseGeneration();
+      }
+      await vi.waitFor(() =>
+        expect(repository.findReplyToLetter(incomingId)?.status).toBe(
+          "delivered_unread",
+        ),
+      );
+      const reply = repository.findReplyToLetter(incomingId)!;
+      expect(reply).toMatchObject({
+        deliveryMethod: "email",
+        transitPolicyVersion: "fixed_0d_v1",
+        dispatchedAtUtc: SEPTEMBER_3,
+        arrivalDueAtUtc: SEPTEMBER_3,
+        deliveredEffectiveAtUtc: SEPTEMBER_3,
+      });
+      expect(reply.body).toBeUndefined();
+      expect(reply.encryptedBody?.ciphertext).toBeTruthy();
+      expect(
+        repository
+          .listTasks(agentId)
+          .filter((task) => [incomingId, reply.id].includes(task.entityId)),
+      ).toHaveLength(3);
+      expect(
+        repository
+          .listTasks(agentId)
+          .filter((task) => [incomingId, reply.id].includes(task.entityId))
+          .every((task) => task.status === "completed"),
+      ).toBe(true);
+      const replayed = await app.inject({
+        method: "POST",
+        url: `/api/letters/${incomingId}/seal`,
+        payload: { clientRequestId: "email-seal" },
+      });
+      expect(replayed.statusCode).toBe(200);
+      expect(generate).toHaveBeenCalledTimes(1);
+      const opened = await app.inject({
+        method: "POST",
+        url: `/api/letters/${reply.id}/open`,
+        payload: {},
+      });
+      expect(opened.statusCode).toBe(200);
+      expect(opened.json<OpenLetterResponse>().letter.deliveryMethod).toBe(
+        "email",
+      );
+      expect(opened.body).toContain("我已经收到你的邮件");
+      await app.close();
+      app = await startApp(
+        databasePath,
+        "enforced",
+        clock,
+        observations,
+        execution,
+      );
+      const restored = await app.inject({
+        method: "GET",
+        url: `/api/letters/${reply.id}`,
+      });
+      expect(restored.statusCode).toBe(200);
+      expect(restored.json<LetterDetailResponse>().letter).toMatchObject({
+        deliveryMethod: "email",
+        status: "read",
+      });
+      expect(
+        app.personasim.correspondenceRepository
+          .listLetters(agentId)
+          .filter((letter) => letter.replyToLetterId === incomingId),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("recovers a failed email after restart with one immediate idempotent reply", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-email-retry-"));
+    const databasePath = join(directory, "correspondence.db");
+    const clock = new FakeClock(SEPTEMBER_3);
+    app = await startApp(databasePath, "enforced", clock, []);
+    const agentId = await createPublishedAgent(app);
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/letters`,
+      payload: {
+        clientRequestId: "email-retry-create",
+        body: "这封邮件应保留并允许重新生成回复。",
+        deliveryMethod: "email",
+      },
+    });
+    const incomingId = created.json<LetterDetailResponse>().letter.id;
+    vi.spyOn(app.personasim.llm, "generateObject").mockResolvedValueOnce({
+      subject: "无效证据",
+      salutation: "你好。",
+      paragraphs: ["这次生成不应提交。"],
+      closing: "祝安。",
+      signature: "Correspondent",
+      referencedEvidenceIds: ["nonexistent-email-evidence"],
+    });
+    const sealed = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingId}/seal`,
+      payload: { clientRequestId: "email-retry-seal" },
+    });
+    expect(sealed.statusCode).toBe(200);
+    await vi.waitFor(() =>
+      expect(
+        app!.personasim.correspondenceRepository.findLatestGenerationTask(
+          incomingId,
+        )?.status,
+      ).toBe("dead_letter"),
+    );
+    const snapshotId =
+      app.personasim.correspondenceRepository.getSnapshotForIncomingLetter(
+        incomingId,
+      )?.id;
+    await app.close();
+    app = await startApp(databasePath, "enforced", clock, []);
+    const generate = vi.spyOn(app.personasim.llm, "generateObject");
+    const payload = { clientRequestId: "email-retry-request" };
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingId}/reply-generation/retry`,
+      payload,
+    });
+    expect(accepted.statusCode).toBe(202);
+    const repository = app.personasim.correspondenceRepository;
+    await vi.waitFor(() =>
+      expect(repository.findReplyToLetter(incomingId)?.status).toBe(
+        "delivered_unread",
+      ),
+    );
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(repository.getGenerationRunForEpoch(incomingId, 1)).toMatchObject({
+      status: "committed",
+      snapshotId,
+    });
+    expect(repository.findReplyToLetter(incomingId)).toMatchObject({
+      deliveryMethod: "email",
+      arrivalDueAtUtc: SEPTEMBER_3,
+    });
+    const repeated = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingId}/reply-generation/retry`,
+      payload,
+    });
+    expect(repeated.statusCode).toBe(202);
+    expect(repeated.json<RetryLetterReplyGenerationResponse>().replayed).toBe(
+      true,
+    );
+    await app.personasim.temporalTaskScheduler.requestAgentCatchUp(agentId);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(
+      repository
+        .listLetters(agentId)
+        .filter((letter) => letter.replyToLetterId === incomingId),
+    ).toHaveLength(1);
+  });
+
+  it("returns pending email reads promptly and starts generation in the managed scheduler", async () => {
+    directory = mkdtempSync(join(tmpdir(), "chatplus-email-pending-"));
+    const databasePath = join(directory, "correspondence.db");
+    const clock = new FakeClock(SEPTEMBER_3);
+    app = await startApp(databasePath, "enforced", clock, []);
+    const agentId = await createPublishedAgent(app);
+    const deferredWake = vi
+      .spyOn(app.personasim.temporalTaskScheduler, "requestAgentCatchUp")
+      .mockResolvedValue(undefined);
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/letters`,
+      payload: {
+        clientRequestId: "email-pending-create",
+        body: "重启后也请立即开始处理这封邮件。",
+        deliveryMethod: "email",
+      },
+    });
+    const incomingId = created.json<LetterDetailResponse>().letter.id;
+    const sealed = await app.inject({
+      method: "POST",
+      url: `/api/letters/${incomingId}/seal`,
+      payload: { clientRequestId: "email-pending-seal" },
+    });
+    expect(sealed.statusCode).toBe(200);
+    expect(
+      app.personasim.correspondenceRepository.getLetter(incomingId)?.status,
+    ).toBe("in_transit");
+    deferredWake.mockRestore();
+    let releaseGeneration!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+    const generate = vi
+      .spyOn(app.personasim.llm, "generateObject")
+      .mockImplementationOnce((input) =>
+        gate.then(() =>
+          input.schema.parse({
+            subject: "重启后回信",
+            salutation: "你好。",
+            paragraphs: ["这封邮件已经完整收到。"],
+            closing: "祝安。",
+            signature: "Correspondent",
+            referencedEvidenceIds: [
+              (JSON.parse(input.prompt) as { USER_LETTER: { id: string } })
+                .USER_LETTER.id,
+            ],
+          }),
+        ),
+      );
+    try {
+      let returned = false;
+      const detail = app
+        .inject({ method: "GET", url: `/api/letters/${incomingId}` })
+        .then((response) => {
+          expect(response.statusCode).toBe(200);
+          returned = true;
+        });
+      await vi.waitFor(() => expect(returned).toBe(true));
+      await detail;
+      await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+      expect(
+        app.personasim.correspondenceRepository.findReplyToLetter(incomingId),
+      ).toBeUndefined();
+    } finally {
+      releaseGeneration();
+    }
+    await vi.waitFor(() =>
+      expect(
+        app!.personasim.correspondenceRepository.findReplyToLetter(incomingId)
+          ?.status,
+      ).toBe("delivered_unread"),
+    );
+  });
+
   it("persists delivery choices across restart and freezes the selected calendar-day deadline when sealing", async () => {
     directory = mkdtempSync(join(tmpdir(), "chatplus-delivery-methods-"));
     const databasePath = join(directory, "correspondence.db");
@@ -1720,6 +2048,7 @@ async function startApp(
   correspondenceMode: "off" | "shadow" | "enforced",
   clock: FakeClock,
   observations: LlmLogicalCallEvent[],
+  execution: "lazy" | "resident" = "lazy",
 ): Promise<PersonaSimApp> {
   return buildApp({
     config: readConfig({
@@ -1732,7 +2061,7 @@ async function startApp(
       developerRoutes: true,
       lifePlanningMode: "fuzzy",
       correspondenceMode,
-      correspondenceExecution: "lazy",
+      correspondenceExecution: execution,
       correspondenceTransitPolicy: "fixed_5d_v1",
       correspondenceGenerationLeaseMs: 1_800_000,
       correspondenceMaxOpenThreads: 1,
@@ -1747,7 +2076,7 @@ async function startApp(
     }),
     clock,
     seedDemo: false,
-    startScheduler: false,
+    startScheduler: execution === "resident",
     logger: false,
     llmObservation: {
       onLogicalCall: (event) => observations.push(event),

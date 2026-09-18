@@ -18,11 +18,12 @@ export function calculateTransitProgress(input: TransitProgressInput): number {
 
   const dispatchedMs = Date.parse(input.dispatchedAtUtc);
   const arrivalMs = Date.parse(input.arrivalDueAtUtc);
-  if (arrivalMs <= dispatchedMs) {
-    throw new RangeError("arrivalDueAtUtc must be later than dispatchedAtUtc");
+  if (arrivalMs < dispatchedMs) {
+    throw new RangeError("arrivalDueAtUtc cannot precede dispatchedAtUtc");
   }
 
   const observedMs = Date.parse(input.observedAtUtc);
+  if (arrivalMs === dispatchedMs) return observedMs < arrivalMs ? 0 : 1;
   return Math.min(
     1,
     Math.max(0, (observedMs - dispatchedMs) / (arrivalMs - dispatchedMs)),

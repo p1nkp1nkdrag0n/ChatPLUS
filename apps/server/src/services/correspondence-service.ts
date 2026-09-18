@@ -144,6 +144,8 @@ export class CorrespondenceService {
   readonly #openService: CorrespondenceOpenService | undefined;
   #auxiliaryCatchUp:
     ((agentId: string, observedNowUtc: string) => Promise<unknown>) | undefined;
+  #backgroundCatchUp:
+    ((agentId: string, observedNowUtc: string) => void) | undefined;
   #relatedKeepsakeIds:
     ((replyLetterId: string) => readonly string[]) | undefined;
   #openedLetterHandler:
@@ -172,6 +174,12 @@ export class CorrespondenceService {
     handler: (agentId: string, observedNowUtc: string) => Promise<unknown>,
   ): void {
     this.#auxiliaryCatchUp = handler;
+  }
+
+  setBackgroundCatchUp(
+    handler: (agentId: string, observedNowUtc: string) => void,
+  ): void {
+    this.#backgroundCatchUp = handler;
   }
 
   setRelatedKeepsakeResolver(
@@ -370,7 +378,7 @@ export class CorrespondenceService {
         ? undefined
         : decodeMailboxCursor(query.cursor, agentId);
     this.requireCharacterTimezone(agentId);
-    await this.catchUpAgent(agentId);
+    await this.catchUpForRead(agentId);
     const nowUtc = UtcDateTimeSchema.parse(this.clock.nowUtc());
     const page = this.repository.listLetterPage(agentId, {
       limit: query.limit,
@@ -419,7 +427,7 @@ export class CorrespondenceService {
   async getLetterDetail(letterIdInput: string): Promise<LetterDetailResponse> {
     const letterId = EntityIdSchema.parse(letterIdInput);
     const initial = this.requireLetter(letterId);
-    await this.catchUpAgent(initial.agentId);
+    await this.catchUpForRead(initial.agentId);
     return this.projectLetterDetail(this.requireLetter(letterId));
   }
 
@@ -533,6 +541,21 @@ export class CorrespondenceService {
     } catch (error) {
       throw translateReplyGenerationRetryError(error);
     }
+  }
+
+  private async catchUpForRead(agentId: string): Promise<void> {
+    const nowUtc = UtcDateTimeSchema.parse(this.clock.nowUtc());
+    if (
+      this.#mode === "enforced" &&
+      this.#backgroundCatchUp !== undefined &&
+      this.repository.hasDueEmailTasks(agentId, nowUtc)
+    ) {
+      // Email models run in the managed scheduler. Polling reads project the
+      // durable waiting state without joining its potentially long model pass.
+      this.#backgroundCatchUp(agentId, nowUtc);
+      return;
+    }
+    await this.catchUpAgent(agentId, nowUtc);
   }
 
   async catchUpAgent(

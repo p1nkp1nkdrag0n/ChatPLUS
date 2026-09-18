@@ -47,14 +47,13 @@ export function calculateFixedTransitArrivalUtc(
 ): string {
   UtcDateTimeSchema.parse(dispatchedAtUtc);
   IanaTimezoneSchema.parse(characterTimezone);
+  const method = LetterDeliveryMethodSchema.parse(deliveryMethod);
 
   const dispatched = DateTime.fromISO(dispatchedAtUtc, { zone: "utc" });
   const localDispatched = dispatched.setZone(characterTimezone);
   const days =
-    leg === "outbound"
-      ? LETTER_DELIVERY_METHODS[
-          LetterDeliveryMethodSchema.parse(deliveryMethod)
-        ].days
+    leg === "outbound" || method === "email"
+      ? LETTER_DELIVERY_METHODS[method].days
       : FixedTransitPolicyV1.returnDays;
   const arrival = localDispatched.plus({ days }).toUTC();
   const arrivalUtc = arrival.toISO({

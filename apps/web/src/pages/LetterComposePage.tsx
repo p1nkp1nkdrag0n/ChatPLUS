@@ -38,8 +38,9 @@ export default function LetterComposePage() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [paper, setPaper] = useState<PaperTemplate>("cotton");
-  const [deliveryMethod, setDeliveryMethod] =
-    useState<LetterDeliveryMethod>("standard");
+  const [deliveryMethod, setDeliveryMethod] = useState<LetterDeliveryMethod>(
+    searchParams.get("deliveryMethod") === "email" ? "email" : "standard",
+  );
   const [confirmingSeal, setConfirmingSeal] = useState(false);
   const initializedDraft = useRef<string | undefined>(undefined);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
@@ -171,6 +172,7 @@ export default function LetterComposePage() {
   const recipient = character?.identity.name ?? "角色";
   const timezone = character?.identity.timezone ?? "Asia/Shanghai";
   const delivery = LETTER_DELIVERY_METHODS[deliveryMethod];
+  const isEmail = deliveryMethod === "email";
   const estimatedArrival = arrivalEstimateLabel(
     timezone,
     mailboxQuery.data?.serverTimeUtc
@@ -259,7 +261,7 @@ export default function LetterComposePage() {
 
       <main className="compose-layout">
         <section className="compose-form-panel" aria-labelledby="compose-title">
-          <h1 id="compose-title">写一封信</h1>
+          <h1 id="compose-title">{isEmail ? "写一封 Email" : "写一封信"}</h1>
           <p className="compose-recipient">
             写给 <strong>{recipient}</strong>
           </p>
@@ -305,11 +307,13 @@ export default function LetterComposePage() {
             <div className="compose-assurances">
               <span>
                 <AlertCircle size={17} aria-hidden="true" />
-                封缄后将无法修改
+                {isEmail ? "发送后将无法修改" : "封缄后将无法修改"}
               </span>
               <span aria-live="polite">
                 <Leaf size={16} aria-hidden="true" />
-                {delivery.label} · 预计 {estimatedArrival} 抵达
+                {isEmail
+                  ? "Email · 即时送达，回信生成后即可阅读"
+                  : `${delivery.label} · 预计 ${estimatedArrival} 抵达`}
               </span>
             </div>
             <div className="compose-actions">
@@ -328,7 +332,7 @@ export default function LetterComposePage() {
                 disabled={!isValid || isBusy}
               >
                 <Feather size={17} aria-hidden="true" />
-                确认封缄并寄出
+                {isEmail ? "发送 Email" : "确认封缄并寄出"}
               </button>
             </div>
           </form>
@@ -368,10 +372,13 @@ export default function LetterComposePage() {
             <span className="seal-dialog__mark" aria-hidden="true">
               <Feather size={22} />
             </span>
-            <h2 id="seal-dialog-title">确认封缄</h2>
+            <h2 id="seal-dialog-title">
+              {isEmail ? "确认发送 Email" : "确认封缄"}
+            </h2>
             <p id="seal-dialog-description">
-              封缄后将无法修改。这封信将以{delivery.label}递送，预计
-              {delivery.days} 天后（{estimatedArrival}）抵达 {recipient}。
+              {isEmail
+                ? `发送后将无法修改。邮件会立即送达 ${recipient} 并开始生成回信，完成后即可在书信页阅读。生成需要一些时间，请稍候。`
+                : `封缄后将无法修改。这封信将以${delivery.label}递送，预计 ${delivery.days} 天后（${estimatedArrival}）抵达 ${recipient}。`}
             </p>
             <div className="seal-dialog__actions">
               <button
@@ -393,7 +400,13 @@ export default function LetterComposePage() {
                   if (!sealMutation.isPending) sealMutation.mutate();
                 }}
               >
-                {sealMutation.isPending ? "正在封缄…" : "确认封缄并寄出"}
+                {sealMutation.isPending
+                  ? isEmail
+                    ? "正在发送…"
+                    : "正在封缄…"
+                  : isEmail
+                    ? "发送 Email"
+                    : "确认封缄并寄出"}
               </button>
             </div>
           </section>

@@ -160,6 +160,40 @@ export function findThreadLetters(
     );
 }
 
+/** Refresh only while an email is being delivered or its reply is pending. */
+export function hasPendingEmailReply(
+  mailbox: CorrespondenceMailboxResponse | undefined,
+): boolean {
+  if (!mailbox) return false;
+  return mailbox.letters.some((letter) => {
+    if (
+      letter.deliveryMethod !== "email" ||
+      letter.direction !== "user_to_agent" ||
+      letter.status === "draft" ||
+      letter.status === "cancelled"
+    )
+      return false;
+    const reply = mailbox.letters.find(
+      (candidate) => candidate.replyToLetterId === letter.id,
+    );
+    if (reply)
+      return reply.status === "sealed" || reply.status === "in_transit";
+    const state =
+      letter.replyState ??
+      mailbox.threads.find(
+        (thread) =>
+          thread.id === letter.threadId &&
+          thread.replyState?.incomingLetterId === letter.id,
+      )?.replyState;
+    return (
+      letter.status === "sealed" ||
+      letter.status === "in_transit" ||
+      state?.kind === "waiting" ||
+      state?.kind === "retry_scheduled"
+    );
+  });
+}
+
 export interface TransitPresentation {
   progress: number;
   statusLabel: string;
@@ -186,6 +220,14 @@ export function transitPresentation(
   }
   if (letter.status === "cancelled") {
     return { progress: 0, statusLabel: "已取消" };
+  }
+  if (letter.deliveryMethod === "email") {
+    const delivered =
+      letter.status === "delivered_unread" || letter.status === "read";
+    return {
+      progress: delivered ? 1 : 0,
+      statusLabel: statusLabel(letter.status, letter.direction, "email"),
+    };
   }
   if (letter.status === "delivered_unread") {
     return {
@@ -230,7 +272,14 @@ export function transitPresentation(
 export function statusLabel(
   status: LetterStatus,
   direction: LetterSummaryResponse["direction"],
+  deliveryMethod?: LetterDeliveryMethod,
 ): string {
+  if (deliveryMethod === "email") {
+    if (status === "sealed" || status === "in_transit") return "邮件发送中";
+    if (status === "delivered_unread") return "邮件已送达，等待阅读";
+    if (status === "read")
+      return direction === "agent_to_user" ? "已阅读" : "对方已读";
+  }
   switch (status) {
     case "draft":
       return "草稿";
@@ -267,6 +316,7 @@ export function arrivalEstimateLabel(
   now: DateTime = DateTime.utc(),
   deliveryMethod: LetterDeliveryMethod = "standard",
 ): string {
+  if (deliveryMethod === "email") return "立即送达";
   return now
     .setZone(timezone)
     .plus({ days: LETTER_DELIVERY_METHODS[deliveryMethod].days })

@@ -65,6 +65,61 @@ interface RelationshipShareProjection {
 const SUBJECT = "阶段八端到端主题";
 const USER_BODY = "我们把这次漫长等待也留在信里，等你五天后的回音。";
 
+test("sends an email and reads the immediate reply without advancing the clock", async ({
+  page,
+  request,
+}) => {
+  const agentId = await createPublishedHighFidelityCharacter(
+    request,
+    `邮件旅人${Date.now()}`,
+  );
+  await rememberCharacter(page, agentId);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const before = await readMailbox(request, agentId);
+  await page.goto(`/characters/${agentId}/correspondence/compose`);
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill("今天很想和你分享书店里的一束阳光。收到后，给我回一封邮件吧。");
+  await page.getByRole("radio", { name: /Email/ }).check();
+  await expect(
+    page.getByRole("heading", { name: "写一封 Email" }),
+  ).toBeVisible();
+  await expect(page.getByText(/无需真实邮箱/)).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("email-compose.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "发送 Email", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "确认发送 Email" });
+  await expect(dialog).toContainText("立即送达");
+  await dialog.getByRole("button", { name: "发送 Email", exact: true }).click();
+  await expect(page).toHaveURL(/\/letters\/[^?]+\?agentId=/u);
+  await expect(page.getByRole("progressbar")).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await readMailbox(request, agentId)).letters.find(
+          (letter) => letter.direction === "agent_to_user",
+        )?.status,
+    )
+    .toBe("delivered_unread");
+  const mailbox = await readMailbox(request, agentId);
+  expect(mailbox.letters.length).toBe(before.letters.length + 2);
+  const reply = mailbox.letters.find(
+    (letter) => letter.direction === "agent_to_user",
+  )!;
+  await page.goto(`/letters/${reply.id}?agentId=${agentId}`);
+  await page.getByRole("button", { name: "阅读邮件" }).click();
+  await expect(page.locator(".letter-paper__body")).not.toBeEmpty();
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await page.screenshot({
+    path: test.info().outputPath("email-reply.png"),
+    fullPage: true,
+  });
+});
+
 test.describe("correspondence, archive, keepsake, and local share flow", () => {
   test("seals, waits, opens, traces, and builds a body-free share projection", async ({
     page,

@@ -10,11 +10,13 @@ import {
   arrivalEstimateLabel,
   composeAvailability,
   filterMailboxLetters,
+  hasPendingEmailReply,
   findThreadLetters,
   mergeCorrespondenceMailboxPages,
   phaseAfterSuccessfulOpen,
   projectLetterDetailForCache,
   transitPresentation,
+  statusLabel,
 } from "./correspondence";
 
 const baseLetter = {
@@ -31,6 +33,69 @@ const baseLetter = {
 >;
 
 describe("correspondence query and privacy boundaries", () => {
+  it("refreshes a sent email until its reply arrives and stops for failed generation", () => {
+    const incoming: LetterSummaryResponse = {
+      ...baseLetter,
+      deliveryMethod: "email",
+      direction: "user_to_agent",
+      status: "read",
+      replyState: { kind: "waiting", incomingLetterId: baseLetter.id },
+    };
+    const mailbox: CorrespondenceMailboxResponse = {
+      threads: [],
+      letters: [incoming],
+      serverTimeUtc: "2026-09-18T00:00:00.000Z",
+    };
+    expect(hasPendingEmailReply(mailbox)).toBe(true);
+    expect(
+      hasPendingEmailReply({
+        ...mailbox,
+        letters: [{ ...incoming, status: "draft" }],
+      }),
+    ).toBe(false);
+    expect(
+      hasPendingEmailReply({
+        ...mailbox,
+        letters: [{ ...incoming, deliveryMethod: "standard" }],
+      }),
+    ).toBe(false);
+    expect(
+      hasPendingEmailReply({
+        ...mailbox,
+        letters: [
+          {
+            ...incoming,
+            replyState: {
+              kind: "failed",
+              incomingLetterId: incoming.id,
+              canRetry: true,
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+    const reply: LetterSummaryResponse = {
+      ...baseLetter,
+      id: "email-reply",
+      replyToLetterId: incoming.id,
+      deliveryMethod: "email",
+      direction: "agent_to_user",
+      status: "delivered_unread",
+    };
+    expect(
+      hasPendingEmailReply({ ...mailbox, letters: [incoming, reply] }),
+    ).toBe(false);
+    expect(statusLabel(reply.status, reply.direction, "email")).toBe(
+      "邮件已送达，等待阅读",
+    );
+    expect(transitPresentation(reply, mailbox.serverTimeUtc)).toEqual({
+      progress: 1,
+      statusLabel: "邮件已送达，等待阅读",
+    });
+    expect(arrivalEstimateLabel("Asia/Shanghai", DateTime.utc(), "email")).toBe(
+      "立即送达",
+    );
+  });
   it("uses the exact Stage 4 query keys", () => {
     expect(correspondenceQueryKeys.mailbox("agent-1")).toEqual([
       "correspondence",

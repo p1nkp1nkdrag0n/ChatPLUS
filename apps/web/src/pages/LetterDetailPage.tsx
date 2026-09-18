@@ -27,6 +27,7 @@ import { ErrorBlock, LoadingBlock } from "../components/Feedback";
 import {
   correspondenceQueryKeys,
   findThreadLetters,
+  hasPendingEmailReply,
   formatCorrespondenceDate,
   isCachedUserLetterDetail,
   statusLabel,
@@ -107,6 +108,8 @@ export function LetterReader({
     queryKey: correspondenceQueryKeys.mailbox(agentId),
     queryFn: () => api.correspondence.list(agentId),
     enabled: Boolean(agentId) && mailboxSnapshot === undefined,
+    refetchInterval: (query) =>
+      hasPendingEmailReply(query.state.data) ? 2000 : false,
   });
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -117,8 +120,9 @@ export function LetterReader({
     : undefined;
   const correspondent = character?.identity.name ?? "角色";
   const detail = detailQuery.data;
-  const letter = detail?.letter;
   const mailbox = mailboxSnapshot ?? mailboxQuery.data;
+  const letter =
+    mailbox?.letters.find((item) => item.id === letterId) ?? detail?.letter;
   const thread =
     letter === undefined
       ? undefined
@@ -146,7 +150,10 @@ export function LetterReader({
         // live only in this mounted reader and disappear when it unmounts.
         await openLetterForMountedReader({
           open: () => api.letters.open(letterId),
-          prefersReducedMotion: prefersReducedMotion || alreadyRead,
+          prefersReducedMotion:
+            prefersReducedMotion ||
+            alreadyRead ||
+            letter?.deliveryMethod === "email",
           onOpened: (response, nextPhase) => {
             if (!mountedRef.current) return;
             setOpened(response);
@@ -185,7 +192,13 @@ export function LetterReader({
         if (mountedRef.current) setOpenPending(false);
       }
     },
-    [agentId, letterId, prefersReducedMotion, queryClient],
+    [
+      agentId,
+      letterId,
+      letter?.deliveryMethod,
+      prefersReducedMotion,
+      queryClient,
+    ],
   );
 
   useEffect(() => {
@@ -296,6 +309,7 @@ export function LetterReader({
               <div className="letter-reply-generation">
                 <ReplyGenerationStatus
                   state={replyState}
+                  deliveryMethod={letter.deliveryMethod ?? "standard"}
                   correspondent={correspondent}
                   isPending={replyRetry.isPending}
                   {...(replyRetry.safeErrorMessage === undefined
@@ -328,7 +342,7 @@ export function LetterReader({
               {canCompose && opened && phase === "reading" && agentId ? (
                 <Link
                   className="button button--primary letter-reader-actions__reply"
-                  to={`/characters/${agentId}/correspondence/compose`}
+                  to={`/characters/${agentId}/correspondence/compose${letter.deliveryMethod === "email" ? "?deliveryMethod=email" : ""}`}
                 >
                   <Reply size={18} aria-hidden="true" /> 回信
                 </Link>
@@ -464,7 +478,7 @@ function AgentLetterReader({
       ) : null}
       {phase === "envelope" && !letter.canOpen ? (
         <p className="letter-envelope-note">
-          {statusLabel(letter.status, letter.direction)}
+          {statusLabel(letter.status, letter.direction, letter.deliveryMethod)}
           。信件抵达前不会显示正文。
         </p>
       ) : null}

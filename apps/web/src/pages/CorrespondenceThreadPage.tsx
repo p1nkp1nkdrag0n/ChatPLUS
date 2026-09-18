@@ -10,6 +10,7 @@ import {
   correspondenceQueryKeys,
   composeAvailability,
   findThreadLetters,
+  hasPendingEmailReply,
   formatCorrespondenceDate,
   statusLabel,
 } from "../lib/correspondence";
@@ -29,6 +30,8 @@ export default function CorrespondenceThreadPage() {
     queryKey: correspondenceQueryKeys.mailbox(agentId),
     queryFn: () => api.correspondence.list(agentId),
     enabled: Boolean(agentId),
+    refetchInterval: (query) =>
+      hasPendingEmailReply(query.state.data) ? 2000 : false,
   });
   const characterQuery = useQuery({
     queryKey: ["character", agentId],
@@ -90,6 +93,11 @@ export default function CorrespondenceThreadPage() {
         <div className="thread-reply-generation">
           <ReplyGenerationStatus
             state={thread.replyState}
+            deliveryMethod={
+              letters.find(
+                (letter) => letter.id === thread.replyState?.incomingLetterId,
+              )?.deliveryMethod ?? "standard"
+            }
             correspondent={correspondent}
             isPending={replyRetry.isPending}
             {...(replyRetry.safeErrorMessage === undefined
@@ -123,7 +131,11 @@ export default function CorrespondenceThreadPage() {
                   <span
                     className={`letter-status letter-status--${letter.status}`}
                   >
-                    {statusLabel(letter.status, letter.direction)}
+                    {statusLabel(
+                      letter.status,
+                      letter.direction,
+                      letter.deliveryMethod,
+                    )}
                   </span>
                 </header>
                 {letter.previewText ? (

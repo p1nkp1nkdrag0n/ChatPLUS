@@ -18,6 +18,7 @@ import {
   correspondenceQueryKeys,
   composeAvailability,
   filterMailboxLetters,
+  hasPendingEmailReply,
   formatCorrespondenceDate,
   mergeCorrespondenceMailboxPages,
   statusLabel,
@@ -67,6 +68,12 @@ export default function CorrespondenceMailboxPage() {
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled: Boolean(characterId),
+    refetchInterval: (query) =>
+      hasPendingEmailReply(
+        mergeCorrespondenceMailboxPages(query.state.data?.pages ?? []),
+      )
+        ? 2000
+        : false,
   });
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -211,6 +218,7 @@ export default function CorrespondenceMailboxPage() {
           <div className="mailbox-reply-generation">
             <ReplyGenerationStatus
               state={replyState}
+              deliveryMethod={selectedLetter?.deliveryMethod ?? "standard"}
               correspondent={character?.identity.name ?? "角色"}
               isPending={replyRetry.isPending}
               {...(replyRetry.safeErrorMessage === undefined
@@ -373,11 +381,13 @@ export function LetterListRow({
   const incoming = letter.direction === "agent_to_user";
   const canPreview = !incoming || letter.status === "read";
   const status =
-    incoming && letter.status === "read"
-      ? "已启封"
-      : letter.status === "delivered_unread"
-        ? "待拆阅"
-        : statusLabel(letter.status, letter.direction);
+    letter.deliveryMethod === "email"
+      ? statusLabel(letter.status, letter.direction, "email")
+      : incoming && letter.status === "read"
+        ? "已启封"
+        : letter.status === "delivered_unread"
+          ? "待拆阅"
+          : statusLabel(letter.status, letter.direction, letter.deliveryMethod);
   return (
     <button
       className={`letter-list-row${selected ? " is-selected" : ""}`}

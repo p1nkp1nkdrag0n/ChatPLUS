@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type {
   CorrespondenceReplyState,
+  LetterDeliveryMethod,
   LetterSummaryResponse,
   OpenLetterResponse,
 } from "@personasim/contracts";
@@ -250,7 +251,12 @@ export function EnvelopePanel({
   onOpen?: () => void;
   openHref?: string;
 }) {
-  const openLabel = letter.status === "read" ? "再次阅读" : "启封阅读";
+  const openLabel =
+    letter.status === "read"
+      ? "再次阅读"
+      : letter.deliveryMethod === "email"
+        ? "阅读邮件"
+        : "启封阅读";
   return (
     <section
       className={`envelope-panel${isRevealing ? " envelope-panel--revealing" : ""}`}
@@ -296,6 +302,14 @@ export function TransitProgress({
 }) {
   const transit = transitPresentation(letter, serverTimeUtc, "zh-CN", timezone);
   const percent = Math.round(transit.progress * 100);
+  if (letter.deliveryMethod === "email") {
+    return (
+      <section className="transit-progress" role="status" aria-live="polite">
+        <h2>{transit.statusLabel}</h2>
+        <p>邮件即时送达。回信生成完成后即可在书信页阅读。</p>
+      </section>
+    );
+  }
   return (
     <section className="transit-progress" aria-labelledby="transit-heading">
       <h2 id="transit-heading">信件在途</h2>
@@ -339,12 +353,14 @@ export function ReplyGenerationStatus({
   isPending,
   safeErrorMessage,
   onRetry,
+  deliveryMethod,
 }: {
   state: CorrespondenceReplyState;
   correspondent: string;
   isPending: boolean;
   safeErrorMessage?: string;
   onRetry: () => void;
+  deliveryMethod?: LetterDeliveryMethod;
 }) {
   const Icon =
     state.kind === "failed"
@@ -365,7 +381,9 @@ export function ReplyGenerationStatus({
         : "你的来信已经安全保存，但当前暂时无法重新尝试，请稍后再看。"
       : state.kind === "retry_scheduled"
         ? "恢复请求已经收到，系统会沿用原来的信件上下文重新准备。"
-        : `${correspondent} 已经收到你的信，回信完成后会按原定路程寄回。`;
+        : deliveryMethod === "email"
+          ? `${correspondent} 已经收到你的邮件，正在生成回信，完成后即可阅读。`
+          : `${correspondent} 已经收到你的信，回信完成后会按原定路程寄回。`;
   const canRetry = state.kind === "failed" && state.canRetry;
 
   return (
@@ -433,7 +451,13 @@ export function ExchangeTimeline({
                   ? "你寄出"
                   : `${correspondent} 来信`}
               </strong>
-              <span>{statusLabel(letter.status, letter.direction)}</span>
+              <span>
+                {statusLabel(
+                  letter.status,
+                  letter.direction,
+                  letter.deliveryMethod,
+                )}
+              </span>
               <Link
                 to={`/letters/${letter.id}?agentId=${encodeURIComponent(agentId)}`}
               >

@@ -2,10 +2,15 @@ import {
   LETTER_DELIVERY_METHODS,
   type LetterDeliveryMethod,
 } from "@personasim/contracts";
-import { Check, Mail, Send, Truck } from "lucide-react";
+import { AtSign, Check, Mail, Send, Truck } from "lucide-react";
 import "../../styles/letter-delivery.css";
 
-const DELIVERY_ICONS = { standard: Mail, express: Truck, priority: Send };
+const DELIVERY_ICONS = {
+  standard: Mail,
+  express: Truck,
+  priority: Send,
+  email: AtSign,
+};
 const DELIVERY_OPTIONS = Object.entries(LETTER_DELIVERY_METHODS) as Array<
   [LetterDeliveryMethod, (typeof LETTER_DELIVERY_METHODS)[LetterDeliveryMethod]]
 >;
@@ -47,7 +52,9 @@ export function LetterDeliverySelector({
                   ) : null}
                 </span>
                 <span className="letter-delivery__duration">
-                  {option.days} 天后抵达
+                  {method === "email"
+                    ? "即时送达 · 即时回信"
+                    : `${option.days} 天后抵达`}
                 </span>
               </span>
             </label>
@@ -55,7 +62,9 @@ export function LetterDeliverySelector({
         })}
       </div>
       <p className="letter-delivery__hint">
-        从封缄寄出时起，按收信人当地日期计算。
+        {value === "email"
+          ? "应用内电子邮件，无需真实邮箱。发送后立即开始生成回信，完成后即可在书信页阅读。"
+          : "从封缄寄出时起，按收信人当地日期计算。"}
       </p>
     </fieldset>
   );

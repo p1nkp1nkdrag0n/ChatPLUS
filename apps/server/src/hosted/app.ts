@@ -147,11 +147,11 @@ export async function buildHostedApps(options: HostedAppOptions) {
             password: z.string().max(256),
           })
           .parse(request.body);
-        const result = await auth.login(input.username, input.password);
-        if (surface === "admin" && result.user.role !== "admin") {
-          auth.logout(result.token);
-          throw new HostedError(403, "admin_required", "请使用管理员账号。");
-        }
+        const result = await auth.login(
+          input.username,
+          input.password,
+          surface,
+        );
         const csrfToken = security.csrf(request, reply);
         security.setSession(reply, result.token, result.session.expiresAtUtc);
         return me(result, csrfToken);

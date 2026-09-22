@@ -94,17 +94,26 @@ export class HostedAuthService {
       return { user, ...this.store.createSession(user.id) };
     });
   }
-  async login(username: string, password: string): Promise<HostedLoginResult> {
+  async login(
+    username: string,
+    password: string,
+    requiredRole?: HostedUser["role"],
+  ): Promise<HostedLoginResult> {
     let subject = "";
     let record: ReturnType<HostedControlStore["passwordRecord"]>;
     try {
       subject = normalizeLoginIdentifier(username).toLocaleLowerCase("en-US");
       record = this.store.passwordRecord(username);
+      // An account on the other listener must behave like an unknown account:
+      // never verify its real password or affect its sign-in failure bucket.
+      if (requiredRole && record?.user.role !== requiredRole)
+        record = undefined;
       // The legacy alias and generated account name share the same failure limit.
       if (record) subject = record.user.accountName.toLocaleLowerCase("en-US");
     } catch {
       // Invalid names share a failure bucket and still receive a generic error.
     }
+    if (requiredRole) subject = `${requiredRole}:${subject}`;
     const retryAfterSeconds = this.store.loginRetryAfterSeconds(subject);
     if (retryAfterSeconds > 0)
       throw new HostedError(
@@ -143,9 +152,12 @@ export class HostedAuthService {
       };
     });
   }
-  authenticate(token: string): { user: HostedUser; session: HostedSession } {
+  authenticate(
+    token: string,
+    requiredRole?: HostedUser["role"],
+  ): { user: HostedUser; session: HostedSession } {
     const value = this.store.authenticateSession(token);
-    if (!value)
+    if (!value || (requiredRole && value.user.role !== requiredRole))
       throw new HostedError(
         401,
         "authentication_required",

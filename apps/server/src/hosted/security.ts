@@ -140,10 +140,16 @@ export function installHostedSecurity(
     const path = hostedRequestPath(request);
     reply
       .header("x-content-type-options", "nosniff")
+      .header("x-frame-options", "DENY")
       .header("referrer-policy", "no-referrer")
+      .header("cross-origin-resource-policy", "same-origin")
+      .header(
+        "permissions-policy",
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+      )
       .header(
         "content-security-policy",
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       );
     if (secure) reply.header("strict-transport-security", "max-age=31536000");
     const host = request.headers.host;
@@ -183,7 +189,10 @@ export function installHostedSecurity(
     const token = cookies(request).get(cookieName);
     if (token) {
       try {
-        request.hosted = { ...options.auth.authenticate(token), token };
+        request.hosted = {
+          ...options.auth.authenticate(token, options.surface),
+          token,
+        };
       } catch {
         clearSession(reply);
       }

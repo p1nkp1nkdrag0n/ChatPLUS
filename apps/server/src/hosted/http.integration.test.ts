@@ -622,7 +622,8 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     expect(recovered.headers["retry-after"]).toBeUndefined();
   });
   it("limits registration to three attempts per IP per ten minutes independently from login", async () => {
-    const { app, adminId } = await fixture();
+    const { app, adminId, register } = await fixture();
+    const existing = await register("existing-rate-friend");
     const anonymous = client(app.userApp, publicOrigin, "203.0.113.30");
     await anonymous.request("GET", "/api/hosted/info");
     const { code } = app.control.createInvite({ maxUses: 2 }, adminId);
@@ -657,8 +658,8 @@ describe("hosted HTTP boundaries and lifecycle", () => {
     expect(
       (
         await anonymous.request("POST", "/api/hosted/auth/login", {
-          username: "operator",
-          password: "testing-operator-password",
+          username: existing.accountName,
+          password: "testing-friend-password",
         })
       ).statusCode,
     ).toBe(200);
@@ -1021,9 +1022,9 @@ describe("hosted HTTP boundaries and lifecycle", () => {
             cookie: ordinaryAdminCookie,
           },
         });
-        expect(forbidden.statusCode, path).toBe(403);
+        expect(forbidden.statusCode, path).toBe(401);
         expect(forbidden.json<{ error: { code: string } }>().error.code).toBe(
-          "admin_required",
+          "login_required",
         );
         const publicResponse = await ordinary.request("GET", path);
         expect(publicResponse.statusCode, path).toBe(404);
@@ -1553,9 +1554,16 @@ describe("hosted HTTP boundaries and lifecycle", () => {
           "max-age=31536000",
         );
         expect(response.headers["x-content-type-options"]).toBe("nosniff");
+        expect(response.headers["x-frame-options"]).toBe("DENY");
+        expect(response.headers["cross-origin-resource-policy"]).toBe(
+          "same-origin",
+        );
         expect(response.headers["referrer-policy"]).toBe("no-referrer");
         expect(response.headers["content-security-policy"]).toContain(
           "frame-ancestors 'none'",
+        );
+        expect(response.headers["content-security-policy"]).toContain(
+          "form-action 'self'",
         );
         expect(response.headers["x-accel-buffering"]).toBe("no");
         await new Promise<void>((resolve, reject) => {

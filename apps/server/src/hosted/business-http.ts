@@ -19,6 +19,8 @@ import { businessRouteManifest } from "./route-registry.js";
 import type { HostedRuntimeManager, TenantRuntime } from "./runtime-manager.js";
 import { readImportInput } from "../http/routes.js";
 
+const maximumEventConnectionsPerUser = 8;
+
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -231,6 +233,15 @@ export function registerHostedBusiness(
         }
         if (route.url.endsWith("/events")) {
           const responses = sockets.get(user.id) ?? new Set();
+          // Both event feeds share one account budget across devices. Reserve
+          // synchronously before a handler can hijack the response or subscribe.
+          if (responses.size >= maximumEventConnectionsPerUser)
+            throw new HostedError(
+              429,
+              "event_connection_limit",
+              "实时连接过多，请关闭部分网页后重试。",
+              5,
+            );
           responses.add(reply.raw);
           sockets.set(user.id, responses);
           const expiry = setTimeout(
@@ -247,7 +258,8 @@ export function registerHostedBusiness(
           reply.raw.once("close", () => {
             clearTimeout(expiry);
             responses.delete(reply.raw);
-            if (!responses.size) sockets.delete(user.id);
+            if (!responses.size && sockets.get(user.id) === responses)
+              sockets.delete(user.id);
           });
         }
         let publicModelId: string | undefined;

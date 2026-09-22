@@ -210,6 +210,9 @@ export function isPublicAddress(address: string): boolean {
       ["10.0.0.0", 8],
       ["100.64.0.0", 10],
       ["127.0.0.0", 8],
+      // Azure's virtual platform address is publicly numbered but reaches the
+      // VM host's control plane; it is not a public image or provider origin.
+      ["168.63.129.16", 32],
       ["169.254.0.0", 16],
       ["172.16.0.0", 12],
       ["192.0.0.0", 24],

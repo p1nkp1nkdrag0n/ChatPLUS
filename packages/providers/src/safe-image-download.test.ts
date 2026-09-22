@@ -63,6 +63,7 @@ describe("safe image URL download", () => {
     "172.16.0.1",
     "192.168.0.1",
     "169.254.169.254",
+    "168.63.129.16",
     "100.100.100.200",
     "0.0.0.0",
     "[::1]",
@@ -88,6 +89,7 @@ describe("safe image URL download", () => {
 
   it.each([
     [{ address: "10.0.0.1", family: 4 }],
+    [{ address: "168.63.129.16", family: 4 }],
     [{ address: "::1", family: 6 }],
     [
       { address: "8.8.8.8", family: 4 },

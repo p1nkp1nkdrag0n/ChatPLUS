@@ -98,6 +98,18 @@ interface OperationState extends HostedOperationContext {
   snapshots: Map<string, HostedResolvedModel>;
   usageUnknown?: boolean;
 }
+
+const diagnosticLimits = {
+  responseBytes: 1024 * 1024,
+  operationBytes: 4 * 1024 * 1024,
+  operationRequests: 100,
+  dailyBytes: 32 * 1024 * 1024,
+  dailyRequests: 200,
+};
+interface DiagnosticBudget {
+  requests: number;
+  bytes: number;
+}
 export interface HostedImageContext {
   purpose: "achievement_badge" | "image_probe";
   generationId: string;
@@ -306,6 +318,12 @@ function attemptId(
 }
 
 export class HostedModelGateway {
+  private readonly userTransport: typeof fetch;
+  private readonly diagnosticTransport: typeof fetch;
+  private readonly diagnosticBudgets = new Map<
+    string,
+    DiagnosticBudget & { day: string }
+  >();
   private readonly userConfigurations = new Map<
     string,
     (selection: LlmSelection) => ResolvedLlmConfiguration
@@ -332,10 +350,17 @@ export class HostedModelGateway {
   constructor(
     private readonly store: HostedGatewayStore,
     private readonly transport: typeof fetch = globalThis.fetch,
-    private readonly userTransport: typeof fetch = createSafeProviderFetch({
-      timeoutMs: 600_000,
-    }),
-  ) {}
+    userTransport?: typeof fetch,
+  ) {
+    this.userTransport =
+      userTransport ?? createSafeProviderFetch({ timeoutMs: 600_000 });
+    this.diagnosticTransport =
+      userTransport ??
+      createSafeProviderFetch({
+        timeoutMs: 120_000,
+        maxBytes: diagnosticLimits.responseBytes,
+      });
+  }
 
   getStats(): { active: number; queued: number; activeImages: number } {
     return {
@@ -795,6 +820,8 @@ export class HostedModelGateway {
   /** Explicit discovery and probes share admission, safe transport and research,
    * while never entering the platform wallet. Secrets exist only in headers. */
   userDiagnosticsFetch(userId: string): typeof fetch {
+    // One closure serves one discovery/probe HTTP action, including pagination.
+    const operationBudget: DiagnosticBudget = { requests: 0, bytes: 0 };
     return async (url, init) => {
       const endpoint = new URL(
         typeof url === "string" || url instanceof URL ? url : url.url,
@@ -825,6 +852,7 @@ export class HostedModelGateway {
       const signal = init?.signal
         ? AbortSignal.any([init.signal, controller.signal])
         : controller.signal;
+      let finishBudget: ((bytes?: number) => void) | undefined;
       const modelId =
         typeof record(payload)?.model === "string"
           ? String(record(payload)!.model)
@@ -850,6 +878,8 @@ export class HostedModelGateway {
         enabled: true,
       };
       try {
+        const allowance = this.reserveDiagnosticBudget(userId, operationBudget);
+        finishBudget = allowance.finish;
         this.store.reserve({
           id,
           userId,
@@ -870,7 +900,7 @@ export class HostedModelGateway {
         });
         signal.throwIfAborted();
         this.store.markAttemptSent(id);
-        const upstream = await this.userTransport(url, {
+        const upstream = await this.diagnosticTransport(url, {
           ...init,
           signal,
           redirect: "error",
@@ -878,7 +908,7 @@ export class HostedModelGateway {
         const result: HostedAttemptResponse = {
           status: upstream.status,
           body: redactKnownSecrets(
-            await readBounded(upstream, 8 * 1024 * 1024),
+            await readBounded(upstream, allowance.maxBytes),
             secrets,
           ),
           headers: {
@@ -888,6 +918,14 @@ export class HostedModelGateway {
             ),
           },
         };
+        const responseBytes = Buffer.byteLength(result.body);
+        if (responseBytes > allowance.maxBytes)
+          throw new HostedError(
+            502,
+            "provider_response_too_large",
+            "供应商检测返回内容过大。",
+          );
+        finishBudget(responseBytes);
         this.store.recordAttemptResponse(id, result);
         this.account(id, model, result);
         return new Response(result.body, {
@@ -907,9 +945,56 @@ export class HostedModelGateway {
           throw new Error(redactKnownSecrets(error.message, secrets));
         throw error;
       } finally {
+        finishBudget?.();
         this.controllers.delete(id);
         release();
       }
+    };
+  }
+
+  private reserveDiagnosticBudget(
+    userId: string,
+    operation: DiagnosticBudget,
+  ): { maxBytes: number; finish: (bytes?: number) => void } {
+    const day = new Date().toISOString().slice(0, 10);
+    let daily = this.diagnosticBudgets.get(userId);
+    if (!daily || daily.day !== day) {
+      for (const [id, budget] of this.diagnosticBudgets)
+        if (budget.day !== day) this.diagnosticBudgets.delete(id);
+      daily = { day, requests: 0, bytes: 0 };
+      this.diagnosticBudgets.set(userId, daily);
+    }
+    if (
+      operation.requests >= diagnosticLimits.operationRequests ||
+      operation.bytes >= diagnosticLimits.operationBytes ||
+      daily.requests >= diagnosticLimits.dailyRequests ||
+      daily.bytes >= diagnosticLimits.dailyBytes
+    )
+      throw new HostedError(
+        429,
+        "diagnostic_budget_exceeded",
+        "供应商检测次数或数据量已达上限，请减少检测或稍后重试。",
+      );
+    const maxBytes = Math.min(
+      diagnosticLimits.responseBytes,
+      diagnosticLimits.operationBytes - operation.bytes,
+      diagnosticLimits.dailyBytes - daily.bytes,
+    );
+    // Reserve before yielding so parallel calls and newly created closures share
+    // the same account budget. Failed calls still consume a request allowance.
+    operation.requests++;
+    daily.requests++;
+    operation.bytes += maxBytes;
+    daily.bytes += maxBytes;
+    let finished = false;
+    return {
+      maxBytes,
+      finish: (bytes = 0) => {
+        if (finished) return;
+        finished = true;
+        operation.bytes -= maxBytes - bytes;
+        daily.bytes -= maxBytes - bytes;
+      },
     };
   }
 

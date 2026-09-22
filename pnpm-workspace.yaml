@@ -2,10 +2,11 @@ packages:
   - apps/*
   - packages/*
 
-# Same-major security floors, including the September 2026 fast-uri advisories.
+# Same-major security floors for transitive dependencies.
 overrides:
-  'fast-uri@>=3.0.0 <3.1.7': 3.1.7
-  'fast-uri@>=4.0.0 <4.1.4': 4.1.4
+  "fast-uri@>=3.0.0 <3.1.7": 3.1.7
+  "fast-uri@>=4.0.0 <4.1.4": 4.1.4
+  "js-yaml@>=4.0.0 <4.3.2": 4.3.2
 
 onlyBuiltDependencies:
   - better-sqlite3

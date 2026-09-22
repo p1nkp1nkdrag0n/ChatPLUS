@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeClock } from "./clock.js";
 import {
   TemporalTaskScheduler,
+  type TemporalTaskSchedulerLogger,
   type TemporalTaskSchedulerRepository,
 } from "./temporal-task-scheduler.js";
 
@@ -445,7 +446,7 @@ function createScheduler(
   options: {
     execution?: "lazy" | "resident" | "worker";
     clock?: FakeClock;
-    logger?: { error: ReturnType<typeof vi.fn> };
+    logger?: TemporalTaskSchedulerLogger;
     idlePollMs?: number;
     errorBackoffMs?: number;
   } = {},

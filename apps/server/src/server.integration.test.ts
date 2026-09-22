@@ -81,6 +81,7 @@ describe("PersonaSim server integration", () => {
         "039_user_model_settings.sql",
         "040_proactive_temporal_tasks.sql",
         "041_proactive_notification_outbox.sql",
+        "042_email_correspondence.sql",
       ]);
       expect(runMigrations(database)).toEqual([]);
       const tables = database

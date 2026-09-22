@@ -335,6 +335,8 @@ describe("dual-model simulation through real application routes", () => {
         structuredOutputMode: "json_object",
         supportsThinkingControl: false,
         supportsStreaming: false,
+        // Reach the mocked transport instead of failing during prompt assembly.
+        maxContextTokens: 128_000,
       },
     };
     const result = await runDualModelSimulation(input);

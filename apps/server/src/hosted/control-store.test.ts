@@ -15,7 +15,7 @@ import { HostedControlStore } from "./control-store.js";
 import type { HostedModelInput } from "./types.js";
 
 vi.mock("node:crypto", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:crypto")>();
+  const original = await importOriginal<typeof crypto>();
   return { ...original, randomInt: vi.fn(original.randomInt) };
 });
 
@@ -303,8 +303,9 @@ describe("hosted central control", () => {
     const migrated = state.store.getUser(user.id)!;
     expect(migrated).toMatchObject({
       ...user,
-      accountName: expect.stringMatching(/^friend#[0-9]{6}$/u),
+      accountName: migrated.accountName,
     });
+    expect(migrated.accountName).toMatch(/^friend#[0-9]{6}$/u);
     expect(state.store.passwordRecord(" FRIEND ")?.user.id).toBe(user.id);
     expect(state.store.passwordRecord(migrated.accountName)?.user.id).toBe(
       user.id,

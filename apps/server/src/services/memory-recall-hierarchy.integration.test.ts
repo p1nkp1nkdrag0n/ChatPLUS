@@ -2006,11 +2006,11 @@ describe("continuity memory recall hierarchy", () => {
       expect(response.statusCode).toBe(201);
       const exchange = SendMessageResponseSchema.parse(response.internalTurn);
       expect(exchange.assistantMessage.content).toBe(
-        "你喝不加糖的红茶；\n木盒标签我不知道。",
+        ADVERSARIAL_PARTIAL_FACT_REPLY,
       );
       expect(exchange.assistantMessage.metadata).toMatchObject({
-        deliveryMode: "sequential",
-        chunks: ["你喝不加糖的红茶；", "木盒标签我不知道。"],
+        deliveryMode: "single_block",
+        chunks: [ADVERSARIAL_PARTIAL_FACT_REPLY],
       });
       expect(
         exchange.assistantMessage.metadata["explicitFactReplyGuard"],

@@ -11,11 +11,15 @@ import {
   type CharacterSpec,
   type OriginalCharacterInput,
 } from "@personasim/contracts";
-import type { LlmCallMetric } from "@personasim/providers";
+import {
+  DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES,
+  type LlmCallMetric,
+} from "@personasim/providers";
 
 import { buildApp } from "../app.js";
 import { readConfig, type ServerConfig } from "../config.js";
 import { FakeClock } from "../runtime/clock.js";
+import { CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS } from "../services/character-compiler.js";
 import type { LlmLogicalCallEvent } from "../services/llm-service.js";
 import { redactLongRunArtifact } from "./companion-long-run-v2-artifacts.js";
 import {
@@ -134,8 +138,23 @@ export function characterGenerationComparisonConfig(
   llm: ServerConfig["llm"],
   directory: string,
 ): ServerConfig {
+  // Production compilation uses the selected model's output capacity. Freeze
+  // that capacity too so this controlled comparison retains its 32k ceiling.
+  const maxOutputTokens = Math.min(
+    CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS,
+    llm.capabilities?.maxOutputTokens ??
+      CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS,
+  );
   return readConfig({
-    llm,
+    llm: {
+      ...llm,
+      maxOutputTokens,
+      capabilities: {
+        ...DEFAULT_OPENAI_COMPATIBLE_CAPABILITIES,
+        ...llm.capabilities,
+        maxOutputTokens,
+      },
+    },
     nodeEnv: "test",
     profile: "character-generation-comparison-v1",
     databasePath: join(directory, "character.sqlite"),
@@ -469,7 +488,8 @@ export async function runCharacterGenerationComparison(
             input: buildCharacterGenerationComparisonInput(id),
           })),
           replyAblationSnapshots: "not_used_or_modified",
-          compilerPolicy: "unchanged_production_32000_output_cap_and_one_retry",
+          compilerPolicy:
+            "production_compiler_with_32000_comparison_ceiling_and_one_retry",
         },
       }),
     ),

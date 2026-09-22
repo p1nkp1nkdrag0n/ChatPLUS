@@ -4,7 +4,7 @@
 
 固定输入来自 `reply-steering-scenarios.ts`：三种角色共享纪录片剪辑师背景、创作价值、失去合作的经历和朋友关系，分别表达温和细察、沉静直率、明快外露的性格。每种模型收到完全相同的对应作者输入，输入哈希、实际模型配置、代码与锁文件指纹写入清单。
 
-默认矩阵为 DeepSeek、GLM、Qwen、GPT-6 Astra × 三种性格，共 12 次主要生成。通过生产 `POST /api/characters/generate`、`POST /api/characters/:id/publish`、`GET /api/characters/:id` 完成生成、发布、读取。编译沿用生产 32,000 输出 token 上限与一次重试，所有物理请求（包括失败与重试）共享 72 次请求、10,000,000 保守预留单位上限；预留单位是 UTF-8 请求字节加输出上限，不是实际账单。
+默认矩阵为 DeepSeek、GLM、Qwen、GPT-6 Astra × 三种性格，共 12 次主要生成。通过生产 `POST /api/characters/generate`、`POST /api/characters/:id/publish`、`GET /api/characters/:id` 完成生成、发布、读取。比较配置将输出预算与模型输出能力显式冻结为最多 32,000 token，并保留模型声明的更低上限；生产编译器继续沿用所选模型的输出能力与一次重试。所有物理请求（包括失败与重试）共享 72 次请求、10,000,000 保守预留单位上限；预留单位是 UTF-8 请求字节加输出上限，不是实际账单。
 
 运行 fixture：
 

@@ -364,7 +364,11 @@ export async function runArchitecturePersonaCandidate(input: {
           const request = JSON.parse(init.body) as {
             max_tokens?: number;
           };
-          if (request.max_tokens !== CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS)
+          if (
+            request.max_tokens !==
+            (input.config.llm.capabilities?.maxOutputTokens ??
+              CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS)
+          )
             throw new Error(
               "Architecture persona output cap changed before dispatch",
             );
@@ -665,7 +669,7 @@ export async function runArchitecturePersonaExperiment(
       })),
       simplePrompt: ARCHITECTURE_SIMPLE_CARD_SYSTEM,
       simpleSchema: z.toJSONSchema(ArchitectureSimpleCardSchema),
-      outputCap: CHARACTER_COMPILATION_MAX_OUTPUT_TOKENS,
+      outputCap: configs[0]!.config.llm.capabilities?.maxOutputTokens,
       retries: CHARACTER_COMPILATION_MAX_RETRIES,
       production: "unchanged_generate_publish_read",
       simple: "same_llm_service_compact_card_no_authoritative_refill",

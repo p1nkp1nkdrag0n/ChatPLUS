@@ -159,9 +159,25 @@ describe("independent character generation comparison", () => {
     ).rejects.toThrow();
   }, 30_000);
 
-  it.each([8_192, 64_000])(
-    "meters the real provider adapter independently of a %i-token environment default while retaining visible output and removing hidden reasoning",
-    async (environmentMaxTokens) => {
+  it.each([
+    {
+      environmentMaxTokens: 8_192,
+      modelMaxTokens: 64_000,
+      expectedCap: 32_000,
+    },
+    {
+      environmentMaxTokens: 64_000,
+      modelMaxTokens: 64_000,
+      expectedCap: 32_000,
+    },
+    {
+      environmentMaxTokens: 64_000,
+      modelMaxTokens: 16_000,
+      expectedCap: 16_000,
+    },
+  ])(
+    "meters a $modelMaxTokens-token model independently of a $environmentMaxTokens-token environment default while retaining visible output and removing hidden reasoning",
+    async ({ environmentMaxTokens, modelMaxTokens, expectedCap }) => {
       vi.stubEnv("LLM_ACTIVE_PROFILE", undefined);
       vi.stubEnv("LLM_PROVIDER", "fixture");
       vi.stubEnv(
@@ -193,13 +209,13 @@ describe("independent character generation comparison", () => {
             timeoutMs: 1_000,
             maxRetries: 0,
             // This synthetic model's capacity must not inherit the developer's
-            // .env: the compiler should request its own 32k per-call budget.
-            maxOutputTokens: 64_000,
+            // .env: the comparison explicitly freezes its 32k output ceiling.
+            maxOutputTokens: modelMaxTokens,
             capabilities: {
               structuredOutputMode: "json_object",
               supportsThinkingControl: false,
               supportsStreaming: false,
-              maxOutputTokens: 64_000,
+              maxOutputTokens: modelMaxTokens,
             },
           },
           directory,
@@ -213,7 +229,7 @@ describe("independent character generation comparison", () => {
           if (typeof init?.body !== "string")
             throw new Error("Expected JSON body");
           const request = JSON.parse(init.body) as { max_tokens: number };
-          expect(request.max_tokens).toBe(32_000);
+          expect(request.max_tokens).toBe(expectedCap);
           return Promise.resolve(
             Response.json({
               model: "transport-fixture",
